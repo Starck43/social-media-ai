@@ -1,0 +1,8 @@
+{% extends "web/base.html" %}
+{% block title %}Результат поручения — AI Assistant{% endblock %}
+{% block page_heading %}Подтвердить результат{% endblock %}
+{% block content %}
+<div class="max-w-2xl space-y-5">{% include "web/_task_tabs.html" %}<section class="ui-card space-y-4"><h2 class="text-lg font-semibold">{{ task.title }}</h2><p>Поручение агента №{{ agent_id }}, запуск №{{ job_id }} завершён. Выберите действие для дела.</p><a class="underline" href="/app/tasks/{{ agent_id }}">Открыть результат поручения</a>
+<form method="post" action="/app/task-hub/assignments/{{ agent_id }}/result" class="space-y-4"><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="job_id" value="{{ job_id }}"><input type="hidden" name="expected_version" value="{{ task.version }}">
+<label>Действие<select class="ui-control block min-h-[44px]" name="operation"><option value="annotate">Добавить заметку</option><option value="complete">Завершить дело</option></select></label><label class="block">Заметка<textarea class="ui-control mt-2 min-h-[44px] w-full" name="annotation" maxlength="2000" rows="4"></textarea></label><label class="flex gap-2"><input type="checkbox" name="confirm" value="yes" required> Я подтверждаю изменение дела</label><button class="ui-control min-h-[44px]" type="submit">Подтвердить и применить</button></form></section></div>
+{% endblock %}

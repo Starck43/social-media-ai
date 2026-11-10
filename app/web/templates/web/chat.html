@@ -416,6 +416,7 @@
                 class="chat-input"
             ></textarea>
             <div class="chat-composer-bar flex items-center gap-4 justify-between w-full">
+                {% if perms and perms.can('plannertask', 'create') %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new">Создать дело</a>{% endif %}
                 <div class="chat-suggestions" data-chat-quick-actions>
                     <button type="button" class="chat-attach" @click="handleAttachClick()" :disabled="pending || awaitingConfirmation" :aria-label="attachmentEnabled() ? 'Прикрепить фото или документ' : 'Прикрепить файл — о доступности'" title="Фото и документы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9m-6 12 8-8"/></svg></button>
                     <button type="button" class="chat-attach-limits" x-show="attachmentEnabled()" x-cloak @click="openAttachmentLimits()" :disabled="pending" aria-label="Допустимые форматы и лимиты вложений">Форматы и лимиты</button>

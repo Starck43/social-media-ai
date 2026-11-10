@@ -8,6 +8,8 @@ from types import SimpleNamespace
 
 from tests.source_import_isolation import load_isolated_source
 
+__source_only__ = True
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -103,7 +105,7 @@ def test_ready_routes_remain_and_mobile_bar_is_daily_loop() -> None:
         "chat": "/app/chat",
         "sources": "/app/sources",
         "scenarios": "/app/scenarios",
-        "tasks": "/app/tasks",
+        "tasks": "/app/task-hub",
         "analytics": "/app/analytics",
         "digests": "/app/digests",
         "actions": "/app/actions",
@@ -114,10 +116,18 @@ def test_ready_routes_remain_and_mobile_bar_is_daily_loop() -> None:
         "communications": "/app/communications",
         "followups": "/app/followups",
         "cases": "/app/cases",
-        "planner": "/app/planner",
         "contacts": "/app/contacts",
     }
     assert [item.key for item in MOBILE_NAV_ITEMS] == ["dashboard", "chat", "communications", "tasks"]
+    tasks = next(item for item in NAV_ITEMS if item.key == "tasks")
+    assert allows(tasks, _StubPerms({("planner.task", "view")}))
+    assert allows(tasks, _StubPerms({("scheduling.task", "view")}))
+    assignments = section_of("/app/tasks")
+    assert assignments is not None and assignments.key == "agent_tasks"
+    assert assignments.required_permission == "scheduling.task.view"
+    planner = section_of("/app/planner")
+    assert planner is not None and planner.key == "planner"
+    assert planner.required_permission == "planner.task.view"
     assert all(item.ready and item.href.startswith("/app") for item in MOBILE_NAV_ITEMS)
 
 

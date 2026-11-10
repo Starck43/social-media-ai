@@ -1,0 +1,19 @@
+{% extends "web/base.html" %}
+{% block title %}Календарь задач — AI Assistant{% endblock %}
+{% block page_heading %}Задачи{% endblock %}
+{% block content %}
+<div class="space-y-6">
+{% include "web/_task_tabs.html" %}
+<section class="ui-card space-y-4" aria-labelledby="calendar-title">
+  <div class="flex flex-wrap items-end justify-between gap-4"><div><h2 id="calendar-title" class="text-lg font-semibold">Календарь</h2><p class="ui-muted">Показано до 50 записей каждого раздела; остальные — на следующих страницах. Время показано в {{ timezone }}. Для повторяющихся событий показан исходный срок.</p></div><form method="get"><label>Часовой пояс <input class="ui-control min-h-[44px]" name="timezone" value="{{ timezone }}" maxlength="100"></label><button class="ui-control min-h-[44px]">Показать</button></form></div>
+  {% for provider in providers %}
+  <section class="border-t pt-4 space-y-3" aria-labelledby="calendar-{{ provider.kind }}">
+    <h3 id="calendar-{{ provider['kind'] }}" class="font-semibold">{{ {'planner': 'Мои дела', 'event': 'События календаря', 'agent': 'Поручения агенту'}.get(provider['kind'], 'Задачи') }}</h3>
+    {% if provider['status'] == 'denied' %}<p class="ui-muted">Нет доступа к этому типу элементов.</p>
+    {% elif provider['status'] != 'available' %}<p role="status" class="ui-muted">{% if provider['status'] == 'not_configured' %}Выберите календарь в настройках.{% elif provider['status'] == 'sync_required' %}Обновите подключённый календарь в настройках.{% elif provider['status'] == 'reauth' %}Подключите календарь заново.{% else %}Раздел сейчас недоступен. Проверьте подключение в настройках.{% endif %}</p>{% if provider['kind'] == 'event' %}<a class="underline" href="/app/settings?tab=connections">Настройки календаря</a>{% endif %}
+    {% elif provider['items'] %}<ul class="space-y-2">{% for item in provider['items'] %}<li class="flex flex-wrap justify-between gap-3 rounded border p-3"><a class="underline" href="{{ item.href }}">{{ item.title }}</a><time datetime="{{ item.when }}">{{ item.when }}</time></li>{% endfor %}</ul>
+    {% else %}<p class="ui-muted">На этой странице элементов нет.</p>{% endif %}
+    {% if provider['next_before_id'] %}<a class="ui-control inline-flex min-h-[44px] items-center" href="?timezone={{ timezone|urlencode }}&before_{{ provider['kind'] }}={{ provider['next_before_id'] }}">Показать более ранние</a>{% endif %}
+  </section>{% endfor %}
+</section></div>
+{% endblock %}

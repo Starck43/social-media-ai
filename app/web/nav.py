@@ -54,18 +54,9 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     ),
     NavItem(
         "tasks",
-        "/app/tasks",
+        "/app/task-hub",
         "Задачи",
         required_permission="scheduling.task.view",
-        icon="calendar",
-        group="work",
-        group_label="Работа",
-    ),
-    NavItem(
-        "planner",
-        "/app/planner",
-        "Планировщик",
-        required_permission="planner.task.view",
         icon="calendar",
         group="work",
         group_label="Работа",
@@ -194,6 +185,16 @@ def allows(item: NavItem, perms: Any) -> bool:
     """True when the caller may open the section (no requirement = everyone signed in)."""
     if item.key == "chat":
         return bool(perms is not None and getattr(perms, "can_open_chat", False))
+    if item.key == "tasks":
+        return bool(
+            perms is not None
+            and (
+                perms.can("agenttask", "view")
+                or perms.can("scheduling.task", "view")
+                or perms.can("plannertask", "view")
+                or perms.can("planner.task", "view")
+            )
+        )
     if item.required_permission is None:
         return True
     # The right is a catalog key, not `model.action`: resource keys carry their
@@ -212,6 +213,10 @@ def allows(item: NavItem, perms: Any) -> bool:
 
 def section_of(path: str) -> NavItem | None:
     """The gated section a `/app` path belongs to, or None (dashboard, settings, auth)."""
+    if path == "/app/planner" or path.startswith("/app/planner/"):
+        return NavItem("planner", "/app/planner", "Мои дела", required_permission="planner.task.view")
+    if path == "/app/tasks" or path.startswith("/app/tasks/"):
+        return NavItem("agent_tasks", "/app/tasks", "Поручения агенту", required_permission="scheduling.task.view")
     for item in NAV_ITEMS:
         if (
             item.ready

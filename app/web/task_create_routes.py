@@ -49,6 +49,8 @@ async def task_create(
     source_ids: list[str] = Form([]),
     source_scope: str = Form("legacy"),
     task_goal: str = Form(""),
+    planner_id: int | None = Form(default=None),
+    planner_version: int | None = Form(default=None),
     platforms: list[str] = Form([]),
     vk_access: str = Form(""),
     window_type: str = Form("fixed"),
@@ -355,7 +357,14 @@ async def task_create(
         with tenant_scope(tenant_id):
             from app.services.task_creation import create_task_with_sources
 
-            task = await create_task_with_sources(
+            create = create_task_with_sources
+            link_args = {}
+            if planner_id is not None or planner_version is not None:
+                from app.services.workspace.task_surface import create_linked_assignment
+
+                create = create_linked_assignment
+                link_args = {"planner_id": planner_id, "expected_version": planner_version}
+            task = await create(
                 task_values={
                     "name": name.strip()[:100],
                     "job_type": job_type,
@@ -369,8 +378,9 @@ async def task_create(
                 },
                 source_ids=parsed_source_ids if parsed_source_ids else None,
                 tenant_id=tenant_id,
+                **link_args,
             )
-    except ValueError:
+    except (ValueError, LookupError, PermissionError):
         # A source that vanished between the check and this write must not leave
         # an active task whose empty link set means "all active sources".
         add_flash(

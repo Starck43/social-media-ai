@@ -14,6 +14,7 @@
 {% if editing %}
 <section class="ui-card space-y-4">
   <h2 class="font-semibold">{{ editing.title }}</h2>
+  {% if perms and perms.can('plannertask', 'create') %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new?origin=document&origin_id={{ editing.id }}&boundary={{ boundary }}">Подготовить дело по документу</a>{% endif %}
   <p class="text-sm">Версия {{ editing.version }} · {{ editing.status }}{% if editing.approval_invalidated %} · прежнее согласование отменено{% endif %}</p>
   <p class="text-xs ui-muted">Контакт: {{ editing.contact_id or '—' }} · Доказательство по делу: {{ editing.case_evidence_id or '—' }} · Владелец: {{ editing.owner_user_id or '—' }}</p>
   <p class="text-xs ui-muted break-all">{{ editing.content_hash }}</p>

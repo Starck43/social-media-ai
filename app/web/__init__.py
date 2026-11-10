@@ -36,6 +36,7 @@ from .settings import router as settings_router
 from .settings_llm import router as settings_llm_router
 from .settings_oauth import router as settings_oauth_router
 from .sources import router as sources_router
+from .task_surface import router as task_surface_router
 from .tasks import router as tasks_router
 from .telegram_login import router as telegram_login_router
 from .trusted_hosts import router as trusted_hosts_router
@@ -77,6 +78,7 @@ web_router.include_router(settings_llm_router)
 web_router.include_router(settings_oauth_router)
 web_router.include_router(sources_router)
 web_router.include_router(tasks_router)
+web_router.include_router(task_surface_router)
 web_router.include_router(telegram_login_router)
 web_router.include_router(trusted_hosts_router)
 web_router.include_router(vk_router)

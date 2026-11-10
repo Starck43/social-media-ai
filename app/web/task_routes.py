@@ -61,6 +61,7 @@ from .task_shared import (
     timedelta,
     timezone,
 )
+from .task_surface import task_tabs as _task_tabs
 from .task_use_cases import (
     queue_task_now,
 )
@@ -142,6 +143,17 @@ async def tasks_list(request: Request):
         if raw_scenario_id.isdigit() and any(scenario.id == int(raw_scenario_id) for scenario in scenarios)
         else None
     )
+    planner_reference = None
+    raw_planner_id = request.query_params.get("planner_id")
+    if raw_planner_id is not None:
+        from fastapi import HTTPException
+
+        from app.services.planner.tasks import planner_service
+        from app.web.planner import invoke
+
+        if not raw_planner_id.isascii() or not raw_planner_id.isdecimal() or int(raw_planner_id) <= 0:
+            raise HTTPException(422, "Invalid planner reference")
+        planner_reference = await invoke(planner_service.get(int(raw_planner_id)))
     open_add_modal = request.query_params.get("create") == "1" and perms_can(request, "agenttask", "create")
     # Which payload target keys each scenario wants (param_registry.PAYLOAD_PARAMS):
     # drives the conditional target inputs in the add modal, as on the edit page.
@@ -188,6 +200,8 @@ async def tasks_list(request: Request):
         request,
         "web/tasks.html",
         section="tasks",
+        tabs=_task_tabs(request),
+        active_tab="tasks",
         tasks=tasks,
         sources=sources,
         source_groups=_group_sources(sources),
@@ -195,6 +209,7 @@ async def tasks_list(request: Request):
         target_fields=TARGET_FIELD_DEFS,
         scenarios=scenarios,
         scenario_analysis=scenario_analysis,
+        planner_reference=planner_reference,
         prefill_source_ids=prefill_source_ids,
         prefill_scenario_id=prefill_scenario_id,
         prefill_job_type=(
@@ -250,6 +265,8 @@ async def task_detail(request: Request, task_id: int):
                 request,
                 "web/task_detail.html",
                 section="tasks",
+                tabs=_task_tabs(request),
+                active_tab="tasks",
                 task=None,
                 filter_tenant_id=filter_tenant_id,
             )
@@ -316,6 +333,9 @@ async def task_detail(request: Request, task_id: int):
     latest_job = next((item for item in recent_jobs if item.id == running_job_id), None)
     if latest_job is None:
         latest_job = running_job if running_job_id is not None else (recent_jobs[0] if recent_jobs else None)
+    from app.services.workspace.task_surface import linked_planner
+
+    planner_link = await linked_planner(source)
     latest_run = _task_run_panel_data(request, source, latest_job, run_scope=run_scope)
     await _attach_task_llm_diagnostics(request, source, latest_job, latest_run)
     await _attach_task_lane_evidence(latest_run, latest_job)
@@ -337,7 +357,10 @@ async def task_detail(request: Request, task_id: int):
         request,
         "web/task_detail.html",
         section="tasks",
+        tabs=_task_tabs(request),
+        active_tab="tasks",
         task=source,
+        planner_link=planner_link,
         filter_tenant_id=filter_tenant_id,
         recent_jobs=recent_jobs,
         running_job_id=running_job_id,

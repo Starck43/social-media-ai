@@ -133,6 +133,7 @@
                         <a href="{{ msg.original_url }}" target="_blank" rel="noopener noreferrer" class="underline" data-original-url>Открыть оригинал</a>
                         {% endif %}
                         <a href="/app/chat?context_type=communication&context_id={{ msg.id }}&boundary={{ boundary | default('cloud') }}" class="ui-control text-xs" data-inbox-chat-handoff>В чат ({{ boundary | default('cloud') }})</a>
+                        {% if perms and perms.can('plannertask', 'create') and not msg.is_unavailable %}<a class="ui-control text-xs" href="/app/task-hub/new?origin=message&origin_id={{ msg.id }}&thread_id={{ selected_thread_detail.thread.id }}&boundary={{ boundary }}">Подготовить дело</a>{% endif %}
                     </div>
                 </article>
                 {% endfor %}

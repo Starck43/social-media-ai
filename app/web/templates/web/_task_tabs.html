@@ -1,5 +1,5 @@
 <nav class="flex flex-wrap gap-2" aria-label="Разделы задач">
   {% for key, label, href in tabs %}
-  {% if (key == 'planner' and perms and perms.can('plannertask', 'view')) or (key == 'tasks' and perms and perms.can('agenttask', 'view')) or (key == 'calendar' and perms and (perms.can('plannertask', 'view') or perms.can('agenttask', 'view'))) %}<a class="ui-control min-h-[44px]" href="{{ href }}" {% if active_tab == key %}aria-current="page"{% endif %}>{{ label }}</a>{% endif %}
+  {% if (key == 'planner' and perms and perms.can('plannertask', 'view')) or (key == 'tasks' and perms and perms.can('agenttask', 'view')) or (key == 'calendar' and perms and (perms.can('plannertask', 'view') or perms.can('agenttask', 'view'))) or (key == 'sources' and perms and perms.can('plannertask', 'view') and perms.can('source', 'view')) %}<a class="ui-control min-h-[44px]" href="{{ href }}" {% if active_tab == key %}aria-current="page"{% endif %}>{{ label }}</a>{% endif %}
 {% endfor %}
 </nav>

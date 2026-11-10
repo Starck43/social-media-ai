@@ -59,15 +59,17 @@ async def export_document(
     revision moved past what the caller saw.
     """
     if session is None:
-        from app.core.database import with_db_session
+        from app.core.database import async_session_maker
 
-        return await with_db_session(export_document)(
-            document_id,
-            format,
-            expected_revision_id=expected_revision_id,
-            expected_content_hash=expected_content_hash,
-            boundary=boundary,
-        )
+        async with async_session_maker() as owned, owned.begin():
+            return await export_document(
+                document_id,
+                format,
+                expected_revision_id=expected_revision_id,
+                expected_content_hash=expected_content_hash,
+                boundary=boundary,
+                session=owned,
+            )
     _, doc, revision = await _locked_current(session, document_id, boundary=boundary)
     if expected_revision_id is not None and revision.id != expected_revision_id:
         raise DocumentConflict("document_stale")
@@ -155,11 +157,10 @@ async def send_document_email(document_id, request, idempotency_key, *, boundary
     if session is not None:
         tenant_id, rendered = await _approved_render_for_send(session, document_id, request.format, boundary=boundary)
     else:
-        from app.core.database import with_db_session
+        from app.core.database import async_session_maker
 
-        tenant_id, rendered = await with_db_session(_approved_render_for_send)(
-            document_id, request.format, boundary=boundary
-        )
+        async with async_session_maker() as owned, owned.begin():
+            tenant_id, rendered = await _approved_render_for_send(owned, document_id, request.format, boundary=boundary)
     draft = await outbox_store.draft(
         DraftIn(
             contact_id=request.contact_id,

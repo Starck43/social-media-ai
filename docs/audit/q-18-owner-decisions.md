@@ -98,3 +98,10 @@ These stand as authorizations for future tasks:
   signing and notarization are a follow-up task, not part of P18-T07 acceptance.
 - D7's consent wording still needs a legal review before the first live campaign;
   the reviewer is not blocked by it.
+- D9a supersedes an earlier record. Commit `bb702f45` ("Record owner artifact
+  storage decision and P19-T05 DDL request") had recorded the opposite: rendered
+  bytes stored encrypted in PostgreSQL with a new hash-read service and a
+  `document_export_artifacts` table. The owner re-answered the same question on
+  2026-11-10 and chose the transient spool. That DDL request is withdrawn and gets
+  no revision number; both cards carry a SUPERSEDED banner. Kept in history so the
+  discarded design stays traceable — it is not an open alternative.

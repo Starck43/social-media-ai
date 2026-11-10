@@ -420,6 +420,7 @@ class TodayRepository:
         return await task_manager.dashboard_upcoming(workspace_id, limit=limit, include_sources=show_sources)
 
     async def unread_threads(self, workspace_id: int, limit: int = PROVIDER_LIMIT) -> list[Any]:
+        from app.core.permissions import get_current_user
         from app.models import MessageThread, ThreadTriageDecision
 
         threads = list(
@@ -432,7 +433,12 @@ class TodayRepository:
         )
         if threads:
             try:
-                decisions = await ThreadTriageDecision.objects.filter(tenant_id=workspace_id).limit(limit * 6)
+                cur_user = get_current_user()
+                cur_uid = getattr(cur_user, "id", None) if cur_user is not None else None
+                flt: dict[str, Any] = {"tenant_id": workspace_id}
+                if _positive_int(cur_uid):
+                    flt["decided_by_user_id"] = int(cur_uid)
+                decisions = await ThreadTriageDecision.objects.filter(**flt).limit(limit * 6)
                 by_thread = {
                     int(d.thread_id): d
                     for d in decisions

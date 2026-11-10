@@ -19,6 +19,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Identity,
     Index,
     Integer,
     String,
@@ -208,10 +209,10 @@ class ContactChannelStat(Base, TimestampMixin, TenantScopedMixin):
 
 
 class ThreadTriageDecision(Base, TimestampMixin, TenantScopedMixin):
-    """Durable tenant-scoped user triage classification decision on a conversation thread (P20-T09).
+    """Durable per-user, tenant-scoped triage classification decision on a thread (P20-T09).
 
-    Records explicit user corrections (basis='user_override', is_model_fact=False)
-    so overrides survive restarts and are shared across workers within the tenant workspace.
+    Keyed by (tenant_id, decided_by_user_id, thread_id) per P20-T09 personal-inbox default
+    so two users in the same tenant never silently overwrite each other's classification.
     """
 
     __tablename__ = "thread_triage_decisions"
@@ -219,8 +220,9 @@ class ThreadTriageDecision(Base, TimestampMixin, TenantScopedMixin):
         UniqueConstraint("tenant_id", "id", name="uq_thread_triage_decisions_tenant_id"),
         UniqueConstraint(
             "tenant_id",
+            "decided_by_user_id",
             "thread_id",
-            name="uq_thread_triage_decisions_thread",
+            name="uq_thread_triage_decisions_user_thread",
         ),
         ForeignKeyConstraint(
             ["tenant_id", "thread_id"],
@@ -232,17 +234,22 @@ class ThreadTriageDecision(Base, TimestampMixin, TenantScopedMixin):
             f"category IN ({_sql_list(TRIAGE_DECISION_CATEGORIES)})",
             name="ck_thread_triage_decisions_category",
         ),
-        Index("ix_thread_triage_decisions_tenant_thread", "tenant_id", "thread_id"),
+        Index(
+            "ix_thread_triage_decisions_tenant_user_thread",
+            "tenant_id",
+            "decided_by_user_id",
+            "thread_id",
+        ),
         {"schema": settings.DB_SCHEMA},
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
     pii_updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1, server_default="1")
     thread_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    decided_by_user_id: Mapped[int | None] = mapped_column(
+    decided_by_user_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="SET NULL"),
-        nullable=True,
+        ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="CASCADE"),
+        nullable=False,
     )
     category: Mapped[str] = mapped_column(String(24), nullable=False)
     reason_encrypted: Mapped[str | None] = mapped_column(EncryptedText(), nullable=True)

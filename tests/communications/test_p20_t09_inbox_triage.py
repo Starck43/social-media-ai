@@ -34,8 +34,6 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
 
 import app.services.communications.triage as triage_mod
 from app.core.tenant_context import tenant_scope
@@ -95,28 +93,6 @@ class _FakeSession:
 
     async def flush(self) -> None:
         self.flushed = True
-
-
-class _AsyncSqliteSessionAdapter:
-    """Thin async adapter over a real SQLAlchemy sync `Session` backed by SQLite."""
-
-    def __init__(self, sync_session: Session):
-        self._sync = sync_session
-
-    async def execute(self, stmt: Any):
-        return self._sync.execute(stmt)
-
-    def add(self, obj: Any) -> None:
-        self._sync.add(obj)
-
-    async def flush(self) -> None:
-        self._sync.flush()
-
-    async def commit(self) -> None:
-        self._sync.commit()
-
-    def close(self) -> None:
-        self._sync.close()
 
 
 def _make_thread(
@@ -453,97 +429,145 @@ async def test_user_correction_stored_as_user_decision_not_model_fact():
     assert other_tenant_res.basis == "deterministic_baseline"
 
 
-@pytest.mark.asyncio
-async def test_user_override_persists_across_restarts_in_database(monkeypatch):
-    """Verify B1: user override is stored in `thread_triage_decisions` and survives process/session restarts."""
-    from cryptography.fernet import Fernet
+def test_thread_triage_decisions_migration_and_schema_guard_contract(monkeypatch):
+    """Verify B1/B6 migration (`p20t09_triage_decisions` -> `0149`), `contact_pii_marker` trigger, and per-user uniqueness."""
+    import runpy
+    from pathlib import Path
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from sqlalchemy import CheckConstraint, ForeignKeyConstraint, UniqueConstraint
     from app.core.config import settings
+    from app.models.types.encrypted import EncryptedText
     from cli.commands.pii import REGISTRY
+    import sys
 
-    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    root = Path(__file__).resolve().parents[2]
+    if sys.version_info >= (3, 12):
+        from scripts.schema_guards import GUARD_TRIGGERS
+    else:
+        sg_src = (root / "scripts/schema_guards.py").read_text(encoding="utf-8")
+        sg_src = sg_src.replace(
+            'f" OF {\', \'.join(f\'\\"{column}\\"\' for column in self.columns)}"',
+            'f" OF {\', \'.join(chr(34) + column + chr(34) for column in self.columns)}"',
+        )
+        sg_ns: dict[str, Any] = {"__name__": "scripts.schema_guards", "__file__": str(root / "scripts/schema_guards.py")}
+        sys.modules["scripts.schema_guards"] = SimpleNamespace(**sg_ns)  # type: ignore[assignment]
+        exec(compile(sg_src, str(root / "scripts/schema_guards.py"), "exec"), sg_ns)
+        GUARD_TRIGGERS = sg_ns["GUARD_TRIGGERS"]
+
     assert not hasattr(triage_mod, "_USER_TRIAGE_DECISIONS")
     assert ("thread_triage_decisions", "reason_encrypted", None) in REGISTRY
+    assert any(
+        t.table == "thread_triage_decisions"
+        and t.name == "contact_pii_marker"
+        and t.function == "bump_contact_pii_marker"
+        and t.events == ("INSERT", "UPDATE")
+        for t in GUARD_TRIGGERS
+    )
 
-    engine = create_engine("sqlite:///:memory:")
+    # Verify ThreadTriageDecision.__table__ is never mutated and preserves schema/constraints
     table = ThreadTriageDecision.__table__
-    orig_schema = table.schema
-    orig_fks = list(table.foreign_key_constraints)
-    try:
-        table.schema = None
-        table.constraints = {c for c in table.constraints if c not in orig_fks}
-        table.create(engine)
+    assert table.schema == settings.DB_SCHEMA
+    assert set(table.c.keys()) == {
+        "id",
+        "tenant_id",
+        "thread_id",
+        "decided_by_user_id",
+        "category",
+        "reason_encrypted",
+        "created_at",
+        "updated_at",
+        "pii_updated_at",
+    }
+    assert table.c.id.identity is not None
+    assert table.c.decided_by_user_id.nullable is False
+    assert isinstance(table.c.reason_encrypted.type, EncryptedText)
 
-        th = _make_thread(17, tenant_id=1, connection_id=None, contact_id=None, subject="Рассылка новостей отрасли", unread_count=1)
-        msg = _make_message(501, tenant_id=1, thread_id=17, subject="Рассылка новостей отрасли")
+    uqs = {c.name: tuple(c.columns.keys()) for c in table.constraints if isinstance(c, UniqueConstraint)}
+    assert uqs["uq_thread_triage_decisions_tenant_id"] == ("tenant_id", "id")
+    assert uqs["uq_thread_triage_decisions_user_thread"] == ("tenant_id", "decided_by_user_id", "thread_id")
 
-        # Baseline before override
-        before = triage_thread_record(th, tenant_id=1, user_id=42, messages=[msg])
-        assert before.category == TRIAGE_CAN_WAIT
-        assert before.basis == "deterministic_baseline"
-        assert before.connection_status == "unlinked"
+    fks = {c.name: tuple(c.column_keys) for c in table.constraints if isinstance(c, ForeignKeyConstraint) and c.name}
+    assert fks["fk_thread_triage_decisions_thread"] == ("tenant_id", "thread_id")
+    checks = {c.name for c in table.constraints if isinstance(c, CheckConstraint)}
+    assert "ck_thread_triage_decisions_category" in checks
 
-        # Worker 1: write override and commit to database, then close session
-        with tenant_scope(1):
-            sync_s1 = Session(engine)
-            s1 = _AsyncSqliteSessionAdapter(sync_s1)
-            saved = await record_user_triage_override(
-                s1,
-                tenant_id=1,
-                user_id=42,
-                thread_id=17,
-                category=TRIAGE_NEEDS_REPLY,
-                reason="Нужно ответить редакции до пятницы",
-            )
-            await s1.commit()
-            s1.close()
+    # Verify Alembic revision graph has one head and down_revision == "0149"
+    script = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
+    heads = script.get_heads()
+    assert len(heads) == 1
+    rev = script.get_revision("p20t09_triage_decisions")
+    assert rev is not None
+    assert rev.down_revision == "0149"
 
-        assert saved["category"] == TRIAGE_NEEDS_REPLY
-        assert saved["basis"] == "user_override"
-        assert saved["is_model_fact"] is False
+    # Verify migration upgrade/downgrade DDL and guarded downgrade refusing data loss
+    mig_path = root / "migrations/versions/p20t09_thread_triage_decisions.py"
+    mig = runpy.run_path(str(mig_path))
+    assert mig["revision"] == "p20t09_triage_decisions"
+    assert mig["down_revision"] == "0149"
 
-        # Simulate restart / Worker 2: open a brand-new session on the DB and read back
-        with tenant_scope(1):
-            sync_s2 = Session(engine)
-            s2 = _AsyncSqliteSessionAdapter(sync_s2)
-            loaded = await get_user_triage_override(s2, 1, 17, user_id=77)
-            assert loaded is not None
-            assert loaded["category"] == TRIAGE_NEEDS_REPLY
-            assert loaded["basis"] == "user_override"
-            assert loaded["is_model_fact"] is False
-            assert loaded["recorded_by_user_id"] == 42
-            assert "Нужно ответить редакции до пятницы" in loaded["reason"]
+    created_tables = []
+    created_indexes = []
+    executed_sql = []
 
-            # Update existing override in Worker 2 and verify pii_updated_at increments
-            updated = await record_user_triage_override(
-                s2,
-                tenant_id=1,
-                user_id=77,
-                thread_id=17,
-                category=TRIAGE_FYI,
-                reason="Вопрос закрыт на звонке",
-            )
-            await s2.commit()
-            s2.close()
+    class _FakeBind:
+        dialect = SimpleNamespace(identifier_preparer=SimpleNamespace(quote_schema=lambda v: f'"{v}"'))
 
-        assert updated["category"] == TRIAGE_FYI
-        assert updated["recorded_by_user_id"] == 77
+    fake_op = SimpleNamespace(
+        create_table=lambda name, *cols, **kw: created_tables.append((name, cols, kw)),
+        create_index=lambda name, tbl, cols, **kw: created_indexes.append((name, tbl, cols, kw)),
+        get_bind=lambda: _FakeBind(),
+        execute=lambda sql: executed_sql.append(str(sql)),
+    )
+    monkeypatch.setitem(mig["upgrade"].__globals__, "op", fake_op)
+    mig["upgrade"]()
+    assert len(created_tables) == 1
+    assert created_tables[0][0] == "thread_triage_decisions"
+    assert len(created_indexes) == 1
+    assert created_indexes[0][0] == "ix_thread_triage_decisions_tenant_user_thread"
+    assert any("CREATE TRIGGER contact_pii_marker BEFORE INSERT OR UPDATE" in s for s in executed_sql)
 
-        # Worker 3 after second restart sees updated override
-        with tenant_scope(1):
-            sync_s3 = Session(engine)
-            s3 = _AsyncSqliteSessionAdapter(sync_s3)
-            reloaded = await get_user_triage_override(s3, 1, 17)
-            assert reloaded is not None
-            assert reloaded["category"] == TRIAGE_FYI
-            after_restart = triage_thread_record(th, tenant_id=1, user_id=10, messages=[msg], override=reloaded)
-            assert after_restart.category == TRIAGE_FYI
-            assert after_restart.basis == "user_override"
-            assert after_restart.is_model_fact is False
-            s3.close()
-    finally:
-        table.schema = orig_schema
-        table.constraints.update(orig_fks)
-        engine.dispose()
+    # Guarded downgrade refuses when rows exist
+    downgrade_calls = []
+
+    class _DowngradeBind:
+        dialect = SimpleNamespace(identifier_preparer=SimpleNamespace(quote_schema=lambda v: f'"{v}"'))
+
+        def execute(self, stmt):
+            downgrade_calls.append(str(stmt))
+
+        def scalar(self, _stmt):
+            return True
+
+    fake_down_op = SimpleNamespace(
+        get_bind=lambda: _DowngradeBind(),
+        drop_index=lambda *a, **kw: downgrade_calls.append("DROP_INDEX"),
+        drop_table=lambda *a, **kw: downgrade_calls.append("DROP_TABLE"),
+    )
+    monkeypatch.setitem(mig["downgrade"].__globals__, "op", fake_down_op)
+    monkeypatch.setitem(mig["downgrade"].__globals__, "context", SimpleNamespace(is_offline_mode=lambda: False))
+    with pytest.raises(RuntimeError, match="Downgrade refused"):
+        mig["downgrade"]()
+    assert downgrade_calls[0].startswith("LOCK TABLE")
+    assert "DROP_TABLE" not in downgrade_calls
+
+    # Verify two users in the same tenant never overwrite or leak into each other's decision
+    th = _make_thread(17, tenant_id=1, subject="Рассылка новостей отрасли", unread_count=1)
+    msg = _make_message(501, tenant_id=1, thread_id=17, subject="Рассылка новостей отрасли")
+    user_42_override = ThreadTriageDecision(
+        tenant_id=1,
+        thread_id=17,
+        decided_by_user_id=42,
+        category=TRIAGE_NEEDS_REPLY,
+        reason_encrypted="Ответ закреплён за сотрудником 42",
+    )
+    res_user_42 = triage_thread_record(th, tenant_id=1, user_id=42, messages=[msg], override=user_42_override)
+    assert res_user_42.category == TRIAGE_NEEDS_REPLY
+    assert res_user_42.basis == "user_override"
+
+    res_user_99 = triage_thread_record(th, tenant_id=1, user_id=99, messages=[msg], override=user_42_override)
+    assert res_user_99.category == TRIAGE_CAN_WAIT
+    assert res_user_99.basis == "deterministic_baseline"
 
 
 @pytest.mark.asyncio

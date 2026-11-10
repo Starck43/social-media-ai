@@ -665,6 +665,8 @@ def _normalize_override_record(
         if isinstance(override, dict)
         else (getattr(override, "decided_by_user_id", None) or getattr(override, "user_id", None))
     )
+    if _positive_int(fallback_user_id) and _positive_int(decided_by) and int(decided_by) != int(fallback_user_id):
+        return None
     eff_user_id = int(decided_by) if _positive_int(decided_by) else (int(fallback_user_id) if _positive_int(fallback_user_id) else 0)
     raw_updated = override.get("updated_at") if isinstance(override, dict) else getattr(override, "updated_at", None)
     if isinstance(raw_updated, datetime):
@@ -714,6 +716,7 @@ async def record_user_triage_override(
             select(ThreadTriageDecision)
             .where(
                 ThreadTriageDecision.tenant_id == tenant_id,
+                ThreadTriageDecision.decided_by_user_id == user_id,
                 ThreadTriageDecision.thread_id == thread_id,
             )
             .with_for_update()
@@ -751,18 +754,19 @@ async def get_user_triage_override(
     *,
     user_id: int | None = None,
 ) -> dict[str, Any] | None:
-    """Load a persisted user triage correction for `(tenant_id, thread_id)` from `thread_triage_decisions`."""
-    if not _positive_int(tenant_id) or not _positive_int(thread_id):
+    """Load a persisted user triage correction for `(tenant_id, user_id, thread_id)` from `thread_triage_decisions`."""
+    if not _positive_int(tenant_id) or not _positive_int(user_id) or not _positive_int(thread_id):
         return None
     row = (
         await session.execute(
             select(ThreadTriageDecision).where(
                 ThreadTriageDecision.tenant_id == tenant_id,
+                ThreadTriageDecision.decided_by_user_id == int(user_id),
                 ThreadTriageDecision.thread_id == thread_id,
             )
         )
     ).scalar_one_or_none()
-    return _normalize_override_record(row, tenant_id=tenant_id, thread_id=thread_id, fallback_user_id=user_id)
+    return _normalize_override_record(row, tenant_id=tenant_id, thread_id=thread_id, fallback_user_id=int(user_id))
 
 
 def _is_connection_revoked(connection: Any, thread: Any = None) -> bool:
@@ -1318,12 +1322,13 @@ async def list_triaged_threads(
                 msgs_by_thread[int(m.thread_id)].append(m)
 
     overrides_by_thread: dict[int, dict[str, Any]] = {}
-    if thread_ids:
+    if thread_ids and _positive_int(user_id):
         ov_rows = list(
             (
                 await session.execute(
                     select(ThreadTriageDecision).where(
                         ThreadTriageDecision.tenant_id == tenant_id,
+                        ThreadTriageDecision.decided_by_user_id == int(user_id),
                         ThreadTriageDecision.thread_id.in_(thread_ids),
                     )
                 )

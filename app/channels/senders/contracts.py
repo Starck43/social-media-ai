@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from app.services.communications.attachments import AttachmentRef
 
 EMAIL = "comms.email.send.v1"
 TELEGRAM = "comms.telegram.bot_send.v1"
@@ -38,12 +41,21 @@ class MailAccount:
 
 
 @dataclass(frozen=True)
+class EmailAttachment:
+    """Internal verified spool bytes, not an HTTP or caller-supplied payload."""
+
+    reference: AttachmentRef
+    content: bytes = field(repr=False)
+
+
+@dataclass(frozen=True)
 class EmailRequest:
     recipient: str = field(repr=False)
     subject: str = field(repr=False)
     text: str = field(repr=False)
     in_reply_to: str | None = field(default=None, repr=False)
     references: tuple[str, ...] = field(default=(), repr=False)
+    attachments: tuple[EmailAttachment, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)

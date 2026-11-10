@@ -1,6 +1,4 @@
-"""Pure unit tests for the P15-T14 attachment contract (no DB, no network, no files)."""
-
-import base64
+"""Spool-shaped attachment references; no DB, network, filesystem or provider."""
 import hashlib
 from email import message_from_bytes
 from email.message import EmailMessage
@@ -9,191 +7,90 @@ import pytest
 from pydantic import ValidationError
 
 from app.services.communications.attachments import (
-    ATTACHMENT_MEDIA_TYPES,
     AttachmentRef,
     AttachmentRejected,
     attach_to_message,
-    build_mime_part,
     channel_supports_attachments,
     validate_attachment_set,
     verify_delivered_bytes,
 )
 
-PDF = "application/pdf"
-DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+def ref(data=b"pdf", **kw):
+    values = {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data), "mime": "application/pdf"}
+    values.update(kw)
+    return AttachmentRef(**values)
 
 
-def _hash(data: bytes) -> str:
-    return "sha256:" + hashlib.sha256(data).hexdigest()
+def test_exact_spool_shape_and_forbidden_caller_bytes():
+    item = ref()
+    assert set(item.model_dump()) == {"sha256", "size", "mime"}
+    with pytest.raises(ValidationError):
+        ref(evidence_id=1)
+    with pytest.raises(ValidationError):
+        ref(payload=b"caller bytes")
+    with pytest.raises(ValidationError):
+        ref(filename="../../escape")
 
 
-def _ref(data: bytes = b"%PDF-1.4 report", **overrides) -> AttachmentRef:
-    fields = {
-        "evidence_id": 1,
-        "revision_id": 10,
-        "revision_body_hash": _hash(b"document body"),
-        "attachment_bytes_hash": _hash(data),
-        "size": len(data),
-        "media_type": PDF,
-        "filename": "report.pdf",
-    }
-    fields.update(overrides)
-    return AttachmentRef(**fields)
+@pytest.mark.parametrize("channel", ["telegram", "max", "unknown", ""])
+def test_non_email_fails_closed(channel):
+    assert not channel_supports_attachments(channel)
+    with pytest.raises(AttachmentRejected, match="channel_cannot_attach"):
+        validate_attachment_set([ref()], channel)
 
 
-def test_happy_path_preserves_order() -> None:
-    first, second = _ref(), _ref(data=b"%PDF other", revision_id=11, filename="other.pdf")
-    result = validate_attachment_set([first, second], "email")
-    assert isinstance(result, tuple)
-    assert result == (first, second)
+def test_order_and_duplicate():
+    first, second = ref(b"a"), ref(b"b")
+    assert validate_attachment_set([first, second], "email") == (first, second)
+    with pytest.raises(AttachmentRejected, match="duplicate_attachment"):
+        validate_attachment_set([first, first], "email")
 
 
-def test_channel_support_fails_closed() -> None:
-    assert channel_supports_attachments("email") is True
-    for channel in ("telegram", "max", "", "unknown"):
-        assert channel_supports_attachments(channel) is False
+def test_limits_are_settings_not_hardcoded(monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ATTACHMENT_MAX_FILE_BYTES", 3)
+    monkeypatch.setattr(settings, "ATTACHMENT_MAX_TOTAL_BYTES", 4)
+    assert validate_attachment_set([ref(b"abc")], "email")
+    with pytest.raises(AttachmentRejected, match="attachment_too_large"):
+        validate_attachment_set([ref(b"abcd")], "email")
+    with pytest.raises(AttachmentRejected, match="attachment_set_too_large"):
+        validate_attachment_set([ref(b"abc"), ref(b"de")], "email")
 
 
-def test_channel_cannot_attach_refused_at_scheduling() -> None:
-    with pytest.raises(AttachmentRejected) as exc:
-        validate_attachment_set([_ref()], "telegram")
-    assert exc.value.code == "channel_cannot_attach"
-
-
-def test_no_attachments() -> None:
-    with pytest.raises(AttachmentRejected) as exc:
+def test_empty_and_count_rejected():
+    with pytest.raises(AttachmentRejected, match="no_attachments"):
         validate_attachment_set([], "email")
-    assert exc.value.code == "no_attachments"
+    with pytest.raises(AttachmentRejected, match="too_many_attachments"):
+        validate_attachment_set([ref(str(i).encode()) for i in range(11)], "email")
 
 
-def test_too_many_attachments() -> None:
-    refs = [_ref(data=b"x", revision_id=i + 1, attachment_bytes_hash=_hash(str(i).encode())) for i in range(11)]
-    with pytest.raises(AttachmentRejected) as exc:
-        validate_attachment_set(refs, "email")
-    assert exc.value.code == "too_many_attachments"
+@pytest.mark.parametrize("digest", ["sha256:" + "a" * 64, "a" * 63, "A" * 64, "g" * 64])
+def test_spool_hash_format(digest):
+    with pytest.raises(ValidationError):
+        ref(sha256=digest)
 
 
-def test_total_size_exceeded() -> None:
-    big = 12 * 1024 * 1024
-    refs = [
-        _ref(size=big, revision_id=1, attachment_bytes_hash=_hash(b"a")),
-        _ref(size=big, revision_id=2, attachment_bytes_hash=_hash(b"b")),
-        _ref(size=big, revision_id=3, attachment_bytes_hash=_hash(b"c")),
-    ]
-    with pytest.raises(AttachmentRejected) as exc:
-        validate_attachment_set(refs, "email")
-    assert exc.value.code == "attachment_size_exceeded"
+@pytest.mark.parametrize("changes", [{"size": 0}, {"size": True}, {"mime": "application/x-msdownload"}])
+def test_invalid_metadata(changes):
+    with pytest.raises(ValidationError):
+        ref(**changes)
 
 
-def test_duplicate_attachment() -> None:
-    ref = _ref()
-    with pytest.raises(AttachmentRejected) as exc:
-        validate_attachment_set([ref, ref], "email")
-    assert exc.value.code == "duplicate_attachment"
-
-
-def test_revision_render_mismatch() -> None:
-    a = _ref(data=b"one", attachment_bytes_hash=_hash(b"one"))
-    b = _ref(data=b"two", attachment_bytes_hash=_hash(b"two"))
-    with pytest.raises(AttachmentRejected) as exc:
-        validate_attachment_set([a, b], "email")
-    assert exc.value.code == "revision_render_mismatch"
-
-
-def test_verify_delivered_bytes_pass_and_fail() -> None:
-    data = b"%PDF-1.4 exact"
-    ref = _ref(data=data)
-    verify_delivered_bytes(ref, data)
-    with pytest.raises(AttachmentRejected) as exc:
-        verify_delivered_bytes(ref, b"%PDF-1.4 EXACT")
-    assert exc.value.code == "attachment_hash_mismatch"
-    with pytest.raises(AttachmentRejected) as exc:
-        verify_delivered_bytes(ref, data + b"extra")
-    assert exc.value.code == "attachment_size_mismatch"
-
-
-def test_mime_part_round_trips_bytes() -> None:
-    data = b"%PDF-1.4 \x00\x01 binary-ish payload \xff"
-    ref = _ref(data=data, filename="quarterly report.pdf")
-    part = build_mime_part(ref, data)
-    assert part["Content-Type"] == PDF
-    assert part["Content-Transfer-Encoding"] == "base64"
-    assert part["Content-Disposition"].startswith("attachment")
-    assert "quarterly report.pdf" in part["Content-Disposition"]
-    assert base64.b64decode(part.get_payload()) == data
-
-
-def test_mime_part_refuses_mismatched_bytes() -> None:
-    ref = _ref(data=b"sealed")
-    with pytest.raises(AttachmentRejected) as exc:
-        build_mime_part(ref, b"other")
-    assert exc.value.code in {"attachment_hash_mismatch", "attachment_size_mismatch"}
-
-
-def test_attached_parts_are_files_not_forwarded_messages() -> None:
-    """Regression: a leaf part handed straight to ``add_attachment`` becomes ``message/rfc822``.
-
-    ``EmailMessage`` starts as ``text/plain`` and wraps any non-``multipart`` child, so the
-    provider would receive an attached email with no file. ``attach_to_message`` must switch
-    the parent to ``multipart/mixed`` and keep every attachment a real leaf of its own type.
-    """
-    pdf, docx = b"%PDF-1.4 first", b"PK\x03\x04 second"
-    message = EmailMessage()
-    message["Subject"] = "report"
-    message.set_content("Please find the documents attached.")
-    attach_to_message(message, _ref(data=pdf, revision_id=1, filename="report.pdf"), pdf)
-    attach_to_message(message, _ref(data=docx, revision_id=2, media_type=DOCX, filename="report.docx"), docx)
-
-    assert message.get_content_type() == "multipart/mixed"
-    attachments = list(message.iter_attachments())
-    assert [(part.get_content_type(), part.get_filename()) for part in attachments] == [
-        (PDF, "report.pdf"),
-        (DOCX, "report.docx"),
-    ]
-    assert all(part.get_content_maintype() != "message" for part in attachments)
-    assert [part.get_content() for part in attachments] == [pdf, docx]
-
-    wire = message_from_bytes(message.as_bytes())
-    parsed = [(part.get_content_type(), part.get_filename()) for part in wire.walk() if part.get_filename()]
-    assert parsed == [(PDF, "report.pdf"), (DOCX, "report.docx")]
-    assert wire.get_payload(0).get_payload(decode=True).decode().strip() == "Please find the documents attached."
-
-
-def test_attach_to_message_refuses_mismatched_bytes() -> None:
+def test_hash_size_checks_and_real_mime_roundtrip():
+    data = b"%PDF-1.4\x00\xff"
+    item = ref(data)
+    verify_delivered_bytes(item, data)
+    with pytest.raises(AttachmentRejected, match="attachment_size_mismatch"):
+        verify_delivered_bytes(item, data + b"x")
+    with pytest.raises(AttachmentRejected, match="attachment_hash_mismatch"):
+        verify_delivered_bytes(item, b"x" * len(data))
     message = EmailMessage()
     message.set_content("body")
-    with pytest.raises(AttachmentRejected):
-        attach_to_message(message, _ref(data=b"sealed"), b"tampered")
-    assert message.get_content_type() == "text/plain"
-
-
-@pytest.mark.parametrize("filename", ["../evil.pdf", "dir/evil.pdf", "dir\\evil.pdf", ".hidden", "a\r\nb.pdf", ""])
-def test_filename_rejects_unsafe_values(filename: str) -> None:
-    with pytest.raises(ValidationError):
-        _ref(filename=filename)
-
-
-def test_filename_length_bound() -> None:
-    _ref(filename="a" * 200)
-    with pytest.raises(ValidationError):
-        _ref(filename="a" * 201)
-
-
-def test_media_type_allowlist() -> None:
-    assert DOCX in ATTACHMENT_MEDIA_TYPES
-    _ref(media_type=DOCX)
-    with pytest.raises(ValidationError):
-        _ref(media_type="application/x-msdownload")
-
-
-@pytest.mark.parametrize("hash_value", ["sha256:xyz", "sha256:" + "A" * 64, "md5:" + "a" * 32])
-def test_hash_format_enforced(hash_value: str) -> None:
-    with pytest.raises(ValidationError):
-        _ref(revision_body_hash=hash_value)
-
-
-def test_size_bounds() -> None:
-    with pytest.raises(ValidationError):
-        _ref(size=0)
-    with pytest.raises(ValidationError):
-        _ref(size=25 * 1024 * 1024 + 1)
+    attach_to_message(message, item, data)
+    wire = message_from_bytes(message.as_bytes())
+    leaves = [part for part in wire.walk() if part.get_filename()]
+    assert len(leaves) == 1 and leaves[0].get_content_type() == "application/pdf"
+    assert leaves[0].get_payload(decode=True) == data
+    assert leaves[0].get_filename().endswith(".pdf")

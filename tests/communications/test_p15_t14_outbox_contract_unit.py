@@ -23,13 +23,9 @@ def draft(**extra):
 
 def attachment(**extra):
     return {
-        "evidence_id": 1,
-        "revision_id": 2,
-        "revision_body_hash": "sha256:" + "a" * 64,
-        "attachment_bytes_hash": "sha256:" + "b" * 64,
+        "sha256": "b" * 64,
         "size": 10,
-        "media_type": "application/pdf",
-        "filename": "document.pdf",
+        "mime": "application/pdf",
         **extra,
     }
 

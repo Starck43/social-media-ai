@@ -337,7 +337,6 @@ may run the candidate migration cycle; record its dev baseline and expected task
 head separately. Before releasing a shared target, verify its agreed dev baseline
 again or record the explicit ownership handoff for a still-active task head.
 
-
 After success/failure/interruption, stop surviving processes, remove all synthetic
 records (including separately committed fixtures), and verify none remain.
 Rollback alone is insufficient. Take a schema inventory (relations, types,

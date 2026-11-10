@@ -21,8 +21,8 @@ Record review success separately; never publish DONE before integration proof.
 Required DB scenarios need exact-revision local evidence and Alembic baseline
 alignment; unit/mock greens or deferred checks cannot substitute for them.
 
-Only after verified integration, update the parent phase with completion date, accepted SHA and a
-brief result linked to `docs/audit/<id>.md`; remove the task card and ROADMAP row
+Only after verified integration, update the parent phase with completion date,
+accepted SHA and a brief result linked to `docs/audit/<id>.md`; remove the task card and ROADMAP row
 for a closed task. An orphan leaves only its audit summary. Return concrete
 findings, required checks and a recommended fix when not accepted: correctable
 findings return the row to IN_PROGRESS, and remote findings ride PR comments,

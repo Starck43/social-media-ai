@@ -94,6 +94,6 @@ Draft until the PR body carries tested SHA, exact test paths, passed/failed/
 skipped counts, execution route and deferred scenarios. Required deferred checks
 keep the task IN_PROGRESS and the PR Draft until linked local evidence passes
 (or the owner explicitly waives a named check, still labelled unrun). Only then
-update the card and set the row `READY`; do not duplicate status in the phase, do not self-accept and
-do not delete the row — the auditor does that. Fetch again and state the SHA you
+update the card and set the row `READY`; do not duplicate status in the phase,
+do not self-accept and do not delete the row — the auditor does that. Fetch again and state the SHA you
 synchronized to.

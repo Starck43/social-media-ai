@@ -16,6 +16,6 @@ shared test-schema revision and candidate graph. Report unexplained drift as a
 baseline/integration failure, not a branch defect; do not stamp or reset around
 it. For a task-isolated schema, record its explicit dev baseline and task head.
 Publish tested revision, exact commands, DB scenario counts, baseline and cleanup
-as a PR comment; ask the
-remote agent to include the linked evidence in the PR body. Do not self-accept,
+as a PR comment; ask the remote agent to include the linked evidence in the PR
+body. Do not self-accept,
 change unowned files or infer merge/deploy permission.

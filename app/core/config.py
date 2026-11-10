@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.settings_views import (
@@ -257,6 +257,33 @@ class Settings(BaseSettings):
             if not value.is_absolute():
                 raise ValueError("RUNTIME_STATE_DIR must be an absolute path")
         return value
+
+    # --- Outbox attachment spool ---
+    # Attachment bytes are transient: an approved document is rendered, hashed and
+    # delivered, and the file lives only from render until dispatch plus this TTL.
+    # Long-term file storage belongs to the owner's own cloud or local store
+    # (S3 connector per D9), never to PostgreSQL, which would grow without bound
+    # across thousands of tenants. The directory must stay outside static roots;
+    # `app.services.attachments.spool` enforces 0o700 directories and 0o600 files.
+    ATTACHMENT_STORAGE_DIR: Path | None = None
+    ATTACHMENT_MAX_FILE_BYTES: int = Field(default=5 * 1024 * 1024, ge=1)
+    ATTACHMENT_MAX_TOTAL_BYTES: int = Field(default=10 * 1024 * 1024, ge=1)
+    ATTACHMENT_SPOOL_TTL_SECONDS: int = Field(default=900, ge=60)
+
+    @field_validator("ATTACHMENT_STORAGE_DIR")
+    @classmethod
+    def _absolute_attachment_storage_dir(cls, value: Path | None) -> Path | None:
+        if value is not None:
+            value = value.expanduser()
+            if not value.is_absolute():
+                raise ValueError("ATTACHMENT_STORAGE_DIR must be an absolute path")
+        return value
+
+    @model_validator(mode="after")
+    def _attachment_total_not_below_file(self) -> "Settings":
+        if self.ATTACHMENT_MAX_TOTAL_BYTES < self.ATTACHMENT_MAX_FILE_BYTES:
+            raise ValueError("ATTACHMENT_MAX_TOTAL_BYTES must not be below ATTACHMENT_MAX_FILE_BYTES")
+        return self
 
     # Workspace subscriptions: selecting a provider never enables checkout.
     # Live payments are deliberately unsupported by this foundation. Test stores

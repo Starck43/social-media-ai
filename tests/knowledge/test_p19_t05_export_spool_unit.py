@@ -16,6 +16,7 @@ from app.services.knowledge.export import (
     ExportRevision,
     spool_revision,
 )
+from tests.shared.pdf_rendering import require_pdf_renderer
 
 BODY = "Уважаемый клиент!\n\nДоговор №12 подписан. \nКонфиденциально."
 
@@ -50,7 +51,7 @@ def test_docx_is_spooled_and_reads_back_through_the_reference(spool):
 
 
 def test_pdf_is_spooled_with_a_pdf_media_type(spool):
-    pytest.importorskip("weasyprint", reason="PDF rendering needs the optional renderer installed")
+    require_pdf_renderer()
     exported = spool_revision(_revision(), "pdf", tenant_id=1, outbox_message_id=8)
 
     assert exported.mime == "application/pdf"

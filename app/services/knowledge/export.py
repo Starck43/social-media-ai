@@ -95,3 +95,52 @@ def render_revision(revision: ExportRevision, format: Literal["docx", "pdf"]) ->
     else:
         raise ExportError("invalid_format")
     return ExportedFile(content, media_type, format, revision.revision_id, revision.content_hash)
+
+
+@dataclass(frozen=True)
+class SpooledExport:
+    """An approved revision rendered into the transient spool, ready to deliver.
+
+    The fields are exactly what the outbox stores (D9a): hash, size and MIME of
+    the delivered bytes. P15-T14 adapts them into its own `AttachmentRef`; this
+    module deliberately does not depend on the outbox package, so the renderer
+    can land independently.
+    """
+
+    sha256: str
+    size: int
+    mime: str
+    revision_id: int
+    revision_body_hash: str
+
+
+ATTACHMENT_POSITION = 0
+
+
+def spool_revision(
+    revision: ExportRevision,
+    format: Literal["docx", "pdf"],
+    *,
+    tenant_id: int,
+    outbox_message_id: int,
+) -> SpooledExport:
+    """Render an already-approved revision and spool it under the outbox scope.
+
+    This is the seam P15-T14 dispatches from: the same `outbox_<id>` item id, the
+    same `(sha256, size, mime)` reference and the same spool limits. It performs no
+    approval check of its own -- the caller must have verified the
+    `(revision_id, revision_body_hash)` pair before calling it.
+    """
+    from app.services.attachments import attachment_spool
+
+    rendered = render_revision(revision, format)
+    item_id = f"outbox_{outbox_message_id}"
+    attachment_spool.purge_expired()
+    stored = attachment_spool.put(tenant_id, item_id, ATTACHMENT_POSITION, rendered.content, mime=rendered.media_type)
+    return SpooledExport(
+        sha256=stored.sha256,
+        size=stored.size,
+        mime=stored.mime,
+        revision_id=revision.revision_id,
+        revision_body_hash=revision.content_hash,
+    )

@@ -880,6 +880,9 @@ class TodayProjection:
             section.reason = "Входящие диалоги временно недоступны."
             return section
 
+        from app.services.communications.triage import InboxItemUnavailable, triage_thread_record
+
+        can_view_contact = _can(self.perms, "contact", "view")
         items: list[dict[str, Any]] = []
         for th in rows:
             if getattr(th, "tenant_id", None) != self.workspace_id or not _positive_int(getattr(th, "id", None)):
@@ -889,6 +892,15 @@ class TodayProjection:
             unread = int(getattr(th, "unread_count", 0) or 0)
             if unread <= 0:
                 continue
+            try:
+                triaged = triage_thread_record(
+                    th,
+                    tenant_id=self.workspace_id,
+                    user_id=self.user_id,
+                    can_view_contact=can_view_contact,
+                )
+            except InboxItemUnavailable:
+                continue
             channel = str(getattr(th, "channel", "email") or "email")
             subject = str(getattr(th, "subject_encrypted", None) or getattr(th, "subject", None) or f"Диалог #{th.id}")[
                 :120
@@ -897,12 +909,23 @@ class TodayProjection:
             items.append(
                 {
                     "item_key": f"reply:thread:{self.workspace_id}:{th.id}",
+                    "provider": "communications.inbox_triage",
                     "kind": "thread",
                     "id": th.id,
                     "channel": channel,
                     "title": subject,
-                    "summary": f"Канал: {channel.upper()} · Непрочитанных: {unread}",
+                    "summary": f"Канал: {channel.upper()} · Непрочитанных: {unread} · {triaged.category_label}: {triaged.reason}",
                     "status_label": f"{unread} непрочит.",
+                    "triage_category": triaged.category,
+                    "triage_label": triaged.category_label,
+                    "triage_reason": triaged.reason,
+                    "triage_basis": triaged.basis,
+                    "is_model_fact": triaged.is_model_fact,
+                    "recommended_priority": triaged.recommended_priority,
+                    "priority_basis": triaged.priority_basis,
+                    "data_boundary": triaged.data_boundary,
+                    "authoritative_ref": triaged.authoritative_ref,
+                    "proposals": [p.to_dict() for p in triaged.proposals],
                     "href": f"/app/communications?thread_id={th.id}",
                     "chat_url": "/app/chat?"
                     + urlencode(

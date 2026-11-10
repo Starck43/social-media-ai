@@ -425,4 +425,239 @@ async def post_communication_contact_unmerge(
         raise HTTPException(status_code=400) from None
 
 
+from typing import Any
+from app.core.tenant_context import current_tenant_id
+from app.services.communications.triage import (
+    TRIAGE_CATEGORIES,
+    evaluate_triage_corpus,
+    list_triaged_threads,
+    materialize_triage_reply_draft,
+    record_user_triage_override,
+    triage_thread,
+)
+from app.services.communications.outbox_store import OutboxConflict
+from app.services.communications.reply import ReplyUnavailable
+
+
+class TriageProposalOut(BusinessSchema):
+    proposal_id: str
+    kind: str
+    label: str
+    title: str
+    summary: str
+    editable: bool = True
+    explicit_confirmation_required: bool = True
+    auto_executed: bool = False
+    sent_without_approval: bool = False
+    fields: dict[str, Any] = Field(default_factory=dict)
+    target_service: str = ""
+    target_route: str = ""
+
+
+class ThreadTriageOut(BusinessSchema):
+    thread_id: int
+    tenant_id: int
+    channel: str
+    channel_label: str
+    contact_id: int | None = None
+    contact_display_name: str | None = None
+    subject: str
+    category: str
+    category_label: str
+    reason: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    basis: str
+    is_model_fact: bool = False
+    baseline_category: str
+    baseline_reason: str
+    recommended_priority: str
+    priority_basis: str
+    unread_count: int = 0
+    message_count: int = 0
+    last_message_at: str | None = None
+    last_direction: str | None = None
+    inbound_message_id: int | None = None
+    assignee: dict[str, Any] | None = None
+    shared_inbox_supported: bool = False
+    data_boundary: str = "metadata_only"
+    persisted_body_cache: bool = False
+    indexed_body: bool = False
+    prompt_injection_detected: bool = False
+    prompt_injection_matches: list[str] = Field(default_factory=list)
+    model_status: str = "baseline_only"
+    model_failure: bool = False
+    budget_denied: bool = False
+    model_notice: str | None = None
+    connection_status: str = "active"
+    stale_or_unavailable: bool = False
+    proposals: list[TriageProposalOut] = Field(default_factory=list)
+    authoritative_ref: str
+    authoritative_url: str
+    chat_url: str
+
+
+class TriagedThreadListOut(BusinessSchema):
+    items: list[ThreadTriageOut] = Field(default_factory=list)
+    counts_by_category: dict[str, int] = Field(default_factory=dict)
+    skipped_revoked_connections: int = 0
+
+
+class TriageOverrideRequest(BusinessSchema):
+    category: Literal["needs_reply", "fyi", "can_wait", "uncertain"]
+    reason: str | None = Field(default=None, max_length=240)
+
+
+class TriageOverrideOut(BusinessSchema):
+    tenant_id: int
+    user_id: int
+    thread_id: int
+    category: str
+    category_label: str
+    reason: str
+    basis: str = "user_override"
+    source: str = "user_decision"
+    is_model_fact: bool = False
+    recorded_by_user_id: int
+    updated_at: str
+
+
+class TriageReplyDraftRequest(BusinessSchema):
+    inbound_message_id: int = Field(..., gt=0)
+    subject: str = Field(default="", max_length=998)
+    body: str = Field(..., min_length=1, max_length=1_000_000)
+    timezone: str = Field(default="UTC", max_length=64)
+    idempotency_key: str = Field(..., min_length=1, max_length=128)
+    auto_send: bool = False
+    bypass_approval: bool = False
+
+
+class TriageReplyDraftOut(BusinessSchema):
+    draft: dict[str, Any]
+    requires_outbox_approval: bool = True
+    sent: bool = False
+    dispatched: bool = False
+    scheduled: bool = False
+    source: str = "p20_t09_reply_proposal"
+
+
+class TriageEvaluationOut(BusinessSchema):
+    total: int
+    correct: int
+    accuracy: float
+    per_category: dict[str, dict[str, float | int]]
+    false_negatives: list[dict[str, Any]]
+    false_positives: list[dict[str, Any]]
+    prompt_injection_total: int
+    prompt_injection_caught: int
+    limitations: str
+    results: list[dict[str, Any]]
+
+
+@router.get("/triage", response_model=TriagedThreadListOut)
+async def get_communication_triage_list(
+    category: Literal["needs_reply", "fyi", "can_wait", "uncertain"] | None = Query(default=None),
+    channel: Literal["email", "telegram", "max", "phone", "bitrix24"] | None = Query(default=None),
+    include_archived: bool = Query(default=False),
+    limit: int = Query(default=25, ge=1, le=100),
+):
+    try:
+        async with async_session_maker() as session:
+            data = await list_triaged_threads(
+                session,
+                category=category,
+                channel=channel,
+                include_archived=include_archived,
+                limit=limit,
+            )
+            return TriagedThreadListOut.model_validate(data)
+    except PermissionError:
+        raise HTTPException(status_code=403) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.get("/triage/evaluation", response_model=TriageEvaluationOut)
+async def get_communication_triage_evaluation():
+    return TriageEvaluationOut.model_validate(evaluate_triage_corpus())
+
+
+@router.get("/threads/{thread_id}/triage", response_model=ThreadTriageOut)
+async def get_communication_thread_triage(
+    thread_id: int = Path(..., gt=0),
+):
+    try:
+        async with async_session_maker() as session:
+            data = await triage_thread(session, thread_id)
+            return ThreadTriageOut.model_validate(data)
+    except PermissionError:
+        raise HTTPException(status_code=403) from None
+    except InboxItemUnavailable:
+        raise HTTPException(status_code=404) from None
+
+
+@router.post(
+    "/threads/{thread_id}/triage/override",
+    response_model=TriageOverrideOut,
+    dependencies=[Depends(require_model_perm("comms.message", ActionType.UPDATE))],
+)
+async def post_communication_thread_triage_override(
+    body: TriageOverrideRequest,
+    thread_id: int = Path(..., gt=0),
+    current_user: User = Depends(get_authenticated_user),
+):
+    try:
+        async with async_session_maker() as session:
+            # Verify thread exists and belongs to the active tenant before recording override
+            await triage_thread(session, thread_id)
+            tenant_id = current_tenant_id()
+            if tenant_id is None:
+                raise PermissionError("Missing tenant context")
+            decision = record_user_triage_override(
+                tenant_id=int(tenant_id),
+                user_id=int(current_user.id),
+                thread_id=thread_id,
+                category=body.category,
+                reason=body.reason,
+            )
+            return TriageOverrideOut.model_validate(decision)
+    except PermissionError:
+        raise HTTPException(status_code=403) from None
+    except InboxItemUnavailable:
+        raise HTTPException(status_code=404) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+
+
+@router.post(
+    "/threads/{thread_id}/triage/reply-draft",
+    response_model=TriageReplyDraftOut,
+    dependencies=[Depends(require_model_perm("comms.outbox", ActionType.UPDATE))],
+)
+async def post_communication_thread_triage_reply_draft(
+    body: TriageReplyDraftRequest,
+    thread_id: int = Path(..., gt=0),
+):
+    try:
+        async with async_session_maker() as session, session.begin():
+            result = await materialize_triage_reply_draft(
+                session,
+                thread_id=thread_id,
+                inbound_message_id=body.inbound_message_id,
+                subject=body.subject,
+                body=body.body,
+                timezone_name=body.timezone,
+                idempotency_key=body.idempotency_key,
+                auto_send=body.auto_send,
+                bypass_approval=body.bypass_approval,
+            )
+            return TriageReplyDraftOut.model_validate(result)
+    except PermissionError:
+        raise HTTPException(status_code=403) from None
+    except ReplyUnavailable:
+        raise HTTPException(status_code=404) from None
+    except (OutboxConflict, ValueError):
+        raise HTTPException(status_code=409) from None
+
+
 validate_business_routes(router)
+

@@ -96,7 +96,7 @@ _LEGAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
             r"\b(?:обязуемся|обязуется|гарантируем|гарантирует|признаем|признаём|"
             r"отказ(?:ываемся)?\s+от\s+прав|соглашен\w+|договор[ауом]?|обязательств\w*|"
             r"акцепт\w*|оферт\w*|уступк\w+|мировое\s+соглашение|"
-            r"waive|waiver|admission|undertake|guarantee|settlement|binding\s+obligation)\b",
+            r"waive|waiver|admission|undertake|guarantee|settlement|contract|agreement|obligation|binding\s+obligation)\b",
             re.IGNORECASE,
         ),
     ),
@@ -279,6 +279,18 @@ def _validate_and_format_variable(name: str, value: Any, var_type: str) -> str:
     """Validate `value` against `var_type` and return its deterministic string representation."""
     if value is None:
         raise ValueError(f"missing_template_variable:{name}")
+    if var_type == "any":
+        if isinstance(value, bool):
+            return _validate_and_format_variable(name, value, "boolean")
+        if type(value) is int:
+            return _validate_and_format_variable(name, value, "integer")
+        if isinstance(value, float):
+            return _validate_and_format_variable(name, value, "number")
+        if isinstance(value, datetime):
+            return _validate_and_format_variable(name, value, "datetime")
+        if isinstance(value, date):
+            return _validate_and_format_variable(name, value, "date")
+        return _validate_and_format_variable(name, str(value), "string")
     if var_type in {"string", "str", "text"}:
         if not isinstance(value, str):
             raise ValueError(f"invalid_variable_type:{name}:expected_string")
@@ -350,7 +362,7 @@ def render_template_content(
     for placeholder in placeholders:
         if placeholder not in specs:
             specs[placeholder] = {
-                "type": "string",
+                "type": "any",
                 "required": True,
                 "has_default": False,
                 "default": None,
@@ -450,9 +462,7 @@ def evaluate_draft_paragraphs(
                     valid_refs.append(ref_str)
 
         explicit_unsupported = [
-            str(claim).strip()
-            for claim in (item.get("unsupported_claims") or [])
-            if str(claim or "").strip()
+            str(claim).strip() for claim in (item.get("unsupported_claims") or []) if str(claim or "").strip()
         ]
         # Any statement without verified evidence is marked as unsupported
         is_supported = bool(valid_refs) and not explicit_unsupported
@@ -498,13 +508,9 @@ def evaluate_draft_paragraphs(
     note_parts: list[str] = []
     if all_unsupported:
         preview = "; ".join(claim[:120] for claim in all_unsupported[:3])
-        note_parts.append(
-            f"Неподтверждённые утверждения ({len(all_unsupported)}): {preview}"
-        )
+        note_parts.append(f"Неподтверждённые утверждения ({len(all_unsupported)}): {preview}")
     if all_review_reasons:
-        note_parts.append(
-            f"Требуется проверка человеком ({', '.join(all_review_reasons)})"
-        )
+        note_parts.append(f"Требуется проверка человеком ({', '.join(all_review_reasons)})")
     unsupported_terms_note = " | ".join(note_parts)
     body_text = "\n\n".join(rendered_blocks)
     return evaluated, body_text, all_unsupported, all_review_reasons, unsupported_terms_note
@@ -669,7 +675,9 @@ class DraftingService:
                 EvidenceRefOut(
                     ref=ref_key,
                     evidence_id=int(snippet.id),
-                    context_type=ctx_type if ctx_type in {"case", "knowledge", "communication", "followup"} else "knowledge",
+                    context_type=(
+                        ctx_type if ctx_type in {"case", "knowledge", "communication", "followup"} else "knowledge"
+                    ),
                     title=str(snippet.title or f"Источник #{snippet.id}")[:200],
                     citation_anchor=str(snippet.citation_anchor or snippet.source_ref or ref_key),
                     revision_hash=str(snippet.revision_hash or "sha256:0"),
@@ -695,9 +703,7 @@ class DraftingService:
         from app.models import DocumentRevision, KnowledgeDocument
         from app.types import ActionType
 
-        req = DocumentDraftRequest.model_validate(
-            data.model_dump() if isinstance(data, DocumentDraftRequest) else data
-        )
+        req = DocumentDraftRequest.model_validate(data.model_dump() if isinstance(data, DocumentDraftRequest) else data)
         identity = await document_service._actor(session, ActionType.CREATE)
 
         # Verify owner_user_id and links via document_service._references
@@ -752,20 +758,17 @@ class DraftingService:
             )
 
         # 4. Evaluate paragraphs, mark/highlight unsupported claims, and flag legal/financial statements
-        paragraphs, body_text, unsupported_claims, review_reasons, unsupported_terms_note = (
-            evaluate_draft_paragraphs(
-                raw_paragraphs,
-                allowed_evidence,
-                document_type=req.document_type,
-            )
+        paragraphs, body_text, unsupported_claims, review_reasons, unsupported_terms_note = evaluate_draft_paragraphs(
+            raw_paragraphs,
+            allowed_evidence,
+            document_type=req.document_type,
         )
         if not body_text.strip():
             raise ValueError("empty_draft_body")
 
         requires_human_review = bool(review_reasons) or bool(unsupported_claims)
         human_review_notice = (
-            "Черновик требует обязательной проверки человеком перед согласованием: "
-            + ", ".join(review_reasons)
+            "Черновик требует обязательной проверки человеком перед согласованием: " + ", ".join(review_reasons)
             if requires_human_review
             else ""
         )

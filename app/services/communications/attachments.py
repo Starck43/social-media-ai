@@ -3,6 +3,7 @@
 An approval's revision/body hash is a separate concern and must be rechecked by
 its caller. The spool hash covers the exact file bytes and is not that body hash.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -10,11 +11,11 @@ import re
 from collections.abc import Iterable
 from email.message import EmailMessage
 
-from pydantic import Field, StrictInt, field_validator
+from pydantic import Field, StrictInt, StrictStr, field_validator
 
 from app.schemas.business import BusinessSchema
 
-SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
+SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 ATTACHMENT_MEDIA_TYPES = frozenset(
     {"application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"}
 )
@@ -42,9 +43,16 @@ def channel_supports_attachments(channel: str) -> bool:
 class AttachmentRef(BusinessSchema):
     """Only the exact spool reference. Tenant/item/position are outbox scope."""
 
-    sha256: str = Field(pattern=SHA256_HEX.pattern)
+    sha256: StrictStr
     size: StrictInt = Field(gt=0)
-    mime: str
+    mime: StrictStr
+
+    @field_validator("sha256")
+    @classmethod
+    def valid_sha256(cls, value: str) -> str:
+        if SHA256_HEX.fullmatch(value) is None:
+            raise ValueError("invalid_hash")
+        return value
 
     @field_validator("mime")
     @classmethod
@@ -76,7 +84,7 @@ def validate_attachment_set(refs: Iterable[AttachmentRef], channel: str) -> tupl
 
 def verify_delivered_bytes(ref: AttachmentRef, delivered: bytes) -> None:
     """Verify bytes again after the spool has returned them; do not re-render."""
-    if len(delivered) != ref.size:
+    if type(delivered) is not bytes or len(delivered) != ref.size:
         raise AttachmentRejected("attachment_size_mismatch")
     if hashlib.sha256(delivered).hexdigest() != ref.sha256:
         raise AttachmentRejected("attachment_hash_mismatch")
@@ -88,7 +96,9 @@ def build_mime_part(ref: AttachmentRef, data: bytes) -> EmailMessage:
     maintype, _, subtype = ref.mime.partition("/")
     part = EmailMessage()
     part.set_content(data, maintype=maintype, subtype=subtype, cte="base64")
-    part.add_header("Content-Disposition", "attachment", filename=f"attachment-{ref.sha256[:16]}.{_EXTENSIONS[ref.mime]}")
+    part.add_header(
+        "Content-Disposition", "attachment", filename=f"attachment-{ref.sha256[:16]}.{_EXTENSIONS[ref.mime]}"
+    )
     return part
 
 

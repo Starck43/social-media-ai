@@ -1,4 +1,5 @@
 """Spool-shaped attachment references; no DB, network, filesystem or provider."""
+
 import hashlib
 from email import message_from_bytes
 from email.message import EmailMessage
@@ -66,7 +67,7 @@ def test_empty_and_count_rejected():
         validate_attachment_set([ref(str(i).encode()) for i in range(11)], "email")
 
 
-@pytest.mark.parametrize("digest", ["sha256:" + "a" * 64, "a" * 63, "A" * 64, "g" * 64])
+@pytest.mark.parametrize("digest", ["sha256:" + "a" * 64, "a" * 63, "A" * 64, "g" * 64, "a" * 64 + "\n"])
 def test_spool_hash_format(digest):
     with pytest.raises(ValidationError):
         ref(sha256=digest)

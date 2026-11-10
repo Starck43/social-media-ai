@@ -524,8 +524,9 @@ class OutboxStore:
         tenant, actor = await current_actor(session, ActionType.CONFIGURE)
         message = await owned_message(session, tenant, request.message_id, lock=True)
         targets = await targets_for(session, message, lock=True)
-        attachment_refs = await attachments_for(session, message, lock=True)
+        # Reply-evidence refusal stays first, matching claim()/deliver() order.
         reply_evidence = await verified_reply_for_outbox(session, message, targets)
+        attachment_refs = await attachments_for(session, message, lock=True)
         now = datetime.now(UTC)
         scheduled = due_after_quiet_hours(request.scheduled_at, message.timezone)
         if (

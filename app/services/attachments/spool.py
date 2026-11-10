@@ -21,6 +21,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.services.attachments.cipher import ExportArtifactUnavailable, ExportCipher
+
 _HASH = re.compile(r"^[0-9a-f]{64}\Z")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}\Z")
 _META_SEPARATOR = "\n"
@@ -58,6 +60,7 @@ class AttachmentSpool:
         max_file_bytes: int | None = None,
         max_total_bytes: int | None = None,
         ttl_seconds: int | None = None,
+        encryption_key: str | None = None,
     ):
         if root_dir is None or max_file_bytes is None or max_total_bytes is None or ttl_seconds is None:
             from app.core.config import settings
@@ -70,6 +73,18 @@ class AttachmentSpool:
         self.max_file_bytes = int(max_file_bytes)
         self.max_total_bytes = int(max_total_bytes)
         self.ttl_seconds = int(ttl_seconds)
+        self._encryption_key = encryption_key
+
+    def _cipher(self) -> ExportCipher:
+        key = self._encryption_key
+        if key is None:
+            from app.core.config import settings
+
+            key = settings.CREDENTIALS_KEY
+        try:
+            return ExportCipher(key, max_bytes=self.max_file_bytes)
+        except ExportArtifactUnavailable:
+            raise SpoolRejected("spool_key_unavailable") from None
 
     # --- scope handling -------------------------------------------------
 
@@ -92,10 +107,10 @@ class AttachmentSpool:
             os.chmod(scope, 0o700)
         return scope
 
-    def _paths(self, tenant_id: int, item_id: str, position: int) -> tuple[Path, Path]:
+    def _paths(self, tenant_id: int, item_id: str, position: int, *, create: bool = False) -> tuple[Path, Path]:
         if type(position) is not int or position < 0:
             raise SpoolRejected("invalid_position")
-        scope = self._scope_dir(tenant_id, item_id, create=True)
+        scope = self._scope_dir(tenant_id, item_id, create=create)
         stem = f"p{position}"
         return scope / stem, scope / f"{stem}.meta"
 
@@ -107,30 +122,55 @@ class AttachmentSpool:
             raise SpoolRejected("empty_attachment")
         if len(data) > self.max_file_bytes:
             raise SpoolRejected("attachment_too_large")
-        if type(mime) is not str or not mime.strip() or "\x00" in mime or len(mime) > 128:
+        if type(mime) is not str or not mime.strip() or any(c in mime for c in "\x00\r\n") or len(mime) > 128:
             raise SpoolRejected("invalid_mime")
-        payload, meta = self._paths(tenant_id, item_id, position)
+        # Seal before opening a file: a missing or invalid key never writes plaintext.
+        encrypted = self._cipher().seal(data)
+        self.purge_expired()
+        payload, meta = self._paths(tenant_id, item_id, position, create=True)
+        if payload.exists() or meta.exists():
+            raise SpoolRejected("attachment_position_occupied")
         if self._total_bytes(self._scope_dir(tenant_id, item_id)) + len(data) > self.max_total_bytes:
             raise SpoolRejected("attachment_set_too_large")
-        digest = _digest(data)
-        _write_private(payload, data)
-        _write_private(meta, _META_SEPARATOR.join((digest, str(len(data)), mime, str(int(time.time())))).encode())
+        digest = encrypted.payload_sha256.removeprefix("sha256:")
+        try:
+            _write_private(payload, encrypted.token.encode("ascii"))
+            _write_private(meta, _META_SEPARATOR.join((digest, str(len(data)), mime, str(int(time.time())))).encode())
+        except OSError:
+            payload.unlink(missing_ok=True)
+            meta.unlink(missing_ok=True)
+            raise SpoolRejected("attachment_write_failed") from None
         return SpooledAttachment(sha256=digest, size=len(data), mime=mime)
 
     def read(self, tenant_id: int, item_id: str, position: int, *, expected_sha256: str) -> bytes:
-        """Recheck the bytes against the approval on every dispatch attempt."""
+        """Decrypt and recheck the exact plaintext; never re-render on failure."""
         if type(expected_sha256) is not str or not _HASH.match(expected_sha256):
             raise SpoolRejected("invalid_hash")
         payload, meta = self._paths(tenant_id, item_id, position)
         try:
-            data = payload.read_bytes()
             stored = meta.read_text(encoding="ascii").split(_META_SEPARATOR)
-        except OSError:
+            if len(stored) != 4 or not _HASH.fullmatch(stored[0]):
+                raise ValueError
+            size, created = int(stored[1]), int(stored[3])
+            if size <= 0 or size > self.max_file_bytes or created > time.time():
+                raise ValueError
+            if time.time() - created >= self.ttl_seconds:
+                raise SpoolRejected("attachment_expired")
+            # Bound disk input before reading or allocating the token.
+            max_token = 4 * ((57 + (self.max_file_bytes // 16 + 1) * 16 + 2) // 3)
+            if payload.stat().st_size > max_token:
+                raise ValueError
+            token = payload.read_text(encoding="ascii")
+        except FileNotFoundError:
             raise SpoolRejected("attachment_missing") from None
-        if len(data) > self.max_file_bytes:
-            raise SpoolRejected("attachment_too_large")
-        if not stored or stored[0] != _digest(data):
-            raise SpoolRejected("attachment_corrupt")
+        except SpoolRejected:
+            raise
+        except (OSError, UnicodeError, ValueError):
+            raise SpoolRejected("attachment_corrupt") from None
+        try:
+            data = self._cipher().open(token, expected_hash="sha256:" + stored[0], expected_size=size)
+        except ExportArtifactUnavailable:
+            raise SpoolRejected("attachment_corrupt") from None
         if _digest(data) != expected_sha256:
             raise SpoolRejected("attachment_render_mismatch")
         return data
@@ -176,11 +216,16 @@ class AttachmentSpool:
     def _total_bytes(scope: Path) -> int:
         total = 0
         try:
-            for child in scope.iterdir():
-                if child.is_file() and child.name.startswith("p") and child.name.partition(".")[0][1:].isdigit():
-                    total += child.stat().st_size
-        except OSError:
-            return 0
+            for meta in scope.glob("p*.meta"):
+                stem = meta.name[:-5]
+                if not stem[1:].isdigit():
+                    continue
+                fields = meta.read_text(encoding="ascii").split(_META_SEPARATOR)
+                if len(fields) != 4 or not _HASH.fullmatch(fields[0]) or int(fields[1]) <= 0:
+                    raise ValueError
+                total += int(fields[1])
+        except (OSError, UnicodeError, ValueError):
+            raise SpoolRejected("attachment_corrupt") from None
         return total
 
 
@@ -199,14 +244,17 @@ def _remove_empty_children(directory: Path) -> None:
 
 def _write_private(path: Path, data: bytes) -> None:
     """Write atomically with owner-only permissions; never expose a partial file."""
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    fd, name = tempfile.mkstemp(prefix=".attachment-", dir=path.parent)
+    tmp = Path(name)
     try:
-        os.write(fd, data)
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(tmp, path)
     finally:
-        os.close(fd)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+        tmp.unlink(missing_ok=True)
 
 
 attachment_spool = AttachmentSpool()

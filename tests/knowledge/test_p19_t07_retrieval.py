@@ -173,12 +173,10 @@ def test_filter_empty_scopes_excludes_non_public():
 @pytest.mark.parametrize(
     ("allowed", "expected_ids"),
     [
-        # Contract as implemented: a snippet is kept only when it meets the ceiling
-        # (snippet_level >= max_level), so it never exceeds it.
-        ("cloud", ["cloud"]),
-        ("company", ["company", "cloud"]),
-        ("local_only", ["local_only", "company", "cloud"]),
-        ("LOCAL_ONLY", ["local_only", "company", "cloud"]),
+        ("cloud", ["local_only", "company", "cloud"]),
+        ("company", ["local_only", "company"]),
+        ("local_only", ["local_only"]),
+        ("LOCAL_ONLY", ["local_only"]),
     ],
 )
 def test_filter_boundary_ceiling(allowed, expected_ids):
@@ -191,10 +189,10 @@ def test_filter_boundary_ceiling(allowed, expected_ids):
     assert [s["id"] for s in result] == expected_ids
 
 
-def test_filter_local_only_snippet_never_leaks_to_cloud_query():
-    local = snippet(id="local", data_boundary="local_only", boundary="local_only")
-    assert mod.filter_snippets_by_acl([local], ["*"], allowed_boundary="cloud") == []
-    assert mod.filter_snippets_by_acl([local], None, allowed_boundary="cloud") == []
+def test_filter_cloud_snippet_excluded_from_local_only_query():
+    cloud = snippet(id="cloud", data_boundary="cloud", boundary="cloud")
+    assert mod.filter_snippets_by_acl([cloud], ["*"], allowed_boundary="local_only") == []
+    assert mod.filter_snippets_by_acl([cloud], None, allowed_boundary="local_only") == []
 
 
 @pytest.mark.parametrize("allowed", ["", "secret", "public", None])
@@ -289,8 +287,8 @@ def test_search_applies_acl_before_matching():
 def test_search_applies_boundary_before_matching():
     local = snippet(id="local", title="секрет", data_boundary="local_only", boundary="local_only")
     cloud = snippet(id="cloud", title="секрет")
-    result = mod.search_knowledge_snippets("секрет", [local, cloud], ["*"], allowed_boundary="cloud")
-    assert [s["id"] for s in result] == ["cloud"]
+    result = mod.search_knowledge_snippets("секрет", [local, cloud], ["*"], allowed_boundary="local_only")
+    assert [s["id"] for s in result] == ["local"]
 
 
 def test_search_no_match_returns_empty():
@@ -339,9 +337,10 @@ def test_assemble_numbers_multiple_blocks_and_separates_with_blank_line():
 @pytest.mark.parametrize(
     ("allowed", "expected_titles"),
     [
-        ("cloud", ["Cloud"]),
-        ("company", ["Company", "Cloud"]),
-        ("local_only", ["Local", "Company", "Cloud"]),
+        ("cloud", ["Local", "Company", "Cloud"]),
+        ("company", ["Local", "Company"]),
+        ("local_only", ["Local"]),
+        ("LOCAL_ONLY", ["Local"]),
     ],
 )
 def test_assemble_filters_by_boundary_ceiling(allowed, expected_titles):
@@ -387,3 +386,25 @@ def test_assemble_uses_legacy_aliases():
     text = mod.assemble_llm_citations_context([legacy], "company")
     assert "[1] Legacy — legacy-src (legacy.md · hh · boundary:company)" in text
     assert "[OCR/Extraction note: page 1]" in text
+
+
+@pytest.mark.parametrize(
+    ("allowed", "expected"),
+    [("local_only", ["local_only"]), ("company", ["local_only", "company"]),
+     ("cloud", ["local_only", "company", "cloud"])],
+)
+def test_search_to_citations_obeys_acl_and_boundary_ceiling(allowed, expected):
+    items = [snippet(id=b, title=b, data_boundary=b, boundary=b) for b in ("local_only", "company", "cloud")]
+    items.append(snippet(id="private", title="private", acl_scope="finance", data_boundary="local_only"))
+    items.append(snippet(id="unknown", title="unknown", data_boundary="secret", boundary="secret"))
+    hits = mod.search_knowledge_snippets("", items, None, allowed_boundary=allowed)
+    assert [item["id"] for item in hits] == expected
+    context = mod.assemble_llm_citations_context(hits, allowed_boundary=allowed)
+    for title in ("local_only", "company", "cloud", "private", "unknown"):
+        assert (f"] {title} — " in context) is (title in expected)
+
+
+def test_assemble_invalid_and_missing_boundaries_fail_closed():
+    items = [snippet(title="Invalid", data_boundary="secret"), snippet(title="Missing", data_boundary=None, boundary=None)]
+    assert mod.assemble_llm_citations_context(items, "cloud") == ""
+    assert mod.assemble_llm_citations_context([snippet()], None) == ""

@@ -78,8 +78,9 @@ def filter_snippets_by_acl(
     - If user_scopes is None, only 'public' snippets are returned.
     - If user has specific scopes, snippets with matching scope or 'public' are allowed.
     - Trusted callers may explicitly supply wildcard '*' scopes access all ACL scopes.
-    - Snippets exceeding allowed_boundary are strictly excluded (e.g. 'local_only' cannot leak
-      to 'cloud' queries).
+    - Snippets exceeding allowed_boundary are strictly excluded (inclusive ceiling).
+    - This ceiling does not authorize sending local-only content to a cloud model;
+      callers must enforce the separate execution/transport boundary.
     """
     max_level = BOUNDARY_LEVELS.get(str(allowed_boundary).lower())
     if max_level is None:
@@ -91,7 +92,7 @@ def filter_snippets_by_acl(
     for s in snippets:
         snippet_boundary = str(s.get("data_boundary") or s.get("boundary") or "").lower()
         snippet_level = BOUNDARY_LEVELS.get(snippet_boundary)
-        if snippet_level is None or snippet_level < max_level:
+        if snippet_level is None or snippet_level > max_level:
             continue
 
         snippet_acl = str(s.get("acl_scope") or "").strip()
@@ -138,14 +139,20 @@ def assemble_llm_citations_context(
     snippets: Iterable[dict[str, Any]],
     allowed_boundary: str = "cloud",
 ) -> str:
-    """Assemble verified citation blocks for LLM prompt context."""
+    """Assemble citation blocks under the ceiling, not a cloud-transport authorization.
+
+    Callers must separately enforce ACLs and the model execution/transport boundary.
+    """
     blocks: list[str] = []
-    safe = [
-        s
-        for s in snippets
-        if BOUNDARY_LEVELS.get(s.get("data_boundary", s.get("boundary")), 0)
-        >= BOUNDARY_LEVELS.get(allowed_boundary, 99)
-    ]
+    max_level = BOUNDARY_LEVELS.get(str(allowed_boundary).lower())
+    if max_level is None:
+        return ""
+    safe = []
+    for s in snippets:
+        boundary = str(s.get("data_boundary") or s.get("boundary") or "").lower()
+        level = BOUNDARY_LEVELS.get(boundary)
+        if level is not None and level <= max_level:
+            safe.append(s)
     for idx, s in enumerate(safe, start=1):
         title = s.get("title", "Документ")
         source = s.get("source_name", s.get("source", "Unknown"))

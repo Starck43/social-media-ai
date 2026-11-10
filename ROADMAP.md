@@ -36,6 +36,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 
+
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed) · — · `P0` · `C3`
 - [P11-T34](docs/tasks/p11-t34.md) `0145` downgrade drops tables created by `0143`; blocks every isolated-schema bootstrap — **TODO** · unassigned · — · `P0` · `C2`
 

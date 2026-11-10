@@ -350,11 +350,17 @@ class OutboxStore:
     @with_db_session
     async def draft(self, request: DraftIn, idempotency_key, session):
         request = DraftIn.model_validate(request)
+        # Until reference persistence is implemented, never silently discard attachments.
+        if request.attachments:
+            raise OutboxConflict("attachment_storage_not_ready")
         if not isinstance(idempotency_key, str) or re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", idempotency_key) is None:
             raise ValueError("invalid_idempotency_key")
         # Tenant lock serializes competing inserts; DB unique key is the final fence.
         tenant, actor = await current_actor(session, ActionType.UPDATE, serialize=True)
-        request_hash = digest(request.model_dump(mode="json"))
+        request_data = request.model_dump(mode="json")
+        # Keep legacy idempotency hashes stable for requests without attachments.
+        request_data.pop("attachments")
+        request_hash = digest(request_data)
         existing = await session.scalar(
             select(OutboxMessage).where(
                 OutboxMessage.tenant_id == tenant,

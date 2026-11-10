@@ -46,6 +46,15 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main collection lanes | --platform | option | str | no | null |
 | python -m cli.main collection lanes | --tenant | option | str | no | null |
 | python -m cli.main collection lanes | --apply | option | boolean | no | false |
+| python -m cli.main communications reply-draft | thread_id | argument | int range | yes | null |
+| python -m cli.main communications reply-draft | inbound_message_id | argument | int range | yes | null |
+| python -m cli.main communications reply-draft | --body, -b | option | str | yes | null |
+| python -m cli.main communications reply-draft | --subject, -s | option | str | no | "" |
+| python -m cli.main communications reply-draft | --timezone, -t | option | str | no | "UTC" |
+| python -m cli.main communications reply-draft | --idempotency-key | option | str | yes | null |
+| python -m cli.main communications reply-draft | --dry-run | option | boolean | no | false |
+| python -m cli.main communications reply-preview | thread_id | argument | int range | yes | null |
+| python -m cli.main communications reply-preview | inbound_message_id | argument | int range | yes | null |
 | python -m cli.main credentials disable | platform | argument | str | yes | null |
 | python -m cli.main credentials disable | kind | argument | str | yes | null |
 | python -m cli.main credentials disable | --user | option | str | no | "" |
@@ -71,6 +80,22 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main digest send-now | period | argument | str | no | "day" |
 | python -m cli.main digest send-now | --group-by | option | str | no | "themes" |
 | python -m cli.main digest send-now | --time-breakdown | option | boolean | no | false |
+| python -m cli.main documents diff | document_id | argument | int | yes | null |
+| python -m cli.main documents diff | from_version | argument | int | yes | null |
+| python -m cli.main documents diff | to_version | argument | int | yes | null |
+| python -m cli.main documents diff | --tenant | option | str | yes | null |
+| python -m cli.main documents diff | --actor | option | str | yes | null |
+| python -m cli.main documents diff | --granularity | option | str | no | "line" |
+| python -m cli.main documents history | document_id | argument | int | yes | null |
+| python -m cli.main documents history | --tenant | option | str | yes | null |
+| python -m cli.main documents history | --actor | option | str | yes | null |
+| python -m cli.main documents history | --limit | option | int range | no | 50 |
+| python -m cli.main documents restore | document_id | argument | int | yes | null |
+| python -m cli.main documents restore | revision_id | argument | int | yes | null |
+| python -m cli.main documents restore | --tenant | option | str | yes | null |
+| python -m cli.main documents restore | --actor | option | str | yes | null |
+| python -m cli.main documents restore | --dry-run | option | boolean | no | false |
+| python -m cli.main documents restore | --description | option | str | no | null |
 | python -m cli.main learn | --src, -s | option | str | no | null |
 | python -m cli.main learn | --tenant | option | str | no | null |
 | python -m cli.main learn | --min-messages | option | int | no | 8 |

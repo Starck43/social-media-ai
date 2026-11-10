@@ -83,12 +83,17 @@ No database on the remote lane. Run only DB-exempt tests, explicit paths,
 boundaries replaced by explicit mocks. Hand every DB/integration scenario to the
 local runner: exact branch, SHA, commands, scenarios, listed under **Deferred
 scenarios** in the PR body. Never report a deferred scenario as passed, and call
-mocked evidence mocked.
+mocked evidence mocked. Require the local runner to record fresh dev/test-schema
+Alembic alignment (or the isolated schema's explicit baseline/task head), exact
+revision, DB results and cleanup under the database safeguards. Unit/mock passes
+do not satisfy required DB scenarios.
 
 ## Hand off
 
 Draft until the PR body carries tested SHA, exact test paths, passed/failed/
-skipped counts, execution route and deferred scenarios. Then update the card and
-set the row `READY`; do not duplicate status in the phase, do not self-accept and
-do not delete the row — the auditor does that. Fetch again and state the SHA you
+skipped counts, execution route and deferred scenarios. Required deferred checks
+keep the task IN_PROGRESS and the PR Draft until linked local evidence passes
+(or the owner explicitly waives a named check, still labelled unrun). Only then
+update the card and set the row `READY`; do not duplicate status in the phase,
+do not self-accept and do not delete the row — the auditor does that. Fetch again and state the SHA you
 synchronized to.

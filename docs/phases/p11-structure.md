@@ -43,3 +43,7 @@ Final accepted source: `ae2c877dd3e467dbaa1cea4b0ecad6d2d7399c01` (commit date
 27. [P11-T27](../audit/p11-t27.md) — DONE 2026-10-31: admin console hardening and live integration verification accepted at `1d740aa3`; merged by PR #286 at `d66e9f8c8ff1a313f5350b674c50f1ef651e1c29`.
 28. [P11-T28](../audit/p11-t28.md) — DONE 2026-10-31: workspace deletion reserved to superuser; retained audit protected; merged with P11-T27 by PR #286.
 29. [P11-T29](../audit/p11-t29.md) — DONE 2026-10-31: reviewed workspace deletion, permanent platform audit and live PostgreSQL/Safari acceptance (accepted `ae2c877dd3e467dbaa1cea4b0ecad6d2d7399c01`, merged `3130a1aa635942eb964611ed650e6d1d9379a2b1`; PR #297).
+
+## Process follow-ups
+
+- [P11-T35](../audit/p11-t35.md) — DONE 2026-11-10: acceptance requires verified integration (mergedAt, merge commit, ancestry, fresh `dev` tree) and mandatory Alembic-baseline/DB evidence (accepted `fce83c68ce991f0361f48543ce364a3a618411f0`, merged `eb8d11bdbbce9bf26646273cde86c7f478f017a8`; PR #458, docs-only).

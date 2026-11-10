@@ -484,6 +484,26 @@ their log collection configuration. An unwritable directory fails explicitly;
 there is no silent fallback to CWD. Static files and both template roots resolve
 relative to the installed Python modules, not the process working directory.
 
+### Outbox attachment spool
+
+Rendered DOCX/PDF attachments are transient: they exist from render until
+dispatch plus a TTL, then are deleted. They are never stored in PostgreSQL —
+long-term files stay in the tenant's own cloud or local store, and an S3 source
+is a planned connector (D9, R-18), not a second byte store of ours.
+
+| Variable | Default | Description |
+|---|---|---|
+| `ATTACHMENT_STORAGE_DIR` | system temp dir + `social-media-ai-attachments` | Absolute spool directory, expanded from `~`; 0o700 directories and 0o600 files are enforced. Keep it outside the static web root |
+| `ATTACHMENT_MAX_FILE_BYTES` | `5242880` (5 MiB) | Per-attachment cap, checked before anything is written |
+| `ATTACHMENT_MAX_TOTAL_BYTES` | `10485760` (10 MiB) | Per-item attachment set cap; must not be below the file cap |
+| `ATTACHMENT_SPOOL_TTL_SECONDS` | `900` | Minimum 60. Files older than this are removed on the next sweep |
+
+The spool is local to one host: delivery runs on the process that wrote the
+file, or the directory lives on a shared volume. `app/services/attachments/`
+owns it; `tests/attachments/test_attachment_spool_unit.py` covers the bounds,
+the privacy model and the restart path (a file plus its digest survive a crash,
+so the next dispatch rechecks the hash instead of re-rendering).
+
 ---
 
 ## Key Generation

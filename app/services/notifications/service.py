@@ -40,6 +40,7 @@ class NotificationService:
         severity: str = "info",
         dedup_key: Optional[str] = None,
         expires_at=None,
+        session=None,
     ) -> Notification:
         """
         Create a notification.
@@ -57,10 +58,13 @@ class NotificationService:
             severity: info, warning or action_required
             dedup_key: Immutable logical event key, unique within its origin workspace
             expires_at: Timezone-aware expiry; default 30 days
+            session: Optional caller-owned transaction; messenger send is not allowed in it
 
         Returns:
             Created Notification object
         """
+        if session is not None and send_to_messenger:
+            raise ValueError("messenger_send_requires_post_commit")
         logger.info("Creating notification (type=%s, messenger_requested=%s)", ntype, send_to_messenger)
 
         actor = get_current_user()
@@ -84,6 +88,7 @@ class NotificationService:
             recipients = [actor.id] if membership is not None else []
         notification = await NotificationReceipt.objects.publish(
             recipient_user_ids=recipients,
+            session=session,
             severity=severity,
             dedup_key=dedup_key,
             expires_at=expires_at or datetime.now(timezone.utc) + timedelta(days=30),

@@ -30,13 +30,14 @@ async def documents_page(request: Request, boundary: str = Query("cloud", patter
 async def _business_invoke(operation):
     from fastapi import HTTPException
 
+    from app.services.knowledge.approvals import ApprovalConflict
     from app.services.knowledge.documents import DocumentConflict, DocumentUnavailable
 
     try:
         return await operation
     except DocumentUnavailable:
         raise HTTPException(404, "Документ недоступен") from None
-    except DocumentConflict:
+    except (DocumentConflict, ApprovalConflict):
         raise HTTPException(409, "Документ изменился; обновите страницу") from None
     except PermissionError:
         raise HTTPException(403, "Недостаточно прав") from None
@@ -64,7 +65,7 @@ async def _business_form(request):
         raise HTTPException(422, "Повторные поля запрещены")
     values = {key: value for key, value in form.items() if key != "_csrf"}
     boundary = _boundary(values.pop("boundary", "cloud"))
-    for key in ("contact_id", "case_evidence_id", "owner_user_id", "expected_revision_id"):
+    for key in ("contact_id", "case_evidence_id", "owner_user_id", "expected_revision_id", "approver_user_id"):
         if key not in values:
             continue
         raw = values[key]
@@ -100,7 +101,10 @@ async def manage_documents(
     to_id: int | None = Query(None, gt=0),
     granularity: str = Query("line", pattern="^(line|word)$"),
 ):
+    from uuid import uuid4
+
     from app.core.permissions import get_current_user, has_permission
+    from app.services.knowledge.approvals import approval_service
     from app.services.knowledge.documents import document_service
     from app.services.knowledge.versions import version_service
     from app.types import ActionType
@@ -134,6 +138,12 @@ async def manage_documents(
         can_create=has_permission(actor, "source", ActionType.CREATE),
         can_update=has_permission(actor, "source", ActionType.UPDATE),
         can_delete=has_permission(actor, "source", ActionType.DELETE),
+        pending=(
+            (await _business_invoke(approval_service.pending(boundary=boundary)))
+            if has_permission(actor, "documentapproval", ActionType.CONFIGURE)
+            else {"items": []}
+        ),
+        approval_key=uuid4().hex,
     )
 
 
@@ -237,4 +247,38 @@ async def restore_business_document(request: Request, document_id: int, revision
     except ValidationError:
         raise HTTPException(422, "Некорректная версия") from None
     await _business_invoke(version_service.restore(document_id, revision_id, data, boundary=boundary))
+    return _back(boundary, document_id)
+
+
+@router.post("/documents/manage/{document_id}/request-approval")
+async def request_document_approval(request: Request, document_id: int):
+    from fastapi import HTTPException
+    from pydantic import ValidationError
+
+    from app.services.knowledge.approval_contracts import ApprovalRequest
+    from app.services.knowledge.approvals import approval_service
+
+    boundary, values = await _business_form(request)
+    try:
+        data = ApprovalRequest.model_validate(values)
+    except ValidationError:
+        raise HTTPException(422, "Некорректный запрос согласования") from None
+    await _business_invoke(approval_service.request(document_id, data, boundary=boundary))
+    return _back(boundary, document_id)
+
+
+@router.post("/documents/manage/{document_id}/approvals/{approval_id}/decision")
+async def decide_document_approval(request: Request, document_id: int, approval_id: int):
+    from fastapi import HTTPException
+    from pydantic import ValidationError
+
+    from app.services.knowledge.approval_contracts import ApprovalDecision
+    from app.services.knowledge.approvals import approval_service
+
+    boundary, values = await _business_form(request)
+    try:
+        data = ApprovalDecision.model_validate(values)
+    except ValidationError:
+        raise HTTPException(422, "Некорректное решение") from None
+    await _business_invoke(approval_service.decide(document_id, approval_id, data, boundary=boundary))
     return _back(boundary, document_id)

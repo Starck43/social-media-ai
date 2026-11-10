@@ -42,7 +42,8 @@ class EmailRequest:
     recipient: str = field(repr=False)
     subject: str = field(repr=False)
     text: str = field(repr=False)
-    in_reply_to: str | None = None
+    in_reply_to: str | None = field(default=None, repr=False)
+    references: tuple[str, ...] = field(default=(), repr=False)
 
 
 @dataclass(frozen=True)

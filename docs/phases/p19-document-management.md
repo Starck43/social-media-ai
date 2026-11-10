@@ -44,6 +44,7 @@ TZ criteria: AI letters from context (T02); templates (T02); every version saved
 4. [P19-T04](../tasks/p19-t04.md) — Document approval workflow bound to an immutable revision hash · `P3` · `C4` · depends: [P19-T01](../audit/p19-t01.md), [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
 5. [P19-T05](../tasks/p19-t05.md) — Export to DOCX/PDF and delivery via outbox · `P3` · `C3` · depends: [P19-T01](../audit/p19-t01.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md)
 6. [P19-T06](../tasks/p19-t06.md) — Document search · `P3` · `C2` · depends: [P19-T01](../audit/p19-t01.md)
+7. [P19-T07 accepted](../audit/p19-t07.md) — **DONE 2026-11-09**: `app/services/knowledge` to the 80% coverage gate; accepted `66d356e3`, package coverage 78.08% → 85.63%, test-only. Its finding — the `retrieval.py` boundary predicate contradicting its docstring — is registered as [P19-T09](../tasks/p19-t09.md), awaiting one owner choice.
 
 ## Dependencies and gates
 

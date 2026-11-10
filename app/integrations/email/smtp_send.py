@@ -71,7 +71,22 @@ def _prepare(account: MailAccount, request: EmailRequest) -> tuple[bytes, str]:
     ):
         raise ValueError("invalid_message")
     if request.in_reply_to is not None and (
-        not isinstance(request.in_reply_to, str) or _MESSAGE_ID.fullmatch(request.in_reply_to) is None
+        not isinstance(request.in_reply_to, str)
+        or len(request.in_reply_to) > 998
+        or _MESSAGE_ID.fullmatch(request.in_reply_to) is None
+    ):
+        raise ValueError("invalid_reply_reference")
+    # Reply headers are private, caller-owned immutable values. Validate again at
+    # the transport boundary: never accept newline injection or unbounded data.
+    if (
+        not isinstance(request.references, tuple)
+        or len(request.references) > 31
+        or any(
+            not isinstance(ref, str) or len(ref) > 998 or _MESSAGE_ID.fullmatch(ref) is None
+            for ref in request.references
+        )
+        or len(" ".join(request.references)) > 998
+        or (request.references and request.in_reply_to not in request.references)
     ):
         raise ValueError("invalid_reply_reference")
     message_id = make_msgid(domain=account.account_login.rsplit("@", 1)[1])
@@ -85,6 +100,8 @@ def _prepare(account: MailAccount, request: EmailRequest) -> tuple[bytes, str]:
     message["Date"] = formatdate(usegmt=True)
     if request.in_reply_to is not None:
         message["In-Reply-To"] = request.in_reply_to
+    if request.references:
+        message["References"] = " ".join(request.references)
     # Keep a 7-bit wire body: do not assume or silently require SMTPUTF8/8BITMIME.
     message.set_content(request.text, cte="quoted-printable")
     return message.as_bytes(), message_id

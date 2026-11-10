@@ -44,6 +44,7 @@ from app.services.communications.outbox_store import (
 )
 from app.utils.crypto import encrypt_secret
 from tests.shared.fixtures.personal_workspace import personal_world  # noqa: F401
+from tests.support.schema_guard import require_isolated_schema
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 UTC = timezone.utc
@@ -79,7 +80,7 @@ async def _purge_own_events(tenant_ids):
 
 @pytest.fixture
 async def outbox_world(personal_world, monkeypatch):  # noqa: F811
-    assert settings.DB_SCHEMA == "test_schema", "P15-T05 DB tests require test_schema"
+    require_isolated_schema()
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
     monkeypatch.setattr(settings, "CREDENTIALS_KEY", Fernet.generate_key().decode())
     monkeypatch.setattr(ledger, "RUNTIME_ENABLED_CAPABILITIES", {EMAIL})

@@ -94,6 +94,8 @@ def test_document_management_template_escapes_content_and_confirms_deletion():
         can_update=True,
         can_delete=True,
         csrf="csrf-test",
+        pending={"items": []},
+        approval_key="test-key",
     )
     assert "<script>bad</script>" not in html and "&lt;script&gt;bad&lt;/script&gt;" in html
     assert "&lt;b&gt;unsafe&lt;/b&gt;" in html
@@ -101,11 +103,12 @@ def test_document_management_template_escapes_content_and_confirms_deletion():
     assert 'name="confirm" value="delete" required' in html
 
 
-def test_review_buttons_have_bound_state_and_clear_owner_only_notice():
+def test_review_buttons_bind_request_and_state_no_owner_bypass():
     root = Path(__file__).resolve().parents[2] / "app/web/templates"
     source = (root / "web/document_management.html").read_text()
     for target in ("approved", "rejected", "revision_requested"):
         assert target in source
-    for field in ("expected_revision_id", "expected_hash", "expected_status", "_csrf"):
+    for field in ("expected_revision_id", "expected_hash", "approver_user_id", "idempotency_key", "_csrf"):
         assert field in source
-    assert "только активный owner" in source
+    assert "только активный owner" not in source
+    assert "не является электронной подписью" in source

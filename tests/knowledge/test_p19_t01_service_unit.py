@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import ValidationError
@@ -190,32 +190,20 @@ async def test_transition_validates_exact_revision_status_and_hash(monkeypatch, 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("target", ["approved", "rejected", "revision_requested"])
-async def test_owner_decision_is_bound_to_actor_and_locked_revision(monkeypatch, snapshot, target):
+@pytest.mark.parametrize("role", ["owner", "manager"])
+async def test_direct_decision_requires_assigned_approval(monkeypatch, snapshot, target, role):
     doc, rev = snapshot
     rev.status = "in_review"
     service = service_fixture(monkeypatch, doc, rev)
+    service._actor.return_value = (1, 2, role, ("public", "collection.source.view"))
     session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
     data = {**version(doc, rev), "expected_hash": rev.content_hash, "expected_status": "in_review", "target": target}
-    result = await service.transition(10, data, session=session)
-    assert result.status == target and result.decision_actor_user_id == 2
-    assert rev.approved_by == ("user:2" if target == "approved" else None)
-    assert service._doc.await_args.kwargs["lock"] is True
-    assert service._revision.await_args.kwargs["lock"] is True
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("target", ["approved", "rejected", "revision_requested"])
-async def test_nonowner_cannot_make_final_review_decision(monkeypatch, snapshot, target):
-    doc, rev = snapshot
-    rev.status = "in_review"
-    service = service_fixture(monkeypatch, doc, rev)
-    service._actor.return_value = (1, 2, "manager", ("public", "collection.source.view"))
-    session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
-    data = {**version(doc, rev), "expected_hash": rev.content_hash, "expected_status": "in_review", "target": target}
-    with pytest.raises(PermissionError):
+    with pytest.raises(mod.DocumentConflict, match="approval_request_required"):
         await service.transition(10, data, session=session)
     assert rev.status == "in_review" and rev.approved_by is None and rev.decision_actor_user_id is None
     session.flush.assert_not_awaited()
+    assert service._doc.await_args.kwargs["lock"] is True
+    assert service._revision.await_args.kwargs["lock"] is True
 
 
 @pytest.mark.asyncio
@@ -238,6 +226,65 @@ async def test_owner_cannot_decide_stale_payload(monkeypatch, snapshot, field, v
         await service.transition(10, data, session=session)
     assert rev.status == "in_review" and rev.decision_actor_user_id is None
     session.flush.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_only_change_description_requires_new_revision(monkeypatch, snapshot):
+    """Lines 565-566: description-only change without body/metadata must raise conflict."""
+    doc, rev = snapshot
+    service = service_fixture(monkeypatch, doc, rev)
+    added = []
+    session = SimpleNamespace(add=lambda row: added.append(row), flush=AsyncMock(), refresh=AsyncMock())
+
+    async def flush():
+        added[0].id = 12
+
+    session.flush.side_effect = flush
+    # Only change_description, no body/title changes -> should raise DocumentConflict
+    with pytest.raises(mod.DocumentConflict, match="description_requires_new_revision"):
+        await service.update(10, {**version(doc, rev), "change_description": "Note"}, session=session)
+    assert len(added) == 0, "No revision created for description-only update"
+
+
+@pytest.mark.asyncio
+async def test_transition_approved_to_in_review_is_invalid(monkeypatch, snapshot):
+    """Lines 591-593: approved -> in_review is invalid transition (frozenset is empty)."""
+    from app.services.knowledge.documents import STATUS_APPROVED, STATUS_IN_REVIEW
+
+    doc, rev = snapshot
+    rev.status = STATUS_APPROVED
+    service = service_fixture(monkeypatch, doc, rev)
+    session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
+    data = {
+        **version(doc, rev),
+        "expected_hash": rev.content_hash,
+        "expected_status": STATUS_APPROVED,
+        "target": STATUS_IN_REVIEW,
+    }
+    with pytest.raises(mod.DocumentConflict, match="invalid_transition"):
+        await service.transition(10, data, session=session)
+    assert rev.status == STATUS_APPROVED
+
+
+@pytest.mark.asyncio
+async def test_transition_rejected_to_in_review_is_invalid(monkeypatch, snapshot):
+    """Lines 591-593: rejected -> in_review/revision_requested are invalid transitions."""
+    from app.services.knowledge.documents import STATUS_IN_REVIEW, STATUS_REJECTED, STATUS_REVISION_REQUESTED
+
+    doc, rev = snapshot
+    rev.status = STATUS_REJECTED
+    service = service_fixture(monkeypatch, doc, rev)
+    session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock())
+    for target in [STATUS_IN_REVIEW, STATUS_REVISION_REQUESTED]:
+        data = {
+            **version(doc, rev),
+            "expected_hash": rev.content_hash,
+            "expected_status": STATUS_REJECTED,
+            "target": target,
+        }
+        with pytest.raises(mod.DocumentConflict, match="invalid_transition"):
+            await service.transition(10, data, session=session)
+    assert rev.status == STATUS_REJECTED
 
 
 @pytest.mark.asyncio
@@ -471,3 +518,54 @@ async def test_legacy_untyped_document_can_be_edited_without_fabricating_type(mo
     session.flush.side_effect = flush
     result = await service.update(10, {**version(doc, rev), "title": "New title"}, session=session)
     assert result.document_type is None and doc.title == "New title" and result.approval_invalidated
+
+
+@pytest.mark.asyncio
+async def test_template_create_conflict_on_integrity_error(monkeypatch, snapshot):
+    """Lines 698-701: IntegrityError -> DocumentConflict('template_conflict')."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.services.knowledge.document_contracts import TemplateCreate
+
+    service = mod.DocumentService()
+    data = TemplateCreate(name="Test", document_type="memo", content="x", variables_schema={})
+
+    monkeypatch.setattr(
+        service, "_actor", AsyncMock(return_value=(1, 2, "owner", ("public", "collection.source.view")))
+    )
+
+    session = SimpleNamespace(add=lambda row: None, flush=AsyncMock(), refresh=AsyncMock())
+    # Simulate IntegrityError on flush
+    session.flush.side_effect = IntegrityError("stmt", params={}, orig=None)
+
+    with pytest.raises(mod.DocumentConflict, match="template_conflict"):
+        await service.create_template(data, session=session)
+
+
+@pytest.mark.asyncio
+async def test_template_update_delete_conflict_on_stale_or_integrity(monkeypatch, snapshot):
+    """Lines 718-725: template_stale and IntegrityError -> DocumentConflict."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.services.knowledge.document_contracts import TemplateUpdate
+
+    service = mod.DocumentService()
+    now = datetime(2026, 11, 7, tzinfo=timezone.utc)
+    template = MagicMock(id=10, updated_at=now, name="Test", document_type="memo", content="x", variables_schema={})
+
+    monkeypatch.setattr(
+        service, "_actor", AsyncMock(return_value=(1, 2, "owner", ("public", "collection.source.view")))
+    )
+    monkeypatch.setattr(service, "_template", AsyncMock(return_value=template))
+
+    # Stale check first (updated_at mismatch)
+    session = SimpleNamespace(flush=AsyncMock(), refresh=AsyncMock(), delete=AsyncMock())
+    with pytest.raises(mod.DocumentConflict, match="template_stale"):
+        await service.delete_template(10, {"expected_updated_at": now.replace(year=2020)}, session=session)
+
+    # Now test update with IntegrityError
+    session.add = lambda row: None
+    session.flush.side_effect = IntegrityError("stmt", params={}, orig=None)
+    update_data = TemplateUpdate(name="Updated", document_type="memo", content="x", expected_updated_at=now)
+    with pytest.raises(mod.DocumentConflict, match="template_conflict"):
+        await service.update_template(10, update_data, session=session)

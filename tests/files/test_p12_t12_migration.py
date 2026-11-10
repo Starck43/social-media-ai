@@ -14,6 +14,7 @@ from app.core.database import async_session_maker, engine
 from app.models import DocumentRevision, FileCatalogObject, KnowledgeDocument, KnowledgeSnippet, Tenant
 from app.models.managers.file_catalog_manager import FileCatalogManager
 from tests.shared.file_catalog_fixtures import actor, admit, data  # noqa: F401
+from tests.support.schema_guard import require_isolated_schema
 
 pytestmark = pytest.mark.tenancy
 
@@ -147,7 +148,7 @@ async def test_round_trip_preserves_0122_evidence():
 
 
 async def test_0125_backfills_existing_rows_in_batches(data):
-    assert settings.DB_SCHEMA == "test_schema"
+    require_isolated_schema()
     manager = FileCatalogManager()
     with actor(data) as args:
         names = [f"Документ-{i:03}.txt" for i in range(501)] + ["Straße.txt", "CAFÉ.txt"]
@@ -175,7 +176,7 @@ async def test_0125_backfills_existing_rows_in_batches(data):
 
 
 async def test_0126_round_trip_keeps_catalog_objects(data):
-    assert settings.DB_SCHEMA == "test_schema"
+    require_isolated_schema()
     from app.services.file_workspace.catalog_scan import start_catalog_scan
 
     manager = FileCatalogManager()
@@ -194,7 +195,7 @@ async def test_0126_round_trip_keeps_catalog_objects(data):
 
 
 async def test_0127_downgrade_discards_recursive_only_and_keeps_metadata(data):
-    assert settings.DB_SCHEMA == "test_schema"
+    require_isolated_schema()
     from app.models import FileCatalogScan
     from app.services.file_workspace.catalog_scan import start_catalog_scan
 

@@ -84,6 +84,18 @@ def resolve_working_schema() -> str:
     return os.environ.get(WORKING_SCHEMA_ENV, "").strip() or DEFAULT_WORKING_SCHEMA
 
 
+def working_schema_before_redirect() -> str:
+    """Working schema before any redirect, derived from settings/env, never a literal.
+
+    After ``resolve_and_redirect`` has run, ``_REDIRECTED_WORKING[1]`` holds the
+    pre-redirect working schema. Otherwise fall back to ``resolve_working_schema()``
+    (env ``DB_SCHEMA`` or ``"public"``).
+    """
+    if _REDIRECTED_WORKING:
+        return _REDIRECTED_WORKING[1]
+    return resolve_working_schema()
+
+
 def redact(url: str) -> str:
     """Display only endpoint/path; remove userinfo, query and fragment secrets."""
     if not url:

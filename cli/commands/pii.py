@@ -36,6 +36,7 @@ REGISTRY: tuple[tuple[str, str, str | None], ...] = (
     ("outbox_messages", "subject_encrypted", None),
     ("outbox_messages", "content_encrypted", None),
     ("outbox_targets", "recipient_encrypted", None),
+    ("outbox_reply_evidence", "headers_encrypted", None),
     ("planner_tasks", "title_encrypted", None),
     ("planner_tasks", "description_encrypted", None),
     ("planner_tasks", "series_template_encrypted", None),

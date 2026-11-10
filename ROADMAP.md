@@ -37,6 +37,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed) · — · `P0` · `C3`
+- [P11-T34](docs/tasks/p11-t34.md) `0145` downgrade drops tables created by `0143`; blocks every isolated-schema bootstrap — **TODO** · unassigned · — · `P0` · `C2`
 
 ### Priority P1
 
@@ -60,7 +61,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [Q-17](docs/tasks/q-17.md) Web test-suite debt in `tests/unit_web/` — **OPEN** · unassigned · raised while closing [P12-T16](docs/audit/p12-t16.md) · `P2` · `C3`
 - [P11-T31](docs/tasks/p11-t31.md) `tests/notifications/` stale fixtures against the current tenant and role contract — **TODO** · unassigned · — · `P2` · `C3`
 - [P11-T32](docs/tasks/p11-t32.md) `--cov-config=/dev/null` aborted coverage collection on `bot_actions` — reproduce or close — **TODO** · unassigned · — · `P2` · `C2`
-- [P11-T33](docs/tasks/p11-t33.md) DB tests refuse any schema but the literal `test_schema` — **TODO** · unassigned · — · `P2` · `C2`
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: remaining roadmap after the accepted increment (provider byte authority, native original open, local-only execution, approved file actions) — **TODO** (increment accepted 2026-11-03, `6433ae6a`/`48caea61`) · unassigned · [increment audit](docs/audit/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
@@ -74,15 +74,14 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 ### Priority P3
 
 - [P20-T02](docs/tasks/p20-t02.md) Social triage, attention-item contract and morning brief — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
-- [P20-T03](docs/tasks/p20-t03.md) Unified approval inbox on existing ledgers — **IN_PROGRESS** · ai-studio-argon · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T03](docs/tasks/p20-t03.md) Unified approval inbox on existing ledgers — **IN_PROGRESS** · codex-review · [resume measurements](docs/tasks/p20-t03-resume.md) · [review](https://github.com/Starck43/social-media-ai/pull/450#issuecomment-6749627992) · `P3` · `C4`
 - [P20-T09](docs/tasks/p20-t09.md) Inbox triage and agent-suggested replies — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T10](docs/tasks/p20-t10.md) Unified task surface: my to-dos, agent assignments and calendar — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T11](docs/tasks/p20-t11.md) Team work through connected task systems — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
-- [P15-T08](docs/tasks/p15-t08.md) Reply from the unified interface — **IN_PROGRESS** · notion-ai-p15-t08 · [dialogue](https://app.notion.com/chat?t=412f361cdc9980be837800a92521bf76) · `P3` · `C3`
-- [P15-T14](docs/tasks/p15-t14.md) Attachment delivery at the outbox seam (owner decision 2026-11-09) — **TODO** · unassigned · — · `P3` · `C4`
+- [P15-T14](docs/tasks/p15-t14.md) Attachment delivery at the outbox seam (owner decision 2026-11-09) — **IN_PROGRESS** · opencode-local · — · `P3` · `C4`
 - [P17-T01](docs/tasks/p17-t01.md) 1C connection: OData/HTTP-service endpoints, credentials and health — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P17-T02](docs/tasks/p17-t02.md) 1C read-only data extraction from catalogs, documents and registers — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P17-T03](docs/tasks/p17-t03.md) Natural-language queries, result formatting, export and history — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
@@ -92,10 +91,8 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P18-T07](docs/tasks/p18-t07.md) Packaging, signing and auto-update for Windows, macOS and Linux — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P19-T02](docs/tasks/p19-t02.md) Templates and AI drafting with evidence and unsupported-claim marking — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P19-T04](docs/tasks/p19-t04.md) Document approval workflow bound to an immutable revision hash — **IN_PROGRESS** · notion-ai-p19-t04 · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C4`
-- [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **IN_PROGRESS** · notion-ai-p19-t05 · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C3`
-- [P19-T07](docs/tasks/p19-t07.md) `app/services/knowledge` to the 80% coverage gate — **TODO** · unassigned · — · `P3` · `C2`
-- [P19-T08](docs/tasks/p19-t08.md) Version history beyond web and API: operator CLI and a safe chat surface — **IN_PROGRESS** · opencode-local · — · `P3` · `C3`
+- [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **IN_PROGRESS** · notion-ai-p19-t05 · [hand-off](docs/tasks/p19-t05-handoff.md) · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C3`
+- [P19-T09](docs/tasks/p19-t09.md) `retrieval.py` boundary predicate contradicts its documented ACL contract — **TODO** · unassigned · raised while closing [P19-T07](docs/audit/p19-t07.md) · `P3` · `C2`
 
 
 ## Deferred by explicit owner decision

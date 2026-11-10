@@ -61,6 +61,8 @@ def test_history_escapes_untrusted_text_and_binds_restore_to_current_state():
         can_update=True,
         can_delete=False,
         csrf="token",
+        pending={"items": []},
+        approval_key="test-key",
         history={"items": [rev], "next_before_id": None},
         diff=SimpleNamespace(parts=[part]),
     )

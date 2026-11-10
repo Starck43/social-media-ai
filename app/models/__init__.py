@@ -34,7 +34,14 @@ from .collection import (
     Platform,
     Source,
 )
-from .communications import ContactChannelStat, MessageThread, OutboxMessage, OutboxTarget, UnifiedMessage
+from .communications import (
+    ContactChannelStat,
+    MessageThread,
+    OutboxMessage,
+    OutboxReplyEvidence,
+    OutboxTarget,
+    UnifiedMessage,
+)
 from .contacts import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
 from .crm import CrmEntity, GreetingHistory
 from .file_workspace import FileCatalogObject, FileCatalogObservation, FileCatalogScan
@@ -94,6 +101,7 @@ __all__ = [
     "PlannerReminder",
     "NotificationDelivery",
     "OutboxMessage",
+    "OutboxReplyEvidence",
     "OutboxTarget",
     "CrmEntity",
     "GreetingHistory",

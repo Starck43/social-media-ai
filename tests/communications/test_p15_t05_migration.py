@@ -47,14 +47,20 @@ def test_migration_model_parity_indexes_triggers_and_clean_downgrade(monkeypatch
         execute=lambda sql, *args, **kwargs: registry_statements.append((str(sql), args, kwargs)),
     )
     monkeypatch.setattr(op, "get_bind", lambda: bind)
+    added_columns = []
+    monkeypatch.setattr(op, "add_column", lambda name, *a, **kw: added_columns.append((name, *a)))
     module = runpy.run_path(str(PATH))
     module["upgrade"]()
     assert set(tables) == {"outbox_messages", "outbox_targets"}
+    assert added_columns == []
+    # `0149` adds reply evidence to the same tables. Parity is checked against the
+    # model as it stood for this revision, not against today's model + later DDL.
+    later_columns = {"reply_evidence_required"}
     for model in (OutboxMessage, OutboxTarget):
         actual = tables[model.__tablename__]
         expected = model.__table__
-        assert set(actual.columns.keys()) == set(expected.columns.keys())
-        for name in expected.columns.keys():
+        assert set(actual.columns.keys()) == set(expected.columns.keys()) - later_columns
+        for name in actual.columns.keys():
             left, right = actual.columns[name], expected.columns[name]
             assert left.nullable == right.nullable
             assert str(left.type.compile()) == str(right.type.compile())

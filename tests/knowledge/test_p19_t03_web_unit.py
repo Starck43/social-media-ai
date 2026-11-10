@@ -60,6 +60,8 @@ def test_history_escapes_untrusted_text_and_binds_restore_to_current_state():
         can_create=False,
         can_update=True,
         can_delete=False,
+        # The real render() always injects perms (None hides optional controls).
+        perms=None,
         csrf="token",
         pending={"items": []},
         approval_key="test-key",

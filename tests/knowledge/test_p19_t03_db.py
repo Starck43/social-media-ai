@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import ExitStack
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import delete, func, select
@@ -11,6 +12,7 @@ from app.core.database import async_session_maker
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import DocumentRevision, KnowledgeDocument
+from app.services.knowledge.approvals import approval_service
 from app.services.knowledge.documents import DocumentConflict, DocumentUnavailable, document_service
 from app.services.knowledge.versions import version_service
 from tests.shared.fixtures.personal_workspace import personal_world  # noqa: F401
@@ -105,6 +107,23 @@ def decision(doc, target):
     }
 
 
+async def decide_via_approval(world, doc, target):
+    """P19-T04: decisions go through the revision-bound approval, never transition."""
+    approval = await approval_service.request(
+        doc.id,
+        {
+            "approver_user_id": world.users[0].id,
+            "expected_revision_id": doc.current_revision_id,
+            "expected_hash": doc.content_hash,
+            "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+            "idempotency_key": f"p19-t03-{doc.id}-{target}",
+        },
+        boundary="local_only",
+    )
+    await approval_service.decide(doc.id, approval["id"], {"decision": target}, boundary="local_only")
+    return await document_service.get(doc.id, boundary="local_only")
+
+
 async def test_restore_preserves_approved_history_and_invalidates_current(version_world):
     with scoped(version_world):
         doc = await create("original")
@@ -112,7 +131,7 @@ async def test_restore_preserves_approved_history_and_invalidates_current(versio
             doc.id, {**expected(doc), "body_text": "approved body"}, boundary="local_only"
         )
         pending = await document_service.transition(doc.id, decision(changed, "in_review"), boundary="local_only")
-        approved = await document_service.transition(doc.id, decision(pending, "approved"), boundary="local_only")
+        approved = await decide_via_approval(version_world, pending, "approved")
         restored = await version_service.restore(
             doc.id, doc.current_revision_id, expected(approved), boundary="local_only"
         )

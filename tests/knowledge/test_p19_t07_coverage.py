@@ -13,6 +13,7 @@ Requires an isolated PostgreSQL schema (``DB_TEST_SCHEMA``); the guard refuses t
 """
 
 from contextlib import ExitStack
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import delete, func, select
@@ -22,6 +23,7 @@ from app.core.database import async_session_maker
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import DocumentRevision, KnowledgeDocument
+from app.services.knowledge.approvals import approval_service
 from app.services.knowledge.documents import DocumentConflict, document_service
 from tests.shared.fixtures.personal_workspace import personal_world  # noqa: F401
 from tests.support.schema_guard import require_isolated_schema
@@ -74,6 +76,23 @@ async def create(body, **extra):
     )
 
 
+async def decide_via_approval(world, doc, target):
+    """P19-T04: decisions go through the revision-bound approval, never transition."""
+    approval = await approval_service.request(
+        doc.id,
+        {
+            "approver_user_id": world.users[0].id,
+            "expected_revision_id": doc.current_revision_id,
+            "expected_hash": doc.content_hash,
+            "expires_at": datetime.now(timezone.utc) + timedelta(hours=1),
+            "idempotency_key": f"p19-t07-{doc.id}-{target}",
+        },
+        boundary="local_only",
+    )
+    await approval_service.decide(doc.id, approval["id"], {"decision": target}, boundary="local_only")
+    return await document_service.get(doc.id, boundary="local_only")
+
+
 async def test_update_only_change_description_requires_new_revision(coverage_world):
     """Line 566: a description-only edit cannot be stored beside an unchanged body."""
     with scoped(coverage_world):
@@ -104,7 +123,7 @@ async def test_transition_invalid_target_for_status(coverage_world):
     with scoped(coverage_world):
         doc = await create("original")
         pending = await document_service.transition(doc.id, decision(doc, "in_review"), boundary="local_only")
-        approved = await document_service.transition(doc.id, decision(pending, "approved"), boundary="local_only")
+        approved = await decide_via_approval(coverage_world, pending, "approved")
         assert approved.status == "approved" and approved.approved_by is not None
 
         # "in_review" passes the Literal schema yet is not in the approved graph.
@@ -122,7 +141,7 @@ async def test_transition_terminal_state_blocks_any_target(coverage_world):
     with scoped(coverage_world):
         doc = await create("original")
         pending = await document_service.transition(doc.id, decision(doc, "in_review"), boundary="local_only")
-        rejected = await document_service.transition(doc.id, decision(pending, "rejected"), boundary="local_only")
+        rejected = await decide_via_approval(coverage_world, pending, "rejected")
         assert rejected.status == "rejected"
 
         for target in ("in_review", "revision_requested"):

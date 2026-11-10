@@ -134,7 +134,7 @@
                 <li data-today-item="{{ item.item_key }}" class="flex flex-wrap items-start justify-between gap-3 py-3">
                     <div class="min-w-0 flex-1">
                         <div class="flex flex-wrap items-center gap-2">
-                            <a href="{{ item.href }}" class="font-medium text-slate-900 dark:text-slate-100 hover:underline">{{ item.title }}</a>
+                            <a href="{{ item.href }}" class="font-medium text-slate-900 dark:text-slate-100 hover:underline" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ item.title }}</a>
                             {% if item.status_label %}
                             <span class="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-300">{{ item.status_label }}</span>
                             {% endif %}
@@ -150,7 +150,7 @@
                         {% endif %}
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
-                        <a href="{{ item.href }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-medium text-cyan-700 dark:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800">Открыть →</a>
+                        <a href="{{ item.href }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-medium text-cyan-700 dark:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>Открыть →</a>
                         {% if can_open_chat and item.chat_url %}
                         <a href="{{ item.chat_url }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">В чат</a>
                         {% endif %}

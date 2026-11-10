@@ -100,6 +100,49 @@ def _iso_or_empty(value: Any) -> str:
     return str(value or "")
 
 
+BITRIX_TASK_STATUS_LABELS = {
+    2: "Ожидает выполнения",
+    3: "В работе",
+    4: "Ожидает контроля",
+    5: "Завершена",
+    6: "Отложена",
+    7: "Отклонена",
+}
+
+
+def bitrix_task_status_label(value: Any) -> str:
+    """Map known Bitrix24 statuses to short UI text without echoing unknown values."""
+    if isinstance(value, bool):
+        return "Статус Bitrix24"
+    try:
+        status = int(value)
+    except (TypeError, ValueError):
+        return "Статус Bitrix24"
+    return BITRIX_TASK_STATUS_LABELS.get(status, "Статус Bitrix24")
+
+
+def _bitrix_due_day(value: Any, reference: datetime) -> date | None:
+    """Parse a due day without assigning a timezone to a naive provider timestamp."""
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        return value
+    elif isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    target_tz = reference.tzinfo or timezone.utc
+    return parsed.astimezone(target_tz).date()
+
+
 # ------------------------------------------------ Start-page preference (O-2) ----
 
 
@@ -399,6 +442,21 @@ class TodayRepository:
         from app.services.planner.tasks import planner_service
 
         return await planner_service.get(task_id)
+
+    async def external_tasks(self, workspace_id: int, user_id: int, limit: int = PROVIDER_LIMIT) -> dict[str, Any]:
+        """Read the selected task source for the authenticated connection owner."""
+        from app.core.permissions import get_current_user
+        from app.core.tenant_context import current_tenant_id, is_bypass
+        from app.services.task_sources import task_source_service
+
+        actor = get_current_user()
+        if is_bypass() or current_tenant_id() != workspace_id or actor is None or getattr(actor, "id", None) != user_id:
+            return {"state": "denied", "items": [], "next_cursor": None}
+        return await task_source_service.projection(
+            expected_tenant_id=workspace_id,
+            expected_user_id=user_id,
+            limit=min(max(int(limit), 1), PROVIDER_LIMIT),
+        )
 
     async def followups(self, workspace_id: int, limit: int = PROVIDER_LIMIT) -> list[Any]:
         from app.models import KnowledgeSnippet
@@ -796,6 +854,141 @@ class TodayProjection:
             except Exception:
                 errors.append("planner")
                 logger.warning("Today planner_tasks provider failed", exc_info=True)
+
+            task_source_reader = getattr(self.repo, "external_tasks", None)
+            if task_source_reader is not None and _can(self.perms, "source", "view"):
+                try:
+                    source_result = await task_source_reader(self.workspace_id, self.user_id, limit=PROVIDER_LIMIT)
+                    source_state = str(source_result.get("state", "source_unavailable"))
+                    if source_state in {"denied", "not_configured", "consent_required", "not_enabled"}:
+                        pass
+                    elif source_state in {
+                        "source_unavailable",
+                        "unavailable",
+                        "reauth",
+                        "reauth_required",
+                        "task_scope_required",
+                        "rate_limited",
+                    }:
+                        if source_state == "task_scope_required":
+                            unavailable = "Bitrix24 требует повторного подключения с доступом к задачам."
+                        elif source_state in {"reauth", "reauth_required"}:
+                            unavailable = "Bitrix24 требует повторного подключения."
+                        elif source_state == "rate_limited":
+                            unavailable = "Bitrix24 временно ограничил частоту запросов."
+                        else:
+                            unavailable = "Задачи Bitrix24 временно недоступны."
+                        source_status_label = {
+                            "task_scope_required": "Нужно разрешение Bitrix24",
+                            "reauth": "Нужно переподключение",
+                            "reauth_required": "Нужно переподключение",
+                            "rate_limited": "Ограничена частота запросов",
+                        }.get(source_state, "Источник недоступен")
+                        items.append(
+                            {
+                                "item_key": f"plan:task-source:{self.workspace_id}:{self.user_id}",
+                                "kind": "external_task_source",
+                                "id": "bitrix24",
+                                "title": unavailable,
+                                "summary": "Источник не считается пустым; проверьте подключение.",
+                                "status_label": source_status_label,
+                                "href": "/app/task-hub/sources",
+                                "chat_url": "/app/chat",
+                                "created_at": "",
+                                "stale_or_unavailable": True,
+                                "marker_label": unavailable,
+                            }
+                        )
+                    elif source_state in {"available", "ok", "synced"}:
+                        for external in source_result.get("items", [])[:PROVIDER_LIMIT]:
+                            if not isinstance(external, dict):
+                                continue
+                            source_ref = str(external.get("source_ref") or external.get("id") or "")
+                            if not source_ref or len(source_ref) > 300 or any(ch.isspace() for ch in source_ref):
+                                continue
+                            title = str(external.get("title") or "Задача Bitrix24")[:140]
+                            raw_status = external.get("status")
+                            if isinstance(raw_status, bool) or raw_status not in (2, 3, 4):
+                                continue
+                            status_label = bitrix_task_status_label(raw_status)
+                            due_at = external.get("due_at")
+                            due_text = _iso_or_empty(due_at)
+                            due_day = _bitrix_due_day(due_at, self.now)
+                            if due_day is not None and due_day > today_date:
+                                continue
+                            timing = (
+                                f"Просрочено ({due_day.isoformat()})"
+                                if due_day is not None and due_day < today_date
+                                else (
+                                    "Срок сегодня"
+                                    if due_day == today_date
+                                    else ("Без срока" if due_at is None else "Срок указан")
+                                )
+                            )
+                            items.append(
+                                {
+                                    "item_key": (
+                                        f"plan:bitrix24:{self.workspace_id}:{self.user_id}:"
+                                        f"{external.get('connection_id', '')}:{source_ref}"
+                                    ),
+                                    "kind": "external_task",
+                                    "id": source_ref,
+                                    "title": title,
+                                    "summary": " · ".join(
+                                        part
+                                        for part in (
+                                            "Bitrix24",
+                                            status_label,
+                                            timing,
+                                            f"Срок {due_text}" if due_text else "",
+                                        )
+                                        if part
+                                    ),
+                                    "status_label": status_label,
+                                    "href": str(external.get("url") or "/app/task-hub/sources"),
+                                    "chat_url": "/app/chat",
+                                    "created_at": due_text,
+                                    "stale_or_unavailable": False,
+                                    "marker_label": "",
+                                }
+                            )
+                        if source_result.get("next_cursor"):
+                            items.append(
+                                {
+                                    "item_key": f"plan:task-source-more:{self.workspace_id}:{self.user_id}",
+                                    "kind": "external_task_source",
+                                    "id": "bitrix24-more",
+                                    "title": "Есть ещё задачи Bitrix24",
+                                    "summary": "Откройте источник, чтобы просмотреть следующие страницы.",
+                                    "status_label": "Есть продолжение",
+                                    "href": "/app/task-hub/sources",
+                                    "chat_url": "/app/chat",
+                                    "created_at": "",
+                                    "stale_or_unavailable": False,
+                                    "marker_label": "",
+                                }
+                            )
+                except PermissionError:
+                    # A provider/tenant grant revoked after the page gate is a
+                    # denial, not a source outage visible to this actor.
+                    pass
+                except Exception:
+                    logger.warning("Today connected task source failed")
+                    items.append(
+                        {
+                            "item_key": f"plan:task-source:{self.workspace_id}:{self.user_id}",
+                            "kind": "external_task_source",
+                            "id": "bitrix24",
+                            "title": "Задачи Bitrix24 временно недоступны.",
+                            "summary": "Источник не считается пустым; проверьте подключение.",
+                            "status_label": "Источник недоступен",
+                            "href": "/app/task-hub/sources",
+                            "chat_url": "/app/chat",
+                            "created_at": "",
+                            "stale_or_unavailable": True,
+                            "marker_label": "Проверьте подключение Bitrix24.",
+                        }
+                    )
 
         if can_tasks:
             try:

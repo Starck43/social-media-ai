@@ -139,12 +139,14 @@ Tasks can be created from chat, a message, a document or «Сегодня».
 ## Team work
 
 A workspace is the team space. Assignee, watchers and the «Моё / Команда» switch
-use existing roles. Users choose the task service they use; supported services
-are connected as task sources by reference ([P20-T11](tasks/p20-t11.md)). The
-first connector is not yet chosen and unsupported services are not implied to be
-available. We do not build a second tracker. Writes back (comment, status,
-assignee) go through the command ledger with preview and approval. Mentions and
-reminders use the one notification surface (D18).
+use existing roles. Users choose their task service; Bitrix24 is the first
+supported task source by owner choice ([P20-T11](tasks/p20-t11.md)). The Tasks
+hub shows assigned and watched items from the current user's authorized portal
+connection when that connection has separate task-read consent. Values are read
+live and linked to Bitrix24; unsupported services are never shown as connected.
+Team scope does not broaden the provider identity. This increment is read-only;
+future writes require command-ledger preview and approval. Mentions and reminders
+use the one notification surface (D18).
 
 ## Documents, CRM and 1C
 

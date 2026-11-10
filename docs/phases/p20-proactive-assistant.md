@@ -15,7 +15,7 @@
 7. ~~P20-T07 — «Сегодня» home as a read-time projection.~~ **DONE 2026-11-08**, accepted source `76da862`, merge `bc550ac5` — [audit](../audit/p20-t07.md).
 8. ~~P20-T08 — chat context panel, inline cards and chat dock.~~ **DONE 2026-11-08**, accepted source `cc121ba`, merge `b86d5b45` — [audit](../audit/p20-t08.md).
 9. [P20-T09](../tasks/p20-t09.md) — inbox triage and agent-suggested replies.
-10. [P20-T10](../tasks/p20-t10.md) — unified task surface with calendar view.
+10. [P20-T10](../audit/p20-t10.md) — **DONE 2026-11-10**, unified task hub, calendar projection and confirmed linked assignments; accepted `d2817412a68e0fc043af3b17cebc4953ebff18f9`.
 11. [P20-T11](../tasks/p20-t11.md) — team work through connected task systems.
 12. [P20-T12](../tasks/p20-t12.md) — web search and public page fetch.
 

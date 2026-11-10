@@ -75,12 +75,14 @@ async def test_thread_triage_decisions_persists_across_postgresql_sessions_and_i
             conn = WorkspaceConnection(
                 tenant_id=tenant_1.id,
                 owner_user_id=user_a.id,
+                schema_version=1,
                 provider_id="imap_smtp",
                 platform="email",
                 auth_method="password",
                 account_key=f"p20t09-{tenant_1.id}",
+                label="Корпоративная почта",
                 is_active=True,
-                state="active",
+                state="verified",
                 config={},
             )
             s1.add(conn)

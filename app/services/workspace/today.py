@@ -419,8 +419,13 @@ class TodayRepository:
 
         return await task_manager.dashboard_upcoming(workspace_id, limit=limit, include_sources=show_sources)
 
-    async def unread_threads(self, workspace_id: int, limit: int = PROVIDER_LIMIT) -> list[Any]:
-        from app.core.permissions import get_current_user
+    async def unread_threads(
+        self,
+        workspace_id: int,
+        limit: int = PROVIDER_LIMIT,
+        *,
+        user_id: int | None = None,
+    ) -> list[Any]:
         from app.models import MessageThread, ThreadTriageDecision
 
         threads = list(
@@ -431,18 +436,19 @@ class TodayRepository:
             .order_by(MessageThread.id.desc())
             .limit(limit * 3)
         )
-        if threads:
+        if threads and _positive_int(user_id):
             try:
-                cur_user = get_current_user()
-                cur_uid = getattr(cur_user, "id", None) if cur_user is not None else None
-                flt: dict[str, Any] = {"tenant_id": workspace_id}
-                if _positive_int(cur_uid):
-                    flt["decided_by_user_id"] = int(cur_uid)
-                decisions = await ThreadTriageDecision.objects.filter(**flt).limit(limit * 6)
+                uid = int(user_id)
+                decisions = await ThreadTriageDecision.objects.filter(
+                    tenant_id=workspace_id,
+                    decided_by_user_id=uid,
+                ).limit(limit * 6)
                 by_thread = {
                     int(d.thread_id): d
                     for d in decisions
-                    if getattr(d, "tenant_id", None) == workspace_id and _positive_int(getattr(d, "thread_id", None))
+                    if getattr(d, "tenant_id", None) == workspace_id
+                    and getattr(d, "decided_by_user_id", None) == uid
+                    and _positive_int(getattr(d, "thread_id", None))
                 }
                 for th in threads:
                     tid = getattr(th, "id", None)
@@ -894,7 +900,19 @@ class TodayProjection:
             return section
 
         try:
-            rows = await self.repo.unread_threads(self.workspace_id, limit=PROVIDER_LIMIT)
+            import inspect
+
+            try:
+                unread_sig = inspect.signature(self.repo.unread_threads)
+                accepts_user_id = "user_id" in unread_sig.parameters or any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD for p in unread_sig.parameters.values()
+                )
+            except TypeError:
+                accepts_user_id = True
+            if accepts_user_id:
+                rows = await self.repo.unread_threads(self.workspace_id, limit=PROVIDER_LIMIT, user_id=self.user_id)
+            else:
+                rows = await self.repo.unread_threads(self.workspace_id, limit=PROVIDER_LIMIT)
         except Exception:
             logger.warning("Today unread_threads provider failed", exc_info=True)
             section.status = "unavailable"

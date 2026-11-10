@@ -1,7 +1,7 @@
 """P20-T09 durable per-user thread triage decisions.
 
-Revision ID: p20t09_triage_decisions
-Revises: 0149
+Revision ID: 0151
+Revises: 0150
 
 Stores explicit user classification overrides (`basis='user_override'`,
 `is_model_fact=False`) keyed by `(tenant_id, decided_by_user_id, thread_id)`
@@ -13,8 +13,8 @@ from alembic import context, op
 
 from app.core.config import settings
 
-revision = "p20t09_triage_decisions"
-down_revision = "0149"
+revision = "0151"
+down_revision = "0150"
 branch_labels = None
 depends_on = None
 

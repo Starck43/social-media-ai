@@ -430,7 +430,7 @@ async def test_user_correction_stored_as_user_decision_not_model_fact():
 
 
 def test_thread_triage_decisions_migration_and_schema_guard_contract(monkeypatch):
-    """Verify B1/B6 migration (`p20t09_triage_decisions` -> `0149`), `contact_pii_marker` trigger, and per-user uniqueness."""
+    """Verify B1/B6 migration single-head chain invariant, `contact_pii_marker` trigger, and per-user uniqueness."""
     import runpy
     from pathlib import Path
     from alembic.config import Config
@@ -492,19 +492,23 @@ def test_thread_triage_decisions_migration_and_schema_guard_contract(monkeypatch
     checks = {c.name for c in table.constraints if isinstance(c, CheckConstraint)}
     assert "ck_thread_triage_decisions_category" in checks
 
-    # Verify Alembic revision graph has one head and down_revision == "0149"
+    # Locate migration creating `thread_triage_decisions` and verify single-head linear chain invariant
+    versions_dir = root / "migrations/versions"
+    mig_candidates = sorted(
+        cand for cand in versions_dir.glob("*.py") if '"thread_triage_decisions"' in cand.read_text(encoding="utf-8")
+    )
+    assert len(mig_candidates) == 1
+    mig_path = mig_candidates[0]
+    mig = runpy.run_path(str(mig_path))
+
     script = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
     heads = script.get_heads()
     assert len(heads) == 1
-    rev = script.get_revision("p20t09_triage_decisions")
+    rev = script.get_revision(mig["revision"])
     assert rev is not None
-    assert rev.down_revision == "0149"
-
-    # Verify migration upgrade/downgrade DDL and guarded downgrade refusing data loss
-    mig_path = root / "migrations/versions/p20t09_thread_triage_decisions.py"
-    mig = runpy.run_path(str(mig_path))
-    assert mig["revision"] == "p20t09_triage_decisions"
-    assert mig["down_revision"] == "0149"
+    assert isinstance(rev.down_revision, str) and bool(rev.down_revision)
+    assert rev.down_revision == mig["down_revision"]
+    assert script.get_revision(rev.down_revision) is not None
 
     created_tables = []
     created_indexes = []
@@ -665,6 +669,51 @@ async def test_today_awaiting_reply_and_web_override_surfaces():
     )
     svc = TodayProjection(workspace_id=1, user_id=10, perms=fake_perms, repository=fake_repo)
     section = await svc.build_awaiting_reply_section()
+    fake_repo.unread_threads.assert_awaited_once_with(1, limit=5, user_id=10)
+    # Verify TodayRepository.unread_threads uses explicit user_id and never loads all members' decisions when user_id is None
+    from app.services.workspace.today import TodayRepository
+
+    th_u = _make_thread(21, tenant_id=1, subject="Запрос счёта?", unread_count=1)
+    filter_calls: list[dict[str, Any]] = []
+
+    class _FakeDecisionQS:
+        def limit(self, _n: int):
+            async def _coro():
+                return [
+                    SimpleNamespace(
+                        tenant_id=1,
+                        decided_by_user_id=10,
+                        thread_id=21,
+                        category=TRIAGE_FYI,
+                        reason_encrypted="Моё решение",
+                    )
+                ]
+            return _coro()
+
+    class _FakeThreadQS:
+        def order_by(self, *_a):
+            return self
+
+        def limit(self, _n: int):
+            async def _coro():
+                return [SimpleNamespace(id=21, tenant_id=1, is_archived=False, unread_count=1)]
+            return _coro()
+
+    with (
+        patch("app.models.MessageThread.objects") as mock_mt_obj,
+        patch("app.models.ThreadTriageDecision.objects") as mock_td_obj,
+    ):
+        mock_mt_obj.filter.return_value = _FakeThreadQS()
+        mock_td_obj.filter.side_effect = lambda **kw: (filter_calls.append(kw), _FakeDecisionQS())[1]
+
+        repo_real = TodayRepository()
+        rows_no_user = await repo_real.unread_threads(1, limit=5, user_id=None)
+        assert filter_calls == []
+        assert not hasattr(rows_no_user[0], "triage_override")
+
+        rows_with_user = await repo_real.unread_threads(1, limit=5, user_id=10)
+        assert filter_calls == [{"tenant_id": 1, "decided_by_user_id": 10}]
+        assert getattr(rows_with_user[0], "triage_override", None) is not None
     assert section.status == "ok"
     assert len(section.items) == 1
     item = section.items[0]

@@ -174,6 +174,11 @@ NAV_ITEMS: tuple[NavItem, ...] = (
     ),
 )
 
+# A direct planner start-page preference remains valid after consolidating the
+# sidebar. Start-page choices and navigation entries have different purposes.
+PLANNER_SECTION = NavItem("planner", "/app/planner", "Мои дела", required_permission="planner.task.view")
+START_PAGE_ITEMS = (*NAV_ITEMS, PLANNER_SECTION)
+
 # Proposed O-3 composition; More is a drawer button in the template.
 MOBILE_NAV_KEYS: tuple[str, ...] = ("dashboard", "chat", "communications", "tasks")
 MOBILE_NAV_ITEMS: tuple[NavItem, ...] = tuple(
@@ -214,7 +219,7 @@ def allows(item: NavItem, perms: Any) -> bool:
 def section_of(path: str) -> NavItem | None:
     """The gated section a `/app` path belongs to, or None (dashboard, settings, auth)."""
     if path == "/app/planner" or path.startswith("/app/planner/"):
-        return NavItem("planner", "/app/planner", "Мои дела", required_permission="planner.task.view")
+        return PLANNER_SECTION
     if path == "/app/tasks" or path.startswith("/app/tasks/"):
         return NavItem("agent_tasks", "/app/tasks", "Поручения агенту", required_permission="scheduling.task.view")
     for item in NAV_ITEMS:

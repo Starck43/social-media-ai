@@ -26,9 +26,9 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
 
-from app.web.nav import NAV_ITEMS, allows
+from app.web.nav import START_PAGE_ITEMS, allows
 
-NAV_BY_KEY = {item.key: item for item in NAV_ITEMS}
+NAV_BY_KEY = {item.key: item for item in START_PAGE_ITEMS}
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def _iso_or_empty(value: Any) -> str:
 # ------------------------------------------------ Start-page preference (O-2) ----
 
 
-def available_start_pages(perms: Any, nav_items=NAV_ITEMS) -> list[dict[str, str]]:
+def available_start_pages(perms: Any, nav_items=START_PAGE_ITEMS) -> list[dict[str, str]]:
     """Return ready, permitted navigation items that the user can pick as start page."""
     options: list[dict[str, str]] = []
     for item in nav_items:
@@ -158,7 +158,7 @@ def resolve_start_page(
     perms: Any,
     *,
     session: dict[str, Any] | None = None,
-    nav_items=NAV_ITEMS,
+    nav_items=START_PAGE_ITEMS,
 ) -> dict[str, Any]:
     """Resolve user's preferred start page with safe fallback to '/app/' ('Сегодня')."""
     preferred_key = get_user_start_page(user_id, session=session)

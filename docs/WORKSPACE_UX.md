@@ -140,7 +140,7 @@ Tasks can be created from chat, a message, a document or «Сегодня».
 
 A workspace is the team space. Assignee, watchers and the «Моё / Команда» switch
 use existing roles. Users choose their task service; Bitrix24 is the first
-supported task source by owner choice ([P20-T11](tasks/p20-t11.md)). The Tasks
+supported task source by owner choice ([P20-T11](audit/p20-t11.md)). The Tasks
 hub shows assigned and watched items from the current user's authorized portal
 connection when that connection has separate task-read consent. Values are read
 live and linked to Bitrix24; unsupported services are never shown as connected.

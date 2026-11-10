@@ -390,8 +390,11 @@ def test_assemble_uses_legacy_aliases():
 
 @pytest.mark.parametrize(
     ("allowed", "expected"),
-    [("local_only", ["local_only"]), ("company", ["local_only", "company"]),
-     ("cloud", ["local_only", "company", "cloud"])],
+    [
+        ("local_only", ["local_only"]),
+        ("company", ["local_only", "company"]),
+        ("cloud", ["local_only", "company", "cloud"]),
+    ],
 )
 def test_search_to_citations_obeys_acl_and_boundary_ceiling(allowed, expected):
     items = [snippet(id=b, title=b, data_boundary=b, boundary=b) for b in ("local_only", "company", "cloud")]
@@ -405,6 +408,9 @@ def test_search_to_citations_obeys_acl_and_boundary_ceiling(allowed, expected):
 
 
 def test_assemble_invalid_and_missing_boundaries_fail_closed():
-    items = [snippet(title="Invalid", data_boundary="secret"), snippet(title="Missing", data_boundary=None, boundary=None)]
+    items = [
+        snippet(title="Invalid", data_boundary="secret"),
+        snippet(title="Missing", data_boundary=None, boundary=None),
+    ]
     assert mod.assemble_llm_citations_context(items, "cloud") == ""
     assert mod.assemble_llm_citations_context([snippet()], None) == ""

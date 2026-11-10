@@ -17,7 +17,9 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
+    Identity,
     Index,
     Integer,
     String,
@@ -31,6 +33,7 @@ from app.models.types.encrypted import EncryptedText
 
 COMMUNICATION_CHANNELS = ("email", "telegram", "max", "phone", "bitrix24")
 MESSAGE_DIRECTIONS = ("inbound", "outbound")
+TRIAGE_DECISION_CATEGORIES = ("needs_reply", "fyi", "can_wait", "uncertain")
 
 
 def _sql_list(values: tuple[str, ...]) -> str:
@@ -203,3 +206,52 @@ class ContactChannelStat(Base, TimestampMixin, TenantScopedMixin):
     last_outbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     objects: ClassVar = None
+
+
+class ThreadTriageDecision(Base, TimestampMixin, TenantScopedMixin):
+    """Durable per-user, tenant-scoped triage classification decision on a thread (P20-T09).
+
+    Keyed by (tenant_id, decided_by_user_id, thread_id) per P20-T09 personal-inbox default
+    so two users in the same tenant never silently overwrite each other's classification.
+    """
+
+    __tablename__ = "thread_triage_decisions"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_thread_triage_decisions_tenant_id"),
+        UniqueConstraint(
+            "tenant_id",
+            "decided_by_user_id",
+            "thread_id",
+            name="uq_thread_triage_decisions_user_thread",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "thread_id"],
+            [f"{settings.DB_SCHEMA}.message_threads.tenant_id", f"{settings.DB_SCHEMA}.message_threads.id"],
+            ondelete="CASCADE",
+            name="fk_thread_triage_decisions_thread",
+        ),
+        CheckConstraint(
+            f"category IN ({_sql_list(TRIAGE_DECISION_CATEGORIES)})",
+            name="ck_thread_triage_decisions_category",
+        ),
+        Index(
+            "ix_thread_triage_decisions_tenant_user_thread",
+            "tenant_id",
+            "decided_by_user_id",
+            "thread_id",
+        ),
+        {"schema": settings.DB_SCHEMA},
+    )
+
+    id: Mapped[int] = mapped_column(Integer, Identity(), primary_key=True)
+    pii_updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1, server_default="1")
+    thread_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    decided_by_user_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    category: Mapped[str] = mapped_column(String(24), nullable=False)
+    reason_encrypted: Mapped[str | None] = mapped_column(EncryptedText(), nullable=True)
+    objects: ClassVar = None
+

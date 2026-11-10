@@ -74,7 +74,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 ### Priority P3
 
 - [P20-T02](docs/tasks/p20-t02.md) Social triage, attention-item contract and morning brief — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
-- [P20-T09](docs/tasks/p20-t09.md) Inbox triage and agent-suggested replies — **IN_PROGRESS** · ai-studio-argon · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T11](docs/tasks/p20-t11.md) Team work through connected task systems — **IN_PROGRESS** · Codex · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · [dialogue](codex%20resume%2001a1c70f-3afc-74a0-9cb0-39678dd7b63a) · `P3` · `C4`
 - [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
@@ -88,7 +87,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P18-T07](docs/tasks/p18-t07.md) Packaging, signing and auto-update for Windows, macOS and Linux — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P19-T02](docs/tasks/p19-t02.md) Templates and AI drafting with evidence and unsupported-claim marking — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **IN_PROGRESS** · opencode-executor (resume: export/send API, findings F-1..F-3; renderer+spool merged via #456) · [hand-off](docs/tasks/p19-t05-handoff.md) · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C3`
+- [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **IN_PROGRESS** · opencode-executor (renderer+encrypted spool accepted as a partial slice in [audit](docs/audit/p19-t05.md); resume: export/send API + dispatch call site + tracking + F-1..F-3) · [hand-off](docs/tasks/p19-t05-handoff.md) · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C3`
 - [P19-T09](docs/tasks/p19-t09.md) `retrieval.py` boundary predicate contradicts its documented ACL contract — **IN_PROGRESS** · notion-ai-p19-t09 · [dialogue](https://app.notion.com/chat?t=4146f4961afe806fb57b00a9325adb27) · raised while closing [P19-T07](docs/audit/p19-t07.md) · `P3` · `C2`
 
 

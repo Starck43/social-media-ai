@@ -51,7 +51,7 @@ Rules:
   connector, models) are connections in Settings and surface as context and
   sources, not as sidebar items.
 - Pending decisions appear in «Сегодня», as a header badge and in chat; a
-  separate «На согласовании» page exists for volume ([P20-T03](tasks/p20-t03.md)),
+  a separate «На согласовании» page handles volume ([P20-T03 acceptance](audit/p20-t03.md)),
   not as another daily entry point.
 - Mobile bar: «Сегодня», «Чат», «Входящие», «Задачи», «Ещё» (drawer). Chat is
   included because it is the primary workspace; decided by the owner on

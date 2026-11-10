@@ -8,7 +8,7 @@
 
 1. [P20-T01](../tasks/p20-t01.md) — plan, audit open work and coordinate.
 2. [P20-T02](../tasks/p20-t02.md) — social triage, the shared attention-item contract and a morning brief.
-3. [P20-T03](../tasks/p20-t03.md) — one decision projection over existing approval ledgers.
+3. ~~P20-T03 — one decision projection over existing approval ledgers.~~ **DONE 2026-11-10**, accepted source `a8afa2eb3a577b24eb803155af3d63681776f343`, merge `a53e1741c2c83d6db7e4efa40becbb85c6c323d0` — [audit](../audit/p20-t03.md).
 4. [P20-T04](../tasks/p20-t04.md) — bounded specialist delegation for research.
 5. [P20-T05](../tasks/p20-t05.md) — review-gated isolated browser pilot, only after T12 shows a measured gap.
 6. ~~P20-T06 — navigation regrouping and mobile entry points.~~ **DONE 2026-11-07**, accepted source `aa9f4e87`, merge `efcbc8b9` (+ regression fix `e4fe0a33`) — [audit](../audit/p20-t06.md).

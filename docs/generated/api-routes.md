@@ -114,6 +114,7 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/documents | list_documents_api_v1_documents_get |
 | POST | /api/v1/documents | create_document_api_v1_documents_post |
 | GET | /api/v1/documents/approvals/pending | pending_approvals_api_v1_documents_approvals_pending_get |
+| POST | /api/v1/documents/draft | draft_document_api_v1_documents_draft_post |
 | GET | /api/v1/documents/templates | list_templates_api_v1_documents_templates_get |
 | POST | /api/v1/documents/templates | create_template_api_v1_documents_templates_post |
 | DELETE | /api/v1/documents/templates/{template_id} | delete_template_api_v1_documents_templates__template_id__delete |

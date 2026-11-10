@@ -46,4 +46,4 @@ Final accepted source: `ae2c877dd3e467dbaa1cea4b0ecad6d2d7399c01` (commit date
 
 ## Process follow-ups
 
-- [P11-T35](../tasks/p11-t35.md): verified integration and mandatory DB acceptance evidence.
+- [P11-T35](../audit/p11-t35.md) — DONE 2026-11-10: acceptance requires verified integration (mergedAt, merge commit, ancestry, fresh `dev` tree) and mandatory Alembic-baseline/DB evidence (accepted `fce83c68ce991f0361f48543ce364a3a618411f0`, merged `eb8d11bdbbce9bf26646273cde86c7f478f017a8`; PR #458, docs-only).

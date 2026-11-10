@@ -16,7 +16,14 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from app.channels.senders.contracts import EMAIL, EmailRequest, MailAccount, SendBinding, SendResult
+from app.channels.senders.contracts import (
+    EMAIL,
+    EmailAttachment,
+    EmailRequest,
+    MailAccount,
+    SendBinding,
+    SendResult,
+)
 from app.core.access_catalog import workspace_grants
 from app.core.database import async_session_maker, with_db_session
 from app.core.permissions import get_current_user
@@ -34,10 +41,17 @@ from app.models import (
     WorkspaceRole,
 )
 from app.models.actions.business_command import BusinessCommand, BusinessCommandTarget
-from app.models.communications.outbox import OutboxMessage, OutboxTarget
+from app.models.communications.outbox import OutboxAttachmentRef, OutboxMessage, OutboxTarget
+from app.services.attachments import SpoolRejected, attachment_spool
 from app.services.commands.ledger import _is_capability_enabled, command_ledger
 from app.services.commands.registry import canonical_payload_hash, get_capability
 from app.services.communications import outbox as transitions
+from app.services.communications.attachments import (
+    AttachmentRef,
+    AttachmentRejected,
+    attach_to_message,
+    validate_attachment_set,
+)
 from app.services.communications.followups import adjust_for_quiet_hours
 from app.services.communications.outbox_contracts import DraftIn, ScheduleIn
 from app.types import ActionType
@@ -71,7 +85,17 @@ def due_after_quiet_hours(value, zone):
     return adjust_for_quiet_hours(instant(value).astimezone(ZoneInfo(zone))).astimezone(UTC)
 
 
-def content_digest(message, targets, reply_evidence=None):
+def attachment_digest(refs):
+    """Bind the approved attachment set: order, exact bytes and MIME type.
+
+    An edited set must not approve under the previous hash, so this is part of
+    `content_digest`, not a side table. The list order is the delivery order, so
+    the sequence itself carries `position`.
+    """
+    return [{"position": index, "sha256": r.sha256, "size": r.size, "mime": r.mime} for index, r in enumerate(refs)]
+
+
+def content_digest(message, targets, reply_evidence=None, attachments=None):
     # Exact JSON, not the legacy stripped/lowercased pure hash alone. Newlines,
     # whitespace and case in recipient/content/credential identity remain bound.
     payload = {
@@ -92,6 +116,10 @@ def content_digest(message, targets, reply_evidence=None):
             for t in targets
         ],
     }
+    # Only present when the set is non-empty, so existing hashes stay stable.
+    bound = attachment_digest(attachments or ())
+    if bound:
+        payload["attachments"] = bound
     if getattr(message, "reply_evidence_required", False) is True:
         if reply_evidence is None:
             raise OutboxConflict("reply_evidence_unavailable")
@@ -232,6 +260,55 @@ async def owned_message(session, tenant, message_id, *, lock=False):
     return row
 
 
+async def attachments_for(session, message, *, lock=False):
+    """The approved attachment set in delivery order. Empty is a valid answer."""
+    query = (
+        select(OutboxAttachmentRef)
+        .where(
+            OutboxAttachmentRef.tenant_id == message.tenant_id,
+            OutboxAttachmentRef.outbox_message_id == message.id,
+        )
+        .order_by(OutboxAttachmentRef.position)
+    )
+    if lock:
+        query = query.with_for_update()
+    return list((await session.scalars(query)).all())
+
+
+def _spool_item_id(message_id):
+    """Stable spool scope for one outbox item; the spool validates the alphabet."""
+    return f"outbox_{message_id}"
+
+
+def _load_attachment_payload(tenant, message, refs):
+    """Read every approved attachment from the spool and recheck its hash.
+
+    Fails closed. A missing, corrupt or mismatched file is a recorded refusal for
+    the whole item: a partial set is never delivered, and nothing is re-rendered.
+    """
+    if not refs:
+        return ()
+    item_id = _spool_item_id(message.id)
+    payload = []
+    for ref in refs:
+        try:
+            data = attachment_spool.read(tenant, item_id, ref.position, expected_sha256=ref.sha256)
+        except SpoolRejected as exc:
+            raise OutboxConflict(f"attachment_unavailable:{exc}") from None
+        verified = AttachmentRef(sha256=ref.sha256, size=ref.size, mime=ref.mime)
+        validate_attachment_set([verified], "email")
+        payload.append(EmailAttachment(reference=verified, content=data))
+    return tuple(payload)
+
+
+def _discard_attachment_payload(tenant, message):
+    """Deterministic cleanup; a failed discard must never mask the send outcome."""
+    try:
+        attachment_spool.discard(tenant, _spool_item_id(message.id))
+    except (SpoolRejected, OSError):
+        pass
+
+
 async def resolve_route(session, message, target, now, *, consent=True):
     """Resolve fresh DB authority, never caller-provided flags or installation tokens.
 
@@ -350,16 +427,18 @@ class OutboxStore:
     @with_db_session
     async def draft(self, request: DraftIn, idempotency_key, session):
         request = DraftIn.model_validate(request)
-        # Until reference persistence is implemented, never silently discard attachments.
-        if request.attachments:
-            raise OutboxConflict("attachment_storage_not_ready")
         if not isinstance(idempotency_key, str) or re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", idempotency_key) is None:
             raise ValueError("invalid_idempotency_key")
         # Tenant lock serializes competing inserts; DB unique key is the final fence.
         tenant, actor = await current_actor(session, ActionType.UPDATE, serialize=True)
+        # Attachment references are part of the request identity: a different set
+        # under the same idempotency key is a mismatch, not a silent rewrite.
         request_data = request.model_dump(mode="json")
-        # Keep legacy idempotency hashes stable for requests without attachments.
         request_data.pop("attachments")
+        if request.attachments:
+            request_data["attachments"] = attachment_digest(
+                [AttachmentRef(sha256=a.sha256, size=a.size, mime=a.mime) for i, a in enumerate(request.attachments)]
+            )
         request_hash = digest(request_data)
         existing = await session.scalar(
             select(OutboxMessage).where(
@@ -372,6 +451,11 @@ class OutboxStore:
             if existing.request_hash != request_hash:
                 raise OutboxConflict("outbox_idempotency_mismatch")
             return projection(existing, await targets_for(session, existing))
+        if request.attachments:
+            # Refuse a set the spool itself would reject, before anything is stored.
+            validate_attachment_set(
+                request.attachments, request.targets[0].channel if len(request.targets) == 1 else "email"
+            )
         message = OutboxMessage(
             tenant_id=tenant,
             author_id=actor,
@@ -401,12 +485,29 @@ class OutboxStore:
                 recipient, target.channel, request.subject, request.body
             )
             targets.append(target)
-        message.content_hash = content_digest(message, targets)
+        message.content_hash = content_digest(
+            message,
+            targets,
+            attachments=(
+                AttachmentRef(sha256=a.sha256, size=a.size, mime=a.mime) for i, a in enumerate(request.attachments)
+            ),
+        )
         session.add(message)
         await session.flush()
         for target in targets:
             target.message_id = message.id
             session.add(target)
+        for position, ref in enumerate(request.attachments):
+            session.add(
+                OutboxAttachmentRef(
+                    tenant_id=tenant,
+                    outbox_message_id=message.id,
+                    position=position,
+                    sha256=ref.sha256,
+                    size=ref.size,
+                    mime=ref.mime,
+                )
+            )
         await session.flush()
         return projection(message, targets)
 
@@ -714,9 +815,15 @@ class OutboxDispatcher:
             try:
                 await actor_authority(session, tenant, message.author_id, ActionType.CONFIGURE)
                 reply_evidence = await verified_reply_for_outbox(session, message, targets)
+                attachment_refs = await attachments_for(session, message)
                 verify_approval(
                     message, targets, target, command, children, now, claimed=True, reply_evidence=reply_evidence
                 )
+                if message.content_hash != content_digest(
+                    message, targets, reply_evidence, attachments=attachment_refs
+                ):
+                    raise OutboxConflict("outbox_attachment_set_changed")
+                attachment_payload = _load_attachment_payload(tenant, message, attachment_refs)
                 connection, secret = await verify_snapshot(session, message, target, now, reply_evidence=reply_evidence)
                 account = MailAccount(
                     SendBinding(
@@ -741,10 +848,16 @@ class OutboxDispatcher:
                             message.content_encrypted,
                             in_reply_to=reply_evidence["headers"]["in_reply_to"] if reply_evidence else None,
                             references=tuple(reply_evidence["headers"]["references"]) if reply_evidence else (),
+                            attachments=attachment_payload,
                         ),
                     )
                 except Exception:
                     result = SendResult("unknown", "outbox_transport_unconfirmed")
+                finally:
+                    # Bytes are transient by contract: forget them after the
+                    # attempt whatever the outcome. A retry is a recorded
+                    # refusal, never a silent re-render.
+                    _discard_attachment_payload(tenant, message)
             await persist_outcome(session, message, targets, target, result, now)
         return True
 

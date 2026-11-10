@@ -1,4 +1,4 @@
-"""Attachment admission is fail-closed until the reference store exists."""
+"""Attachment references are bound to the approval hash and persisted, never caller bytes."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -50,9 +50,43 @@ def test_caller_bytes_are_not_accepted():
         draft(attachments=[attachment(content="caller bytes")])
 
 
-@pytest.mark.asyncio
-async def test_attachment_ref_is_refused_before_database_access():
-    with patch("app.services.communications.outbox_store.current_actor") as actor:
-        with pytest.raises(OutboxConflict, match="attachment_storage_not_ready"):
-            await OutboxStore().draft(draft(attachments=[attachment()]), "key", session=object())
-        actor.assert_not_called()
+def test_attachment_set_is_bound_into_the_content_digest():
+    """Editing the attachment set must not approve under the previous hash."""
+    from app.services.communications.outbox_store import attachment_digest
+
+    first = attachment_digest([SimpleNamespace(sha256="a" * 64, size=10, mime="application/pdf")])
+    swapped = attachment_digest([SimpleNamespace(sha256="c" * 64, size=10, mime="application/pdf")])
+    resized = attachment_digest([SimpleNamespace(sha256="a" * 64, size=11, mime="application/pdf")])
+    retyped = attachment_digest([SimpleNamespace(sha256="a" * 64, size=10, mime="text/plain")])
+
+    assert first != swapped
+    assert first != resized
+    assert first != retyped
+    assert first == attachment_digest([SimpleNamespace(sha256="a" * 64, size=10, mime="application/pdf")])
+    assert first[0]["position"] == 0
+
+
+def test_attachment_digest_is_absent_for_an_empty_set():
+    from app.services.communications.outbox_store import attachment_digest
+
+    assert attachment_digest([]) == []
+
+
+def test_request_hash_differs_when_only_the_attachment_set_differs():
+    """Same idempotency key, different set -> different hash -> OutboxConflict upstream."""
+    from app.services.communications import outbox_store as mod
+
+    def request_hash(req):
+        data = req.model_dump(mode="json")
+        data.pop("attachments")
+        if req.attachments:
+            data["attachments"] = mod.attachment_digest(
+                [SimpleNamespace(sha256=a.sha256, size=a.size, mime=a.mime) for a in req.attachments]
+            )
+        return digest(data)
+
+    assert request_hash(draft(attachments=[attachment()])) != request_hash(
+        draft(attachments=[attachment(sha256="c" * 64)])
+    )
+    assert request_hash(draft(attachments=[attachment()])) != request_hash(draft())
+    assert request_hash(draft(attachments=[attachment()])) == request_hash(draft(attachments=[attachment()]))

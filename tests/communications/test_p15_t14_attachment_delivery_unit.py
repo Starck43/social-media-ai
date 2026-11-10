@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.services.attachments.spool import AttachmentSpool
+from app.services.attachments.spool import AttachmentSpool, SpoolRejected
 from app.services.communications.attachment_delivery import (
     AttachmentStitchRefused,
     spool_approved_revision,
@@ -134,3 +134,21 @@ async def test_bad_scope_is_refused_before_any_lookup(spool, kwargs):
         await _stitch(session, **kwargs)
 
     session.scalar.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "code",
+    [
+        "attachment_position_occupied",
+        "attachment_set_too_large",
+        "spool_key_unavailable",
+        "attachment_write_failed",
+    ],
+)
+async def test_spool_refusals_are_mapped_at_the_stitch_boundary(code):
+    with patch("app.services.knowledge.export.spool_revision", side_effect=SpoolRejected(code)):
+        with pytest.raises(AttachmentStitchRefused) as caught:
+            await _stitch(_session(_approval(), _revision(), _document()))
+    assert caught.value.code == code
+    assert caught.value.__suppress_context__

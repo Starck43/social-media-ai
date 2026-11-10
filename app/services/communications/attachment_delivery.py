@@ -21,6 +21,7 @@ from sqlalchemy import select
 
 from app.models import DocumentRevision, KnowledgeDocument
 from app.models.knowledge.approval import DocumentApproval
+from app.services.attachments.spool import SpoolRejected
 from app.services.communications.attachments import AttachmentRef
 
 
@@ -129,7 +130,7 @@ async def spool_approved_revision(
             tenant_id=tenant_id,
             outbox_message_id=outbox_message_id,
         )
-    except ExportError as exc:
+    except (ExportError, SpoolRejected) as exc:
         raise AttachmentStitchRefused(str(exc)) from None
 
     return StitchedAttachment(

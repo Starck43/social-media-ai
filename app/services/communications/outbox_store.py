@@ -309,6 +309,12 @@ def _discard_attachment_payload(tenant, message):
         pass
 
 
+def _discard_if_terminal(tenant, message, targets):
+    # The spool is message-scoped; another target may still need the same bytes.
+    if not any(t.state in {"validated", "approved", "claimed"} for t in targets):
+        _discard_attachment_payload(tenant, message)
+
+
 async def resolve_route(session, message, target, now, *, consent=True):
     """Resolve fresh DB authority, never caller-provided flags or installation tokens.
 
@@ -518,13 +524,14 @@ class OutboxStore:
         tenant, actor = await current_actor(session, ActionType.CONFIGURE)
         message = await owned_message(session, tenant, request.message_id, lock=True)
         targets = await targets_for(session, message, lock=True)
+        attachment_refs = await attachments_for(session, message, lock=True)
         reply_evidence = await verified_reply_for_outbox(session, message, targets)
         now = datetime.now(UTC)
         scheduled = due_after_quiet_hours(request.scheduled_at, message.timezone)
         if (
             message.author_id != actor
             or message.content_hash != request.expected_content_hash
-            or message.content_hash != content_digest(message, targets, reply_evidence)
+            or message.content_hash != content_digest(message, targets, reply_evidence, attachments=attachment_refs)
         ):
             raise OutboxConflict("outbox_intent_mismatch")
         if message.state == "approved" and message.scheduled_at == scheduled:
@@ -607,6 +614,7 @@ class OutboxStore:
                 for child in children:
                     child.state = "cancelled"
         rollup(message, targets)
+        _discard_if_terminal(tenant, message, targets)
         await session.flush()
         return projection(message, targets)
 
@@ -632,7 +640,9 @@ async def command_rows(session, message, target):
     return command, rows
 
 
-def verify_approval(message, targets, target, command, command_targets, now, *, claimed=False, reply_evidence=None):
+def verify_approval(
+    message, targets, target, command, command_targets, now, *, claimed=False, reply_evidence=None, attachments=()
+):
     # A reply carries the provenance verified at this moment, or it does not leave at
     # all: the marker alone authorizes nothing (D15).
     if getattr(message, "reply_evidence_required", False) and reply_evidence is None:
@@ -644,7 +654,7 @@ def verify_approval(message, targets, target, command, command_targets, now, *, 
         message.approved_by != message.author_id
         or message.approval_expires_at is None
         or now >= instant(message.approval_expires_at)
-        or message.content_hash != content_digest(message, targets, reply_evidence)
+        or message.content_hash != content_digest(message, targets, reply_evidence, attachments=attachments)
         or message.approved_hash != approval_digest(message)
         or target.state != state
         or target.attempts != int(claimed)
@@ -705,6 +715,7 @@ async def persist_outcome(session, message, targets, target, result, now):
             child.provider_receipt = target.provider_message_id[:160] if target.provider_message_id else None
     rollup(message, targets)
     await session.flush()
+    _discard_if_terminal(message.tenant_id, message, targets)
 
 
 class OutboxDispatcher:
@@ -756,7 +767,17 @@ class OutboxDispatcher:
             try:
                 await actor_authority(session, tenant, message.author_id, ActionType.CONFIGURE)
                 reply_evidence = await verified_reply_for_outbox(session, message, targets)
-                verify_approval(message, targets, target, command, children, now, reply_evidence=reply_evidence)
+                attachment_refs = await attachments_for(session, message, lock=True)
+                verify_approval(
+                    message,
+                    targets,
+                    target,
+                    command,
+                    children,
+                    now,
+                    reply_evidence=reply_evidence,
+                    attachments=attachment_refs,
+                )
                 await verify_snapshot(session, message, target, now, reply_evidence=reply_evidence)
                 claimed = transitions.claim_outbox_item(target_item(message, target), now.isoformat())
             except (PermissionError, OutboxConflict, OutboxUnavailable, transitions.CommunicationError):
@@ -767,6 +788,7 @@ class OutboxDispatcher:
                     for child in children:
                         child.state, child.error_code = "failed", target.error_code
                 rollup(message, targets)
+                _discard_if_terminal(tenant, message, targets)
                 return {"denied": True}
             target.state, target.attempts = claimed["state"], claimed["attempts_count"]
             target.claimed_at, target.claim_token = now, str(uuid4())
@@ -815,9 +837,17 @@ class OutboxDispatcher:
             try:
                 await actor_authority(session, tenant, message.author_id, ActionType.CONFIGURE)
                 reply_evidence = await verified_reply_for_outbox(session, message, targets)
-                attachment_refs = await attachments_for(session, message)
+                attachment_refs = await attachments_for(session, message, lock=True)
                 verify_approval(
-                    message, targets, target, command, children, now, claimed=True, reply_evidence=reply_evidence
+                    message,
+                    targets,
+                    target,
+                    command,
+                    children,
+                    now,
+                    claimed=True,
+                    reply_evidence=reply_evidence,
+                    attachments=attachment_refs,
                 )
                 if message.content_hash != content_digest(
                     message, targets, reply_evidence, attachments=attachment_refs
@@ -834,7 +864,14 @@ class OutboxDispatcher:
                     decrypt_secret(secret.secret_encrypted),
                     send_enabled=connection.config.get("send_enabled") is True,
                 )
-            except (PermissionError, OutboxConflict, OutboxUnavailable, ValueError, RuntimeError):
+            except OutboxConflict as exc:
+                code = (
+                    "attachment_unavailable"
+                    if str(exc).startswith("attachment_unavailable:")
+                    else "outbox_authority_changed"
+                )
+                result = SendResult("blocked", code)
+            except (PermissionError, OutboxUnavailable, ValueError, RuntimeError):
                 result = SendResult("blocked", "outbox_authority_changed")
             else:
                 # Locks span I/O to serialize connection/consent/actor revocation.
@@ -853,11 +890,6 @@ class OutboxDispatcher:
                     )
                 except Exception:
                     result = SendResult("unknown", "outbox_transport_unconfirmed")
-                finally:
-                    # Bytes are transient by contract: forget them after the
-                    # attempt whatever the outcome. A retry is a recorded
-                    # refusal, never a silent re-render.
-                    _discard_attachment_payload(tenant, message)
             await persist_outcome(session, message, targets, target, result, now)
         return True
 

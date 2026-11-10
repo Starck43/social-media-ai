@@ -33,6 +33,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
+- [P11-T35](docs/tasks/p11-t35.md) Verify integration before acceptance; require DB evidence — **IN_PROGRESS** · hoplite-p11-t35 · session `run_26c45626d78c4725bfbb113263db51a5` · `P0` · `C1`
+
 
 
 

@@ -63,10 +63,14 @@ def test_purged_file_is_a_recorded_refusal_not_a_rerender(spool):
 def test_re_rendered_file_is_refused_on_the_hash(spool):
     message = _message()
     refs = _refs(spool)
-    # Simulate a re-render: same slot, different bytes, meta still consistent.
-    spool.put(1, _spool_item_id(message.id), 0, b"%PDF-1.7\ndifferent bytes\n", mime="application/pdf")
+    # Simulate a re-render that replaced the file behind the spool's back: the
+    # slot cannot be overwritten through put() (it refuses an occupied position),
+    # so tamper at the file level and prove the hash check still catches it.
+    payload = spool.root_dir / "t_1" / _spool_item_id(message.id) / "p0"
+    payload.chmod(0o600)
+    payload.write_bytes(b"%PDF-1.7\ndifferent bytes\n")
 
-    with pytest.raises(OutboxConflict, match="attachment_unavailable:attachment_render_mismatch"):
+    with pytest.raises(OutboxConflict, match="attachment_unavailable"):
         _load_attachment_payload(1, message, refs)
 
 

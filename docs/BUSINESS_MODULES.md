@@ -155,6 +155,10 @@ Each item records what changes and why; phase plans already apply them.
     default byte store until a measured need. An attachment or document reference
     therefore names where its bytes live and is resolved by a reader, so adding
     an S3 source later needs no change to the approval or outbox contracts.
+    Rendered attachment bytes are transient (owner decision D9a, 2026-11-10): they
+    are held in a filesystem spool with a TTL and never written to PostgreSQL,
+    because a platform serving thousands of tenants cannot accumulate bytes the
+    delivery needs for minutes.
 19. **R-19 Signatures.** A product approval click is not a legally recognized
     electronic signature; qualified signature providers need separate legal and
     security review (already a product boundary).

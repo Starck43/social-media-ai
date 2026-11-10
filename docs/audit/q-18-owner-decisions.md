@@ -58,6 +58,15 @@ build; a card is not blocked on a decision any more.
   and outbox work (P15-T14, P19-T05) must not assume PostgreSQL is the only byte
   source: the reference carries a location the reader resolves, so a later S3
   source does not change the outbox or approval contract.
+- D9a — **answered (owner, 2026-11-10)**: rendered DOCX/PDF attachment bytes are
+  **not** stored in PostgreSQL; they live in a transient filesystem spool from
+  render until dispatch plus a TTL and are then deleted. Long-term storage is the
+  tenant's own cloud or local store. Limits are configurable with defaults:
+  `ATTACHMENT_MAX_FILE_BYTES` 5 MiB per file, `ATTACHMENT_MAX_TOTAL_BYTES` 10 MiB
+  per message, `ATTACHMENT_SPOOL_TTL_SECONDS` 900, `ATTACHMENT_STORAGE_DIR` the
+  system temp directory. Rationale: thousands of tenants would bloat the database
+  for bytes needed for minutes. Implementation and the restart guarantee are in
+  [CONFIGURATION](../CONFIGURATION.md) and `app/services/attachments/`.
 
 ## Authorizations that outlive the register
 

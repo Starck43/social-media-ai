@@ -34,6 +34,7 @@
 {% endblock %}
 {% block page_heading %}Обзор{% endblock %}
 {% block content %}
+    {% if perms and perms.can("plannertask", "create") %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new">Подготовить дело</a>{% endif %}
 <div class="ui-home">
     {% if is_superuser and tenants %}
     <form method="get" class="mb-6">

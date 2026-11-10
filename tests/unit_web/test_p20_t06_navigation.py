@@ -7,6 +7,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from tests.source_import_isolation import load_isolated_source
 
+__source_only__ = True
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -22,8 +23,7 @@ EXPECTED = {
     "dashboard": ("/app/", None),
     "chat": ("/app/chat", None),
     "communications": ("/app/communications", "scheduling.action.view"),
-    "tasks": ("/app/tasks", "scheduling.task.view"),
-    "planner": ("/app/planner", "planner.task.view"),
+    "tasks": ("/app/task-hub", "scheduling.task.view"),
     "contacts": ("/app/contacts", "contacts.contact.view"),
     "followups": ("/app/followups", "scheduling.task.view"),
     "cases": ("/app/cases", "scheduling.action.view"),
@@ -122,8 +122,24 @@ def test_mobile_bar_renders_only_ready_permitted_items_and_skips_embedded():
     )
     html = env.get_template("web/base.html").render(**context)
     bar = html.split('<nav class="shell-mobile-bar"', 1)[1].split("</nav>", 1)[0]
-    assert 'href="/app/"' in bar and 'href="/app/tasks"' in bar
+    assert 'href="/app/"' in bar and 'href="/app/task-hub"' in bar
     assert 'href="/app/chat"' not in bar and 'href="/app/communications"' not in bar
     assert bar.index("Сегодня") < bar.index("Задачи") < bar.index("Ещё")
     context["request"] = SimpleNamespace(query_params={"embedded": "1"})
     assert 'class="shell-mobile-bar"' not in env.get_template("web/base.html").render(**context)
+
+
+def test_unified_tasks_hub_is_visible_for_either_task_kind_and_legacy_paths_stay_gated():
+    tasks = next(item for item in nav.NAV_ITEMS if item.key == "tasks")
+    assert tasks.href == "/app/task-hub"
+    assert nav.allows(tasks, Perms({("planner.task", "view")}))
+    assert nav.allows(tasks, Perms({("scheduling.task", "view")}))
+    assert not nav.allows(tasks, Perms())
+    # The legacy pages remain addressable directly and must still be classified
+    # for route authorization even though the sidebar exposes one unified item.
+    assignments = nav.section_of("/app/tasks")
+    assert assignments is not None and assignments.key == "agent_tasks"
+    assert assignments.required_permission == "scheduling.task.view"
+    planner = nav.section_of("/app/planner")
+    assert planner is not None and planner.key == "planner"
+    assert planner.required_permission == "planner.task.view"

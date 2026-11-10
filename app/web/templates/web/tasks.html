@@ -5,6 +5,7 @@
 {% block extra_head %}<link rel="stylesheet" href="{{ static_v('css/task-run-progress.css') }}">{% endblock %}
 {% block content %}
 <div x-data="tasksPage()">
+    {% include "web/_task_tabs.html" %}
     <div class="ui-card mb-4">
         <p class="text-sm font-medium text-slate-800 dark:text-slate-200">Источники → Сценарий → Задача → Результаты</p>
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Добавьте источники и настройте сценарий, затем создайте анализ соцсетей. Запуск можно выполнить сразу или сохранить задачу для очереди и расписания.</p>
@@ -222,6 +223,7 @@
                   x-on:schedule-once.window="schedOnce = $event.detail"
                   x-on:submit="if (sending) { $event.preventDefault() } else { sending = true }">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
+                {% if planner_reference %}<input type="hidden" name="planner_id" value="{{ planner_reference.id }}"><input type="hidden" name="planner_version" value="{{ planner_reference.version }}"><p class="ui-muted">Связать поручение с делом: <a class="underline" href="/app/planner/{{ planner_reference.id }}/edit">{{ planner_reference.title }}</a></p>{% endif %}
                 <input type="hidden" name="trigger_timezone" value="">
                 {{ tenant_field(is_superuser, filter_tenant_id) }}
                 {{ task_fields(job_types, "add", "task.job_type", "Хранение истории Jobs" if prefill_retention else "") }}

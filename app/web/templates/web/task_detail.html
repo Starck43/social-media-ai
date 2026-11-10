@@ -61,6 +61,11 @@
     </div>
 {% else %}
 <div>
+    {% include "web/_task_tabs.html" %}
+    {% if planner_link is defined and planner_link %}
+      {% if planner_link['status'] == 'available' %}<p class="ui-muted">Связанное дело: <a class="underline" href="/app/planner/{{ planner_link['task'].id }}/edit">{{ planner_link['task'].title }}</a></p>
+      {% else %}<p class="ui-muted">Связанное дело удалено или недоступно.</p>{% endif %}
+    {% endif %}
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
             {# `?from=jobs` — the queue links here per task, so when the reader
@@ -233,6 +238,7 @@
                         </td>
                         <td class="py-2.5 pr-4">
                             {% if job.status == 'done' %}
+                                {% if planner_link is defined and planner_link and planner_link['status'] == 'available' and perms and perms.can('plannertask', 'update') and perms.can('job', 'view') %}<a class="ml-2 underline" href="/app/task-hub/assignments/{{ task.id }}/result?job_id={{ job.id }}">Передать результат в дело</a>{% endif %}
                                 {# The badge carries the outcome, not just the status:
                                    the modal says «Выполнено частично» for the same
                                    run, and a green «готово» here would contradict it. #}

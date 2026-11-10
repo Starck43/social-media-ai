@@ -76,7 +76,13 @@ async def planner_page(
     return render(
         request,
         "web/planner.html",
-        section="planner",
+        section="tasks",
+        tabs=[
+            ("planner", "Мои дела", "/app/planner"),
+            ("tasks", "Поручения агенту", "/app/tasks"),
+            ("calendar", "Календарь", "/app/task-hub/calendar"),
+        ],
+        active_tab="planner",
         view=view,
         editing=editing,
         status_labels=STATUS_LABELS,
@@ -159,7 +165,7 @@ async def create_event_draft(request: Request, task_id: int = Path(gt=0)):
         raise HTTPException(403, "Greeting draft access denied") from None
     except Bitrix24Error as exc:
         raise HTTPException(exc.status_code, exc.code) from None
-    return render(request, "web/planner_event_draft.html", section="planner", draft=draft)
+    return render(request, "web/planner_event_draft.html", section="tasks", draft=draft)
 
 
 @router.post("/planner/{task_id}/{operation}")

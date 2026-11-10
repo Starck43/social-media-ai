@@ -10,12 +10,14 @@
 {% endblock %}
 {% block content %}
 <div class="planner-page space-y-6">
+    {% include "web/_task_tabs.html" %}
     <section class="ui-card space-y-4" aria-labelledby="planner-heading">
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
-                <h2 id="planner-heading" class="text-lg font-semibold">Задачи пространства</h2>
-                <p class="ui-muted mt-2">Ваши дела, сроки и подзадачи. Не расписание запуска агента.</p>
+                <h2 id="planner-heading" class="text-lg font-semibold">Мои дела</h2>
+                <p class="ui-muted mt-2">Ваши дела, сроки и подзадачи.</p>
             </div>
+            {% if can_create %}<a class="ui-control min-h-[44px]" href="/app/task-hub/new">Быстрое дело</a>{% endif %}
             <nav class="flex flex-wrap gap-2" aria-label="Вид планировщика">
                 <a href="/app/planner?view=list" class="ui-control min-h-[44px]" {% if view == 'list' %}aria-current="page"{% endif %}>Список</a>
                 <a href="/app/planner?view=board" class="ui-control min-h-[44px]" {% if view == 'board' %}aria-current="page"{% endif %}>Доска</a>
@@ -38,6 +40,7 @@
     {% if editing and can_update %}
     <section class="ui-card space-y-4" aria-labelledby="edit-heading">
         <h2 id="edit-heading" class="text-lg font-semibold">Изменить задачу №{{ editing.id }}</h2>
+        {% if perms and perms.can("agenttask", "create") %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/tasks?create=1&planner_id={{ editing.id }}">Поручить агенту</a>{% endif %}
         <form method="post" action="/app/planner/{{ editing.id }}/edit" class="space-y-4">
             <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ editing.version }}">
             <label class="block">Название<input class="ui-control w-full mt-2" name="title" maxlength="500" required value="{{ editing.title }}"></label>

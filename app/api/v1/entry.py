@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     contacts,
     credentials,
     dashboard,
+    document_delivery,
     documents,
     files_connectors,
     llm_models,
@@ -44,6 +45,7 @@ router.include_router(contacts.router, prefix="/contacts", tags=["contacts"], de
 router.include_router(planner.router, dependencies=API_AUTH)
 router.include_router(calendar.router, dependencies=API_AUTH)
 router.include_router(documents.router, dependencies=API_AUTH)
+router.include_router(document_delivery.router, dependencies=API_AUTH)
 router.include_router(outbox.router, dependencies=API_AUTH)
 router.include_router(communication.router, prefix="/communication", tags=["communication"], dependencies=API_AUTH)
 router.include_router(commands.router, dependencies=API_AUTH)

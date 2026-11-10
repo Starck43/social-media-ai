@@ -57,7 +57,7 @@ class ExportCipher:
             size_bytes=len(payload),
         )
 
-    def open(self, token: str, *, expected_hash: str, expected_size: int) -> bytes:
+    def open(self, token: str, *, expected_hash: str, expected_size: int, ttl_seconds: int | None = None) -> bytes:
         # Bound ciphertext before decrypting to avoid processing arbitrarily large inputs.
         # Fernet token bytes: 57 framing bytes + PKCS7-padded payload, then base64.
         maximum_token_length = 4 * ((57 + (self._max_bytes // 16 + 1) * 16 + 2) // 3)
@@ -68,10 +68,11 @@ class ExportCipher:
             or not 1 <= expected_size <= self._max_bytes
             or type(expected_hash) is not str
             or not _HASH.fullmatch(expected_hash)
+            or (ttl_seconds is not None and (type(ttl_seconds) is not int or ttl_seconds <= 0))
         ):
             raise ExportArtifactUnavailable("export_artifact_unavailable")
         try:
-            payload = self._cipher.decrypt(token.encode("ascii"))
+            payload = self._cipher.decrypt(token.encode("ascii"), ttl=ttl_seconds)
         except (InvalidToken, UnicodeError, ValueError, TypeError):
             raise ExportArtifactUnavailable("export_artifact_unavailable") from None
         actual_hash = "sha256:" + hashlib.sha256(payload).hexdigest()

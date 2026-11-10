@@ -155,6 +155,7 @@ def test_resolved_spool_follows_settings(tmp_path):
 
 def test_default_root_is_outside_static_and_private(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
     spool = AttachmentSpool(
         None,
         max_file_bytes=1024,

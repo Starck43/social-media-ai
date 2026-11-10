@@ -13,11 +13,13 @@ touch another's files, and the TTL and size caps come from settings.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import os
 import re
 import tempfile
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -86,6 +88,21 @@ class AttachmentSpool:
         except ExportArtifactUnavailable:
             raise SpoolRejected("spool_key_unavailable") from None
 
+    @contextmanager
+    def _locked(self):
+        """Serialize spool admission and cleanup across workers sharing a root."""
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(self.root_dir, 0o700)
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(self.root_dir / ".spool.lock", flags, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
     # --- scope handling -------------------------------------------------
 
     @staticmethod
@@ -117,7 +134,11 @@ class AttachmentSpool:
     # --- public API -----------------------------------------------------
 
     def put(self, tenant_id: int, item_id: str, position: int, data: bytes, *, mime: str) -> SpooledAttachment:
-        """Spool one attachment; bounds are enforced before anything is written."""
+        """Atomically check the set budget and write a bounded encrypted payload."""
+        with self._locked():
+            return self._put_locked(tenant_id, item_id, position, data, mime=mime)
+
+    def _put_locked(self, tenant_id: int, item_id: str, position: int, data: bytes, *, mime: str) -> SpooledAttachment:
         if type(data) is not bytes or not data:
             raise SpoolRejected("empty_attachment")
         if len(data) > self.max_file_bytes:
@@ -126,7 +147,7 @@ class AttachmentSpool:
             raise SpoolRejected("invalid_mime")
         # Seal before opening a file: a missing or invalid key never writes plaintext.
         encrypted = self._cipher().seal(data)
-        self.purge_expired()
+        self._purge_expired_locked()
         payload, meta = self._paths(tenant_id, item_id, position, create=True)
         if payload.exists() or meta.exists():
             raise SpoolRejected("attachment_position_occupied")
@@ -144,6 +165,10 @@ class AttachmentSpool:
 
     def read(self, tenant_id: int, item_id: str, position: int, *, expected_sha256: str) -> bytes:
         """Decrypt and recheck the exact plaintext; never re-render on failure."""
+        with self._locked():
+            return self._read_locked(tenant_id, item_id, position, expected_sha256=expected_sha256)
+
+    def _read_locked(self, tenant_id: int, item_id: str, position: int, *, expected_sha256: str) -> bytes:
         if type(expected_sha256) is not str or not _HASH.match(expected_sha256):
             raise SpoolRejected("invalid_hash")
         payload, meta = self._paths(tenant_id, item_id, position)
@@ -168,7 +193,9 @@ class AttachmentSpool:
         except (OSError, UnicodeError, ValueError):
             raise SpoolRejected("attachment_corrupt") from None
         try:
-            data = self._cipher().open(token, expected_hash="sha256:" + stored[0], expected_size=size)
+            data = self._cipher().open(
+                token, expected_hash="sha256:" + stored[0], expected_size=size, ttl_seconds=self.ttl_seconds
+            )
         except ExportArtifactUnavailable:
             raise SpoolRejected("attachment_corrupt") from None
         if _digest(data) != expected_sha256:
@@ -177,6 +204,10 @@ class AttachmentSpool:
 
     def discard(self, tenant_id: int, item_id: str) -> None:
         """Deterministic cleanup after delivery, failure or cancellation."""
+        with self._locked():
+            self._discard_locked(tenant_id, item_id)
+
+    def _discard_locked(self, tenant_id: int, item_id: str) -> None:
         scope = self._scope_dir(tenant_id, item_id)
         if not scope.is_dir():
             return
@@ -191,6 +222,10 @@ class AttachmentSpool:
         Every caller that admits a new attachment also sweeps, exactly like the
         chat store, so an abandoned render never outlives its TTL.
         """
+        with self._locked():
+            return self._purge_expired_locked(now=now)
+
+    def _purge_expired_locked(self, *, now: float | None = None) -> int:
         if not self.root_dir.is_dir():
             return 0
         cutoff = (time.time() if now is None else now) - self.ttl_seconds

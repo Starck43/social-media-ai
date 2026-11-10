@@ -75,3 +75,33 @@ def test_total_is_plaintext_sizes_not_ciphertext_overhead(spool):
     spool.put(7, "outbox_3", 1, b"b" * 64, mime="application/pdf")
     with pytest.raises(SpoolRejected, match="attachment_set_too_large"):
         spool.put(7, "outbox_3", 2, b"c", mime="application/pdf")
+
+
+def test_concurrent_writers_cannot_exceed_set_budget(tmp_path, key):
+    from concurrent.futures import ThreadPoolExecutor
+
+    root = tmp_path / "shared"
+
+    def put(position):
+        worker = AttachmentSpool(root, max_file_bytes=64, max_total_bytes=64, ttl_seconds=60, encryption_key=key)
+        try:
+            worker.put(7, "outbox_3", position, bytes([65 + position]) * 64, mime="application/pdf")
+            return "stored"
+        except SpoolRejected as exc:
+            return str(exc)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(put, (0, 1)))
+    assert sorted(outcomes) == ["attachment_set_too_large", "stored"]
+
+
+def test_metadata_cannot_extend_authenticated_token_ttl(spool, key):
+    from app.services.attachments.cipher import ExportCipher
+
+    data = b"secret"
+    ref = spool.put(7, "outbox_3", 0, data, mime="application/pdf")
+    token = ExportCipher(key, max_bytes=64)._cipher.encrypt_at_time(data, int(time.time()) - 61)
+    (spool.root_dir / "t_7" / "outbox_3" / "p0").write_bytes(token)
+    # The fresh metadata is not enough to bypass the authenticated token timestamp.
+    with pytest.raises(SpoolRejected, match="attachment_corrupt"):
+        spool.read(7, "outbox_3", 0, expected_sha256=ref.sha256)

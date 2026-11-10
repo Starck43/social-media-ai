@@ -19,7 +19,9 @@ require PR `mergedAt`/merge commit, fetch origin, prove ancestry and inspect
 merged; rejected/queued/unverified merges retain the row, card and resume branch.
 Record review success separately; never publish DONE before integration proof.
 Required DB scenarios need exact-revision local evidence and Alembic baseline
-alignment; unit/mock greens or deferred checks cannot substitute for them.
+alignment; unit/mock greens or deferred checks cannot substitute for them. Only
+an explicit owner waiver of a named check is an exception under Evidence; record
+it as unrun/waived, never PASS.
 
 Only after verified integration, update the parent phase with completion date,
 accepted SHA and a brief result linked to `docs/audit/<id>.md`; remove the task card and ROADMAP row

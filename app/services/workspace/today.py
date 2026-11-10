@@ -351,6 +351,26 @@ class TodayRepository:
             .limit(limit * 2)
         )
 
+    async def command_decisions(
+        self,
+        workspace_id: int,
+        user_id: int,
+        perms: Any,
+        scope: str,
+        now: datetime,
+    ) -> list[dict[str, Any]]:
+        """Return the shared authorized inbox projection used by Today."""
+        from app.core.tenant_context import tenant_scope
+        from app.services.commands.approval_inbox import approval_inbox
+
+        with tenant_scope(workspace_id):
+            return await approval_inbox.project_for_today(
+                perms=perms,
+                scope=scope,
+                actor_id=user_id,
+                now=now,
+            )
+
     async def pending_outbox(self, workspace_id: int, limit: int = PROVIDER_LIMIT) -> list[Any]:
         from app.models import OutboxMessage
 
@@ -588,37 +608,36 @@ class TodayProjection:
 
             try:
                 command_items: list[dict[str, Any]] = []
-                for cmd in await self.repo.pending_commands(self.workspace_id, limit=PROVIDER_LIMIT):
-                    if getattr(cmd, "tenant_id", None) != self.workspace_id or not _positive_int(
-                        getattr(cmd, "id", None)
-                    ):
+                # F6: repository injection supplies the same authorized projection
+                # as the inbox. There is no raw ledger fallback in Today.
+                today_decisions = await self.repo.command_decisions(
+                    self.workspace_id,
+                    self.user_id,
+                    self.perms,
+                    self.scope,
+                    self.now,
+                )
+                for decision in today_decisions:
+                    if decision.get("tenant_id") != self.workspace_id:
                         continue
-                    actor_uid = getattr(cmd, "actor_user_id", None)
-                    if self.scope == "mine" and actor_uid is not None and actor_uid != self.user_id:
+                    if self.scope == "mine" and decision.get("requester_user_id") != self.user_id:
                         continue
-                    state = str(getattr(cmd, "state", "")).lower()
-                    if state not in {"previewed", "approved", "unknown"}:
-                        continue
-                    snap = getattr(cmd, "preview_snapshot", None) or {}
-                    summary_txt = str(snap.get("summary") or getattr(cmd, "capability", "Команда"))[:160]
-                    is_unknown = state == "unknown"
                     command_items.append(
                         {
-                            "item_key": f"decision:command:{self.workspace_id}:{cmd.id}",
+                            "item_key": f"decision:command:{self.workspace_id}:{decision['id']}",
                             "kind": "command",
-                            "id": cmd.id,
-                            "title": f"Команда #{cmd.id}: {summary_txt}",
-                            "summary": (
-                                "Статус внешнего вызова не подтверждён — требуется сверка"
-                                if is_unknown
-                                else "Черновик команды ожидает подтверждения"
-                            ),
-                            "status_label": "Требует сверки" if is_unknown else "На подтверждении",
+                            "id": decision["id"],
+                            "title": decision["title"],
+                            "summary": decision["summary"],
+                            "status_label": decision["status_label"],
                             "href": "/app/commands",
+                            "authoritative_url": decision["authoritative_url"],
                             "chat_url": "/app/chat",
-                            "created_at": _iso_or_empty(getattr(cmd, "created_at", None)),
-                            "stale_or_unavailable": is_unknown,
-                            "marker_label": "Статус не подтверждён" if is_unknown else "",
+                            "created_at": decision["freshness"]["updated_at"],
+                            "stale_or_unavailable": decision["status"] == "unknown",
+                            "marker_label": "Статус не подтверждён" if decision["status"] == "unknown" else "",
+                            "payload_hash": decision["payload_hash"],
+                            "redacted": False,
                         }
                     )
                     if len(command_items) >= PROVIDER_LIMIT:

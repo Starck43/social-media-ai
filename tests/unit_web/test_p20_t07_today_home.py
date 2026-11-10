@@ -17,6 +17,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace as NS
+from typing import Any
 
 import pytest
 from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, StrictUndefined, select_autoescape
@@ -104,6 +105,12 @@ class FakeTodayRepository:
             return await val(workspace_id, limit)
         return val
 
+    async def command_decisions(self, workspace_id, user_id, perms, scope, now):
+        val = self.data.get("command_decisions", [])
+        if callable(val):
+            return await val(workspace_id, user_id, perms, scope, now)
+        return val
+
     async def pending_outbox(self, workspace_id: int, limit: int = PROVIDER_LIMIT):
         val = self.data.get("pending_outbox", [])
         if callable(val):
@@ -157,6 +164,38 @@ class FakeTodayRepository:
         if callable(val):
             return await val(workspace_id)
         return val
+
+
+def _command_decision(
+    command_id: int,
+    *,
+    requester_user_id: int,
+    status: str = "pending",
+    title: str | None = None,
+    summary: str | None = None,
+    created_at: datetime | None = None,
+    tenant_id: int = 7,
+) -> dict[str, Any]:
+    """Build an already-authorized command projection for repository-boundary tests."""
+    detail_url = f"/app/commands/{command_id}"
+    return {
+        "key": f"command:{command_id}",
+        "id": command_id,
+        "tenant_id": tenant_id,
+        "requester_user_id": requester_user_id,
+        "title": title or f"Command #{command_id}",
+        "summary": summary or "Awaiting review",
+        "status": status,
+        "status_label": "Требует сверки" if status == "unknown" else "На согласовании",
+        "href": detail_url,
+        "authoritative_url": detail_url,
+        "payload_hash": "sha256:" + "a" * 64,
+        "freshness": {
+            "state": "degraded" if status == "unknown" else "fresh",
+            "label": "Требует сверки" if status == "unknown" else "На согласовании",
+            "updated_at": created_at.isoformat() if created_at else "",
+        },
+    }
 
 
 def _render_dashboard(today_snapshot: dict, *, perms=None, recent_results=(), recent_tasks=(), **extra) -> str:
@@ -355,16 +394,15 @@ async def test_stale_and_unavailable_markers_and_authoritative_links():
         pending_actions=[
             NS(id=101, tenant_id=7, status="PENDING", capability="telegram.send", approved_user_id=10, created_at=now),
         ],
-        pending_commands=[
-            NS(
-                id=202,
-                tenant_id=7,
-                actor_user_id=10,
-                state="unknown",
-                capability="crm.write",
-                preview_snapshot={"summary": "Update CRM deal"},
+        command_decisions=[
+            _command_decision(
+                202,
+                requester_user_id=10,
+                status="unknown",
+                title="CRM deal #202",
+                summary="Update CRM deal",
                 created_at=now,
-            ),
+            )
         ],
         pending_outbox=[
             NS(id=303, tenant_id=7, author_id=10, state="draft", subject_encrypted="Draft Quote", created_at=now),
@@ -494,13 +532,10 @@ async def test_decisions_section_enforces_total_limit_of_seven():
         for i in range(1, 9)
     ]
     many_commands = [
-        NS(
-            id=100 + i,
-            tenant_id=7,
-            actor_user_id=10,
-            state="previewed",
-            capability="crm.write",
-            preview_snapshot={"summary": f"Cmd {i}"},
+        _command_decision(
+            100 + i,
+            requester_user_id=10,
+            title=f"Cmd {i}",
             created_at=now,
         )
         for i in range(1, 9)
@@ -515,7 +550,7 @@ async def test_decisions_section_enforces_total_limit_of_seven():
         perms=FakePerms(ALL_RIGHTS),
         repository=FakeTodayRepository(
             pending_actions=many_actions,
-            pending_commands=many_commands,
+            command_decisions=many_commands,
             pending_outbox=many_outbox,
         ),
         now=now,
@@ -533,25 +568,9 @@ async def test_mine_vs_team_scope_switch_respects_role_boundaries():
     """'mine' shows only user 10's items; 'team' widens for managers but keeps non-managers restricted in Planner."""
     now = datetime(2026, 11, 7, 12, 0, tzinfo=timezone.utc)
     repo = FakeTodayRepository(
-        pending_commands=[
-            NS(
-                id=1,
-                tenant_id=7,
-                actor_user_id=10,
-                state="previewed",
-                capability="c1",
-                preview_snapshot={"summary": "Mine Cmd"},
-                created_at=now,
-            ),
-            NS(
-                id=2,
-                tenant_id=7,
-                actor_user_id=20,
-                state="previewed",
-                capability="c2",
-                preview_snapshot={"summary": "Teammate Cmd"},
-                created_at=now,
-            ),
+        command_decisions=[
+            _command_decision(1, requester_user_id=10, title="Mine Cmd", created_at=now),
+            _command_decision(2, requester_user_id=20, title="Teammate Cmd", created_at=now),
         ],
         planner_tasks=[
             NS(
@@ -876,16 +895,8 @@ async def test_partial_provider_errors_keep_surviving_items_in_same_section():
     repo = FakeTodayRepository(
         brief=fail_Async,
         pending_actions=fail_Async,
-        pending_commands=[
-            NS(
-                id=1,
-                tenant_id=7,
-                actor_user_id=10,
-                state="previewed",
-                capability="c1",
-                preview_snapshot={"summary": "Surviving Cmd"},
-                created_at=now,
-            ),
+        command_decisions=[
+            _command_decision(1, requester_user_id=10, title="Surviving Cmd", created_at=now),
         ],
         pending_outbox=fail_Async,
         planner_tasks=fail_Async,

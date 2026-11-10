@@ -428,10 +428,10 @@ async def test_execute_success_adapter_failure_reject_list_and_tenant_isolation(
     with tenant_scope(10):
         # 1. Execute success path
         p1 = await ledger.preview_command(
-            capability="calendar.event_write.v1",
-            idempotency_key="cal-ok",
-            target_refs=["cal:evt:1"],
-            payload={"title": "Demo"},
+            capability="crm.greeting_send.v1",
+            idempotency_key="crm-ok",
+            target_refs=["contact:1"],
+            payload={"subject": "Demo"},
             session=session,
         )
         await ledger.approve_command(p1["id"], expected_payload_hash=p1["payload_hash"], session=session)
@@ -441,10 +441,10 @@ async def test_execute_success_adapter_failure_reject_list_and_tenant_isolation(
 
         # 2. Adapter non-timeout exception -> failed state
         p2 = await ledger.preview_command(
-            capability="documents.delivery_send.v1",
-            idempotency_key="doc-fail",
-            target_refs=["doc:77"],
-            payload={"recipient": "client@example.com"},
+            capability="crm.greeting_send.v1",
+            idempotency_key="crm-fail",
+            target_refs=["contact:77"],
+            payload={"subject": "Failing execution"},
             session=session,
         )
         await ledger.approve_command(p2["id"], expected_payload_hash=p2["payload_hash"], session=session)

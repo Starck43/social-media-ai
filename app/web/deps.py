@@ -257,6 +257,37 @@ def render_section_denied(request: Request, item: Any):
     )
 
 
+async def pending_approvals_badge(request: Request) -> None:
+    """F5: populate the header/nav badge on every authenticated `/app` page.
+
+    The count comes from the same authorized projection the inbox list uses, so
+    it can never exceed what this viewer may open, and it walks every page so a
+    long queue is not undercounted. Anything unexpected leaves the badge at zero
+    rather than failing the page.
+    """
+    request.state.pending_approvals_count = 0
+    if request.method not in {"GET", "HEAD"}:
+        return
+    accept = (request.headers.get("accept") or "").lower()
+    if "text/html" not in accept or "application/json" in accept:
+        return
+    user = getattr(request.state, "web_user", None)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    perms = getattr(request.state, "web_perms", None)
+    if user is None or type(tenant_id) is not int or tenant_id <= 0 or perms is None:
+        return
+    from app.core.permissions import set_current_user
+    from app.core.tenant_context import tenant_scope
+    from app.services.commands import approval_inbox
+
+    try:
+        set_current_user(user)
+        with tenant_scope(tenant_id):
+            request.state.pending_approvals_count = await approval_inbox.count_pending(perms=perms)
+    except Exception:
+        request.state.pending_approvals_count = 0
+
+
 def render(request: Request, name: str, status_code: int = 200, **extra: Any):
     perms = getattr(request.state, "web_perms", None)
     admin_plus = perms is not None and perms.is_superuser_role
@@ -274,6 +305,7 @@ def render(request: Request, name: str, status_code: int = 200, **extra: Any):
         "workspaces": getattr(request.state, "workspaces", []) or [],
         "tenant": getattr(request.state, "tenant", None),
         "unread_notifications": getattr(request.state, "unread_notifications", 0) or 0,
+        "pending_approvals_count": getattr(request.state, "pending_approvals_count", 0) or 0,
         # Personal connections this person must act on; empty in a healthy setup.
         "connection_alerts": getattr(request.state, "connection_alerts", []) or [],
         "perms": perms,

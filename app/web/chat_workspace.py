@@ -395,20 +395,25 @@ def build_decision_cards(
     for item in decisions[:10]:
         if not isinstance(item, dict):
             continue
-        target_ctx = str(item.get("context_key") or item.get("authoritative_ref") or "")
+        target_ctx = str(item.get("context_key") or "")
         if context_key and target_ctx and context_key not in target_ctx:
             continue
         dec_id = item.get("id") or item.get("key") or "pending"
-        auth_url = str(item.get("authoritative_url") or item.get("href") or "/app/chat")
+        auth_url = str(item.get("authoritative_url") or item.get("href") or "/app/commands")
         cards.append(
             sanitize_card_payload(
                 {
-                    "id": f"decision:{dec_id}",
+                    "id": f"decision:{dec_id}" if not str(dec_id).startswith("decision:") else str(dec_id),
                     "card_type": "decision",
                     "title": str(item.get("title") or "Ожидает решения")[:160],
                     "status": str(item.get("status") or "pending"),
-                    "summary": str(item.get("summary") or item.get("reason") or "")[:300],
-                    "expires_at": item.get("expires_at") or item.get("due_iso"),
+                    "status_label": str(item.get("status_label") or item.get("status") or "pending"),
+                    "summary": str(item.get("summary") or item.get("reason_for_review") or item.get("reason") or "")[
+                        :300
+                    ],
+                    "reason_for_review": str(item.get("reason_for_review") or item.get("reason") or "")[:300],
+                    "payload_hash": item.get("payload_hash"),
+                    "expires_at": item.get("approval_expires_at") or item.get("expires_at") or item.get("due_iso"),
                     "authoritative_ref": str(item.get("authoritative_ref") or f"decision:{dec_id}"),
                     "authoritative_url": auth_url,
                     "actions": [
@@ -498,7 +503,46 @@ async def workspace_cards(
             )
         )
 
-    if context_type or context_id or boundary:
+    if context_type == "command":
+        from app.core.permissions import set_current_user
+        from app.core.tenant_context import tenant_scope
+        from app.services.commands import CommandDenied, CommandNotFound, approval_inbox
+
+        # F6: a local-only or unknown boundary must never reach the inbox lookup.
+        if str(boundary or "cloud").strip().lower() != "cloud":
+            return JSONResponse({"error": "Команда недоступна", "cards": []}, status_code=404)
+        if context_id is None or not str(context_id).isdigit() or int(context_id) <= 0:
+            return JSONResponse({"error": "Команда недоступна", "cards": []}, status_code=404)
+        try:
+            set_current_user(getattr(request.state, "web_user", None))
+            with tenant_scope(request.state.tenant_id):
+                cmd_item = await approval_inbox.get_item(
+                    int(context_id),
+                    perms=getattr(request.state, "web_perms", None),
+                )
+        except CommandNotFound:
+            return JSONResponse({"error": "Команда не найдена", "cards": []}, status_code=404)
+        except (CommandDenied, PermissionError):
+            return JSONResponse({"error": "Доступ к решению отозван", "cards": []}, status_code=403)
+        cards.extend(
+            build_decision_cards(
+                [
+                    {
+                        "id": f"command:{cmd_item['command_id']}",
+                        "title": f"{cmd_item['type_label']} #{cmd_item['command_id']}",
+                        "status": cmd_item["status"],
+                        "status_label": cmd_item["status_label"],
+                        "summary": cmd_item["preview_text"],
+                        "reason_for_review": cmd_item["reason_for_review"],
+                        "payload_hash": cmd_item["payload_hash"],
+                        "approval_expires_at": cmd_item["approval_expires_at"],
+                        "authoritative_ref": f"command:{cmd_item['command_id']}",
+                        "authoritative_url": cmd_item["authoritative_url"],
+                    }
+                ]
+            )
+        )
+    elif context_type or context_id or boundary:
         from fastapi import HTTPException
 
         from app.core.tenant_context import tenant_scope
@@ -634,6 +678,20 @@ async def workspace_panel(
                         "authoritative_url": "/app/chat",
                     }
                 )
+    except Exception:
+        pass
+
+    try:
+        from app.core.permissions import set_current_user
+        from app.core.tenant_context import tenant_scope
+        from app.services.commands import approval_inbox
+
+        set_current_user(user)
+        with tenant_scope(tenant_id):
+            inbox_decisions = await approval_inbox.project_for_chat_decisions(
+                perms=getattr(request.state, "web_perms", None),
+            )
+            decisions.extend(inbox_decisions)
     except Exception:
         pass
 

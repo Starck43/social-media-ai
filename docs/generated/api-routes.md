@@ -39,6 +39,8 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/calendar/events/preview | preview_api_v1_calendar_events_preview_post |
 | POST | /api/v1/calendar/sync | sync_api_v1_calendar_sync_post |
 | GET | /api/v1/commands | list_commands_endpoint_api_v1_commands_get |
+| GET | /api/v1/commands/inbox | list_approval_inbox_endpoint_api_v1_commands_inbox_get |
+| GET | /api/v1/commands/inbox/{command_id} | get_approval_inbox_item_endpoint_api_v1_commands_inbox__command_id__get |
 | POST | /api/v1/commands/preview | preview_command_endpoint_api_v1_commands_preview_post |
 | GET | /api/v1/commands/{command_id} | get_command_endpoint_api_v1_commands__command_id__get |
 | POST | /api/v1/commands/{command_id}/approve | approve_command_endpoint_api_v1_commands__command_id__approve_post |

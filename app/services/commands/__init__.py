@@ -1,5 +1,16 @@
-"""Business write-approval workflow and command ledger (P13-T04)."""
+"""Business write-approval workflow, command ledger (P13-T04) and unified approval inbox (P20-T03)."""
 
+from .approval_inbox import (
+    DISABLED_PROJECTION_SOURCES,
+    DOCUMENT_PROJECTION_ENABLED,
+    INBOX_STATUSES,
+    OUTBOX_PROJECTION_ENABLED,
+    PROJECTED_SOURCES,
+    ApprovalInboxItem,
+    ApprovalInboxService,
+    approval_inbox,
+    format_bot_decision_link,
+)
 from .ledger import (
     BusinessCommandLedger,
     CommandConflict,
@@ -20,6 +31,8 @@ from .registry import (
 )
 
 __all__ = [
+    "ApprovalInboxItem",
+    "ApprovalInboxService",
     "BusinessCommandLedger",
     "CAPABILITY_REGISTRY",
     "CapabilitySpec",
@@ -29,9 +42,16 @@ __all__ = [
     "CommandNotFound",
     "CommandTimeoutUnknown",
     "DEFAULT_TTL_SECONDS",
+    "DISABLED_PROJECTION_SOURCES",
+    "DOCUMENT_PROJECTION_ENABLED",
+    "INBOX_STATUSES",
     "MAX_SCHEDULED_TTL_SECONDS",
+    "OUTBOX_PROJECTION_ENABLED",
+    "PROJECTED_SOURCES",
+    "approval_inbox",
     "canonical_payload_hash",
     "command_ledger",
+    "format_bot_decision_link",
     "get_capability",
     "serialize_command",
 ]

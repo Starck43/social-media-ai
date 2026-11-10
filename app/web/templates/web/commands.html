@@ -1,34 +1,205 @@
 {% extends "web/base.html" %}
-{% block title %}Команды записи — Журнал подтверждений{% endblock %}
+{% block title %}На согласовании — Единый инбокс согласований{% endblock %}
+{% block page_heading %}На согласовании{% endblock %}
 {% block content %}
-<div class="space-y-6">
-  <div>
-    <h1 class="text-xl font-semibold text-slate-900">Журнал бизнес-команд (P13-T04)</h1>
-    <p class="text-sm text-slate-600">Ни одна внешняя запись не выполняется без подтверждённого хеша полезной нагрузки и активного TTL.</p>
-  </div>
-  <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-    <table class="min-w-full divide-y divide-slate-200 text-sm">
-      <thead class="bg-slate-50">
+<div class="space-y-6" data-approval-inbox>
+  <header class="flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">Единый инбокс согласований (P20-T03 · P13-T04)</h1>
+      <p class="text-sm text-slate-600 dark:text-slate-400">
+        Показываются только разрешённые вам команды записи. Согласование привязано к точному хешу полезной нагрузки и сроку действия (TTL) и не запускает внешнюю отправку автоматически.
+      </p>
+      <p class="text-xs text-slate-500 dark:text-slate-400" data-approval-policy-note>
+        Постоянное разрешение («всегда разрешать»), пакетное одобрение и автозапуск отключены по контракту безопасности.
+      </p>
+    </div>
+    <nav aria-label="Фильтр статусов согласования" class="flex flex-wrap items-center gap-1.5 text-xs">
+      {% set current_filter = status_filter | default('all') %}
+      {% for key, label in [
+        ('all', 'Все'),
+        ('pending', 'Ожидают'),
+        ('approved', 'Согласованы'),
+        ('expired', 'Истёк срок'),
+        ('rejected', 'Отклонены'),
+        ('executed', 'Выполнены'),
+        ('failed', 'Ошибка'),
+        ('unknown', 'Требуют сверки')
+      ] %}
+      <a href="/app/commands{% if key != 'all' %}?status={{ key }}{% endif %}"
+         {% if current_filter == key %}aria-current="page"{% endif %}
+         class="rounded-md px-2.5 py-1 font-medium border {% if current_filter == key %}border-cyan-600 bg-cyan-50 text-cyan-800 dark:border-cyan-500 dark:bg-cyan-950/50 dark:text-cyan-200{% else %}border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300{% endif %}">
+        {{ label }}
+      </a>
+      {% endfor %}
+    </nav>
+  </header>
+
+  {% if selected_item %}
+  <section aria-labelledby="command-detail-heading" class="rounded-xl border border-cyan-200 bg-white p-5 shadow-sm dark:border-cyan-900/60 dark:bg-slate-900 space-y-4" data-approval-detail-card>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div>
+        <h2 id="command-detail-heading" class="text-base font-semibold text-slate-900 dark:text-slate-100">
+          {{ selected_item.type_label | default(selected_item.capability) }} #{{ selected_item.id }}
+        </h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Источник: {{ selected_item.source_label }} · Инициатор: {{ selected_item.requester_label }} · Версия: v{{ selected_item.capability_version }}
+        </p>
+      </div>
+      <a href="/app/commands" class="text-xs font-medium text-cyan-700 dark:text-cyan-400 hover:underline">← Ко всем командам</a>
+    </div>
+
+    <dl class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+      <div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-3">
+        <dt class="font-medium text-slate-500 dark:text-slate-400">Статус решения</dt>
+        <dd class="mt-1 font-semibold text-slate-900 dark:text-slate-100" role="status" data-item-status="{{ selected_item.status }}">
+          {{ selected_item.status_label | default(selected_item.state) }}
+        </dd>
+      </div>
+      <div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-3">
+        <dt class="font-medium text-slate-500 dark:text-slate-400">Цели ({{ selected_item.target_count | default(selected_item.target_refs | length) }})</dt>
+        <dd class="mt-1 font-mono text-slate-800 dark:text-slate-200">{{ selected_item.target_summary | default((selected_item.target_refs or []) | join(', ')) }}</dd>
+      </div>
+      <div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-3">
+        <dt class="font-medium text-slate-500 dark:text-slate-400">Хеш полезной нагрузки</dt>
+        <dd class="mt-1 font-mono text-slate-800 dark:text-slate-200 break-all">{{ selected_item.payload_hash }}</dd>
+      </div>
+      <div class="rounded-lg bg-slate-50 dark:bg-slate-800/60 p-3">
+        <dt class="font-medium text-slate-500 dark:text-slate-400">Срок действия (TTL)</dt>
+        <dd class="mt-1 text-slate-800 dark:text-slate-200">{{ selected_item.approval_expires_at or 'До согласования (по умолчанию 15 мин)' }}</dd>
+      </div>
+    </dl>
+
+    <div class="space-y-1 text-xs">
+      <p class="font-medium text-slate-700 dark:text-slate-300">Причина проверки:</p>
+      <p class="text-slate-600 dark:text-slate-400">{{ selected_item.reason_for_review }}</p>
+      {% if selected_item.reconcile_hint %}
+      <p role="alert" class="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+        Сверка состояния: {{ selected_item.reconcile_hint }}
+      </p>
+      {% endif %}
+    </div>
+
+    <div class="space-y-1 text-xs">
+      <p class="font-medium text-slate-700 dark:text-slate-300">Безопасный предпросмотр содержимого:</p>
+      <pre class="overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" data-safe-preview>{{ selected_item.preview_text }}</pre>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+      {% if selected_item.can_approve %}
+      <form method="post" action="/app/commands/{{ selected_item.id }}/approve" class="inline-flex items-center gap-2" data-approve-form>
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="expected_payload_hash" value="{{ selected_item.payload_hash }}">
+        <button type="submit"
+                aria-label="Согласовать команду #{{ selected_item.id }}"
+                class="rounded-lg bg-cyan-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-cyan-500">
+          Согласовать команду #{{ selected_item.id }}
+        </button>
+      </form>
+      {% endif %}
+      {% if selected_item.can_reject %}
+      <form method="post" action="/app/commands/{{ selected_item.id }}/reject" class="inline-flex items-center gap-2" data-reject-form>
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="expected_payload_hash" value="{{ selected_item.payload_hash }}">
+        <input type="hidden" name="reason" value="user_rejected">
+        <button type="submit"
+                aria-label="Отклонить команду #{{ selected_item.id }}"
+                class="rounded-lg border border-rose-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:bg-slate-900 dark:text-rose-300">
+          Отклонить команду #{{ selected_item.id }}
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+    <table class="min-w-full divide-y divide-slate-200 dark:divide-slate-800 text-sm" aria-label="Список команд на согласовании">
+      <thead class="bg-slate-50 dark:bg-slate-800/60">
         <tr>
-          <th class="px-4 py-3 text-left font-medium text-slate-700">ID</th>
-          <th class="px-4 py-3 text-left font-medium text-slate-700">Операция</th>
-          <th class="px-4 py-3 text-left font-medium text-slate-700">Статус</th>
-          <th class="px-4 py-3 text-left font-medium text-slate-700">Хеш нагрузки</th>
-          <th class="px-4 py-3 text-left font-medium text-slate-700">Целей</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-slate-700 dark:text-slate-300">ID / Запись</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-slate-700 dark:text-slate-300">Тип и источник</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-slate-700 dark:text-slate-300">Инициатор / Цели</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-slate-700 dark:text-slate-300">Предпросмотр и причина</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-slate-700 dark:text-slate-300">Статус и TTL</th>
+          <th scope="col" class="px-4 py-3 text-left font-medium text-slate-700 dark:text-slate-300">Решение по 1 записи</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-slate-100">
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
         {% for item in items %}
-        <tr>
-          <td class="px-4 py-3 font-mono text-xs">#{{ item.id }}</td>
-          <td class="px-4 py-3">{{ item.capability }}</td>
-          <td class="px-4 py-3"><span class="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium">{{ item.state }}</span></td>
-          <td class="px-4 py-3 font-mono text-xs">{{ item.payload_hash[:24] }}…</td>
-          <td class="px-4 py-3">{{ item.target_refs | length }}</td>
+        <tr data-approval-row="command:{{ item.id }}" data-status="{{ item.status | default(item.state) }}">
+          <td class="px-4 py-3 align-top font-mono text-xs">
+            <a href="{{ item.authoritative_url | default('/app/commands/' ~ item.id) }}"
+               class="font-semibold text-cyan-700 dark:text-cyan-400 hover:underline"
+               aria-label="Открыть карточку решения #{{ item.id }}">
+              #{{ item.id }}
+            </a>
+            <div class="mt-1 text-[11px] text-slate-500">{{ item.payload_hash[:24] }}…</div>
+          </td>
+          <td class="px-4 py-3 align-top">
+            <div class="font-medium text-slate-900 dark:text-slate-100">{{ item.type_label | default(item.capability) }}</div>
+            <div class="text-xs font-mono text-slate-500">{{ item.capability }} · v{{ item.capability_version | default(1) }}</div>
+            <div class="text-xs text-slate-500">{{ item.source_label | default('Журнал команд P13-T04') }}</div>
+          </td>
+          <td class="px-4 py-3 align-top text-xs">
+            <div class="text-slate-800 dark:text-slate-200">{{ item.requester_label | default('Пользователь #' ~ item.actor_user_id) }}</div>
+            <div class="mt-0.5 text-slate-500">Целей: {{ item.target_count | default(item.target_refs | length) }} ({{ item.target_summary | default((item.target_refs or []) | join(', ')) }})</div>
+          </td>
+          <td class="px-4 py-3 align-top text-xs max-w-md">
+            <p class="text-slate-800 dark:text-slate-200 font-medium" data-row-preview>{{ item.preview_text | default(item.capability) }}</p>
+            <p class="mt-1 text-slate-500 dark:text-slate-400">{{ item.reason_for_review | default('') }}</p>
+            {% if item.reconcile_hint %}
+            <p class="mt-1 text-amber-700 dark:text-amber-300 font-medium">{{ item.reconcile_hint }}</p>
+            {% endif %}
+          </td>
+          <td class="px-4 py-3 align-top text-xs">
+            <span class="inline-flex rounded px-2 py-0.5 text-xs font-medium
+              {% if (item.status | default(item.state)) == 'pending' %}bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200
+              {% elif (item.status | default(item.state)) == 'approved' %}bg-cyan-100 text-cyan-900 dark:bg-cyan-950/60 dark:text-cyan-200
+              {% elif (item.status | default(item.state)) == 'executed' %}bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-200
+              {% elif (item.status | default(item.state)) in ('rejected', 'expired', 'failed') %}bg-rose-100 text-rose-900 dark:bg-rose-950/60 dark:text-rose-200
+              {% else %}bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200{% endif %}"
+              role="status">
+              {{ item.status_label | default(item.state) }}
+            </span>
+            <div class="mt-1 text-[11px] text-slate-500">
+              {% if item.approval_expires_at %}TTL: {{ item.approval_expires_at }}{% else %}TTL: по одобрению{% endif %}
+            </div>
+          </td>
+          <td class="px-4 py-3 align-top text-xs">
+            <div class="flex flex-wrap items-center gap-1.5">
+              {% if item.can_approve %}
+              <form method="post" action="/app/commands/{{ item.id }}/approve" class="inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="expected_payload_hash" value="{{ item.payload_hash }}">
+                <button type="submit"
+                        aria-label="Согласовать команду #{{ item.id }}"
+                        class="rounded bg-cyan-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-cyan-700">
+                  Согласовать
+                </button>
+              </form>
+              {% endif %}
+              {% if item.can_reject %}
+              <form method="post" action="/app/commands/{{ item.id }}/reject" class="inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="expected_payload_hash" value="{{ item.payload_hash }}">
+                <input type="hidden" name="reason" value="user_rejected">
+                <button type="submit"
+                        aria-label="Отклонить команду #{{ item.id }}"
+                        class="rounded border border-rose-300 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300">
+                  Отклонить
+                </button>
+              </form>
+              {% endif %}
+              <a href="{{ item.authoritative_url | default('/app/commands/' ~ item.id) }}"
+                 class="rounded border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800">
+                Открыть
+              </a>
+            </div>
+          </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="5" class="px-4 py-6 text-center text-slate-500">Нет ожидающих или выполненных бизнес-команд.</td>
+          <td colspan="6" class="px-4 py-6 text-center text-slate-500">Нет ожидающих или выполненных бизнес-команд по выбранному фильтру.</td>
         </tr>
         {% endfor %}
       </tbody>

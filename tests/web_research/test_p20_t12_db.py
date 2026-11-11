@@ -118,20 +118,28 @@ async def test_live_page_snapshot_persists_to_knowledge_snippet_and_enforces_dur
         assert stub_exc.value.code == "stub_cannot_be_live_evidence"
 
         live_out = await service.research(
-            {"query": "партнёр", "preset": "site_brief", "fetch_top_n": 1, "save_evidence": True},
+            {
+                "query": "партнёр",
+                "preset": "site_brief",
+                "target_urls": ["https://partner.example.com/profile"],
+                "fetch_top_n": 0,
+                "save_evidence": True,
+            },
             budget=budget,
             resolver=_resolver,
             transport=_transport,
             require_durable=True,
         )
         assert live_out.is_stub is False
+        assert live_out.provider_used == "stub"
+        assert live_out.search_hits and all(hit.is_stub for hit in live_out.search_hits)
         snippet_id = live_out.citations[0].saved_snippet_id
         assert snippet_id is not None
 
         # 2. Fresh PostgreSQL session sees persisted KnowledgeSnippet and durable quota count
         status_out = await service.status_async(budget=budget, require_durable=True)
-        assert status_out.budget["daily_used"] == 2
-        assert status_out.budget["daily_remaining"] == 2
+        assert status_out.budget["daily_used"] == 3
+        assert status_out.budget["daily_remaining"] == 1
 
         saved_rows = await service.list_saved_snapshots_async(require_durable=True)
         assert len(saved_rows) == 1

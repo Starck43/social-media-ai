@@ -17,11 +17,17 @@ import certifi
 import h11
 
 from app.core.outbound import Resolver, default_dns_resolver
+from app.integrations.ratelimit.signals import provider_signal
 
 from .endpoint import OneCEndpoint, OneCEndpointError, resolve_endpoint
 
 TIMEOUT_SECONDS = 30
 MAX_BODY_BYTES = 2 * 1024 * 1024
+# P13-T03 has a burst of 10 tokens and refills 10/min. Spending two tokens
+# per attempt bounds this client to at most 10 in any 60-second window, at
+# the cost of a conservative sustained 5/min. All 1C callers sharing this
+# budget must use the same cost; mixed costs do not provide that guarantee.
+REQUEST_TOKEN_COST = 2
 
 
 class OneCHealthError(RuntimeError):
@@ -55,7 +61,7 @@ async def check_health(
     writer = None
     try:
         async with asyncio.timeout(TIMEOUT_SECONDS):
-            async with limiter.acquire(budget, max_wait=0):
+            async with limiter.acquire(budget, cost=REQUEST_TOKEN_COST, max_wait=0):
                 target = await asyncio.to_thread(resolve_endpoint, endpoint, resolver=resolver)
                 tls = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
                 tls.load_verify_locations(certifi.where())
@@ -95,8 +101,14 @@ async def check_health(
                             raise OneCHealthError("redirect_forbidden")
                         if status in (401, 403):
                             raise OneCHealthError("authentication_failed")
-                        if status == 429:
-                            raise OneCHealthError("rate_limited")
+                        if status in (429, 503):
+                            retry_after = next(
+                                (v.decode("ascii", "ignore") for k, v in event.headers if k.lower() == b"retry-after"),
+                                None,
+                            )
+                            signal = provider_signal("onec", status, {"retry-after": retry_after})
+                            await limiter.note_signal(budget, signal)
+                            raise OneCHealthError("rate_limited" if status == 429 else "service_unavailable")
                         if status != 200:
                             raise OneCHealthError("service_unavailable")
                         if any(k.lower() == b"content-encoding" and v.lower() != b"identity" for k, v in event.headers):

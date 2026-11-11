@@ -14,11 +14,15 @@ from app.integrations.onec.transport import MAX_BODY_BYTES, OneCHealthError, che
 class Limiter:
     def __init__(self):
         self.calls = []
+        self.signals = []
 
     @asynccontextmanager
-    async def acquire(self, budget, *, max_wait):
-        self.calls.append((budget, max_wait))
+    async def acquire(self, budget, *, cost, max_wait):
+        self.calls.append((budget, cost, max_wait))
         yield
+
+    async def note_signal(self, budget, signal):
+        self.signals.append((budget, signal.retry_after))
 
 
 class Reader:
@@ -79,7 +83,7 @@ async def test_health_pins_dns_preserves_sni_and_hashes_metadata(monkeypatch):
     result = await check_health(
         endpoint(), "reader", "synthetic-password", limiter=limiter, budget="mock", resolver=dns
     )
-    assert limiter.calls == [("mock", 0)]
+    assert limiter.calls == [("mock", 2, 0)]
     assert calls[0][0:2] == ("8.8.8.8", 443)
     assert calls[0][2]["server_hostname"] == "erp.example.com"
     assert b"GET /base/odata/standard.odata/$metadata HTTP/1.1" in writer.wire
@@ -142,7 +146,7 @@ async def test_budget_denial_happens_before_any_connection(monkeypatch):
 
     class DeniedLimiter:
         @asynccontextmanager
-        async def acquire(self, budget, *, max_wait):
+        async def acquire(self, budget, *, cost, max_wait):
             raise RuntimeError("budget denied")
             yield
 
@@ -166,3 +170,26 @@ async def test_invalid_credentials_and_timeout_are_sanitized(monkeypatch):
         await check_health(endpoint(), "reader", "mock", limiter=Limiter(), budget=1, resolver=dns)
     assert exc.value.code == "connection_failed"
     assert "sensitive" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [429, 503])
+async def test_throttling_signal_is_recorded_in_shared_limiter(monkeypatch, status):
+    fake_network(monkeypatch, response(status=status, extra=b"Retry-After: 12\r\n"))
+    limiter = Limiter()
+    with pytest.raises(OneCHealthError):
+        await check_health(endpoint(), "reader", "mock", limiter=limiter, budget="shared", resolver=dns)
+    assert limiter.signals == [("shared", 12.0)]
+
+
+def test_two_token_admission_bounds_each_60_second_window():
+    # One bucket, initial burst 10 and refill 10/60 per second as in P13-T03.
+    tokens, last, accepted = 10.0, 0.0, []
+    for tick in range(1200):
+        now = tick / 10
+        tokens = min(10.0, tokens + (now - last) / 6)
+        last = now
+        if tokens >= 2:
+            tokens -= 2
+            accepted.append(now)
+    assert max(sum(start <= t < start + 60 for t in accepted) for start in accepted) <= 10

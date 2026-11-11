@@ -34,15 +34,31 @@ Representative journeys:
 | Scope | Owner and contract | Acceptance boundary |
 | --- | --- | --- |
 | Pilot capability/security contract | [P12-T13](audit/p12-t13.md) | Existing admission contract defines separate processing, retention, model-egress and action grants. Contract review does not grant user consent or turn on storage. |
-| Read-only Yandex Disk pilot | [P8-T34](tasks/p8-t34.md) | Metadata browsing and bounded mock-tested transport do not prove live account connectivity, exact immutable byte-version identity or safe native browser opening. The owner will test live connections after merge; that check remains explicitly unrun until then. |
-| Catalog, bounded text read/preview, private-result foundations | [P12-T12](tasks/p12-t12.md), [PR #327](https://github.com/Starck43/social-media-ai/pull/327) | Delivered portions are default-off. Current text attachment is not a provider-native open and does not certify an immutable provider version. Durable Yandex result creation remains unavailable until exact-version evidence is established. |
-| Folder policy editor, sharing and approved file actions | [P12-T15](tasks/p12-t15.md) | Separate future scope. Read permission, membership and a provider token do not imply sharing or write/delete permission. |
+| Read-only Yandex Disk pilot | [P8-T34](tasks/p8-t34.md) — **owner-deferred 2026-11-04**; resume via draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) | Metadata browsing and bounded mock-tested transport do not prove live account connectivity, exact immutable byte-version identity or safe native browser opening. The owner will test live connections after merge; that check remains explicitly unrun until then. |
+| Catalog, bounded text read/preview, private-result foundations | [P12-T12](tasks/p12-t12.md), [PR #327](https://github.com/Starck43/social-media-ai/pull/327) — increment accepted 2026-11-03; remaining roadmap [re-scoped 2026-11-11](tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) | Delivered portions are default-off. Current text attachment is not a provider-native open and does not certify an immutable provider version. Durable Yandex result creation remains unavailable until exact-version evidence is established. |
+| Folder policy editor, sharing and approved file actions | Per [D21](audit/q-20-notification-surface.md) the file-workspace management (including folder grants and mutations) is owned by [P12-T12](tasks/p12-t12.md); [P12-T15](tasks/p12-t15.md) is a future extension of it, never a second management | Separate future scope. Read permission, membership and a provider token do not imply sharing or write/delete permission. |
+| Local-only execution | [P18](phases/p18-local-file-connector.md) — protocol accepted, gateway/scaffold/extraction delivered; T05–T07 TODO; [Q-19](tasks/q-19.md) open | P18 reuses the P12-T12 catalog/admission/evidence/retention contracts; P12-T12 remains their contract owner. No cloud egress may be claimed before Q-19 and real-device evidence. |
 
 Integrating the delivered #327 increment does not complete the entire originals-first
-parent journey. The task remains open while its remaining file-history, local-only,
-performance, recovery and user-flow scope remains. Do not duplicate accepted
-P12-T11 evidence, the existing job queue, old immutable evidence revisions or
-credential authorities.
+parent journey. The task remains open while its remaining file-history, performance,
+recovery and user-flow scope remains; local-only execution is delivered by P18 on top
+of these contracts. Do not duplicate accepted P12-T11 evidence, the existing job
+queue, old immutable evidence revisions or credential authorities.
+
+## Re-scope status (2026-11-11)
+
+Where the six delivery-sequence steps stand after the accepted increment and the
+subsequent owner decisions. Owners, gates and the residual slices S1–S4:
+[P12-T12 card](tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11).
+
+| Step | Status |
+| --- | --- |
+| 1. Capability contract | Reviewed and accepted ([P12-T13](audit/p12-t13.md)). The exact-version capability for Yandex remains unestablished, not fabricated ([P8-T34](tasks/p8-t34.md), owner-deferred). |
+| 2. Read-only catalog and original access | Catalog, scans/traversal and the bounded attachment are delivered default-off. Vanished or moved originals are not reconciled: the admitted-page manager never infers deletion (residual S1). Original-open is gated on P8-T34 (cloud route) and P18/[Q-19](tasks/q-19.md) (device route). |
+| 3. Bounded analysis and compact insights | Delivered: bounded `.txt` extraction, selected-line preview, mock candidates, encrypted retention lifecycle with bounded expiry. Durable admission and version-aware freshness stay gated on exact-version authority (residual S3). |
+| 4. Typed actions | Not started (residual S2). Writes remain off until preview, fresh approval, conditional revision checks and reconciliation pass. |
+| 5. Local-only execution and later adapters | Owned by [P18](phases/p18-local-file-connector.md). P12-T12 keeps contract ownership of the reused catalog/admission/retention records; additive contract changes are reviewed under P12-T12 when a consumer needs them. |
+| 6. Parent evaluation | Pending activation; measurement harness is residual S4. |
 
 ## Data, identity and version model
 

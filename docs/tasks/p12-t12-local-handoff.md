@@ -32,12 +32,16 @@ criteria. Keep source and tested revisions explicit in the PR/audit.
 
 ## Future task scope
 
-P12-T12 remains the broader roadmap: exact-version provider capability, native
-original-open, local-only execution, richer version/activity workflows and
-capacity/restore evidence. P12-T15 owns separately reviewed folder controls and
-approved mutations. P12-T13 is the independent capability-contract review;
-P8-T34 retains provider capability limitations. The original #307 requirements
-are preserved in the reconciled plan rather than overwritten by a short card.
+Re-scoped 2026-11-11 — owners and gates:
+[P12-T12 card](p12-t12.md#re-scoped-remaining-roadmap-2026-11-11). P12-T12 remains
+the contract owner of the accepted file-workspace seams. Exact-version provider
+capability and native original-open are gated on the owner-deferred P8-T34;
+local-only execution is delivered by P18 reusing these contracts; folder grants
+and approved mutations belong to P12-T12 per
+[D21](../audit/q-20-notification-surface.md), which P12-T15 may extend but never
+duplicate. P12-T13 is the accepted independent capability-contract review. The
+original #307 requirements are preserved in the reconciled plan rather than
+overwritten by a short card.
 
 Accepting the delivered default-off increment does not report the entire future
 roadmap, live provider or deployment as complete. Resume any further implementation

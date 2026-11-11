@@ -11,6 +11,8 @@ import pytest
 from app.core.outbound import OutboundTarget
 from app.services.web_research import RawHttpResponse, WebResearchRefusal, fetch_public_page, fetcher
 
+__source_only__ = True
+
 
 def _resolver(host: str, port: int) -> list[tuple]:
     return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]

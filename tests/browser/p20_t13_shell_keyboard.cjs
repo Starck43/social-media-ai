@@ -113,7 +113,7 @@ const child = spawn(CHROME, [
     '--remote-debugging-pipe', `--user-data-dir=${path.join(temp, 'profile')}`, 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
 
-let nextId = 0, buffer = Buffer.alloc(0), sessionId = null, closed = false;
+let nextId = 0, buffer = Buffer.alloc(0), sessionId = null, browserClosed = false;
 const blocked = [];
 const waiting = new Map();
 
@@ -134,7 +134,7 @@ function dispatch(message) {
 
 child.on('error', error => { console.error(`Chromium failed to start: ${error.message}`); process.exitCode = 1; });
 child.on('exit', code => {
-    closed = true;
+    browserClosed = true;
     for (const [id, pending] of waiting) { pending.reject(Error(`Chromium exited (${code}) during ${pending.method}`)); waiting.delete(id); }
 });
 child.stdio[4].on('data', chunk => {
@@ -150,7 +150,7 @@ child.stdio[4].on('data', chunk => {
 
 function send(method, params = {}, session = sessionId) {
     return new Promise((resolve, reject) => {
-        if (closed) return reject(Error(`Chromium exited before ${method}`));
+        if (browserClosed) return reject(Error(`Chromium exited before ${method}`));
         const id = ++nextId;
         const timer = setTimeout(() => { waiting.delete(id); reject(Error(`CDP timeout: ${method}`)); }, STEP_TIMEOUT);
         waiting.set(id, {

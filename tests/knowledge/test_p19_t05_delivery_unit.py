@@ -67,7 +67,7 @@ def session():
     """Keep the ORM seam's model-query order visible without a database."""
     calls = {OutboxMessage: 0}
     command = SimpleNamespace(payload={"outbox_id": 77, "intent_hash": APPROVED_HASH}, preview_snapshot={})
-    message = SimpleNamespace(approved_hash=APPROVED_HASH)
+    message = SimpleNamespace(id=77, approved_hash=APPROVED_HASH)
 
     async def scalar(statement):
         entity = statement.column_descriptions[0]["entity"]
@@ -187,7 +187,10 @@ async def test_occupied_position_with_foreign_bytes_is_refused(services, session
         raise SpoolRejected("attachment_hash_mismatch")
 
     monkeypatch.setattr(delivery, "spool_rendered", occupied)
-    monkeypatch.setattr("app.services.attachments.attachment_spool", SimpleNamespace(read=reject))
+    monkeypatch.setattr(
+        "app.services.attachments.attachment_spool",
+        SimpleNamespace(read=reject, discard=lambda tenant_id, item_id: None),
+    )
 
     with pytest.raises(AttachmentStitchRefused, match="attachment_position_conflict"):
         await delivery.send_document_email(3, _request(), "key-1", session=session)

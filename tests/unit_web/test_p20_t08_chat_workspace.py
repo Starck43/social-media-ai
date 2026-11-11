@@ -15,16 +15,17 @@ Covers:
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import json
-from pathlib import Path
 import types
+from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace as NS
 
+import pytest
 from fastapi import APIRouter, HTTPException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-import pytest
 
+from tests.shared.template_shell import shell_perms
 from tests.source_import_isolation import load_isolated_source
 
 __source_only__ = True
@@ -232,7 +233,7 @@ def test_chat_template_renders_boundary_badge_chips_quick_actions_and_four_tabs(
     rendered = tmpl.render(
         user=NS(id=1, username="owner", is_authenticated=True, has_admin_access=lambda: False),
         tenant=NS(id=1, name="Рабочее пространство"),
-        perms=NS(can_open_chat=True, is_owner=True, can_manage_workspace=lambda tid: False),
+        perms=shell_perms(can_open_chat=True, is_owner=True, can_manage_workspace=lambda tid: False),
         member_level=NS(label="Владелец"),
         section="chat",
         messages=[],
@@ -290,7 +291,7 @@ def test_object_page_renders_ask_agent_dock_with_boundary_refusal_and_escape():
     rendered = base_tmpl.render(
         user=NS(id=5, username="member", is_authenticated=True, has_admin_access=lambda: False),
         tenant=NS(id=2, name="Отдел продаж"),
-        perms=NS(can_open_chat=True, is_owner=False, can_manage_workspace=lambda tid: False),
+        perms=shell_perms(can_open_chat=True, is_owner=False, can_manage_workspace=lambda tid: False),
         member_level=NS(label="Участник"),
         section="contacts",
         csrf="csrf-token",

@@ -22,6 +22,7 @@ import pytest
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
 from tests.shared.evidence_fixtures import evidence_row, workspace_double
+from tests.shared.template_shell import shell_perms
 from tests.source_import_isolation import load_isolated_source as _isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -66,11 +67,10 @@ def _build_test_jinja_env() -> Environment:
 
 
 def _build_base_template_context() -> dict[str, Any]:
-    perms = NS(
+    perms = shell_perms(
         can=lambda *args: True,
+        can_open_chat=True,
         can_manage_workspace=lambda *a: False,
-        is_owner=False,
-        is_superuser_role=False,
         workspace_role="viewer",
     )
     return {

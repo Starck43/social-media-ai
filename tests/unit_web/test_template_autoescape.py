@@ -105,7 +105,6 @@ def context(name):
         "source_type": {"db_value": "group", "display_name": name},
         "is_active": True,
         "params": {},
-
     }
     task = {
         "id": 5,
@@ -216,6 +215,11 @@ def context(name):
         "recent": [],
         "latest_progress": None,
         "latest_diagnostics": None,
+        # Declared explicitly: the editor serializes these into JS and renders
+        # the no-JS fallback from the same grouped catalogue the route builds.
+        "target_fields": [],
+        "source_groups": [{"label": name, "sources": [source]}],
+        "task_sources": [],
     }
 
 
@@ -286,8 +290,7 @@ def test_source_detail_raw_cleanup_form_requires_admin_context(page_env):
     )
     assert form is not None
     assert any(
-        attrs.get("name") == "_csrf" and attrs.get("value") == "csrf-fixture"
-        for attrs in parsed.elements("input")
+        attrs.get("name") == "_csrf" and attrs.get("value") == "csrf-fixture" for attrs in parsed.elements("input")
     )
 
 

@@ -78,6 +78,7 @@ _REFUSAL_MESSAGES: dict[str, str] = {
     "invalid_url": "Указан некорректный или неподдерживаемый URL (разрешены только публичные http/https адреса).",
     "invalid_query": "Поисковый запрос пуст или содержит недопустимые символы.",
     "provider_unavailable": "Источник веб-исследования временно недоступен.",
+    "quota_state_unavailable": "Состояние квот веб-исследования недоступно: выполнение запроса отклонено политикой безопасности.",
 }
 
 
@@ -99,6 +100,7 @@ class ProviderCapabilityConfig:
     yandex_folder_id: str = ""
     yandex_live_enabled: bool = False
     chromium_enabled: bool = True
+    chromium_live_enabled: bool = False
     chromium_binary: str = "chromium"
     allow_stub_fallback: bool = True
 
@@ -117,11 +119,16 @@ class ResolvedSearchCapability:
     note: str
 
 
-def resolve_search_capability(config: ProviderCapabilityConfig | None = None) -> ResolvedSearchCapability:
-    """Select Yandex Search API when configured & approved; otherwise default to Chromium under the hood."""
+def resolve_search_capability(
+    config: ProviderCapabilityConfig | None = None,
+    *,
+    has_yandex_runner: bool | None = None,
+    has_chromium_runner: bool | None = None,
+) -> ResolvedSearchCapability:
+    """Resolve truthful search capability under O-5: stub by default unless an approved live runner is active."""
     cfg = config or ProviderCapabilityConfig()
     yandex_ready = bool(cfg.yandex_api_key.strip() and cfg.yandex_folder_id.strip())
-    if yandex_ready and cfg.yandex_live_enabled:
+    if yandex_ready and cfg.yandex_live_enabled and (has_yandex_runner is not False):
         return ResolvedSearchCapability(
             preferred_provider="yandex_search_api",
             default_under_hood="chromium_headless",
@@ -132,7 +139,11 @@ def resolve_search_capability(config: ProviderCapabilityConfig | None = None) ->
             label="Yandex Search API",
             note="Используется подключённый Yandex Search API с контролем квот и безопасным чтением страниц.",
         )
-    if cfg.chromium_enabled:
+    if (
+        cfg.chromium_enabled
+        and (cfg.chromium_live_enabled or has_chromium_runner is True)
+        and (has_chromium_runner is not False)
+    ):
         return ResolvedSearchCapability(
             preferred_provider="chromium_headless",
             default_under_hood="chromium_headless",
@@ -142,7 +153,7 @@ def resolve_search_capability(config: ProviderCapabilityConfig | None = None) ->
             is_live_capable=True,
             label="Chromium (по умолчанию без Yandex Search API)",
             note=(
-                "Yandex Search API не подключён: под капотом по умолчанию используется изолированный "
+                "Yandex Search API не подключён: под капотом активирован изолированный "
                 "read-only Chromium и прямой безопасный HTTP-фетчер публичных страниц."
             ),
         )
@@ -153,8 +164,12 @@ def resolve_search_capability(config: ProviderCapabilityConfig | None = None) ->
         yandex_live_enabled=False,
         chromium_default_active=False,
         is_live_capable=False,
-        label="Stub (тестовая заглушка O-5)",
-        note="Живые провайдеры отключены: используется явно помеченная тестовая заглушка (не является живым источником).",
+        label="Stub (тестовая заглушка O-5; живой поиск и браузер P20-T05 не активированы)",
+        note=(
+            "По решению владельца O-5 живой поиск (Yandex Search API) и браузерный пилот (P20-T05) не активированы: "
+            "поиск работает в режиме явно помеченной тестовой заглушки (stub), а чтение публичных страниц выполняется "
+            "по прямому HTTP с привязкой проверенного IP."
+        ),
     )
 
 
@@ -265,6 +280,138 @@ class TenantBudgetTracker:
             "daily_remaining": max(0, cfg.daily_quota - state.daily_used),
             "daily_quota": cfg.daily_quota,
             "burst_tokens_remaining": round(state.tokens, 2),
+            "max_searches_per_run": cfg.max_searches_per_run,
+            "max_fetches_per_run": cfg.max_fetches_per_run,
+        }
+
+    async def _lock_durable_row(
+        self,
+        session: object,
+        tenant_id: int,
+        account_key: str = "default",
+        *,
+        budget: WebResearchBudget | None = None,
+        now: datetime | None = None,
+    ) -> tuple[object, WebResearchBudget, datetime]:
+        if session is None:
+            raise WebResearchRefusal("quota_state_unavailable")
+        cfg = budget or self.default_budget
+        tid, clean_account = self._key(tenant_id, account_key)
+        try:
+            from sqlalchemy import func, select, text
+            from sqlalchemy.dialects.postgresql import insert
+
+            from app.services.web_research.models import WebResearchQuota
+
+            await session.execute(text("SET LOCAL lock_timeout = '250ms'"))  # type: ignore[attr-defined]
+            await session.execute(text("SET LOCAL statement_timeout = '2s'"))  # type: ignore[attr-defined]
+            server_now = now or await session.scalar(select(func.clock_timestamp()))  # type: ignore[attr-defined]
+            if server_now is None:
+                raise WebResearchRefusal("quota_state_unavailable")
+            day_str = server_now.astimezone(timezone.utc).strftime("%Y-%m-%d")
+            stmt = (
+                insert(WebResearchQuota)
+                .values(
+                    tenant_id=tid,
+                    account_key=clean_account,
+                    day_key=day_str,
+                    daily_used=0,
+                    daily_quota=cfg.daily_quota,
+                    burst_tokens=float(cfg.burst_limit),
+                    burst_limit=cfg.burst_limit,
+                    rate_per_minute=float(cfg.rate_per_minute),
+                    updated_at=server_now,
+                )
+                .on_conflict_do_nothing(index_elements=["tenant_id", "account_key"])
+            )
+            await session.execute(stmt)  # type: ignore[attr-defined]
+            row = await session.scalar(  # type: ignore[attr-defined]
+                select(WebResearchQuota)
+                .where(
+                    WebResearchQuota.tenant_id == tid,
+                    WebResearchQuota.account_key == clean_account,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            moment = now or await session.scalar(select(func.clock_timestamp()))  # type: ignore[attr-defined]
+            if row is None or moment is None:
+                raise WebResearchRefusal("quota_state_unavailable")
+            moment_utc = moment.astimezone(timezone.utc)
+            current_day = moment_utc.strftime("%Y-%m-%d")
+            if row.day_key != current_day:
+                row.day_key = current_day
+                row.daily_used = 0
+                row.daily_quota = cfg.daily_quota
+                row.burst_tokens = float(cfg.burst_limit)
+                row.burst_limit = cfg.burst_limit
+                row.rate_per_minute = float(cfg.rate_per_minute)
+                row.updated_at = moment_utc
+            else:
+                elapsed = max(0.0, (moment_utc - row.updated_at.astimezone(timezone.utc)).total_seconds())
+                refilled = float(row.burst_tokens) + elapsed * (cfg.rate_per_minute / 60.0)
+                row.burst_tokens = min(float(cfg.burst_limit), max(0.0, refilled))
+                row.daily_quota = cfg.daily_quota
+                row.burst_limit = cfg.burst_limit
+                row.rate_per_minute = float(cfg.rate_per_minute)
+                row.updated_at = max(moment_utc, row.updated_at.astimezone(timezone.utc))
+            return row, cfg, moment_utc
+        except WebResearchRefusal:
+            raise
+        except Exception:
+            raise WebResearchRefusal("quota_state_unavailable") from None
+
+    async def consume_durable(
+        self,
+        session: object,
+        tenant_id: int,
+        account_key: str = "default",
+        *,
+        cost: int = 1,
+        budget: WebResearchBudget | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, int | float]:
+        """Atomically deduct quota in PostgreSQL (`web_research_quotas`); fail closed if state is unavailable."""
+        if type(cost) is not int or cost <= 0:
+            raise ValueError("invalid_cost")
+        row, cfg, _ = await self._lock_durable_row(session, tenant_id, account_key, budget=budget, now=now)
+        if row.daily_used + cost > cfg.daily_quota:  # type: ignore[attr-defined]
+            raise WebResearchRefusal("budget_exhausted")
+        if float(row.burst_tokens) < float(cost):  # type: ignore[attr-defined]
+            raise WebResearchRefusal("rate_limited")
+        row.burst_tokens = float(row.burst_tokens) - float(cost)  # type: ignore[attr-defined]
+        row.daily_used = int(row.daily_used) + cost  # type: ignore[attr-defined]
+        try:
+            await session.flush()  # type: ignore[attr-defined]
+        except Exception:
+            raise WebResearchRefusal("quota_state_unavailable") from None
+        return {
+            "daily_used": int(row.daily_used),  # type: ignore[attr-defined]
+            "daily_remaining": max(0, cfg.daily_quota - int(row.daily_used)),  # type: ignore[attr-defined]
+            "daily_quota": cfg.daily_quota,
+            "burst_tokens_remaining": round(float(row.burst_tokens), 2),  # type: ignore[attr-defined]
+        }
+
+    async def snapshot_durable(
+        self,
+        session: object,
+        tenant_id: int,
+        account_key: str = "default",
+        *,
+        budget: WebResearchBudget | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, int | float]:
+        """Read durable quota state from PostgreSQL (`web_research_quotas`); fail closed if unavailable."""
+        row, cfg, _ = await self._lock_durable_row(session, tenant_id, account_key, budget=budget, now=now)
+        try:
+            await session.flush()  # type: ignore[attr-defined]
+        except Exception:
+            raise WebResearchRefusal("quota_state_unavailable") from None
+        return {
+            "daily_used": int(row.daily_used),  # type: ignore[attr-defined]
+            "daily_remaining": max(0, cfg.daily_quota - int(row.daily_used)),  # type: ignore[attr-defined]
+            "daily_quota": cfg.daily_quota,
+            "burst_tokens_remaining": round(float(row.burst_tokens), 2),  # type: ignore[attr-defined]
             "max_searches_per_run": cfg.max_searches_per_run,
             "max_fetches_per_run": cfg.max_fetches_per_run,
         }

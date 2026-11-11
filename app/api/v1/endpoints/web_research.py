@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_model_perm
+from app.api.deps import get_db, require_model_perm
 from app.core.permissions import get_current_user, has_permission
 from app.services.web_research.contracts import (
     PageSnapshotOut,
@@ -30,6 +31,8 @@ def _raise_http_for_refusal(exc: WebResearchRefusal) -> None:
         raise HTTPException(status_code=403, detail=exc.user_message) from None
     if exc.code in {"budget_exhausted", "rate_limited"}:
         raise HTTPException(status_code=429, detail=exc.user_message) from None
+    if exc.code == "quota_state_unavailable":
+        raise HTTPException(status_code=503, detail=exc.user_message) from None
     if exc.code in {
         "invalid_url",
         "invalid_query",
@@ -56,18 +59,18 @@ def _ensure_save_permission(save_evidence: bool) -> None:
 
 
 @router.get("/status", response_model=WebResearchStatusOut)
-async def get_web_research_status():
+async def get_web_research_status(db: AsyncSession = Depends(get_db)):
     try:
-        return web_research_service.status()
+        return await web_research_service.status_async(session=db, require_durable=True)
     except WebResearchRefusal as exc:
         _raise_http_for_refusal(exc)
 
 
 @router.post("/search", response_model=WebResearchRunOut)
-async def run_web_research(payload: WebSearchRequest):
+async def run_web_research(payload: WebSearchRequest, db: AsyncSession = Depends(get_db)):
     _ensure_save_permission(payload.save_evidence)
     try:
-        return await web_research_service.research(payload)
+        return await web_research_service.research(payload, session=db, require_durable=True)
     except WebResearchRefusal as exc:
         _raise_http_for_refusal(exc)
     except ValidationError:
@@ -75,10 +78,10 @@ async def run_web_research(payload: WebSearchRequest):
 
 
 @router.post("/fetch", response_model=PageSnapshotOut)
-async def fetch_web_page(payload: WebFetchRequest):
+async def fetch_web_page(payload: WebFetchRequest, db: AsyncSession = Depends(get_db)):
     _ensure_save_permission(payload.save_evidence)
     try:
-        return await web_research_service.fetch_page(payload)
+        return await web_research_service.fetch_page(payload, session=db, require_durable=True)
     except WebResearchRefusal as exc:
         _raise_http_for_refusal(exc)
     except ValidationError:

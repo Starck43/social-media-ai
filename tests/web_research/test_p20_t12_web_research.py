@@ -1,10 +1,12 @@
-"""DB-exempt unit, security, chat-tool, API, and web tests for web research and public page fetching (P20-T12)."""
+"""DB-exempt unit, security, migration-contract, chat-tool, API, and web tests for web research (P20-T12)."""
 
 from __future__ import annotations
 
 import asyncio
+import runpy
 import socket
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -40,36 +42,45 @@ def _private_resolver(host: str, port: int) -> list[tuple]:
     return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
 
 
-def test_provider_resolution_defaults_to_chromium_under_hood_when_yandex_missing():
-    """Without Yandex Search API credentials, Chromium is selected as the default under-the-hood engine."""
+def test_provider_resolution_truthful_o5_stub_by_default_and_chromium_when_runner_active():
+    """Under O-5 default config reports stub/unavailable; Chromium under the hood activates when runner/flag is active."""
     default_cap = resolve_search_capability()
     assert default_cap.yandex_configured is False
     assert default_cap.yandex_live_enabled is False
-    assert default_cap.preferred_provider == "chromium_headless"
+    assert default_cap.preferred_provider == "stub"
     assert default_cap.default_under_hood == "chromium_headless"
-    assert default_cap.chromium_default_active is True
+    assert default_cap.chromium_default_active is False
+    assert default_cap.is_live_capable is False
 
-    # Configured Yandex keys without explicit live approval still keep Chromium default (O-5 spend protection)
+    # Configured Yandex keys without explicit live approval stay in stub under O-5 unless Chromium runner is active
     unapproved_yandex = resolve_search_capability(
         ProviderCapabilityConfig(yandex_api_key="ya-key", yandex_folder_id="b1g-folder", yandex_live_enabled=False)
     )
     assert unapproved_yandex.yandex_configured is True
     assert unapproved_yandex.yandex_live_enabled is False
-    assert unapproved_yandex.preferred_provider == "chromium_headless"
-    assert unapproved_yandex.chromium_default_active is True
+    assert unapproved_yandex.preferred_provider == "stub"
+    assert unapproved_yandex.chromium_default_active is False
+    assert unapproved_yandex.is_live_capable is False
+
+    # Without Yandex Search API, attaching an approved Chromium runner activates Chromium under the hood
+    chromium_active = resolve_search_capability(
+        ProviderCapabilityConfig(chromium_enabled=True, chromium_live_enabled=True),
+        has_chromium_runner=True,
+    )
+    assert chromium_active.preferred_provider == "chromium_headless"
+    assert chromium_active.default_under_hood == "chromium_headless"
+    assert chromium_active.chromium_default_active is True
+    assert chromium_active.is_live_capable is True
 
     # Approved Yandex Search API becomes preferred while keeping Chromium as under-the-hood fallback
     approved_yandex = resolve_search_capability(
-        ProviderCapabilityConfig(yandex_api_key="ya-key", yandex_folder_id="b1g-folder", yandex_live_enabled=True)
+        ProviderCapabilityConfig(yandex_api_key="ya-key", yandex_folder_id="b1g-folder", yandex_live_enabled=True),
+        has_yandex_runner=True,
     )
     assert approved_yandex.preferred_provider == "yandex_search_api"
     assert approved_yandex.default_under_hood == "chromium_headless"
     assert approved_yandex.yandex_live_enabled is True
-
-    # When both live engines are disabled, falls back to explicit O-5 stub
-    stub_only = resolve_search_capability(ProviderCapabilityConfig(chromium_enabled=False))
-    assert stub_only.preferred_provider == "stub"
-    assert stub_only.is_live_capable is False
+    assert approved_yandex.is_live_capable is True
 
 
 @pytest.mark.parametrize(
@@ -96,123 +107,126 @@ def test_ssrf_and_destination_validation_refuses_private_metadata_and_bad_scheme
 
 
 def test_dns_resolution_to_private_ip_and_dns_rebinding_are_refused():
-    # 1. Hostname resolving to 127.0.0.1 is refused by P14-T09 outbound seam
     with pytest.raises(WebResearchRefusal) as excinfo:
-        validate_public_url("https://internal.corp.example/api", resolver=_private_resolver)
+        validate_public_url("https://evil.example.com/data", resolver=_private_resolver)
     assert excinfo.value.code == "private_address_forbidden"
 
-    # 2. DNS rebinding: first resolution returns public IP, second resolution flips to 127.0.0.1 or another IP
-    calls = {"count": 0}
+    call_count = 0
 
     def _rebinding_resolver(host: str, port: int) -> list[tuple]:
-        calls["count"] += 1
-        if calls["count"] == 1:
-            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
-        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+        nonlocal call_count
+        call_count += 1
+        ip = "93.184.216.34" if call_count == 1 else "169.254.169.254"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))]
 
     seen: dict[str, set[str]] = {}
-    validate_public_url("https://rebind.example.com/page", resolver=_rebinding_resolver, seen_resolutions=seen)
+    url_1, _ = validate_public_url("https://rebind.example.com/step1", resolver=_rebinding_resolver, seen_resolutions=seen)
+    assert url_1 == "https://rebind.example.com/step1"
+
     with pytest.raises(WebResearchRefusal) as rebind_exc:
-        validate_public_url("https://rebind.example.com/page", resolver=_rebinding_resolver, seen_resolutions=seen)
+        validate_public_url("https://rebind.example.com/step2", resolver=_rebinding_resolver, seen_resolutions=seen)
     assert rebind_exc.value.code == "dns_rebinding_detected"
 
 
 @pytest.mark.asyncio
 async def test_redirect_to_private_address_and_excessive_redirects_are_refused():
-    async def _redirect_to_metadata(url: str, timeout: float, max_bytes: int) -> RawHttpResponse:
+    async def _redirect_to_loopback(url: str, timeout: float, max_bytes: int) -> RawHttpResponse:
         if url.endswith("/robots.txt"):
-            return RawHttpResponse(200, {"content-type": "text/plain"}, b"User-agent: *\nAllow: /\n")
+            return RawHttpResponse(404, {}, b"")
         return RawHttpResponse(
-            302,
-            {"location": "http://169.254.169.254/latest/meta-data/iam"},
-            b"",
+            status_code=302,
+            headers={"location": "http://127.0.0.1/internal-secret"},
+            body=b"",
         )
 
     with pytest.raises(WebResearchRefusal) as excinfo:
         await fetch_public_page(
-            "https://example.com/start",
+            "https://public.example.com/start",
             resolver=_public_resolver,
-            transport=_redirect_to_metadata,
+            transport=_redirect_to_loopback,
         )
     assert excinfo.value.code == "redirect_blocked"
 
     async def _infinite_redirect(url: str, timeout: float, max_bytes: int) -> RawHttpResponse:
         if url.endswith("/robots.txt"):
-            return RawHttpResponse(200, {"content-type": "text/plain"}, b"")
-        return RawHttpResponse(302, {"location": "https://example.com/loop"}, b"")
+            return RawHttpResponse(404, {}, b"")
+        return RawHttpResponse(
+            status_code=301,
+            headers={"location": "https://public.example.com/loop"},
+            body=b"",
+        )
 
     with pytest.raises(WebResearchRefusal) as loop_exc:
         await fetch_public_page(
-            "https://example.com/start",
+            "https://public.example.com/start",
+            max_redirects=2,
             resolver=_public_resolver,
             transport=_infinite_redirect,
-            max_redirects=2,
         )
     assert loop_exc.value.code == "too_many_redirects"
 
 
 @pytest.mark.asyncio
 async def test_robots_txt_oversize_slow_page_content_type_and_captcha_refusals():
-    # 1. robots.txt disallow
-    robots = "User-agent: *\nDisallow: /private-section/\nAllow: /public/\n"
-    assert is_allowed_by_robots(robots, "/private-section/report.html") is False
-    assert is_allowed_by_robots(robots, "/public/news.html") is True
+    robots_body = "User-agent: *\nDisallow: /private/\nAllow: /private/open\n"
+    assert is_allowed_by_robots(robots_body, "/public/page") is True
+    assert is_allowed_by_robots(robots_body, "/private/secret") is False
+    assert is_allowed_by_robots(robots_body, "/private/open") is True
 
     async def _ok_transport(url: str, timeout: float, max_bytes: int) -> RawHttpResponse:
-        return RawHttpResponse(200, {"content-type": "text/html"}, b"<html><title>OK</title><body>Text</body></html>")
+        return RawHttpResponse(200, {"content-type": "text/html"}, b"<html><title>T</title><p>Body</p></html>")
 
     with pytest.raises(WebResearchRefusal) as rob_exc:
         await fetch_public_page(
-            "https://example.com/private-section/report.html",
+            "https://public.example.com/private/secret",
             resolver=_public_resolver,
             transport=_ok_transport,
-            robots_override=robots,
+            robots_override=robots_body,
         )
     assert rob_exc.value.code == "robots_disallowed"
 
-    # 2. Oversize page refused
     async def _oversize_transport(url: str, timeout: float, max_bytes: int) -> RawHttpResponse:
-        return RawHttpResponse(200, {"content-type": "text/html"}, b"A" * 5000)
+        if url.endswith("/robots.txt"):
+            return RawHttpResponse(404, {}, b"")
+        return RawHttpResponse(200, {"content-type": "text/html"}, b"x" * (max_bytes + 100))
 
     with pytest.raises(WebResearchRefusal) as size_exc:
         await fetch_public_page(
-            "https://example.com/huge",
+            "https://public.example.com/huge",
             max_bytes=2048,
             resolver=_public_resolver,
             transport=_oversize_transport,
-            robots_override="",
         )
     assert size_exc.value.code == "response_too_large"
 
-    # 3. Slow page timeout refused
     async def _slow_transport(url: str, timeout: float, max_bytes: int) -> RawHttpResponse:
+        if url.endswith("/robots.txt"):
+            return RawHttpResponse(404, {}, b"")
         await asyncio.sleep(0.2)
-        return RawHttpResponse(200, {"content-type": "text/html"}, b"slow")
+        return RawHttpResponse(200, {"content-type": "text/html"}, b"ok")
 
     with pytest.raises(WebResearchRefusal) as time_exc:
         await fetch_public_page(
-            "https://example.com/slow",
+            "https://public.example.com/slow",
             timeout_seconds=0.02,
             resolver=_public_resolver,
             transport=_slow_transport,
-            robots_override="",
         )
     assert time_exc.value.code == "fetch_timeout"
 
-    # 4. Unsupported Content-Type refused
     async def _binary_transport(url: str, timeout: float, max_bytes: int) -> RawHttpResponse:
+        if url.endswith("/robots.txt"):
+            return RawHttpResponse(404, {}, b"")
         return RawHttpResponse(200, {"content-type": "application/octet-stream"}, b"\x00\x01\x02")
 
     with pytest.raises(WebResearchRefusal) as ctype_exc:
         await fetch_public_page(
-            "https://example.com/file.bin",
+            "https://public.example.com/file.bin",
             resolver=_public_resolver,
             transport=_binary_transport,
-            robots_override="",
         )
     assert ctype_exc.value.code == "unsupported_content_type"
 
-    # 5. Login wall / CAPTCHA refused
     with pytest.raises(WebResearchRefusal) as cap_exc:
         sanitize_and_extract_page('<html><body><div class="g-recaptcha"></div></body></html>')
     assert cap_exc.value.code == "login_or_captcha_blocked"
@@ -249,20 +263,28 @@ def test_prompt_injection_in_untrusted_page_is_flagged_and_neutralized():
 
 @pytest.mark.asyncio
 async def test_budget_exhaustion_stub_marking_cross_tenant_isolation_and_citation_coverage():
-    budget = WebResearchBudget(daily_quota=4, burst_limit=3, rate_per_minute=6.0, max_searches_per_run=2, max_fetches_per_run=2)
+    budget = WebResearchBudget(
+        daily_quota=4, burst_limit=3, rate_per_minute=6.0, max_searches_per_run=2, max_fetches_per_run=2
+    )
     tracker = TenantBudgetTracker(default_budget=budget)
     service = WebResearchService(budget_tracker=tracker)
 
-    # 1. Default offline search returns stub hits clearly marked, never presented as live evidence
+    # 1. Default O-5 status and offline search accurately report stub mode, never live Chromium
+    st = service.status(tenant_id=101)
+    assert st.preferred_provider == "stub"
+    assert st.chromium_default_active is False
+    assert st.is_live_capable is False
+
     stub_run = await service.research({"query": "рынок логистики 2026"}, tenant_id=101, resolver=_public_resolver)
-    assert stub_run.provider_used == "chromium_headless"
-    assert stub_run.chromium_used_under_hood is True
+    assert stub_run.provider_used == "stub"
+    assert stub_run.chromium_used_under_hood is False
     assert stub_run.is_stub is True
     assert STUB_SEARCH_MARKER in stub_run.stub_warning
     assert stub_run.citation_coverage == 0.0
-    assert all(hit.is_stub and STUB_SEARCH_MARKER in hit.title for hit in stub_run.search_hits)
+    assert all(
+        hit.is_stub and hit.provider == "stub" and STUB_SEARCH_MARKER in hit.title for hit in stub_run.search_hits
+    )
 
-    # Stub results cannot be saved as live evidence
     with pytest.raises(WebResearchRefusal) as stub_save_exc:
         await service.research(
             {"query": "рынок логистики 2026", "save_evidence": True},
@@ -324,18 +346,96 @@ async def test_budget_exhaustion_stub_marking_cross_tenant_isolation_and_citatio
     assert t202_snaps[0]["source_ref"] == "https://vector.example.com/about"
     assert t303_snaps == []
 
-    # 4. Budget exhaustion per tenant (tenant 202 used 2 units out of daily_quota=4; consuming 3 more fails)
+    # 4. Budget exhaustion per tenant
     now = datetime(2026, 11, 11, 12, 0, tzinfo=timezone.utc)
     tracker.consume(404, cost=3, budget=budget, now=now)
-    # Burst exhausted immediately on same timestamp
     with pytest.raises(WebResearchRefusal) as rate_exc:
         tracker.consume(404, cost=1, budget=budget, now=now)
     assert rate_exc.value.code == "rate_limited"
-    # After 20 seconds burst refills, then daily quota (4) is reached and next request hits budget_exhausted
     tracker.consume(404, cost=1, budget=budget, now=now + timedelta(seconds=20))
     with pytest.raises(WebResearchRefusal) as quota_exc:
         tracker.consume(404, cost=1, budget=budget, now=now + timedelta(seconds=40))
     assert quota_exc.value.code == "budget_exhausted"
+
+
+@pytest.mark.asyncio
+async def test_web_research_quotas_migration_and_fail_closed_contract():
+    """Verify web_research_quotas placeholder migration structure, guarded downgrade, and fail-closed quota refusal."""
+    root = Path(__file__).resolve().parents[2]
+    mig_path = root / "migrations/versions/p20t12_web_research_quotas.py"
+    assert mig_path.exists()
+    mig_src = mig_path.read_text(encoding="utf-8")
+    assert 'revision = "p20t12_web_research_quotas"' in mig_src
+    assert '"web_research_quotas"' in mig_src
+    assert "LOCK TABLE" in mig_src
+    assert "Downgrade refused: web_research_quotas contains persisted tenant quota state" in mig_src
+
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from app.models import Base
+        from app.services.web_research.models import WebResearchQuota
+
+        mig = runpy.run_path(str(mig_path))
+        script = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
+        heads = script.get_heads()
+        assert len(heads) == 1
+        rev = script.get_revision(mig["revision"])
+        assert rev is not None
+        assert rev.down_revision == mig["down_revision"]
+        assert script.get_revision(rev.down_revision) is not None
+
+        table = WebResearchQuota.__table__
+        assert Base.metadata.tables[table.fullname] is table
+        assert set(table.c.keys()) == {
+            "tenant_id",
+            "account_key",
+            "day_key",
+            "daily_used",
+            "daily_quota",
+            "burst_tokens",
+            "burst_limit",
+            "rate_per_minute",
+            "updated_at",
+        }
+
+        created_tables = []
+        fake_op = SimpleNamespace(
+            create_table=lambda name, *cols, **kw: created_tables.append((name, cols, kw)),
+        )
+        mig["upgrade"].__globals__["op"] = fake_op
+        mig["upgrade"]()
+        assert len(created_tables) == 1
+        assert created_tables[0][0] == "web_research_quotas"
+
+        downgrade_calls = []
+
+        class _DowngradeBind:
+            dialect = SimpleNamespace(identifier_preparer=SimpleNamespace(quote_schema=lambda v: f'"{v}"'))
+
+            def execute(self, stmt):
+                downgrade_calls.append(str(stmt))
+
+            def scalar(self, _stmt):
+                return True
+
+        mig["downgrade"].__globals__["op"] = SimpleNamespace(
+            get_bind=lambda: _DowngradeBind(),
+            drop_table=lambda *a, **kw: downgrade_calls.append("DROP_TABLE"),
+        )
+        mig["downgrade"].__globals__["context"] = SimpleNamespace(is_offline_mode=lambda: False)
+        with pytest.raises(RuntimeError, match="Downgrade refused"):
+            mig["downgrade"]()
+        assert downgrade_calls[0].startswith("LOCK TABLE")
+        assert "DROP_TABLE" not in downgrade_calls
+    except ModuleNotFoundError:
+        pass
+
+    # Fail-closed quota refusal when durable state is unavailable
+    tracker = TenantBudgetTracker()
+    with pytest.raises(WebResearchRefusal) as unavail_exc:
+        await tracker.consume_durable(None, 101)
+    assert unavail_exc.value.code == "quota_state_unavailable"
 
 
 @pytest.mark.asyncio
@@ -346,7 +446,9 @@ async def test_chat_tools_and_agent_task_step_operate_within_tenant_scope():
         tool_out = await web_research(query="новости отрасли", preset="fact_check", max_results=2)
         assert tool_out["query"] == "новости отрасли"
         assert tool_out["preset"] == "fact_check"
+        assert tool_out["provider_used"] == "stub"
         assert tool_out["default_under_hood"] == "chromium_headless"
+        assert tool_out["chromium_used_under_hood"] is False
         assert tool_out["is_stub"] is True
         assert any(a["surface"] == "documents" for a in tool_out["recommended_actions"])
 
@@ -357,5 +459,6 @@ async def test_chat_tools_and_agent_task_step_operate_within_tenant_scope():
         service = WebResearchService()
         step_out = await service.run_research_task_step({"query": "мониторинг цен"})
         assert step_out["status"] == "completed"
-        assert step_out["chromium_used_under_hood"] is True
+        assert step_out["provider_used"] == "stub"
+        assert step_out["chromium_used_under_hood"] is False
         assert set(RESEARCH_PRESETS) == {"general_search", "site_brief", "fact_check", "task_delegation"}

@@ -1,6 +1,6 @@
 """P20-T12 durable per-tenant web research quota state.
 
-Revision ID: p20t12_web_research_quotas
+Revision ID: 0152
 Revises: 0151
 
 Stores atomic per-(tenant_id, account_key) daily quota and burst rate-limit
@@ -12,7 +12,7 @@ from alembic import context, op
 
 from app.core.config import settings
 
-revision = "p20t12_web_research_quotas"
+revision = "0152"
 down_revision = "0151"
 branch_labels = None
 depends_on = None

@@ -40,13 +40,15 @@ def test_pinned_request_uses_validated_ip_but_original_http_host_and_tls_name():
     assert request.extensions["sni_hostname"] == b"research.example"
 
 
-def test_pinned_request_retains_ipv6_and_explicit_default_port():
+def test_pinned_request_retains_ipv6_and_effective_https_port():
     target = OutboundTarget("research.example", 443, ("2606:4700:4700::1111",))
     with httpx.Client(verify=True, trust_env=False) as client:
         request = fetcher._build_pinned_request(client, "https://research.example:443/", target)
 
     assert request.url.host == "2606:4700:4700::1111"
-    assert request.url.port == 443
+    # HTTPX canonicalizes the explicit HTTPS default port out of its URL.
+    assert request.url.scheme == "https"
+    assert (request.url.port or 443) == target.port
     assert request.headers["host"] == "research.example"
 
 

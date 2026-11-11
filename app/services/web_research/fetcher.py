@@ -209,7 +209,11 @@ def validate_public_url(
         seen_resolutions[key] = current_set
 
     normalized_path = parts.path or "/"
-    canonical_netloc = target.host if port in (80, 443) else f"{target.host}:{port}"
+    # Preserve the caller's explicit port, including scheme-default ports. Bracket
+    # literal IPv6 addresses before putting them back into a URL authority.
+    authority_host = f"[{target.host}]" if ":" in target.host else target.host
+    explicit_port = parts.port is not None
+    canonical_netloc = f"{authority_host}:{port}" if explicit_port else authority_host
     canonical_url = urlunsplit((scheme, canonical_netloc, normalized_path, parts.query, ""))
     return canonical_url, target
 
@@ -392,7 +396,7 @@ def sanitize_and_extract_page(
         title = " ".join("".join(parser.title_parts).split()).strip() or fallback_title or "Публичная страница"
         visible_text = "".join(parser.text_parts)
         hidden_text = " ".join(parser.hidden_text_parts)
-        if parser.has_password_input and len(visible_text.strip()) < 160:
+        if parser.has_password_input:
             raise WebResearchRefusal("login_or_captcha_blocked")
 
     cleaned_lines: list[str] = []
@@ -430,6 +434,41 @@ def sanitize_and_extract_page(
         "prompt_injection_detected": bool(injection_markers),
         "injection_markers": injection_markers,
     }
+
+
+def _build_pinned_request(client: Any, url: str, target: OutboundTarget) -> Any:
+    """Build an HTTPX request whose TCP peer is a previously validated IP."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if not target.addresses or target.host.lower() != host.lower().rstrip("."):
+        raise WebResearchRefusal("ssrf_blocked")
+    try:
+        tls_host = host.rstrip(".").encode("idna").decode("ascii")
+    except UnicodeError:
+        raise WebResearchRefusal("invalid_url") from None
+    port = parts.port
+    default_port = 443 if parts.scheme == "https" else 80
+    if target.port != (port or default_port):
+        raise WebResearchRefusal("ssrf_blocked")
+    host_header = f"[{tls_host}]" if ":" in tls_host else tls_host
+    if port is not None and port != default_port:
+        host_header = f"{host_header}:{port}"
+    address = target.addresses[0]
+    connection_host = f"[{address}]" if ":" in address else address
+    authority = f"{connection_host}:{port or default_port}"
+    request_url = urlunsplit((parts.scheme, authority, parts.path or "/", parts.query, ""))
+    request = client.build_request(
+        "GET",
+        request_url,
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept": "text/html,text/plain,application/xhtml+xml",
+            "Host": host_header,
+        },
+    )
+    if parts.scheme == "https":
+        request.extensions["sni_hostname"] = tls_host.encode("ascii")
+    return request
 
 
 class ChromiumUnderHoodEngine:
@@ -493,12 +532,10 @@ class ChromiumUnderHoodEngine:
         resolver: Resolver = default_dns_resolver,
     ) -> RawHttpResponse:
         canonical_url, _ = validate_public_url(url, resolver=resolver)
-        if self._page_runner is None:
-            raise WebResearchRefusal("provider_unavailable", host=urlsplit(canonical_url).hostname or "")
-        return await asyncio.wait_for(
-            self._page_runner(canonical_url, timeout_seconds, max_bytes),
-            timeout=timeout_seconds,
-        )
+        # CLI flags do not constrain Chromium's subresource, websocket, service
+        # worker, or navigation egress. Until every browser request is forced
+        # through an approved network boundary, do not execute a page runner.
+        raise WebResearchRefusal("provider_unavailable", host=urlsplit(canonical_url).hostname or "")
 
 
 def build_stub_search_hits(
@@ -541,17 +578,28 @@ def build_stub_search_hits(
     ]
 
 
-async def _default_http_transport(url: str, timeout_seconds: float, max_bytes: int) -> RawHttpResponse:
-    """Plain HTTP GET transport with redirects disabled, zero credentials, and streaming byte cap."""
+async def _default_http_transport(
+    url: str,
+    timeout_seconds: float,
+    max_bytes: int,
+    *,
+    target: OutboundTarget,
+) -> RawHttpResponse:
+    """GET one validated target IP while retaining the URL host for HTTP and TLS."""
     import httpx
 
     async with httpx.AsyncClient(
         follow_redirects=False,
         timeout=httpx.Timeout(timeout_seconds),
         trust_env=False,
+        verify=True,
         headers={"User-Agent": USER_AGENT, "Accept": "text/html,text/plain,application/xhtml+xml"},
     ) as client:
-        async with client.stream("GET", url) as resp:
+        # httpcore 1.x consumes sni_hostname for TLS negotiation and
+        # certificate hostname verification while TCP connects to the IP URL.
+        request = _build_pinned_request(client, url, target)
+        resp = await client.send(request, stream=True)
+        try:
             content_length = resp.headers.get("content-length")
             if content_length and content_length.isdigit() and int(content_length) > max_bytes:
                 raise WebResearchRefusal("response_too_large")
@@ -569,6 +617,8 @@ async def _default_http_transport(url: str, timeout_seconds: float, max_bytes: i
                 body=b"".join(chunks),
                 final_url=url,
             )
+        finally:
+            await resp.aclose()
 
 
 async def fetch_public_page(
@@ -587,6 +637,7 @@ async def fetch_public_page(
 ) -> PageSnapshotOut:
     """Fetch a public web page with SSRF/redirect/rebinding checks, robots.txt enforcement, and sanitization."""
     seen_resolutions: dict[str, set[str]] = {}
+    deadline = asyncio.get_running_loop().time() + timeout_seconds
     current_url, target = validate_public_url(
         url,
         policy=policy,
@@ -597,6 +648,19 @@ async def fetch_public_page(
     )
     active_transport = transport or _default_http_transport
     redirect_chain: list[str] = []
+
+    async def request(target_url: str, target: OutboundTarget, byte_limit: int, *, cap: float) -> RawHttpResponse:
+        remaining = min(cap, deadline - asyncio.get_running_loop().time())
+        if remaining <= 0:
+            raise WebResearchRefusal("fetch_timeout", host=target.host)
+        if transport is None:
+            operation = _default_http_transport(target_url, remaining, byte_limit, target=target)
+        else:
+            operation = active_transport(target_url, remaining, byte_limit)
+        try:
+            return await asyncio.wait_for(operation, timeout=remaining)
+        except (TimeoutError, asyncio.TimeoutError):
+            raise WebResearchRefusal("fetch_timeout", host=target.host) from None
 
     for hop in range(max_redirects + 1):
         current_url, target = validate_public_url(
@@ -611,38 +675,52 @@ async def fetch_public_page(
         origin = urlunsplit((parts.scheme, parts.netloc, "", "", ""))
 
         robots_txt = robots_override
-        if robots_txt is None and transport is not None:
+        robots_checked = robots_txt is not None
+        if robots_txt is None:
             robots_url = f"{origin}/robots.txt"
+            robots_url, robots_target = validate_public_url(
+                robots_url,
+                policy=policy,
+                registry=registry,
+                resolver=resolver,
+                seen_resolutions=seen_resolutions,
+                is_redirect=False,
+            )
             try:
-                robots_resp = await asyncio.wait_for(
-                    active_transport(robots_url, min(timeout_seconds, 5.0), 64_000),
-                    timeout=min(timeout_seconds, 5.0),
-                )
+                robots_resp = await request(robots_url, robots_target, 64_000, cap=5.0)
+                if robots_resp.status_code in _REDIRECT_STATUSES:
+                    raise WebResearchRefusal("provider_unavailable", host=target.host)
                 if 200 <= robots_resp.status_code < 300:
+                    if len(robots_resp.body) > 64_000:
+                        raise WebResearchRefusal("response_too_large", host=target.host)
+                    ctype = (robots_resp.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+                    if ctype not in {"text/plain", "application/octet-stream"}:
+                        raise WebResearchRefusal("provider_unavailable", host=target.host)
                     robots_txt = robots_resp.body.decode("utf-8", errors="replace")
-                else:
+                elif robots_resp.status_code in {404, 410}:
                     robots_txt = ""
+                else:
+                    raise WebResearchRefusal("provider_unavailable", host=target.host)
+                robots_checked = True
             except WebResearchRefusal:
-                robots_txt = ""
+                raise
             except Exception:
-                robots_txt = ""
+                raise WebResearchRefusal("provider_unavailable", host=target.host) from None
 
-        if robots_txt and not is_allowed_by_robots(robots_txt, parts.path or "/"):
+        if robots_txt and not is_allowed_by_robots(
+            robots_txt, (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
+        ):
             raise WebResearchRefusal("robots_disallowed", host=target.host)
 
         try:
-            if fetch_mode == "chromium_read_only" and chromium_engine is not None:
+            if fetch_mode == "chromium_read_only":
+                if chromium_engine is None:
+                    raise WebResearchRefusal("provider_unavailable", host=target.host)
                 resp = await chromium_engine.fetch_rendered_page(
-                    current_url,
-                    timeout_seconds=timeout_seconds,
-                    max_bytes=max_bytes,
-                    resolver=resolver,
+                    current_url, timeout_seconds=timeout_seconds, max_bytes=max_bytes, resolver=resolver
                 )
             else:
-                resp = await asyncio.wait_for(
-                    active_transport(current_url, timeout_seconds, max_bytes),
-                    timeout=timeout_seconds,
-                )
+                resp = await request(current_url, target, max_bytes, cap=timeout_seconds)
         except WebResearchRefusal:
             raise
         except (TimeoutError, asyncio.TimeoutError):
@@ -678,8 +756,8 @@ async def fetch_public_page(
         if len(resp.body) > max_bytes:
             raise WebResearchRefusal("response_too_large", host=target.host)
 
-        raw_ctype = (resp.headers.get("content-type") or resp.headers.get("Content-Type") or "text/html").strip()
-        media_type = raw_ctype.split(";", 1)[0].strip().lower() or "text/html"
+        raw_ctype = (resp.headers.get("content-type") or resp.headers.get("Content-Type") or "").strip()
+        media_type = raw_ctype.split(";", 1)[0].strip().lower()
         if media_type not in ALLOWED_CONTENT_TYPES:
             raise WebResearchRefusal("unsupported_content_type", host=target.host)
 
@@ -689,9 +767,7 @@ async def fetch_public_page(
         citation_anchor = f"{current_url}#t={fetched_at.strftime('%Y-%m-%dT%H:%M:%SZ')}"
         limit_notes: list[str] = []
         if extracted["prompt_injection_detected"]:
-            limit_notes.append(
-                "Обнаружены и нейтрализованы подозрительные инструкции во внешнем тексте (prompt injection)."
-            )
+            limit_notes.append("Heuristic prompt-injection markers were detected; external content remains untrusted.")
         if len(extracted["clean_text"]) > 8000:
             limit_notes.append("Текст страницы сокращён до 8000 символов.")
 
@@ -708,7 +784,7 @@ async def fetch_public_page(
             fetched_at=fetched_at,
             fetch_mode=fetch_mode,
             redirect_chain=redirect_chain,
-            robots_checked=True,
+            robots_checked=robots_checked,
             prompt_injection_detected=extracted["prompt_injection_detected"],
             injection_markers=extracted["injection_markers"],
             extraction_limit_note=" ".join(limit_notes),

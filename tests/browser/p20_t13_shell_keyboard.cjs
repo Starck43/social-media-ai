@@ -202,7 +202,15 @@ async function waitFor(expression, label, attempts = 80) {
         if (await evaluate(expression)) return;
         await new Promise(resolve => setTimeout(resolve, 25));
     }
-    throw Error(`Timed out waiting for ${label}`);
+    const diagnostic = await evaluate(`({
+        active: document.activeElement?.id || document.activeElement?.tagName,
+        overflow: document.body.style.overflow,
+        dialogs: [...document.querySelectorAll('dialog')].map(dialog => ({
+            id: dialog.id, open: dialog.open, managed: !!dialog.shellDepth,
+            launcher: dialog.shellLauncher?.id
+        }))
+    })`);
+    throw Error(`Timed out waiting for ${label} after ${checks.length} passed checks: ${JSON.stringify(diagnostic)}`);
 }
 
 let phase = 'startup';

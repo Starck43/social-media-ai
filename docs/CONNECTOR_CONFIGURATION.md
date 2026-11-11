@@ -8,8 +8,7 @@ VK OAuth/manual user tokens retain their existing personal flow. Telegram
 workspace consent and same-user cross-workspace reuse are specified in
 [personal account reuse](CONNECTOR_ACCOUNT_REUSE.md); that draft foundation is not
 yet a completed authorization/runtime journey. Mail configuration does not gain
-credential reuse implicitly. Other business connectors remain unavailable: a
-descriptor is not an adapter.
+credential reuse implicitly. A descriptor alone is not an adapter; see the provider-specific sections below.
 
 ## Storage boundaries
 
@@ -20,8 +19,8 @@ descriptor is not an adapter.
 | Connection instance | `workspace_connections` (`WorkspaceConnection`): explicit tenant and personal owner, platform/provider/method, schema version, label, normalized account identity, non-secret config and check state. |
 | Connection secret | Separate one-to-one `workspace_connection_secrets`, encrypted with Fernet under `CREDENTIALS_KEY`; FK to the connection, never a caller-selected credential reference. Deployment OAuth client secrets stay in deployment configuration. |
 
-Only entries explicitly included in `WORKSPACE_PROVIDERS` have a settings flow.
-Other catalog descriptors (VK, Telegram, disks) do not enable new calls. A new
+Only entries explicitly included in `WORKSPACE_PROVIDERS` use the generic mail settings flow.
+Provider-specific flows have their own explicit managers and policies. A new
 provider needs a reviewed field contract **and** an implemented, tested adapter
 and authorization/network policy. Increase the schema version deliberately when
 changing the saved contract; unknown versions fail closed on verification.
@@ -172,3 +171,15 @@ Per Owner Decision D2 ([Q-18](audit/q-18-owner-decisions.md)), Bitrix24 connecti
 - **Global-application credentials (P14-T07):** Bitrix24 is registered as a global application outside this product. `resolve_app_credentials` (the single resolver seam) reads an operator-supplied JSON secret file named by `BITRIX24_APP_SECRET_FILE` (entry `BITRIX24_APP_SECRET_NAME`, default `client_secret`, accepting `{"client_id", "client_secret"}`) or an injected provider (`INJECTED_APP_CREDENTIALS`). Source order: injected provider, operator file, then the rollback-only `BITRIX24_LEGACY_ENV_CREDENTIALS` settings bridge (default OFF, ignored whenever `BITRIX24_APP_SECRET_FILE` is set). Any missing, unreadable, malformed or incomplete source fails closed with `bitrix_credentials_unavailable`: no fallback, no secret in logs, errors, settings repr or API responses. Portal domain, install state and tokens remain tenant-scoped in the database.
 
 
+
+## 1C connection and health (P17-T01)
+
+A workspace owner or admin approves an exact DNS host in Settings → Connections → 1C before a member with `source.create` can configure a 1C:Enterprise 8.3+ connection. This approval is scoped to the workspace and is independent of the installation-level outbound-host registry. It is provider-neutral but does not itself grant access to a connector or permit private addresses. An actor sees and operates only their own connections in the active workspace; host approval/revocation is restricted to workspace owners and admins.
+
+Use a published HTTPS base URL with an approved host and either standard OData (`/odata/standard.odata/$metadata`) or a published HTTP service exposing `/ping`. Basic login and password are Fernet-encrypted together in the existing `workspace_connection_secrets` row under `CREDENTIALS_KEY`; they are not placed in config or returned by the API. Prefer a dedicated read-only 1C account. Saving does not contact 1C. Health checks perform one bounded, TLS-verified GET and store a status and, for OData, the SHA-256 hash of the response; they do not query business records or write to 1C. Disable removes the local encrypted material; provider-side access must be revoked separately.
+
+Every attempt resolves afresh, rejects non-public, multicast, mixed private/public results, pins the chosen IP and checks TLS for the original host. Redirects, IP literals, URL credentials, query strings and private/loopback destinations are refused, regardless of the installation registry. The timeout is 30 seconds and response body is bounded to 2 MiB. The shared provider budget requires a separately configured `RATE_LIMIT_KEY` and currently spends two tokens per attempt: burst 5, sustained 5/minute; a 10-in-60-second bound requires all consumers of this budget to use the same token cost. No 1C consumer should bypass the shared budget. An internal-only 1C base requires the separate future local connector; it is not an exception to these checks.
+
+API endpoints under `/api/v1/integrations/1c`: `POST /connect`, `GET /connections`, `DELETE /connections/{id}`, `PATCH /connections/{id}/credentials`, `POST /connections/{id}/health-check`, and owner/admin `GET/POST /hosts`, `DELETE /hosts/{id}`. API calls require a bearer token and active matching workspace context; web forms require CSRF. The generic `WORKSPACE_PROVIDERS` mail catalog is not the 1C connection manager. This task implements health only; 1C data queries and write operations are separate tasks. A disabled connection retains its unique identity. Use its credential replacement form to set a new login and password and reactivate it; this clears the previous check state and does not contact the provider. Replacing credentials on an active connection likewise resets its health state.
+
+The workspace host migration uses a task placeholder revision; rebase against the then-current Alembic head and assign its final revision at integration. Its downgrade refuses to delete persisted approvals. Before deployment, the isolated-schema runner must verify upgrade, rollback refusal, tenant/admin isolation, host revocation, credential persistence and health/disable/quota concurrency; mocked tests are not evidence of those DB properties.

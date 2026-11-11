@@ -1,0 +1,62 @@
+{% extends "web/base.html" %}
+{% block title %}Подключение 1С — AI Monitor{% endblock %}
+{% block page_heading %}Подключение 1С{% endblock %}
+{% block page_context %}Активное пространство{% endblock %}
+{% block content %}
+<a href="/app/settings?tab=connections">← К подключениям</a>
+<section class="ui-card mt-4">
+  <h2>Хосты пространства</h2>
+  <p class="ui-muted">Хост разрешает владелец или администратор пространства. Только публичный HTTPS: локальные и внутренние IP-адреса запрещены. Для приватной сети нужен отдельный локальный коннектор.</p>
+  {% if can_manage_hosts %}
+    {% for host in hosts %}
+    <form method="post" action="/app/settings/onec/hosts/{{ host.id }}/revoke" class="mt-2">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <span>{{ host.host }}</span> <button class="ui-control">Отозвать разрешение</button>
+    </form>
+    {% endfor %}
+    <form method="post" action="/app/settings/onec/hosts" class="mt-3">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <label for="onec-host">Домен без схемы и порта</label>
+      <input class="ui-control" id="onec-host" name="host" maxlength="253" placeholder="erp.example.com" required>
+      <button class="ui-control">Разрешить хост</button>
+    </form>
+  {% else %}<p>За разрешением хоста обратитесь к владельцу или администратору пространства.</p>{% endif %}
+</section>
+<section class="ui-card mt-4">
+  <h2>Мои подключения</h2>
+  {% for row in rows %}
+  <article class="mt-3" data-onec-connection="{{ row.id }}">
+    <h3>{{ row.label }}</h3><p>{{ row.host }} · {{ row.interface }} · {{ row.state }}{% if row.check_code %} · {{ row.check_code }}{% endif %}</p>
+    {% if row.is_active %}
+    <form method="post" action="/app/settings/onec/connections/{{ row.id }}/health" class="inline"><input type="hidden" name="_csrf" value="{{ csrf }}"><button class="ui-control">Проверить доступ</button></form>
+    <form method="post" action="/app/settings/onec/connections/{{ row.id }}/disable" class="inline"><input type="hidden" name="_csrf" value="{{ csrf }}"><button class="ui-control">Отключить</button></form>
+    {% endif %}
+    <details class="mt-3">
+      <summary>Заменить учётные данные{% if not row.is_active %} и восстановить подключение{% endif %}</summary>
+      <p class="ui-muted">Заново укажите логин и пароль. Предыдущий результат проверки будет сброшен.</p>
+      <form method="post" action="/app/settings/onec/connections/{{ row.id }}/credentials" class="mt-2 space-y-2">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <label for="onec-relogin-{{ row.id }}">Логин</label>
+        <input class="ui-control" id="onec-relogin-{{ row.id }}" name="login" maxlength="320" autocomplete="username" required>
+        <label for="onec-repassword-{{ row.id }}">Новый пароль</label>
+        <input class="ui-control" id="onec-repassword-{{ row.id }}" name="password" type="password" maxlength="4096" autocomplete="new-password" required>
+        <button class="ui-control">Сохранить учётные данные</button>
+      </form>
+    </details>
+  </article>
+  {% else %}<p>Подключения пока не сохранены.</p>{% endfor %}
+</section>
+<section class="ui-card mt-4">
+  <h2>Добавить подключение</h2>
+  <p class="ui-muted">Рекомендуется отдельная учётная запись 1С только для чтения. Пароль сохраняется зашифрованным и не отображается повторно.</p>
+  <form method="post" action="/app/settings/onec/connect" class="mt-3 space-y-3">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <label class="block" for="onec-label">Название</label><input class="ui-control w-full" id="onec-label" name="label" maxlength="100" required>
+    <label class="block" for="onec-url">HTTPS-адрес базы или службы</label><input class="ui-control w-full" id="onec-url" type="url" name="base_url" maxlength="2048" required>
+    <label class="block" for="onec-interface">Интерфейс</label><select class="ui-control w-full" id="onec-interface" name="interface"><option value="odata_standard">Стандартный OData</option><option value="http_service">HTTP-служба</option></select>
+    <label class="block" for="onec-login">Логин</label><input class="ui-control w-full" id="onec-login" name="login" autocomplete="username" required>
+    <label class="block" for="onec-password">Пароль</label><input class="ui-control w-full" id="onec-password" type="password" name="password" autocomplete="new-password" required>
+    <button class="ui-control">Сохранить</button>
+  </form>
+</section>
+{% endblock %}

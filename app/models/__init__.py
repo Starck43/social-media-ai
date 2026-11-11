@@ -26,6 +26,7 @@ from .billing import (
     PersonalLLMReservationState,
     TaskBillingPayer,
 )
+from .calendar import CalendarChoice, CalendarEvent, SourceObject
 from .collection import (
     CollectedItem,
     CollectionCandidate,
@@ -65,6 +66,7 @@ from .integrations import (
     WorkspaceAuthorizationGrant,
     WorkspaceConnection,
     WorkspaceConnectionSecret,
+    WorkspaceOutboundHost,
 )
 from .knowledge import DocumentApproval, DocumentRevision, KnowledgeDocument, KnowledgeSnippet
 from .llm import (
@@ -77,7 +79,6 @@ from .llm import (
     LLMProvider,
 )
 from .notifications import DigestRun, Notification, NotificationDelivery, NotificationPreference, NotificationReceipt
-from .calendar import CalendarChoice, CalendarEvent, SourceObject
 from .planner import PlannerEventRun, PlannerEventSettings, PlannerReminder, PlannerTask
 from .scheduling import AgentTask, Job
 from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
@@ -139,6 +140,7 @@ __all__ = [
     "UserCredential",
     "WorkspaceConnection",
     "WorkspaceConnectionSecret",
+    "WorkspaceOutboundHost",
     "PersonalConnectorAuthorization",
     "TelegramLoginAttempt",
     "TelegramLoginRequestKey",

@@ -28,6 +28,7 @@ from app.api.v1.endpoints import (
     sources,
     tasks,
     user,
+    web_research,
 )
 from app.models import Permission, User
 from app.services.user.auth import get_authenticated_user
@@ -46,6 +47,7 @@ router.include_router(planner.router, dependencies=API_AUTH)
 router.include_router(calendar.router, dependencies=API_AUTH)
 router.include_router(documents.router, dependencies=API_AUTH)
 router.include_router(document_delivery.router, dependencies=API_AUTH)
+router.include_router(web_research.router, dependencies=API_AUTH)
 router.include_router(outbox.router, dependencies=API_AUTH)
 router.include_router(communication.router, prefix="/communication", tags=["communication"], dependencies=API_AUTH)
 router.include_router(commands.router, dependencies=API_AUTH)

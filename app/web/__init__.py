@@ -41,6 +41,7 @@ from .tasks import router as tasks_router
 from .telegram_login import router as telegram_login_router
 from .trusted_hosts import router as trusted_hosts_router
 from .vk import router as vk_router
+from .web_research import router as web_research_router
 
 web_router = APIRouter(
     prefix="/app",
@@ -82,5 +83,6 @@ web_router.include_router(task_surface_router)
 web_router.include_router(telegram_login_router)
 web_router.include_router(trusted_hosts_router)
 web_router.include_router(vk_router)
+web_router.include_router(web_research_router)
 
 __all__ = ["web_router"]

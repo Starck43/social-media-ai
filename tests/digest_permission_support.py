@@ -140,6 +140,15 @@ class DigestEnvironment:
             },
         )
         self.spec = self.tools.get_tool("digest_send_now")
+        # A test rewrites `required_permission` to replay an older contract, but the
+        # registry hands out a frozen `Tool`: the mutable stand-in keeps that copy
+        # local, and the fields the confirmation path reads stay identical.
+        self.spec = SimpleNamespace(
+            name=self.spec.name,
+            required_permission=self.spec.required_permission,
+            confirm=self.spec.confirm,
+            parameters=self.spec.parameters,
+        )
         self.actor = self.identity.RuntimeIdentity(
             tenant_id=31,
             user_id=12,

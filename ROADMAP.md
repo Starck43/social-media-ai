@@ -56,11 +56,10 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T46](docs/tasks/p8-t46.md) VK video search category — **IN_PROGRESS** · notion-ai-p8-t46 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
 - [P8-T47](docs/tasks/p8-t47.md) VK apps/games search category — **IN_PROGRESS** · notion-ai-p8-t47 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
 - [P8-T48](docs/tasks/p8-t48.md) VK owner-scoped market items category — **IN_PROGRESS** · notion-ai-p8-t48 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
-- [P8-T49](docs/tasks/p8-t49.md) VK music search category — **IN_PROGRESS** · notion-ai-p8-t49 · [chat](https://app.notion.com/chat?t=40bd5248ae66806fba4a00a9d3a3af96) · `P2` · `C3`
+- [P8-T49](docs/tasks/p8-t49.md) VK music search category — **READY** ([PR #469](https://github.com/Starck43/social-media-ai/pull/469), head `1024c7fb`: reclassified `unsupported`, no public search method since the 2016 audio API shutdown; 217 passed) · opencode-auditor · [card](docs/tasks/p8-t49.md#execution-evidence-2026-11-01) · `P2` · `C3`
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-17](docs/tasks/q-17.md) Web test-suite debt in `tests/unit_web/` — **OPEN** · unassigned · raised while closing [P12-T16](docs/audit/p12-t16.md) · `P2` · `C3`
-- [P11-T31](docs/tasks/p11-t31.md) `tests/notifications/` stale fixtures against the current tenant and role contract — **BLOCKED** (shared `test_schema` is a stale metadata snapshot: version says `0145`, `alembic upgrade` hits `DuplicateTable`, bootstrap refuses on missing `outbox_messages.reply_evidence_required`; the suite hard-requires that target, so it cannot even collect) · opencode-executor · [card](docs/tasks/p11-t31.md#status-2026-11-11--blocked-on-the-shared-test_schema) · `P2` · `C3`
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: remaining roadmap after the accepted increment (provider byte authority, native original open, local-only execution, approved file actions) — **TODO** (increment accepted 2026-11-03, `6433ae6a`/`48caea61`) · unassigned · [increment audit](docs/audit/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
@@ -74,7 +73,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 ### Priority P3
 
 - [P20-T02](docs/tasks/p20-t02.md) Social triage, attention-item contract and morning brief — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
-- [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **IN_PROGRESS** · ai-studio-argon · [Draft PR #467](https://github.com/Starck43/social-media-ai/pull/467) · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **IN_PROGRESS** · Codex audit · [audit PR #467](https://github.com/Starck43/social-media-ai/pull/467#issuecomment-6791334236) · `P3` · `C4`
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
 - [P17-T01](docs/tasks/p17-t01.md) 1C connection: OData/HTTP-service endpoints, credentials and health — **IN_PROGRESS** · notion-ai-p17-t01 · [dialogue](https://app.notion.com/chat?t=4146f4961afe806fb57b00a9325adb27) · `P3` · `C3`
@@ -85,7 +84,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P18-T07](docs/tasks/p18-t07.md) Packaging, signing and auto-update for Windows, macOS and Linux — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P19-T02](docs/tasks/p19-t02.md) Templates and AI drafting with evidence and unsupported-claim marking — **IN_PROGRESS** · Codex audit corrections · [dialogue](https://github.com/Starck43/social-media-ai/pull/463#issuecomment-6789103633) · `P3` · `C4`
 
 
 ## Deferred by explicit owner decision

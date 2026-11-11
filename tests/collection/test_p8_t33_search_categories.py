@@ -102,7 +102,12 @@ def test_no_category_is_live_enabled_while_q5_owns_profile_evidence():
 def test_every_requested_category_keeps_an_explicit_status_and_reason():
     by_id = {category.category_id: category for category in vk_search_categories()}
 
-    for category_id, status in (("video", "mocked"), ("apps", "mocked"), ("market", "mocked"), ("music", "deferred")):
+    for category_id, status in (
+        ("video", "mocked"),
+        ("apps", "mocked"),
+        ("market", "mocked"),
+        ("music", "unsupported"),
+    ):
         assert by_id[category_id].status == status
         assert by_id[category_id].reason
         assert by_id[category_id].executable is False
@@ -257,7 +262,7 @@ async def test_people_search_maps_1051_to_a_bounded_credentials_error(enabled_pe
 
 
 @pytest.mark.asyncio
-async def test_deferred_category_fails_visibly_instead_of_an_empty_page():
+async def test_unsupported_category_fails_visibly_instead_of_an_empty_page():
     client = _client()
     adapter = VKCollectionAdapter(client)
 
@@ -265,7 +270,7 @@ async def test_deferred_category_fails_visibly_instead_of_an_empty_page():
         await search_category(adapter, "music", "ремонт", limit=5)
 
     assert caught.value.code == "search_category_unavailable"
-    assert "deferred" in caught.value.message
+    assert "unsupported" in caught.value.message
 
 
 @pytest.mark.asyncio

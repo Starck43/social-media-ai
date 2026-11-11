@@ -313,9 +313,11 @@ official API method, result kind, status (`enabled`, `mocked`, `deferred`,
 is selected in the T33 slice; it dispatches through the collection adapter's
 existing `search_people`, returns typed people results (never Sources) stamped
 with category provenance, and stays `mocked` — contract-tested only — while
-Q-5 owns live method/profile evidence. Video, apps/games, owner-scoped market
-items and music are `deferred` with their own task cards; clips and channels
-are `unsupported` with explicit reasons. Only `enabled` categories may
+Q-5 owns live method/profile evidence. Video, apps/games and owner-scoped market
+items are `mocked` with their own task cards, each gated by the same Q-5 evidence;
+music, clips and channels are `unsupported` with explicit reasons (music has no
+public search method since VK disabled the public audio API in 2016 — the
+`audio` access right still exists, but no documented search method uses it). Only `enabled` categories may
 execute: `resolve_categories` aggregates only enabled categories for `all`,
 returns the rest as unavailable with their reasons and fails closed on unknown
 ids; a refused or unavailable category raises a bounded error instead of

@@ -129,7 +129,7 @@ One surface, two kinds kept separate in storage ([R-03](BUSINESS_MODULES.md#revi
 - **Agent task** — an executable plan with preview, schedule and run history:
   social collection/analysis today; later message analysis, web research
   ([P20-T12](tasks/p20-t12.md)), 1C queries ([P17-T03](tasks/p17-t03.md)), document
-  drafts ([P19-T02](tasks/p19-t02.md)) and delegated research.
+  drafts ([P19-T02](audit/p19-t02.md)) and delegated research.
 
 «Поручить агенту» on a planner task creates a linked agent task; its result may
 annotate or complete the planner task after the user confirms. The calendar is a

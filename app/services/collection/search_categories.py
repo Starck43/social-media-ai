@@ -58,7 +58,6 @@ STATUS_LABELS = {
 REASON_PROFILE_UNVERIFIED = "vk_method_profile_unverified"
 REASON_NOT_SELECTED = "category_not_selected_for_this_slice"
 REASON_METHOD_UNVERIFIED = "official_method_unverified"
-REASON_PERMISSION_EVIDENCE = "separate_permission_evidence_required"
 REASON_NO_PUBLIC_METHOD = "no_promised_public_search_method"
 REASON_PARTIAL_VIA_COMMUNITIES = "partially_represented_by_communities"
 
@@ -186,8 +185,12 @@ VK_SEARCH_CATEGORIES: tuple[SearchCategory, ...] = (
         platform="vk",
         label="Музыка",
         result_kind="audio",
-        status=STATUS_DEFERRED,
-        reason=REASON_PERMISSION_EVIDENCE,
+        # VK disabled the public audio API on 2016-12-16 and the current official
+        # method index has no Audio/Music section (only `Podcasts.searchPodcast`,
+        # a different category), so there is no permission to wait for: the
+        # category cannot be enabled from code or from a support reply.
+        status=STATUS_UNSUPPORTED,
+        reason=REASON_NO_PUBLIC_METHOD,
         evidence_ref=T49_CARD_REF,
     ),
     SearchCategory(
@@ -324,10 +327,10 @@ async def search_category(
         page = await operation(query, owner_id, limit, cursor)
     elif resolved.category_id in (CATEGORY_VIDEO, CATEGORY_APPS):
         page = await operation(query, limit, cursor)
-    elif resolved.category_id == CATEGORY_MUSIC:  # pragma: no cover - binding withheld while the rights gate is open
+    elif resolved.category_id == CATEGORY_MUSIC:  # pragma: no cover - unsupported category, binding withheld
         raise SearchCategoryError(
             "search_category_unavailable",
-            f"{resolved.platform} search category {resolved.category_id!r} awaits separate permission evidence",
+            f"{resolved.platform} search category {resolved.category_id!r} has no public search method",
         )
     else:  # pragma: no cover - no other executable category exists yet
         raise SearchCategoryError(

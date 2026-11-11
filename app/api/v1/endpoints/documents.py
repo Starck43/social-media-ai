@@ -25,6 +25,12 @@ from app.services.knowledge.document_contracts import (
     TemplateVersion,
 )
 from app.services.knowledge.documents import DocumentConflict, DocumentUnavailable, document_service
+from app.services.knowledge.drafting import (
+    DocumentDraftOut,
+    DocumentDraftRequest,
+    DraftingUnavailable,
+    drafting_service,
+)
 from app.services.knowledge.search import document_search_service
 from app.services.knowledge.versions import RestoreRequest, RevisionDiff, RevisionOut, version_service
 from app.types import ActionType
@@ -39,6 +45,8 @@ class DeletedOut(BusinessSchema):
 async def invoke(operation):
     try:
         return await operation
+    except DraftingUnavailable:
+        raise HTTPException(503) from None
     except DocumentUnavailable:
         raise HTTPException(404) from None
     except (DocumentConflict, ApprovalConflict):
@@ -85,6 +93,16 @@ async def update_template(request: TemplateUpdate, template_id: int = Path(gt=0)
 )
 async def delete_template(request: TemplateVersion, template_id: int = Path(gt=0)):
     return await invoke(document_service.delete_template(template_id, request))
+
+
+@router.post(
+    "/draft",
+    response_model=DocumentDraftOut,
+    status_code=201,
+    dependencies=[Depends(require_model_perm("source", ActionType.CREATE))],
+)
+async def draft_document(request: DocumentDraftRequest):
+    return await invoke(drafting_service.draft(request))
 
 
 @router.get(

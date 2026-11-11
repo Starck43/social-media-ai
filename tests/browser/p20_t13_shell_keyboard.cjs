@@ -189,6 +189,9 @@ const focusId = () => evaluate(`(() => {
     return el.id || (el.hasAttribute('data-popover-option') ? 'option:' + el.getAttribute('data-popover-option') : el.tagName);
 })()`);
 const overflow = () => evaluate('document.body.style.overflow');
+// Native close queues its close event separately from clearing the open flag.
+// Wait for the presentation cleanup before reopening or checking restored state.
+const closed = id => `!document.getElementById('${id}').open && !document.getElementById('${id}').shellDepth`;
 const open = id => evaluate(`document.getElementById(${JSON.stringify(id)}).open`);
 
 async function waitFor(expression, label, attempts = 80) {
@@ -288,11 +291,11 @@ async function run() {
     await waitFor(`document.getElementById('context-panel').open`, 'context panel opens');
     check((await overflow()) === 'hidden', 'nested dialog keeps the page locked');
     await evaluate(`document.getElementById('context-panel').close()`);
-    await waitFor(`!document.getElementById('context-panel').open`, 'context panel closes');
+    await waitFor(closed('context-panel'), 'context panel closes');
     check((await overflow()) === 'hidden', 'closing the inner dialog does not unlock scroll');
     check((await focusId()) === 'open-context', 'inner dialog returns focus to its launcher inside the invite dialog');
     await key('Escape');
-    await waitFor(`!document.getElementById('invite-dialog').open`, 'invite dialog closes with native Escape');
+    await waitFor(closed('invite-dialog'), 'invite dialog closes with native Escape');
     check((await overflow()) === 'auto', 'closing the outermost dialog restores the prior overflow');
     check((await focusId()) === 'open-invite', 'closing the dialog returns focus to its page launcher');
     // The original value was empty: an empty marker is restored empty, byte for byte.
@@ -301,7 +304,7 @@ async function run() {
     await waitFor(`document.getElementById('invite-dialog').open`, 'invite dialog reopens');
     check((await overflow()) === 'hidden', 'an originally empty overflow is still locked');
     await key('Escape');
-    await waitFor(`!document.getElementById('invite-dialog').open`, 'invite dialog closes again');
+    await waitFor(closed('invite-dialog'), 'invite dialog closes again');
     check((await overflow()) === '', 'an originally empty overflow is restored as empty');
     check(await evaluate(`document.body.style.getPropertyValue('overflow') === ''`), 'no leftover overflow declaration remains');
 
@@ -317,7 +320,7 @@ async function run() {
     check((await focusId()) === 'chat-dock-send', 'dock Tab moves to send');
     await evaluate(`document.getElementById('chat-dock-input').focus()`);
     await key('Escape');
-    await waitFor(`!document.getElementById('chat-dock-drawer').open`, 'dock closes with Escape');
+    await waitFor(closed('chat-dock-drawer'), 'dock closes with Escape');
     check((await overflow()) === '', 'closing the dock restores the previous overflow');
     check((await focusId()) === 'chat-dock-toggle', 'dock returns focus to its launcher');
     await evaluate(`document.getElementById('ask-agent').focus()`);
@@ -325,7 +328,7 @@ async function run() {
     await waitFor(`document.getElementById('chat-dock-drawer').open`, 'dock opens from the page trigger');
     check(await evaluate(`window.__events.appOpens['chat-dock-drawer'] === 2`), 'dock announces one opening from the page trigger');
     await key('Escape');
-    await waitFor(`!document.getElementById('chat-dock-drawer').open`, 'dock closes from the page trigger');
+    await waitFor(closed('chat-dock-drawer'), 'dock closes from the page trigger');
     check((await focusId()) === 'ask-agent', 'dock returns focus to the page trigger, not the fixed toggle');
 
     // 5. Local-only context keeps the refusal boundary.
@@ -341,7 +344,7 @@ async function run() {
     check(await evaluate('window.__events.submits === 0'), 'local-only form cannot be submitted');
     await evaluate(`document.getElementById('object-row').setAttribute('data-boundary', 'cloud')`);
     await key('Escape');
-    await waitFor(`!document.getElementById('chat-dock-drawer').open`, 'dock closes again');
+    await waitFor(closed('chat-dock-drawer'), 'dock closes again');
 
     // 6. Real backdrop click closes the dialog and releases scroll.
     await evaluate(`document.getElementById('open-invite').focus()`);
@@ -349,7 +352,7 @@ async function run() {
     await waitFor(`document.getElementById('invite-dialog').open`, 'invite dialog reopens');
     const rect = await evaluate(`(() => { const box = document.getElementById('invite-dialog').getBoundingClientRect(); return { left: box.left, top: box.top }; })()`);
     await clickAt(Math.max(1, rect.left - 12), Math.max(1, rect.top - 12));
-    await waitFor(`!document.getElementById('invite-dialog').open`, 'backdrop click closes the dialog');
+    await waitFor(closed('invite-dialog'), 'backdrop click closes the dialog');
     check((await overflow()) === '', 'backdrop close releases the scroll lock');
     check((await focusId()) === 'open-invite', 'backdrop close restores the launcher focus');
 
@@ -363,7 +366,7 @@ async function run() {
         return box.left >= -1 && box.top >= -1 && box.bottom <= innerHeight + 1 && box.width > 0;
     })()`), 'mobile dock stays within the viewport');
     await key('Escape');
-    await waitFor(`!document.getElementById('chat-dock-drawer').open`, 'mobile dock closes');
+    await waitFor(closed('chat-dock-drawer'), 'mobile dock closes');
     await send('Emulation.clearDeviceMetricsOverride');
 
     check(blocked.length === 0, 'no blocked network request was attempted');

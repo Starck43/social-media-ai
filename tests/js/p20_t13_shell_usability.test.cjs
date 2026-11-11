@@ -158,6 +158,7 @@ function build({ issuePost = false } = {}) {
     // Ancestors connect to the document: body -> html -> document element chain.
     html.append(body);
     html.parent = document;
+    body.append(pageContent);
     body.ownerDocument = html.ownerDocument = document;
     activeDocument = document;
     const storage = new Map();
@@ -212,6 +213,7 @@ function buildShell() {
     const hidden = new Node_('input'); hidden.setAttribute('data-popover-value', ''); hidden.type = 'hidden'; hidden.value = 'm2';
     const label = new Node_('span'); label.setAttribute('data-popover-label', ''); label.textContent = 'Модель 2';
     const trigger = new Node_('button'); trigger.setAttribute('data-popover-trigger', ''); trigger.setAttribute('aria-expanded', 'false');
+    trigger.append(label);
     const panel = new Node_('div'); panel.attributes.class = 'shell-popover-panel'; panel.setAttribute('role', 'listbox'); panel.hidden = true;
     const options = [['', 'Автовыбор', false], ['m1', 'Модель 1', false], ['m2', 'Модель 2', true], ['m3', 'Модель 3', false]]
         .map(([value, text, selected]) => {
@@ -260,14 +262,14 @@ test('popover select: hidden or inert options are skipped by entry and movement'
     s.panel.append(branch);
     s.trigger.fire('keydown', key('ArrowDown'));
     assert.equal(s.document.activeElement, s.options[0], 'entry skips the hidden selection, and does not move twice');
-    s.options[1].fire('keydown', key('ArrowDown'));
+    s.options[1].focus(); s.options[1].fire('keydown', key('ArrowDown'));
     assert.equal(s.document.activeElement, s.options[3], 'movement skips the hidden option');
-    s.options[3].fire('keydown', key('ArrowUp'));
+    s.options[3].focus(); s.options[3].fire('keydown', key('ArrowUp'));
     assert.equal(s.document.activeElement, s.options[1]);
     const inert = new Node_('section'); inert.setAttribute('inert', '');
     const inertOption = new Node_('button'); inertOption.setAttribute('data-popover-option', 'm4');
     inertOption.setAttribute('role', 'option'); inert.append(inertOption); s.panel.append(inert);
-    s.options[3].fire('keydown', key('ArrowDown'));
+    s.options[3].focus(); s.options[3].fire('keydown', key('ArrowDown'));
     assert.equal(s.document.activeElement, s.options[0], 'inert options are not in the list');
 });
 
@@ -410,7 +412,7 @@ function buildDialogs() {
         if (selector.startsWith('dialog.')) return [drawer, invite];
         return [];
     };
-    document.getElementById = id => ({ 'invite-dialog': invite, 'navigation-drawer': drawer, 'notification-overlay': notification })[id] || null;
+    document.getElementById = id => ({ 'invite-dialog': invite, 'navigation-drawer': drawer, 'notification-overlay': notification, 'page-content': env.pageContent })[id] || null;
     vm.runInContext(read('shell.js'), env.context);
     document.fire('DOMContentLoaded', {});
     const counts = { appOpen: 0, nativeShow: 0 };
@@ -469,6 +471,7 @@ test('dialog: Tab trap uses the real first and last controls', () => {
     d.invite.fire('keydown', { key: 'Tab', shiftKey: true });
     assert.equal(d.document.activeElement, d.drawerTrigger, 'Shift+Tab from the first wraps to the last real control');
     // Interior controls keep native movement.
+    d.last.focus();
     const interior = d.last.fire('keydown', key('Tab'));
     assert.equal(interior.defaultPrevented, false, 'a control before the last keeps native Tab');
 });

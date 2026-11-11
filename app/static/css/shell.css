@@ -713,10 +713,10 @@ html[data-sidebar-collapsed="true"] .shell-sidebar .shell-nav-group {
     /* Reserve fixed chrome outside the scrollport, not just after its last row.
      * --shell-dock-space already contains the safe-area inset; do not add it twice. */
     body:has(> .shell-mobile-bar) .shell-content {
-        margin-bottom: max(calc(64px + env(safe-area-inset-bottom)), calc(64px + var(--shell-dock-space, 0px)));
+        margin-bottom: max(calc(65px + env(safe-area-inset-bottom)), calc(65px + var(--shell-dock-space, 0px)));
         padding-bottom: 24px;
     }
     body:has(> .shell-mobile-bar):has([data-chat-dock-container]) .shell-content {
-        margin-bottom: max(calc(140px + env(safe-area-inset-bottom)), calc(64px + var(--shell-dock-space, 0px)));
+        margin-bottom: max(calc(140px + env(safe-area-inset-bottom)), calc(65px + var(--shell-dock-space, 0px)));
     }
 }

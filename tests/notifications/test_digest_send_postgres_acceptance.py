@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from contextlib import asynccontextmanager, contextmanager
-from copy import copy, deepcopy
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -386,8 +386,17 @@ async def test_persisted_obsolete_intents_are_rejected(invalid, digest_effects):
         elif invalid == "version2":
             pending["authorization"]["version"] = 2
         else:
-            old_spec = copy(get_tool("digest_send_now"))
-            old_spec.required_permission = "notifications.digest_run.update"
+            current = get_tool("digest_send_now")
+            # `Tool` is frozen and not modifiable after construction, so the
+            # historical (pre-cutover) permission is presented as a stand-in spec
+            # with the same name/contract and the retired permission key. The
+            # runtime must compare it against today's tool and refuse.
+            old_spec = SimpleNamespace(
+                name=current.name,
+                required_permission="notifications.digest_run.update",
+                confirm=current.confirm,
+                parameters=current.parameters,
+            )
             pending = make_pending_intent(
                 await subject.identity(),
                 subject.session,
@@ -396,6 +405,7 @@ async def test_persisted_obsolete_intents_are_rejected(invalid, digest_effects):
                 "historical-update",
             )
             assert pending is not None
+            assert pending["required_permission"] == "notifications.digest_run.update"
         with tenant_scope(workspace.tenant_id):
             await agent_sessions.set_state(subject.session.id, pending_confirmation=pending)
         assert "отклонено" in await subject.yes()

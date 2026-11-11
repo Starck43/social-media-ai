@@ -15,7 +15,7 @@ from app.models.managers.tenant_manager import tenant_channels
 from app.services.monitoring import collector
 from app.services.notifications import messenger
 from app.services.notifications.service import notify
-from app.types import NotificationType, SourceType
+from app.types import NotificationType, PlatformType, SourceType
 
 pytestmark = pytest.mark.tenancy
 
@@ -389,7 +389,7 @@ async def test_collection_failure_keeps_workspace_db_and_scrubs_operator_payload
         name="private-customer-source",
         params={},
         platform_id=1,
-        platform=SimpleNamespace(params={}),
+        platform=SimpleNamespace(params={}, platform_type=PlatformType.VK),
         source_type=SourceType.USER,
         last_checked=None,
     )

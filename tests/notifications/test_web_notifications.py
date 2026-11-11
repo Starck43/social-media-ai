@@ -17,6 +17,7 @@ import re
 import secrets
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 # isort: off
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -32,7 +33,8 @@ from tests.web.test_web_settings import _login
 from app.core.permissions import operator_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
-from app.models import Notification
+from app.models import Notification, NotificationReceipt
+from app.services.notifications.service import notify
 
 # isort: on
 
@@ -57,37 +59,61 @@ async def client():
 
 @pytest.fixture
 async def logged_in(client, home):
-    """A real member with notification.view/update; no permission bypass on HTTP."""
+    """Return the real member's id; the inbox is receipt-owned, so address that user."""
     user = await actor(home, "manager")
     await _login(client, user.username)
-    return home[1][0]
+    return user.id
 
 
 @pytest.fixture(autouse=True)
-async def owned_notifications(logged_in):
+async def owned_notifications(home, logged_in):
+    """Drop only the fixture's own workspace rows; the bell counts unread ones.
+
+    `notification_receipts` has no workspace column (its event carries it), so the
+    receipts go first via the event ids and the user id they were published for.
+    """
+    tenant_id = home[1][0]
     try:
         yield
     finally:
-        with tenant_scope(logged_in), operator_permission_scope():
-            await Notification.objects.filter(tenant_id=logged_in).delete()
+        with tenant_scope(tenant_id), operator_permission_scope():
+            events = await Notification.objects.filter(tenant_id=tenant_id)
+            for event_id in [event.id for event in events]:
+                receipts = await NotificationReceipt.objects.filter(notification_id=event_id, user_id=logged_in)
+                for receipt in receipts:
+                    await NotificationReceipt.objects.delete_by_id(receipt.id)
+                await Notification.objects.delete_by_id(event_id)
 
 
-async def test_notifications_list_and_read_all(client: AsyncClient, logged_in: int) -> None:
-    tenant_id = logged_in
+async def _notify(title: str, message: str, notification_type: str, recipient_ids: list[int]) -> Notification:
+    """The production producer: an event plus personal receipts, in the current workspace."""
+    return await notify.create(title, message, notification_type, recipient_user_ids=recipient_ids)
+
+
+@pytest.fixture(autouse=True)
+def no_deployment_connection_notice(monkeypatch):
+    """The bell also lists personal connection notices, which depend on deployment.
+
+    A registered VK app makes every account without a token "needs a connection",
+    and an unconfigured Telegram session counts the same way. Those items are not
+    notifications, so pin the connection projection to empty and assert events only.
+    """
+    monkeypatch.setattr("app.services.social.connections.statuses_needing_action", AsyncMock(return_value=[]))
+
+
+async def test_notifications_list_and_read_all(client: AsyncClient, logged_in: int, home) -> None:
+    tenant_id = home[1][0]
     with tenant_scope(tenant_id), operator_permission_scope():
-        n1 = await Notification.objects.create_notification(
-            title=_name("n1"), message="hello", notification_type="REPORT_READY"
-        )
-        n2 = await Notification.objects.create_notification(
-            title=_name("n2"), message="world", notification_type="API_ERROR"
-        )
+        n1 = await _notify(_name("n1"), "hello", "REPORT_READY", [logged_in])
+        n2 = await _notify(_name("n2"), "world", "API_ERROR", [logged_in])
 
     resp = await client.get("/app/notifications")
     assert resp.status_code == 200
     items = resp.json()["notifications"]
     assert {n1.id, n2.id} <= {n.get("id") for n in items}
-    assert {"Результат готов", "Сообщение об ошибке"} <= {n["title"] for n in items}
-    assert n1.title not in resp.text and n2.title not in resp.text
+    # The projection returns stored titles verbatim; only the producer redacts.
+    titles = {n["id"]: n["title"] for n in items}
+    assert (titles[n1.id], titles[n2.id]) == (n1.title, n2.title)
 
     page = await client.get("/app/")
     csrf = CSRF_RE.search(page.text).group(1)
@@ -99,15 +125,11 @@ async def test_notifications_list_and_read_all(client: AsyncClient, logged_in: i
     assert not {n1.id, n2.id} & {n.get("id") for n in after.json()["notifications"]}
 
 
-async def test_notification_read_one_marks_single(client: AsyncClient, logged_in: int) -> None:
-    tenant_id = logged_in
+async def test_notification_read_one_marks_single(client: AsyncClient, logged_in: int, home) -> None:
+    tenant_id = home[1][0]
     with tenant_scope(tenant_id), operator_permission_scope():
-        n1 = await Notification.objects.create_notification(
-            title=_name("n1"), message="hello", notification_type="REPORT_READY"
-        )
-        n2 = await Notification.objects.create_notification(
-            title=_name("n2"), message="world", notification_type="REPORT_READY"
-        )
+        n1 = await _notify(_name("n1"), "hello", "REPORT_READY", [logged_in])
+        n2 = await _notify(_name("n2"), "world", "REPORT_READY", [logged_in])
 
     page = await client.get("/app/")
     csrf = CSRF_RE.search(page.text).group(1)

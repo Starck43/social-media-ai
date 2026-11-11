@@ -55,6 +55,8 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main scenarios list | List agent scenarios for a workspace. |
 | python -m cli.main scenarios output-schema | Set an explicit output_schema for a scenario (dry-run unless --apply). The stored schema is extended with the requested fields; the derived contract of the scenario stays intact. Without --apply nothing is written. |
 | python -m cli.main scenarios seed-default | Seed a basic monitoring default scenario for a workspace. |
+| python -m cli.main social-brief | Read a social morning brief |
+| python -m cli.main social-brief preview | Print the read-only, deterministic brief; never sends or stores it. |
 | python -m cli.main task | Operator-only task management. Requires an authenticated active platform admin context. |
 | python -m cli.main task add | Add a task. |
 | python -m cli.main task analyze | Run a analyze task now. Use --task <name\|id> for an existing task, or pass direct parameters for a one-off run. |

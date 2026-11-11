@@ -27,6 +27,21 @@ class MorningBrief:
     missing_providers: tuple[str, ...] = ("inbox", "planner", "calendar")
     model_status: str = "disabled_deterministic_only"
 
+    def to_dict(self) -> dict:
+        return {
+            "tenant_id": self.tenant_id,
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "timezone": self.timezone,
+            "generated_at": self.generated_at.isoformat(),
+            "items": [item.to_dict() for item in self.items],
+            "top_count": len(self.top),
+            "remaining_count": len(self.remaining),
+            "notices": list(self.notices),
+            "missing_providers": list(self.missing_providers),
+            "model_status": self.model_status,
+        }
+
     @property
     def top(self) -> tuple[AttentionItem, ...]:
         return self.items[:3]
@@ -58,6 +73,8 @@ def require_actor(tenant_id: int, user_id: int):
         or current_tenant_id() != tenant_id
         or type(tenant_id) is not int
         or tenant_id <= 0
+        or type(user_id) is not int
+        or user_id <= 0
         or actor is None
         or actor.id != user_id
         or not all(has_permission(actor, model, ActionType.VIEW) for model in ("source", "aianalytics"))
@@ -117,6 +134,9 @@ async def preview(
     now: datetime | None = None,
     repository=None,
     overrides: dict[str, str] | None = None,
+    timezone_name: str | None = None,
+    report_start: date | None = None,
+    report_end: date | None = None,
 ) -> MorningBrief:
     from dataclasses import replace
 
@@ -126,8 +146,18 @@ async def preview(
     require_actor(tenant_id, user_id)
     repo = repository or SocialBriefRepository()
     now = now or datetime.now(timezone.utc)
-    zone = await repo.timezone(tenant_id)
+    zone = timezone_name if timezone_name is not None else await repo.timezone(tenant_id)
     start, end = local_window(now, zone, days)
+    if report_start is not None or report_end is not None:
+        if (
+            type(report_start) is not date
+            or type(report_end) is not date
+            or report_start > report_end
+            or (report_end - report_start).days != days - 1
+            or report_end > end
+        ):
+            raise ValueError("brief_fixed_window_invalid")
+        start, end = report_start, report_end
     notices = ["Охват ограничен сохранёнными результатами; отсутствие данных не означает отсутствие публикаций."]
     sources = await repo.sources(tenant_id)
     if len(sources) > SOURCE_LIMIT:

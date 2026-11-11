@@ -109,6 +109,8 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         reserved = {"launch_key", "launch_fingerprint", "launch_job_id"}.intersection(kwargs)
         if reserved:
             raise ValueError(f"Task launch identity fields are server-managed: {', '.join(sorted(reserved))}")
+        if kwargs.get("job_type") == "social.brief":
+            raise ValueError("Use the signed morning brief schedule service")
         self._require_job_retention_permission(kwargs.get("job_type"))
         self._validate_job_retention_schedule(kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr"))
         self._validate_task_plan_binding(
@@ -179,6 +181,10 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         current = await self._lock_task_for_mutation(session, instance_id)
         if current is None:
             return None
+        if kwargs.get("job_type") == "social.brief":
+            raise ValueError("Use the signed morning brief schedule service")
+        if current.job_type == "social.brief" and set(kwargs) - {"is_active"}:
+            raise ValueError("Morning brief tasks are managed by their schedule form")
         self._require_job_retention_permission(getattr(current, "job_type", None))
         self._require_job_retention_permission(kwargs.get("job_type"))
         self._validate_job_retention_schedule(
@@ -259,6 +265,10 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
 
                 jobs = JobManager()
                 for task in rows:
+                    if values.get("job_type") == "social.brief":
+                        raise ValueError("Use the signed morning brief schedule service")
+                    if task.job_type == "social.brief" and set(values) - {"is_active"}:
+                        raise ValueError("Morning brief tasks are managed by their schedule form")
                     if task.job_type == "prune":
                         self._require_job_retention_permission(task.job_type)
                     self._require_job_retention_permission(values.get("job_type"))
@@ -947,10 +957,17 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
                 schedule_error = None
                 if scheduled and not once:
                     try:
-                        from app.services.task_plans import task_plan_timezone
+                        if row.job_type == "social.brief":
+                            from app.services.social.brief_schedule import schedule_for_task
 
-                        task_plan = (row.payload or {}).get("task_plan") if isinstance(row.payload, dict) else None
-                        effective_timezone = task_plan_timezone(task_plan, timezone_name or settings.SCHEDULER_TIMEZONE)
+                            effective_timezone = schedule_for_task(row).timezone
+                        else:
+                            from app.services.task_plans import task_plan_timezone
+
+                            task_plan = (row.payload or {}).get("task_plan") if isinstance(row.payload, dict) else None
+                            effective_timezone = task_plan_timezone(
+                                task_plan, timezone_name or settings.SCHEDULER_TIMEZONE
+                            )
                         next_fire = next_run_at(row.cron_expr, effective_timezone, after=now)
                     except (ValueError, KeyError) as error:
                         schedule_error = str(error)
@@ -1006,6 +1023,18 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
                             payload["task_plan"], workspace_timezone or settings.SCHEDULER_TIMEZONE
                         )
                         payload = materialize_task_plan_window(payload, now, timezone=effective_timezone)
+                    if row.job_type == "social.brief":
+                        from app.services.social.brief_schedule import occurrence_token, schedule_for_task
+
+                        schedule = schedule_for_task(row)
+                        occurrence = expected_next_run_at if scheduled else now
+                        if occurrence is None or occurrence.utcoffset() is None:
+                            raise ValueError("Morning brief requires an aware occurrence")
+                        occurrence = occurrence.astimezone(timezone.utc)
+                        payload["scheduled_for"] = occurrence.isoformat()
+                        payload["occurrence_token"] = occurrence_token(
+                            tenant_id, row.id, row.payload["signed_config"], occurrence
+                        )
                     retry_reset_count = 0
                     if retry_exhausted:
                         if row.job_type != "analyze":

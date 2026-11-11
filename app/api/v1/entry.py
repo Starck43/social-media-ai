@@ -2,6 +2,7 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.api import social_brief
 from app.api.v1.endpoints import (
     action_audit,
     auth,
@@ -67,6 +68,7 @@ router.include_router(llm_providers.router, prefix="/llm", tags=["llm"], depende
 router.include_router(llm_models.router, prefix="/llm", tags=["llm"], dependencies=API_AUTH)
 # Public (no API_AUTH): the platform redirects the browser here after consent.
 router.include_router(social.router, prefix="/social", tags=["social"])
+router.include_router(social_brief.router, dependencies=API_AUTH)
 router.include_router(sources.router, prefix="/sources", tags=["sources"], dependencies=API_AUTH)
 router.include_router(tasks.router, prefix="/tasks", tags=["tasks"], dependencies=API_AUTH)
 router.include_router(credentials.router, prefix="/credentials", tags=["credentials"], dependencies=API_AUTH)

@@ -1,7 +1,8 @@
 """Source-only contract and deterministic ranking evidence for P20-T02."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -351,6 +352,40 @@ def test_local_window_uses_local_calendar_across_dst_and_midnight(now, expected)
     assert morning_brief.local_window(now, "America/New_York", days=3) == expected
 
 
+@pytest.mark.asyncio
+async def test_preview_honors_frozen_historical_window_for_retry_replay(monkeypatch):
+    install_brief_doubles(monkeypatch)
+    repo = FakeBriefRepository(zone="UTC")
+    brief = await morning_brief.preview(
+        7,
+        11,
+        days=3,
+        now=NOW,
+        repository=repo,
+        report_start=date(2026, 11, 8),
+        report_end=date(2026, 11, 10),
+    )
+    assert (brief.start, brief.end) == (date(2026, 11, 8), date(2026, 11, 10))
+    assert repo.window == (date(2026, 11, 8), date(2026, 11, 10))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "start, end",
+    [
+        (date(2026, 11, 8), date(2026, 11, 9)),  # Does not span the requested three days.
+        (date(2026, 11, 10), date(2026, 11, 12)),  # Includes a day after today's window.
+        (date(2026, 11, 9), None),  # A fixed window must provide both bounds.
+    ],
+)
+async def test_preview_rejects_mismatched_or_future_frozen_window(monkeypatch, start, end):
+    install_brief_doubles(monkeypatch)
+    repo = FakeBriefRepository(zone="UTC")
+    with pytest.raises(ValueError, match="brief_fixed_window_invalid"):
+        await morning_brief.preview(7, 11, days=3, now=NOW, repository=repo, report_start=start, report_end=end)
+    assert repo.read_count == 0
+
+
 def test_local_window_rejects_naive_time_and_invalid_day_count():
     with pytest.raises(ValueError, match="brief_aware_time_required"):
         morning_brief.local_window(datetime(2026, 11, 11), "UTC")
@@ -455,6 +490,76 @@ async def test_web_morning_get_requires_actor_workspace_and_maps_service_denial(
 
 
 @pytest.mark.asyncio
+async def test_web_morning_get_renders_unavailable_state_as_503(monkeypatch):
+    from app.web import digests
+
+    async def unavailable(*args, **kwargs):
+        raise RuntimeError("repository unavailable")
+
+    monkeypatch.setattr("app.services.social.morning_brief.preview", unavailable)
+    rendered = {}
+
+    def capture_render(request, template, status_code=200, **context):
+        rendered.update(template=template, status_code=status_code, context=context)
+        return rendered
+
+    monkeypatch.setattr(digests, "render", capture_render)
+    result = await digests.morning_brief_preview(web_request(actor=SimpleNamespace(id=11)))
+    assert result["template"] == "web/social_brief.html"
+    assert result["status_code"] == 503
+    assert result["context"]["brief"] is None
+    assert "полнота данных не подтверждена" in result["context"]["error"]
+
+
+@pytest.mark.asyncio
+async def test_web_morning_get_accepts_selected_timezone_and_rejects_invalid_timezone(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.web import digests
+
+    seen = []
+
+    async def fake_preview(tenant_id, user_id, **kwargs):
+        seen.append((tenant_id, user_id, kwargs))
+        return SimpleNamespace()
+
+    monkeypatch.setattr("app.services.social.morning_brief.preview", fake_preview)
+    monkeypatch.setattr(digests, "render", lambda request, template, **context: context)
+    result = await digests.morning_brief_preview(
+        web_request(actor=SimpleNamespace(id=11)),
+        days=2,
+        tz="America/New_York",
+        start=date(2026, 11, 9),
+        end=date(2026, 11, 10),
+    )
+    assert result["days"] == 2
+    assert seen == [
+        (
+            7,
+            11,
+            {
+                "days": 2,
+                "overrides": {},
+                "timezone_name": "America/New_York",
+                "report_start": date(2026, 11, 9),
+                "report_end": date(2026, 11, 10),
+            },
+        )
+    ]
+    with pytest.raises(HTTPException) as caught:
+        await digests.morning_brief_preview(web_request(actor=SimpleNamespace(id=11)), tz="Not/AZone")
+    assert caught.value.status_code == 400
+    with pytest.raises(HTTPException) as caught:
+        await digests.morning_brief_preview(
+            web_request(actor=SimpleNamespace(id=11)),
+            days=2,
+            start=date(2026, 11, 8),
+            end=date(2026, 11, 10),
+        )
+    assert caught.value.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_web_morning_post_requires_csrf_and_scoped_current_evidence(monkeypatch):
     from fastapi import HTTPException
 
@@ -472,22 +577,47 @@ async def test_web_morning_post_requires_csrf_and_scoped_current_evidence(monkey
     monkeypatch.setattr("app.services.social.morning_brief.preview", fake_preview)
     monkeypatch.setattr(digests, "ensure_csrf", lambda request, token: token == "valid")
     with pytest.raises(HTTPException) as caught:
-        await digests.morning_brief_correct(request, analysis_id=10, category="needs_attention", token="bad")
+        await digests.morning_brief_correct(request, analysis_id=10, category="needs_attention", days=1, token="bad")
     assert caught.value.status_code == 403
     assert calls == []
 
     with pytest.raises(HTTPException) as caught:
-        await digests.morning_brief_correct(request, analysis_id=9, category="needs_attention", token="valid")
+        await digests.morning_brief_correct(request, analysis_id=9, category="needs_attention", days=1, token="valid")
     assert caught.value.status_code == 404
     assert session["social_triage:7:11"] == {"analysis:9": "can_wait"}
 
     response = await digests.morning_brief_correct(
-        request, analysis_id=10, category="needs_attention", days=3, token="valid"
+        request,
+        analysis_id=10,
+        category="needs_attention",
+        days=3,
+        token="valid",
+        tz="Europe/Moscow",
+        start=date(2026, 11, 8),
+        end=date(2026, 11, 10),
     )
     assert response.status_code == 303
-    assert response.headers["location"] == "/app/digests/morning?days=3"
+    assert urlparse(response.headers["location"]).path == "/app/digests/morning"
+    assert parse_qs(urlparse(response.headers["location"]).query) == {
+        "days": ["3"],
+        "tz": ["Europe/Moscow"],
+        "start": ["2026-11-08"],
+        "end": ["2026-11-10"],
+    }
     assert session["social_triage:7:11"] == {"analysis:9": "can_wait", "analysis:10": "needs_attention"}
-    assert calls == [(7, 11, {}), (7, 11, {})]
+    assert calls == [
+        (7, 11, {"days": 1}),
+        (
+            7,
+            11,
+            {
+                "days": 3,
+                "timezone_name": "Europe/Moscow",
+                "report_start": date(2026, 11, 8),
+                "report_end": date(2026, 11, 10),
+            },
+        ),
+    ]
 
 
 @pytest.mark.asyncio
@@ -506,10 +636,58 @@ async def test_web_morning_post_rejects_invalid_category_and_never_uses_another_
 
     monkeypatch.setattr("app.services.social.morning_brief.preview", preview_one)
     with pytest.raises(HTTPException) as caught:
-        await digests.morning_brief_correct(request, analysis_id=10, category="other")
+        await digests.morning_brief_correct(request, analysis_id=10, category="other", days=1)
     assert caught.value.status_code == 400
     assert "social_triage:7:12" in session
-    with pytest.raises(HTTPException) as caught:
-        await digests.morning_brief_correct(request, analysis_id=10, category="needs_attention")
-    assert caught.value.status_code == 404
+    response = await digests.morning_brief_correct(request, analysis_id=10, category="needs_attention", days=1)
+    assert response.status_code == 303
     assert session["social_triage:7:12"] == {"analysis:10": "needs_attention"}
+    assert session["social_triage:7:11"] == {"analysis:10": "needs_attention"}
+
+
+def test_social_brief_template_escapes_titles_and_renders_csrf_and_remaining_items():
+    from types import SimpleNamespace
+
+    from app.services.social.morning_brief import MorningBrief
+    from app.web.deps import templates
+
+    def item(index, title):
+        return AttentionItem(
+            provider="social",
+            kind="analysis",
+            authoritative_ref=f"analysis:{index}",
+            title=title,
+            reason="Manual review recommended.",
+            category="uncertain",
+            recommended_priority=50,
+            priority_basis="deterministic_title_v1",
+            freshness=NOW,
+            allowed_actions=(AttentionAction("open", "Open evidence", f"/app/analytics/{index}"),),
+            data_boundary="local_only",
+        )
+
+    items = (
+        item(1, '<img src=x onerror="alert(1)">'),
+        item(2, "Second result"),
+        item(3, "Third result"),
+        item(4, "Remaining result"),
+    )
+    brief = MorningBrief(7, NOW.date(), NOW.date(), "UTC", NOW, items, ("Coverage is limited.",))
+    html = templates.env.get_template("web/social_brief.html").render(
+        request=SimpleNamespace(query_params={}.get),
+        url_for=lambda name, **kwargs: f"/static/{kwargs.get('path', name)}",
+        section="digests",
+        brief=brief,
+        days=1,
+        csrf="csrf-token-value",
+        user=None,
+        tenant=None,
+        mobile_nav=[],
+        nav=[],
+        flashes=[],
+    )
+    assert "&lt;img src=x onerror=&#34;alert(1)&#34;&gt;" in html
+    assert '<img src=x onerror="alert(1)">' not in html
+    assert 'value="csrf-token-value"' in html
+    assert "Остальные результаты (1)" in html
+    assert "Remaining result" in html

@@ -18,6 +18,11 @@ two digests — which is what was asked for.
 
 from __future__ import annotations
 
+from datetime import date
+from typing import Annotated
+from urllib.parse import urlencode
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
@@ -25,7 +30,7 @@ from app.models.notifications.digest_run import DigestRun
 from app.services.digest.builder import DigestDeliveryError, build_and_publish
 from app.services.digest.render import render_digest
 
-from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, render, tenant_filter_context
+from .deps import action_tenant_id, add_flash, ensure_csrf, guard_web, perms_can, render, tenant_filter_context
 
 router = APIRouter(prefix="/digests")
 
@@ -81,8 +86,34 @@ async def digest_preview(
     return await _page(request, period, preview=True, group_by=group_by, time_breakdown=time_breakdown)
 
 
+def _brief_timezone(raw: str | None):
+    from fastapi import HTTPException
+
+    if raw is None or raw == "":
+        return None
+    try:
+        if len(raw) > 64:
+            raise ValueError("zone too long")
+        ZoneInfo(raw)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise HTTPException(400, "Invalid timezone") from None
+    return raw
+
+
+def _brief_fixed_window(start, end, days):
+    from fastapi import HTTPException
+
+    if start is None and end is None:
+        return {}
+    if type(start) is not date or type(end) is not date or start > end or (end - start).days != days - 1:
+        raise HTTPException(400, "Invalid report window")
+    return {"report_start": start, "report_end": end}
+
+
 @router.get("/morning")
-async def morning_brief_preview(request: Request, days: int = 1):
+async def morning_brief_preview(
+    request: Request, days: int = 1, tz: str | None = None, start: date | None = None, end: date | None = None
+):
     """Actor-scoped deterministic preview; no paid ranking or external send."""
     from fastapi import HTTPException
 
@@ -94,12 +125,40 @@ async def morning_brief_preview(request: Request, days: int = 1):
     tenant_id = getattr(request.state, "tenant_id", None)
     if actor is None or tenant_id is None:
         raise HTTPException(403, "Workspace and actor required")
+    tz = _brief_timezone(tz)
+    fixed_window = _brief_fixed_window(start, end, days)
     key = f"social_triage:{tenant_id}:{actor.id}"
     try:
-        brief = await preview(tenant_id, actor.id, days=days, overrides=request.session.get(key, {}))
+        brief = await preview(
+            tenant_id,
+            actor.id,
+            days=days,
+            overrides=request.session.get(key, {}),
+            **({"timezone_name": tz} if tz else {}),
+            **fixed_window,
+        )
     except PermissionError:
         raise HTTPException(403, "Social brief unavailable") from None
-    return render(request, "web/social_brief.html", section="digests", brief=brief, days=days)
+    except ValueError:
+        raise HTTPException(400, "Invalid report window or timezone") from None
+    except Exception:
+        return render(
+            request,
+            "web/social_brief.html",
+            section="digests",
+            brief=None,
+            days=days,
+            error="Социальный источник или сервис сводки временно недоступен. Полнота данных не подтверждена.",
+            status_code=503,
+        )
+    return render(
+        request,
+        "web/social_brief.html",
+        section="digests",
+        brief=brief,
+        days=days,
+        can_schedule=perms_can(request, "agenttask", "create") and perms_can(request, "agenttask", "update"),
+    )
 
 
 @router.post("/morning/correct")
@@ -109,6 +168,9 @@ async def morning_brief_correct(
     category: str = Form(...),
     days: int = Form(1),
     token: str = Form("", alias="_csrf"),
+    tz: Annotated[str | None, Form()] = None,
+    start: Annotated[date | None, Form()] = None,
+    end: Annotated[date | None, Form()] = None,
 ):
     from fastapi import HTTPException
 
@@ -122,10 +184,16 @@ async def morning_brief_correct(
         raise HTTPException(403, "Workspace and actor required")
     if category not in {"needs_attention", "can_wait", "uncertain", "restore"}:
         raise HTTPException(400, "Invalid classification")
+    tz = _brief_timezone(tz)
+    fixed_window = _brief_fixed_window(start, end, days)
     try:
-        brief = await preview(tenant_id, actor.id, days=days)
+        brief = await preview(tenant_id, actor.id, days=days, **({"timezone_name": tz} if tz else {}), **fixed_window)
     except PermissionError:
         raise HTTPException(403, "Social brief unavailable") from None
+    except ValueError:
+        raise HTTPException(400, "Invalid report window or timezone") from None
+    except Exception:
+        raise HTTPException(503, "Social brief service unavailable") from None
     reference = f"analysis:{analysis_id}"
     if not any(item.authoritative_ref == reference for item in brief.items):
         raise HTTPException(404, "Evidence unavailable")
@@ -139,7 +207,58 @@ async def morning_brief_correct(
         decisions[reference] = category
         decisions = dict(list(decisions.items())[-20:])
     request.session[key] = decisions
-    return RedirectResponse(f"/app/digests/morning?days={days}", status_code=303)
+    query = urlencode(
+        {
+            "days": days,
+            **({"tz": tz} if tz else {}),
+            **({"start": start.isoformat(), "end": end.isoformat()} if fixed_window else {}),
+        }
+    )
+    return RedirectResponse(f"/app/digests/morning?{query}", status_code=303)
+
+
+@router.post("/morning/schedule")
+async def morning_brief_schedule(
+    request: Request,
+    local_time: Annotated[str, Form()],
+    tz: Annotated[str, Form()],
+    days: Annotated[int, Form()] = 1,
+    channel: Annotated[str, Form()] = "inbox",
+    confirm_external: Annotated[bool, Form()] = False,
+    token: Annotated[str, Form(alias="_csrf")] = "",
+):
+    from fastapi import HTTPException
+
+    from app.services.social.brief_schedule import configure_schedule
+
+    if not ensure_csrf(request, token):
+        raise HTTPException(403, "Invalid CSRF")
+    actor = getattr(request.state, "web_user", None)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if actor is None or tenant_id is None:
+        raise HTTPException(403, "Workspace and actor required")
+    if channel != "inbox" and not confirm_external:
+        raise HTTPException(400, "Explicit notification permission required")
+    zone = _brief_timezone(tz)
+    if zone is None:
+        raise HTTPException(400, "Timezone required")
+    try:
+        await configure_schedule(
+            tenant_id,
+            actor.id,
+            local_time=local_time,
+            timezone_name=zone,
+            days=days,
+            channel=channel,
+            notify_confirmed=confirm_external,
+        )
+    except PermissionError:
+        raise HTTPException(403, "Social schedule unavailable") from None
+    except ValueError:
+        raise HTTPException(400, "Invalid schedule or conflicting task") from None
+    add_flash(request, "success", "Расписание уведомлений сохранено. Тихие часы применяются перед внешней доставкой.")
+    query = urlencode({"days": days, "tz": zone})
+    return RedirectResponse(f"/app/digests/morning?{query}", status_code=303)
 
 
 async def _page(

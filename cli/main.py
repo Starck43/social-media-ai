@@ -3,6 +3,7 @@ import typer
 # Configure logging (console + file -> logs/app.log) for CLI runs.
 import app.core.logger  # noqa: F401  (configures the "app" logger handlers)
 
+from . import social_brief
 from .commands import (
     chains,
     collect,
@@ -45,6 +46,7 @@ app.add_typer(chains.app, name="chains", help="Manage topic chains")
 app.add_typer(scenarios.app, name="scenarios", help="Manage agent scenarios")
 app.add_typer(collection.app, name="collection", help="Manage task-scoped collection lanes")
 app.add_typer(documents.app, name="documents", help="Document version history, diff and restore")
+app.add_typer(social_brief.app, name="social-brief", help="Read a social morning brief")
 app.command(name="collect")(collect.collect_cmd)
 
 # Direct job-type commands at top level: `cli.main analyze|prune|learn|reflect`.

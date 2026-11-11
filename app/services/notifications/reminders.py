@@ -139,7 +139,7 @@ class ReminderNotifications:
         # Same actor -> workspace -> membership -> role -> task -> reminder
         # order as planner writes, held until the delivery outcome is persisted.
         user = await session.scalar(
-            select(User.id).where(User.id == delivery.user_id, User.is_active.is_(True)).with_for_update(read=True)
+            select(User).where(User.id == delivery.user_id, User.is_active.is_(True)).with_for_update(read=True)
         )
         tenant = await session.scalar(
             select(Tenant.id).where(Tenant.id == _scope(), Tenant.is_active.is_(True)).with_for_update(read=True)
@@ -161,6 +161,9 @@ class ReminderNotifications:
                 select(WorkspaceRole.codename).where(WorkspaceRole.id == member.role_id).with_for_update(read=True)
             )
         )
+        event = await session.get(Notification, delivery.notification_id)
+        if event is not None and event.related_entity_type == "social_morning_brief":
+            return await self._brief_rights(session, delivery, event, user, tenant, member, role)
         reminder_id = await session.scalar(
             select(PlannerReminder.id).where(
                 PlannerReminder.tenant_id == _scope(),
@@ -193,6 +196,59 @@ class ReminderNotifications:
         ):
             return None
         return task
+
+    async def _brief_rights(self, session, delivery, event, user, tenant, member, role):
+        """Reauthorize signed brief task and live source access at D18 dispatch."""
+        from types import SimpleNamespace
+
+        from app.models import AgentTask
+        from app.services.social.brief_schedule import report_window_from_message, schedule_for_task
+
+        if (
+            user is None
+            or tenant is None
+            or member is None
+            or role is None
+            or event.tenant_id != _scope()
+            or delivery.tenant_id != _scope()
+        ):
+            return None
+        now = datetime.now(UTC)
+        if event.expires_at is not None and event.expires_at <= now:
+            return None
+        task = await session.scalar(
+            select(AgentTask)
+            .where(AgentTask.tenant_id == _scope(), AgentTask.id == event.related_entity_id)
+            .with_for_update(read=True)
+        )
+        if task is None or not task.is_active or task.job_type != "social.brief":
+            return None
+        try:
+            schedule = schedule_for_task(task)
+        except ValueError:
+            return None
+        if schedule.user_id != delivery.user_id or schedule.channel != delivery.channel:
+            return None
+        window = report_window_from_message(event, task=task, user_id=delivery.user_id)
+        if window is None:
+            return None
+        from app.core.permissions import permission_scope
+        from app.services.social.morning_brief import preview
+
+        with permission_scope(user, member_grants=workspace_grants(role)):
+            try:
+                await preview(
+                    _scope(),
+                    delivery.user_id,
+                    days=schedule.days,
+                    now=datetime.now(UTC),
+                    timezone_name=schedule.timezone,
+                    report_start=window[0],
+                    report_end=window[1],
+                )
+            except Exception:
+                return None
+        return SimpleNamespace(timezone=schedule.timezone)
 
     async def _telegram_recipient(self, session, user_id):
         # A workspace chat is not a person. Join a provider-verified personal

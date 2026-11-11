@@ -197,6 +197,7 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/planner/tasks/{task_id}/reminders | list_reminders_api_v1_planner_tasks__task_id__reminders_get |
 | POST | /api/v1/planner/tasks/{task_id}/reminders | create_reminder_api_v1_planner_tasks__task_id__reminders_post |
 | POST | /api/v1/planner/tasks/{task_id}/reschedule | reschedule_task_api_v1_planner_tasks__task_id__reschedule_post |
+| GET | /api/v1/social/brief | get_social_morning_brief |
 | GET | /api/v1/social/callback | vk_callback_api_v1_social_callback_get |
 | GET | /api/v1/social/start | vk_oauth_start_api_v1_social_start_get |
 | GET | /api/v1/sources | list_sources_api_v1_sources_get |

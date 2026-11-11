@@ -154,6 +154,12 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main scenarios output-schema | --apply | option | boolean | no | false |
 | python -m cli.main scenarios seed-default | --tenant | option | str | no | "owner" |
 | python -m cli.main scenarios seed-default | --force | option | boolean | no | false |
+| python -m cli.main social-brief preview | --tenant | option | str | yes | null |
+| python -m cli.main social-brief preview | --actor | option | int range | yes | null |
+| python -m cli.main social-brief preview | --days | option | int range | no | 1 |
+| python -m cli.main social-brief preview | --timezone | option | str | no | null |
+| python -m cli.main social-brief preview | --start | option | str | no | null |
+| python -m cli.main social-brief preview | --end | option | str | no | null |
 | python -m cli.main task | --output | option | choice | no | "human" |
 | python -m cli.main task add | name | argument | str | yes | null |
 | python -m cli.main task add | cron | argument | str | yes | null |

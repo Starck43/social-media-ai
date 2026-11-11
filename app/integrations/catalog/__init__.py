@@ -1,7 +1,8 @@
 """Versioned connector form contracts; importing this package performs no I/O.
 
-Only providers in WORKSPACE_PROVIDERS have an implemented settings flow.
-Other descriptors never enable an adapter or grant network access.
+WORKSPACE_PROVIDERS owns the generic mail form. Provider-specific flows such
+as 1C use their own authorization, forms and network policy; a descriptor alone
+never grants network access.
 """
 
 from __future__ import annotations
@@ -65,7 +66,7 @@ class Provider:
     description: str = ""
     category: str = ""
     icon_asset: str = ""
-    availability: str = "unavailable"  # personal | mail_check | unavailable
+    availability: str = "unavailable"  # personal | mail_check | workspace_health | unavailable
     capabilities: tuple[str, ...] = ()
     setup_hint: str = ""
     auth_protocol: str = ""
@@ -281,11 +282,13 @@ BITRIX24 = replace(
 )
 ONEC = replace(
     ONEC,
-    description="Подключение к 1С по OData пока не реализовано.",
+    description="Подключение 1С по публичному HTTPS: OData или HTTP-служба, проверка доступности.",
     category="Учётная система (ERP / 1С)",
     icon_asset="icons/providers/onec.svg",
-    setup_hint="Форма и транспорт пока недоступны.",
-    auth_protocol="OData (планируется)",
+    availability="workspace_health",
+    capabilities=("health_check",),
+    setup_hint="Сначала владелец или администратор разрешает точный домен в пространстве.",
+    auth_protocol="HTTPS Basic / OData или HTTP-служба",
 )
 LOCAL_GATEWAY = replace(
     LOCAL_GATEWAY,

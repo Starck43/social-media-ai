@@ -37,10 +37,11 @@ def test_registry_covers_all_providers_and_keeps_mail_version():
         "yandex_disk",
         "mailru_cloud",
         "bitrix24",
-        "onec",
         "google_calendar",
         "local_gateway",
     }
+    assert PROVIDERS["onec"].availability == "workspace_health"
+    assert PROVIDERS["onec"].capabilities == ("health_check",)
     assert all(not p.capabilities for p in PROVIDERS.values() if p.availability == "unavailable")
     for provider in PROVIDERS.values():
         if provider.id in OAUTH_MECHANICS_ONLY:
@@ -70,7 +71,7 @@ def test_shared_macros_escape_values_and_never_fill_secrets():
     assert "value=" not in password
 
 
-@pytest.mark.parametrize("provider_id", ["bitrix24", "onec", "mailru_cloud", "local_gateway", "google_calendar"])
+@pytest.mark.parametrize("provider_id", ["bitrix24", "mailru_cloud", "local_gateway", "google_calendar"])
 def test_unavailable_provider_has_no_save_or_connect_form(provider_id):
     provider = PROVIDERS[provider_id]
     ctx = context("connections")

@@ -775,6 +775,7 @@ class WebResearchService:
         payload: dict[str, Any],
         *,
         tenant_id: int | None = None,
+        expected_actor_id: int | None = None,
         account_key: str = "default",
         transport: HttpTransport | None = None,
         resolver: Resolver = default_dns_resolver,
@@ -784,13 +785,28 @@ class WebResearchService:
     ) -> dict[str, Any]:
         """Execute a web-research step inside an AgentTask workflow and return structured evidence metadata."""
         tid = _resolve_tenant_id(tenant_id)
+        if expected_actor_id is not None:
+            from app.core.permissions import get_current_user
+
+            current_actor = get_current_user()
+            if type(expected_actor_id) is not int or current_actor is None or current_actor.id != expected_actor_id:
+                raise WebResearchRefusal("permission_denied")
         query = str(payload.get("query") or payload.get("goal") or "").strip()
         target_urls = list(payload.get("target_urls") or [])
+        public_urls_only = bool(payload.get("public_urls_only", False))
         save_evidence = bool(payload.get("save_evidence", False))
+        if public_urls_only:
+            # Delegated v2 has no search-provider discovery: accept only an explicit,
+            # small URL list. DNS validation happens in the fetcher after DB admission.
+            if not target_urls or len(target_urls) > 2 or save_evidence:
+                raise WebResearchRefusal("invalid_url")
         run_out = await self.research(
             {
                 "query": query,
                 "preset": "task_delegation",
+                "provider": "stub" if public_urls_only else "auto",
+                "max_results": 1,
+                "fetch_top_n": 0 if public_urls_only else 2,
                 "target_urls": target_urls,
                 "save_evidence": save_evidence,
             },

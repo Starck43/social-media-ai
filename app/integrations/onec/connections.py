@@ -15,7 +15,12 @@ from app.integrations.onec.credentials import seal_basic_credentials
 from app.integrations.onec.endpoint import OneCEndpointError, validate_endpoint
 from app.models.integrations.connection import WorkspaceConnection, WorkspaceConnectionSecret
 from app.models.managers.base_manager import BaseManager
-from app.models.managers.workspace_connection_manager import WorkspaceConnectionManager, _authorize
+from app.models.managers.workspace_connection_manager import (
+    ConnectionDenied,
+    WorkspaceConnectionManager,
+    _authorize,
+    _connection,
+)
 from app.models.managers.workspace_outbound_host_manager import WorkspaceOutboundHostManager
 
 PROVIDER = "onec"
@@ -36,6 +41,20 @@ def _endpoint(base_url, interface):
         raise OneCEndpointError("invalid_endpoint") from None
     # This is a syntax check only; it must be followed by the DB approval check.
     return validate_endpoint(base_url, interface, frozenset({host}) if host else frozenset())
+
+
+def _stored_endpoint(config):
+    """Revalidate persisted endpoint fields instead of trusting mutable JSON."""
+    try:
+        host, port, path, interface = (config[key] for key in ("host", "port", "base_path", "interface"))
+        if not isinstance(host, str) or type(port) is not int or not isinstance(path, str):
+            raise ValueError
+        endpoint = _endpoint(f"https://{host}:{port}{path}", interface)
+        if (endpoint.host, endpoint.port, endpoint.base_path) != (host, port, path):
+            raise ValueError
+        return endpoint
+    except (KeyError, TypeError, ValueError):
+        raise OneCConnectionError("invalid_configuration") from None
 
 
 def _label(value):
@@ -103,6 +122,33 @@ class OneCConnectionService:
                 session.add(row)
                 await session.flush()
                 session.add(WorkspaceConnectionSecret(connection_id=row.id, secret_encrypted=ciphertext))
+                await session.flush()
+                return _projection(row)
+        except IntegrityError:
+            raise OneCConnectionError("duplicate_connection") from None
+
+    async def replace_credentials(self, *, tenant_id, actor_id, connection_id, login, password):
+        """Replace credentials or reactivate a disabled connection without a network call."""
+        try:
+            async with self._sessions._get_owned_session() as session:
+                await _authorize(session, tenant_id, actor_id, write=True)
+                row = await _connection(session, tenant_id, actor_id, connection_id)
+                if row.provider_id != PROVIDER or row.auth_method != METHOD or row.schema_version != SCHEMA_VERSION:
+                    raise ConnectionDenied()
+                endpoint = _stored_endpoint(row.config)
+                await self._hosts.require_approved(
+                    session=session, tenant_id=tenant_id, actor_id=actor_id, host=endpoint.host
+                )
+                ciphertext = seal_basic_credentials(login, password)
+                secret = await session.get(WorkspaceConnectionSecret, row.id)
+                if secret is None:
+                    secret = WorkspaceConnectionSecret(connection_id=row.id, secret_encrypted=ciphertext)
+                    session.add(secret)
+                else:
+                    secret.secret_encrypted = ciphertext
+                row.account_key = _account_key(endpoint, login)
+                row.config = {key: row.config[key] for key in ("host", "port", "base_path", "interface")}
+                row.is_active, row.state, row.check_code, row.checked_at = True, "unverified", None, None
                 await session.flush()
                 return _projection(row)
         except IntegrityError:

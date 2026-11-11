@@ -894,7 +894,7 @@ async def execute_delegated_research(
                         "code": str(row.get("code") or "provider_unavailable")[:80],
                         "message": str(row.get("message") or "Public page was refused")[:240],
                     }
-                    for row in (web_result.get("refusals") or [])[:len(public_web_urls)]
+                    for row in (web_result.get("refusals") or [])[: len(public_web_urls)]
                     if isinstance(row, Mapping)
                 ],
             }
@@ -1197,9 +1197,11 @@ def project_delegated_run_for_workspace(
             web_status = (
                 "pending"
                 if row.get("state") != "completed"
-                else "partial"
-                if web_result.get("is_stub") or web_result.get("refusals") or not web_citations
-                else "completed"
+                else (
+                    "partial"
+                    if web_result.get("is_stub") or web_result.get("refusals") or not web_citations
+                    else "completed"
+                )
             )
             if web_status == "completed":
                 completed_count += 1
@@ -1222,7 +1224,8 @@ def project_delegated_run_for_workspace(
         "workflow_version": int(delegation.get("workflow_version") or DELEGATION_WORKFLOW_VERSION),
         "status": overall_state,
         "completed_steps": completed_count,
-        "total_steps": len(STEP_ORDER) + int(int(delegation.get("workflow_version") or 1) == DELEGATION_WORKFLOW_VERSION_WEB),
+        "total_steps": len(STEP_ORDER)
+        + int(int(delegation.get("workflow_version") or 1) == DELEGATION_WORKFLOW_VERSION_WEB),
         "steps": projected_steps,
         "can_cancel": bool(can_cancel and is_active),
         "cancel_url": f"/app/chat/workspace/tasks/{task_id}/cancel" if (can_cancel and is_active) else None,

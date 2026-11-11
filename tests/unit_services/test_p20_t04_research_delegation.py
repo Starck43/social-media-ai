@@ -248,7 +248,9 @@ async def test_workflow_v2_fetches_only_requested_public_urls_and_keeps_v1_defau
         ]
         return {"findings": [], "tokens_used": 100, "cost_usd": 0.001}
 
-    async def synthesizer(_scope: ChildScope, _collected: dict[str, Any], _analyzed: dict[str, Any], _caps: DelegationCaps):
+    async def synthesizer(
+        _scope: ChildScope, _collected: dict[str, Any], _analyzed: dict[str, Any], _caps: DelegationCaps
+    ):
         return {"summary": "Draft", "tokens_used": 100, "cost_usd": 0.001}
 
     outcome = await execute_delegated_research(
@@ -300,7 +302,9 @@ async def test_workflow_v2_requires_explicit_bounded_urls_and_v1_rejects_opt_in(
     async def analyzer(_scope: ChildScope, _collected: dict[str, Any], _caps: DelegationCaps) -> dict[str, Any]:
         return {"findings": []}
 
-    async def synthesizer(_scope: ChildScope, _collected: dict[str, Any], _analyzed: dict[str, Any], _caps: DelegationCaps):
+    async def synthesizer(
+        _scope: ChildScope, _collected: dict[str, Any], _analyzed: dict[str, Any], _caps: DelegationCaps
+    ):
         return {"summary": "Draft"}
 
     common = {
@@ -365,6 +369,7 @@ async def test_agent_task_public_urls_only_mode_forces_stub_search_without_provi
     assert captured["require_durable"] is True
     assert result["provider_used"] == "stub"
     assert result["is_stub"] is False
+
 
 @pytest.mark.asyncio
 async def test_permission_revocation_between_steps_stops_and_preserves_prior_receipt():

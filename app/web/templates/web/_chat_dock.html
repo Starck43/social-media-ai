@@ -1,5 +1,5 @@
 {% if user and tenant and request.query_params.get('embedded') != '1' and section != 'chat' and (not perms or perms.can_open_chat) %}
-<div class="chat-dock-launcher fixed bottom-16 right-4 lg:bottom-6 lg:right-6 z-30" data-chat-dock-container>
+<div class="chat-dock-launcher z-30" data-chat-dock-container>
     <button
         type="button"
         id="chat-dock-toggle"

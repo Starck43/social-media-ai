@@ -232,26 +232,26 @@
 
                 <div x-show="task.job_type === 'collect' || task.job_type === 'analyze'" x-cloak
                      class="space-y-3 rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-                    <label class="block text-sm text-slate-700 dark:text-slate-300">Цель задачи</label>
-                    <input name="task_goal" type="text" maxlength="500" placeholder="Например: найти свежие обращения по ремонту квартир"
+                    <label for="add-task_goal" class="block text-sm text-slate-700 dark:text-slate-300">Цель задачи</label>
+                    <input id="add-task_goal" name="task_goal" type="text" maxlength="500" placeholder="Например: найти свежие обращения по ремонту квартир"
                            class="{{ control() }}">
                     <div class="grid gap-3 sm:grid-cols-2">
                         <label class="block text-sm text-slate-700 dark:text-slate-300">Область источников
-                            <select name="source_scope" x-model="task.source_scope" class="{{ control() }} mt-1">
+                            <select id="add-source_scope" name="source_scope" x-model="task.source_scope" class="{{ control() }} mt-1">
                                 <option value="selected">Выбранные источники</option>
                                 <option value="discovery">Найти сообщества по теме</option>
                                 <option value="all">Все активные источники</option>
                             </select>
                         </label>
                         <label class="block text-sm text-slate-700 dark:text-slate-300">Окно данных
-                            <select name="window_type" x-model="task.window_type" class="{{ control() }} mt-1">
+                            <select id="add-window_type" name="window_type" x-model="task.window_type" class="{{ control() }} mt-1">
                                 <option value="fixed">Фиксированный период</option>
                                 <option value="rolling">Последние N дней (обновлять при запуске)</option>
                             </select>
                         </label>
                     </div>
                     <label class="block text-sm text-slate-700 dark:text-slate-300">Дней для скользящего окна
-                        <input name="rolling_days" type="number" min="1" max="365" value="1" class="{{ control() }} mt-1">
+                        <input id="add-rolling_days" name="rolling_days" type="number" min="1" max="365" value="1" class="{{ control() }} mt-1">
                     </label>
                     <fieldset>
                         <legend class="mb-1 text-sm text-slate-700 dark:text-slate-300">Платформы</legend>
@@ -259,7 +259,7 @@
                         <label class="text-sm"><input type="checkbox" name="platforms" value="telegram"> Telegram</label>
                     </fieldset>
                     <label class="block text-sm text-slate-700 dark:text-slate-300">Подключение ВКонтакте
-                        <select name="vk_access" x-model="task.vk_access_json" class="{{ control() }} mt-1">
+                        <select id="add-vk_access" name="vk_access" x-model="task.vk_access_json" class="{{ control() }} mt-1">
                             <option value="">Сохранить текущий выбор (для новой задачи — режим источника)</option>
                             <template x-if="task.vk_access_json && !vkConnections.some((item) => JSON.stringify(item.selection) === task.vk_access_json)">
                                 <option :value="task.vk_access_json" x-text="'Сохранённое подключение ' + task.vk_access_json + ' (состояние недоступно)'" selected></option>
@@ -281,20 +281,20 @@
                     <div x-show="task.compose_digest" class="space-y-3">
                         <label class="text-sm"><input type="checkbox" name="include_collection" value="true" checked x-model="task.include_collection"> Собирать новые публикации перед анализом</label>
                         <label class="block text-sm">Период отчёта
-                            <select name="digest_window_type" x-model="task.digest_window_type" class="{{ control() }} mt-1">
+                            <select id="add-digest_window_type" name="digest_window_type" x-model="task.digest_window_type" class="{{ control() }} mt-1">
                                 <option value="rolling">Скользящий период</option>
                                 <option value="fixed">Фиксированные даты</option>
                             </select>
                         </label>
                         <label x-show="task.digest_window_type === 'rolling'" class="block text-sm">Дней в отчёте
-                            <input name="digest_rolling_days" type="number" min="1" max="365" x-model="task.digest_rolling_days" class="{{ control() }} mt-1">
+                            <input id="add-digest_rolling_days" name="digest_rolling_days" type="number" min="1" max="365" x-model="task.digest_rolling_days" class="{{ control() }} mt-1">
                         </label>
                         <div x-show="task.digest_window_type === 'fixed'" class="grid gap-3 sm:grid-cols-2">
-                            <label class="block text-sm">Начало отчёта<input name="digest_start_date" type="date" x-model="task.digest_start_date" class="{{ control() }} mt-1"></label>
-                            <label class="block text-sm">Конец отчёта<input name="digest_end_date" type="date" x-model="task.digest_end_date" class="{{ control() }} mt-1"></label>
+                            <label class="block text-sm">Начало отчёта<input id="add-digest_start_date" name="digest_start_date" type="date" x-model="task.digest_start_date" class="{{ control() }} mt-1"></label>
+                            <label class="block text-sm">Конец отчёта<input id="add-digest_end_date" name="digest_end_date" type="date" x-model="task.digest_end_date" class="{{ control() }} mt-1"></label>
                         </div>
                         <label class="block text-sm">Группировка
-                            <select name="digest_group_by" x-model="task.digest_group_by" class="{{ control() }} mt-1">
+                            <select id="add-digest_report_group_by" name="digest_group_by" x-model="task.digest_group_by" class="{{ control() }} mt-1">
                                 <option value="themes">По темам</option><option value="sources">По источникам</option>
                                 <option value="entities">По упоминаниям</option><option value="intent">По намерению</option>
                                 <option value="topic_chains">Тематические цепочки</option>
@@ -336,13 +336,13 @@
                             <div>
                                 <div class="grid grid-cols-2 gap-3">
                                     <div>
-                                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Время</label>
-                                        <input type="time" name="sched_time" x-model="time" @input="markChanged()" value="09:00"
+                                        <label for="add-sched_time" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Время</label>
+                                        <input id="add-sched_time" type="time" name="sched_time" x-model="time" @input="markChanged()" value="09:00"
                                                class="{{ control() }}">
                                     </div>
                                     <div>
-                                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Периодичность</label>
-                                        <select x-model="freq" @change="markChanged()"
+                                        <label for="add-sched-freq" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Периодичность</label>
+                                        <select id="add-sched-freq" x-model="freq" @change="markChanged()"
                                                 class="{{ control() }}">
                                             <option value="daily">Каждый день</option>
                                             <option value="weekly">По дням недели</option>
@@ -369,8 +369,8 @@
 
                                 <template x-if="freq === 'monthly'">
                                     <div>
-                                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">День месяца</label>
-                                        <select x-model.number="monthday" @change="markChanged()"
+                                        <label for="add-sched-monthday" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">День месяца</label>
+                                        <select id="add-sched-monthday" x-model.number="monthday" @change="markChanged()"
                                                 class="{{ control() }}">
                                             <template x-for="d in 31" :key="d">
                                                 <option :value="d" x-text="d"></option>
@@ -381,8 +381,8 @@
 
                                 <template x-if="freq === 'interval'">
                                     <div>
-                                        <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Интервал</label>
-                                        <select x-model.number="everyHours" @change="markChanged()"
+                                        <label for="add-sched-every-hours" class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Интервал</label>
+                                        <select id="add-sched-every-hours" x-model.number="everyHours" @change="markChanged()"
                                                 class="{{ control() }}">
                                             <template x-for="h in intervalOptions" :key="h">
                                                 <option :value="h" x-text="h + ' ч'"></option>
@@ -458,8 +458,8 @@
                         <h3 class="text-sm font-medium text-slate-700 dark:text-slate-300">Параметры дайджеста</h3>
                         <div class="grid grid-cols-2 gap-3">
                             <div>
-                                <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Период</label>
-                                <select name="digest_period" x-model="task.digest_period"
+                                <label for="add-digest_period" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Период</label>
+                                <select id="add-digest_period" name="digest_period" x-model="task.digest_period"
                                         class="{{ control() }}">
                                     <option value="day">День</option>
                                     <option value="week">Неделя</option>
@@ -467,8 +467,8 @@
                                 </select>
                             </div>
                             <div>
-                                <label class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Ось группировки</label>
-                                <select name="digest_group_by" x-model="task.digest_group_by"
+                                <label for="add-digest_group_by" class="mb-1 block text-sm text-slate-700 dark:text-slate-300">Ось группировки</label>
+                                <select id="add-digest_group_by" name="digest_group_by" x-model="task.digest_group_by"
                                         class="{{ control() }}">
                                     <option value="themes">По темам</option>
                                     <option value="sources">По источникам</option>

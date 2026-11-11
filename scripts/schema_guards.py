@@ -566,6 +566,9 @@ GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
             "greeting_history",
             "message_threads",
             "outbox_messages",
+            # 0149 creates this one with explicit DDL; a metadata-built schema
+            # must replay it, or reply evidence text would escape the PII marker.
+            "outbox_reply_evidence",
             "outbox_targets",
             "planner_tasks",
             "thread_triage_decisions",

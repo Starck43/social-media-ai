@@ -50,12 +50,14 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
+- [P20-T13](docs/tasks/p20-t13.md) Web usability hardening while preserving the current visual style — **IN_PROGRESS** · opencode-p20-t13 · session `ses_e358bb5feffeNEyN3YgY2XIlCq` · `P2` · `C3`
+
 
 
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 
-- [P12-T12](docs/tasks/p12-t12.md) File workspace: remaining roadmap after the accepted increment (provider byte authority, native original open, local-only execution, approved file actions) — **IN_PROGRESS** (re-scope of the remaining roadmap; increment accepted 2026-11-03, `6433ae6a`/`48caea61`) · opencode-p12-t12 · claimed 2026-11-11 on `dev` `f14f60b6` · session `ses_e35c82e2fffeyIc34yFc702Ehw` · [increment audit](docs/audit/p12-t12-increment.md) · `P2` · `C5`
+- [P12-T12](docs/tasks/p12-t12.md) File workspace: contract ownership and gated remainder after the accepted increment (byte authority/original-open with deferred P8-T34, local-only execution with P18, mutations per D21) — **TODO** (gate: owner activation / P8-T34 resume / consumer contract request; not claimable before it; re-scoped 2026-11-11, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · unassigned · [re-scope record](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) · [increment audit](docs/audit/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **re-scope against accepted P12-T12 first (D21)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 
@@ -67,7 +69,8 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 ### Priority P3
 
 - [P20-T02](docs/tasks/p20-t02.md) Social triage, attention-item contract and morning brief — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
-- [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **IN_PROGRESS** · Codex audit · [audit PR #467](https://github.com/Starck43/social-media-ai/pull/467#issuecomment-6791334236) · `P3` · `C4`
+- [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **IN_PROGRESS** · Codex audit · [audit PR #467](https://github.com/Starck43/social-media-ai/pull/467#issuecomment-6791334236) · `P3` · `C4` · owner 2026-11-11 (O-6): bounded public-web step enabled in the delegated workflow
+
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
 - [P17-T01](docs/tasks/p17-t01.md) 1C connection: OData/HTTP-service endpoints, credentials and health — **IN_PROGRESS** · notion-ai-p17-t01 · [dialogue](https://app.notion.com/chat?t=4146f4961afe806fb57b00a9325adb27) · `P3` · `C3`

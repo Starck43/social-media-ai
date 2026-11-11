@@ -18,6 +18,7 @@
 10. [P20-T10](../audit/p20-t10.md) — **DONE 2026-11-10**, unified task hub, calendar projection and confirmed linked assignments; accepted `d2817412a68e0fc043af3b17cebc4953ebff18f9`.
 11. [P20-T11](../audit/p20-t11.md) — **DONE 2026-11-11**: Bitrix24 read-only assigned/watched task sources in Tasks and Today; accepted `4fcf66959a32692199f6bcea0d37c0ab7192521e`.
 12. [P20-T12](../tasks/p20-t12.md) — web search and public page fetch.
+13. [P20-T13](../tasks/p20-t13.md) — bounded web usability and keyboard/mobile hardening, preserving the existing theme and owning-service contracts.
 
 ## Waves
 

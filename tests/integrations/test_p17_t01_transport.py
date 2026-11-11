@@ -134,3 +134,35 @@ async def test_private_dns_does_not_open_connection(monkeypatch):
     with pytest.raises(OneCHealthError, match="private_address_forbidden"):
         await check_health(endpoint(), "reader", "mock", limiter=Limiter(), budget=1, resolver=private)
     assert not calls
+
+
+@pytest.mark.asyncio
+async def test_budget_denial_happens_before_any_connection(monkeypatch):
+    calls, _ = fake_network(monkeypatch, response())
+
+    class DeniedLimiter:
+        @asynccontextmanager
+        async def acquire(self, budget, *, max_wait):
+            raise RuntimeError("budget denied")
+            yield
+
+    with pytest.raises(RuntimeError, match="budget denied"):
+        await check_health(endpoint(), "reader", "mock", limiter=DeniedLimiter(), budget=1, resolver=dns)
+    assert not calls
+
+
+@pytest.mark.asyncio
+async def test_invalid_credentials_and_timeout_are_sanitized(monkeypatch):
+    calls, _ = fake_network(monkeypatch, response())
+    with pytest.raises(OneCHealthError, match="invalid_credentials"):
+        await check_health(endpoint(), "invalid:login", "mock", limiter=Limiter(), budget=1, resolver=dns)
+    assert not calls
+
+    async def timed_out(*args, **kwargs):
+        raise TimeoutError("sensitive provider details")
+
+    monkeypatch.setattr(asyncio, "open_connection", timed_out)
+    with pytest.raises(OneCHealthError) as exc:
+        await check_health(endpoint(), "reader", "mock", limiter=Limiter(), budget=1, resolver=dns)
+    assert exc.value.code == "connection_failed"
+    assert "sensitive" not in str(exc.value)

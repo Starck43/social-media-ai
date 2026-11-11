@@ -5,6 +5,7 @@ input. A caller must connect only to the returned address while verifying TLS
 against the returned hostname. Validation alone is not a network transport.
 """
 
+import ipaddress
 from dataclasses import dataclass
 from urllib.parse import unquote, urlsplit
 
@@ -74,6 +75,8 @@ def validate_endpoint(base_url: str, interface: str, allowed_hosts: frozenset[st
         and parsed.path
         or any(ord(c) < 32 or ord(c) == 127 for c in decoded)
         or "\\" in decoded
+        or "%" in decoded
+        or decoded.count("/") != parsed.path.count("/")
         or any(part in {".", ".."} for part in decoded.split("/"))
         or "?" in decoded
         or "#" in decoded
@@ -89,12 +92,15 @@ def resolve_endpoint(endpoint: OneCEndpoint, *, resolver: Resolver = default_dns
     IP-pinned transport. The future P18 tunnel is not implemented here.
     """
     try:
-        return acquire_outbound_target(
+        target = acquire_outbound_target(
             endpoint.host,
             endpoint.port,
             policy=StaticPolicy((endpoint.host,)),
             registry=empty_registry,
             resolver=resolver,
         )
+        if any(ipaddress.ip_address(address).is_multicast for address in target.addresses):
+            raise OneCEndpointError("private_address_forbidden")
+        return target
     except OutboundRefusal as exc:
         raise OneCEndpointError(exc.code) from None

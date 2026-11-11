@@ -33,6 +33,8 @@ def test_valid_endpoints_build_only_fixed_health_paths():
         "https://erp.example.com/a/../b",
         "https://erp.example.com/a/%2e%2e/b",
         "https://erp.example.com/a%5cb",
+        "https://erp.example.com/a%252e%252e/b",
+        "https://erp.example.com/a%2fb",
         "https://erp.example.com:99999/",
         "https://erp.example.com:0/",
         "https://erp.example.com/line\nfeed",
@@ -52,7 +54,7 @@ def test_exact_admin_allowlist_is_required():
         validate_endpoint("https://erp.example.com", "unsupported", ALLOW)
 
 
-@pytest.mark.parametrize("ip", ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1", "fc00::1"])
+@pytest.mark.parametrize("ip", ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1", "fc00::1", "224.0.0.1", "ff02::1"])
 def test_non_public_dns_rejected_even_when_mixed_with_public(ip):
     ep = validate_endpoint("https://erp.example.com", "odata_standard", ALLOW)
     with pytest.raises(OneCEndpointError):

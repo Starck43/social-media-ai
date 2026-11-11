@@ -27,6 +27,30 @@
             if (focus) popover.querySelector('[data-popover-trigger]').focus();
         };
         const initializedPopovers = new WeakSet();
+        const usable = el => Boolean(el && !el.disabled && !el.closest('[hidden], [inert]') && el.getClientRects().length);
+        // One option list for both entry and movement: only select options that
+        // are visible, enabled and in the focus order (never hidden/inert ones).
+        const selectOptions = panel => Array.from(panel.querySelectorAll('[data-popover-option]'))
+            .filter(option => option.tabIndex >= 0 && usable(option));
+        // Keyboard navigation shared by popover-select option lists; Tab and
+        // Escape keep their native/overlay meaning. The trigger has its own
+        // handler and stops its events, so only real option events land here.
+        const moveOptions = (event, panel) => {
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+            // Never hijack typing inside an editable control.
+            if (event.target.closest?.('input:not([type="hidden"]), textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+            event.preventDefault();
+            const options = selectOptions(panel);
+            if (!options.length) return;
+            const current = options.indexOf(document.activeElement);
+            const selected = options.findIndex(option => option.getAttribute('aria-selected') === 'true');
+            let next;
+            if (event.key === 'Home') next = 0;
+            else if (event.key === 'End') next = options.length - 1;
+            else if (current < 0) next = selected >= 0 ? selected : (event.key === 'ArrowUp' ? options.length - 1 : 0);
+            else next = (current + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+            options[next].focus();
+        };
         const initPopovers = (root = document) => {
             root.querySelectorAll('[data-shell-popover]').forEach(popover => {
                 if (initializedPopovers.has(popover)) return;
@@ -60,10 +84,29 @@
                     else closePopover(popover);
                 });
                 trigger.addEventListener('keydown', event => {
-                    if (event.key === 'ArrowDown') { event.preventDefault(); open(); panel.querySelector('a, button')?.focus(); }
+                    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+                    event.preventDefault();
+                    // The event bubbles to the popover's own option handler;
+                    // stopping it here keeps one key press to one focus move.
+                    event.stopPropagation();
+                    if (panel.hidden) open();
+                    if (popover.hasAttribute('data-popover-select')) {
+                        const options = selectOptions(panel);
+                        const selected = options.find(option => option.getAttribute('aria-selected') === 'true');
+                        const target = event.key === 'ArrowDown'
+                            ? (selected || options[0])
+                            : (selected || options[options.length - 1]);
+                        target?.focus();
+                    } else {
+                        panel.querySelector('a, button')?.focus();
+                    }
                 });
                 popover.addEventListener('keydown', event => {
-                    if (event.key === 'Escape' && !panel.hidden) { event.preventDefault(); event.stopPropagation(); closePopover(popover, true); }
+                    // Options must stay inside this popover; Escape closes it.
+                    if (event.key === 'Escape' && !panel.hidden) { event.preventDefault(); event.stopPropagation(); closePopover(popover, true); return; }
+                    if (panel.hidden || !popover.hasAttribute('data-popover-select')) return;
+                    if (event.target === trigger) return;
+                    moveOptions(event, panel);
                 });
                 popover.addEventListener('focusout', event => {
                     if (event.relatedTarget && popover.contains(event.relatedTarget)) return;
@@ -110,30 +153,67 @@
                 if (!popover.contains(event.target)) closePopover(popover);
             });
         });
-        let scrollDepth = 0, oldOverflow = '';
+        // Registered shell dialogs are the only ones the shell manages.
+        const shellDialogs = Array.from(document.querySelectorAll('dialog.shell-dialog, dialog.shell-drawer, dialog.shell-right-panel'));
+        // Exact inline overflow saved by the first managed opening; the last
+        // managed close writes it back verbatim (including an empty value).
+        let scrollDepth = 0, savedOverflow;
         document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
             trigger.setAttribute('aria-controls', trigger.dataset.dialogOpen);
             trigger.setAttribute('aria-expanded', 'false');
         });
-        document.querySelectorAll('dialog.shell-dialog, dialog.shell-drawer, dialog.shell-right-panel').forEach(dialog => {
+        // Single focusable-controls source for the Tab trap and focus fallbacks.
+        // Hidden inputs, hidden/inert subtrees and negative tabindex are excluded.
+        const tabbables = root => Array.from(root.querySelectorAll(
+            'a[href], button, input:not([type="hidden"]), select, textarea, [tabindex]'
+        )).filter(el => !el.disabled && !el.hasAttribute('inert') && el.tabIndex >= 0 && usable(el));
+        const restoreFocus = (root, launcher) => {
+            if (launcher?.isConnected && usable(launcher)) launcher.focus();
+            else if (root && usable(root)) root.focus();
+            else document.getElementById('page-content')?.focus();
+        };
+        const claim = dialog => {
+            if (!shellDialogs.includes(dialog) || !dialog.open || dialog.shellDepth) return;
+            dialog.shellDepth = true;
+            if (!scrollDepth) savedOverflow = document.body.style.overflow;
+            scrollDepth++;
+            document.body.style.overflow = 'hidden';
+            document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
+                if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'true');
+            });
+        };
+        const release = dialog => {
+            if (dialog.shellDepth && scrollDepth) {
+                scrollDepth--;
+                if (!scrollDepth) document.body.style.overflow = savedOverflow;
+            }
+            dialog.shellDepth = false;
+        };
+        // Pages and modules (chat dock) announce their successful showModal via
+        // this explicit event; the shell stays the only owner of scroll depth,
+        // launcher hand-off and aria-expanded, and native close does the undo.
+        // `bubbles` lets a dialog-local dispatch reach the document listener.
+        const notifyOpened = dialog => dialog.dispatchEvent(new CustomEvent('app:shell-dialog-open', { detail: { dialog }, bubbles: true, composed: true }));
+        document.addEventListener('app:shell-dialog-open', event => {
+            const dialog = event.detail?.dialog || event.target;
+            if (dialog instanceof HTMLDialogElement) claim(dialog);
+        });
+        shellDialogs.forEach(dialog => {
             dialog.addEventListener('close', () => {
-                scrollDepth = Math.max(0, scrollDepth - 1);
-                if (!scrollDepth) document.body.style.overflow = oldOverflow;
+                release(dialog);
                 document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
                     if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'false');
                 });
                 // Native dialog normally restores focus; handle disappeared/hidden launchers.
-                const launcher = dialog.shellLauncher;
-                if (launcher?.isConnected && launcher.getClientRects().length) launcher.focus();
-                else document.getElementById('page-content')?.focus();
+                restoreFocus(dialog, dialog.shellLauncher);
             });
             dialog.addEventListener('keydown', event => {
                 if (event.key !== 'Tab') return;
-                const controls = Array.from(dialog.querySelectorAll('a[href], button, input, select, textarea, [tabindex="0"]'))
-                    .filter(el => el.getClientRects().length && !el.disabled);
+                const controls = tabbables(dialog);
+                if (!controls.length) { event.preventDefault(); dialog.focus(); return; }
                 const first = controls[0], last = controls[controls.length - 1];
-                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+                if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog)) { event.preventDefault(); first.focus(); }
             });
             dialog.addEventListener('click', event => {
                 const rect = dialog.getBoundingClientRect();
@@ -142,12 +222,9 @@
         });
         function openDialog(dialog, launcher = document.activeElement) {
             if (!dialog || dialog.open) return;
-            dialog.shellLauncher = launcher;
-            if (!scrollDepth++) { oldOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
+            dialog.shellLauncher = launcher || document.activeElement;
             dialog.showModal();
-            document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
-                if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'true');
-            });
+            notifyOpened(dialog);
         }
         async function openInvites(launcher) {
             const dialog = document.getElementById('invite-dialog');

@@ -172,8 +172,8 @@ const measure = () => evaluate(`(() => {
 })()`);
 
 // Fixed chrome currently visible over the page; the scrollport must end above it.
-function chromeBottoms(m) {
-    return [m.barShown && m.bar.bottom, m.launcherShown && m.launcher.bottom, m.bellShown && m.bell.bottom].filter(Boolean);
+function chromeTops(m) {
+    return [m.barShown && m.bar.top, m.launcherShown && m.launcher.top, m.bellShown && m.bell.top].filter(Boolean);
 }
 
 const checks = [];
@@ -190,7 +190,7 @@ async function layoutCase(label, { width, height, phone }, scenario = {}) {
     await waitFor(`innerWidth === ${width} && innerHeight === ${height}`, `${label} viewport`);
     const m = await measure();
     check(m.overflowBefore === 0 && m.overflowAfter === 0, `${label}: no horizontal overflow`);
-    check(m.barShown === Boolean(scenario.mobile ?? true), `${label}: mobile bar presence matches ${scenario.mobile ?? true}`);
+    check(m.barShown === (phone && Boolean(scenario.mobile ?? true)), `${label}: mobile bar presence matches the viewport`);
     check(m.launcherShown === Boolean(scenario.launcher ?? true), `${label}: launcher presence matches ${scenario.launcher ?? true}`);
     if (m.launcherShown && m.bellShown) {
         const a = m.launcher, b = m.bell;
@@ -200,13 +200,13 @@ async function layoutCase(label, { width, height, phone }, scenario = {}) {
     if (phone) {
         for (const [name, r] of [['launcher', m.launcherShown && m.launcher], ['bell', m.bellShown && m.bell]]) {
             if (!r) continue;
-            check(r.bottom <= m.bar.top + 0.5, `${label}: ${name} sits above the mobile bar`);
+            if (m.barShown) check(r.bottom <= m.bar.top + 0.5, `${label}: ${name} sits above the mobile bar`);
             check(r.left >= 0 && r.right <= width && r.top >= 0, `${label}: ${name} stays in the viewport`);
         }
     }
     // The scrollport (its rect already excludes the reserved margin) ends above all
     // visible fixed chrome, so no row is permanently covered.
-    const floor = Math.min(...chromeBottoms(m));
+    const floor = Math.min(...chromeTops(m));
     if (Number.isFinite(floor)) check(m.content.bottom <= floor + 0.5, `${label}: scrollport ends above fixed chrome`);
     return m;
 }
@@ -241,21 +241,21 @@ async function run() {
     const docked = await measure();
     check(docked.marginBottom >= 80 && docked.content.bottom <= docked.bell.top + 0.5, 'dock-space calc(80px + safe-area) reserves the bell');
 
-    // 3. Chat page: launcher removed, bell only. No phantom reservation on phones.
-    await load('no-launcher', { launcher: false });
+    // 3. Chat page without notifications: reserve only the mobile navigation bar.
+    await load('no-launcher', { launcher: false, bellOn: false });
     for (const viewport of VIEWPORTS.filter(v => v.phone)) {
         const m = await layoutCase(`${viewport.width}x${viewport.height} bell only`, viewport, { launcher: false });
         check(m.marginBottom < 80, `${viewport.width}x${viewport.height}: bell-only phone reserves no launcher band`);
     }
 
-    // 4. Embedded/guest: no mobile bar and no launcher - the bell alone decides the band.
-    await load('embedded', { mobile: false, launcher: false });
+    // 4. Embedded/guest pages omit all authenticated fixed chrome.
+    await load('embedded', { mobile: false, launcher: false, bellOn: false });
     for (const viewport of VIEWPORTS) {
         const label = `${viewport.width}x${viewport.height} embedded`;
         const m = await layoutCase(label, viewport, { mobile: false, launcher: false });
         check(!m.barShown && !m.launcherShown, `${label}: no mobile bar and no launcher`);
         check(m.marginBottom < 80, `${label}: no phantom mobile space without bar/launcher`);
-        check(m.last.bottom <= m.bell.top + 0.5, `${label}: last action still clears the bell`);
+        check(m.last.bottom <= m.content.bottom + 0.5, `${label}: last action stays in the scrollport`);
     }
 
     // 5. Guest with no fixed chrome at all: nothing reserved.

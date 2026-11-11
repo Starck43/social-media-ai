@@ -146,12 +146,15 @@
         function openDock(launcher) {
             activeLauncher = launcher || toggleBtn;
             applyDockContext(detectPageContext(launcher));
-            toggleBtn.setAttribute('aria-expanded', 'true');
-            if (typeof dock.showModal === 'function' && !dock.open) {
-                dock.showModal();
-            } else if (!dock.open) {
-                dock.setAttribute('open', '');
+            // The shared shell owns scroll depth, launcher hand-off, aria-expanded
+            // and close cleanup once the dock announces its opening.
+            dock.shellLauncher = activeLauncher;
+            if (!dock.open) {
+                if (typeof dock.showModal === 'function') dock.showModal();
+                else dock.setAttribute('open', '');
+                dock.dispatchEvent(new CustomEvent('app:shell-dialog-open', { detail: { dialog: dock }, bubbles: true }));
             }
+            toggleBtn.setAttribute('aria-expanded', 'true');
             if (inputEl && !sendBtn?.disabled) {
                 inputEl.focus();
             } else {
@@ -164,9 +167,8 @@
                 dock.close();
             } else {
                 dock.removeAttribute('open');
+                dock.dispatchEvent(new Event('close'));
             }
-            toggleBtn.setAttribute('aria-expanded', 'false');
-            (activeLauncher || toggleBtn)?.focus();
         }
 
         toggleBtn.addEventListener('click', function(event) {
@@ -178,6 +180,7 @@
             const trigger = event.target.closest('[data-ask-agent-trigger]');
             if (trigger) {
                 event.preventDefault();
+                if (dock.open) return;
                 openDock(trigger);
             }
         });
@@ -196,7 +199,6 @@
 
         dock.addEventListener('close', function() {
             toggleBtn.setAttribute('aria-expanded', 'false');
-            (activeLauncher || toggleBtn)?.focus();
         });
 
         removeChipBtn?.addEventListener('click', function() {
@@ -224,4 +226,3 @@
         boot();
     }
 })();
-

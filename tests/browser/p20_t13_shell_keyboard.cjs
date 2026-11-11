@@ -110,6 +110,8 @@ const child = spawn(CHROME, [
     '--headless=new', '--no-sandbox', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
     '--disable-extensions', '--disable-background-networking', '--disable-sync', '--disable-component-update',
     '--disable-breakpad', '--disable-crash-reporter', '--mute-audio',
+    '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
+    '--disable-backgrounding-occluded-windows',
     '--remote-debugging-pipe', `--user-data-dir=${path.join(temp, 'profile')}`, 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
 
@@ -152,7 +154,7 @@ function send(method, params = {}, session = sessionId) {
     return new Promise((resolve, reject) => {
         if (browserClosed) return reject(Error(`Chromium exited before ${method}`));
         const id = ++nextId;
-        const timer = setTimeout(() => { waiting.delete(id); reject(Error(`CDP timeout: ${method}`)); }, STEP_TIMEOUT);
+        const timer = setTimeout(() => { waiting.delete(id); reject(Error(`CDP timeout: ${method} ${params.expression || ''}`)); }, STEP_TIMEOUT);
         waiting.set(id, {
             method,
             resolve: value => { clearTimeout(timer); resolve(value); },
@@ -182,7 +184,7 @@ async function clickAt(x, y) {
     await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
     await settle();
 }
-const settle = () => evaluate('new Promise(resolve => setTimeout(resolve, 30))');
+const settle = () => new Promise(resolve => setTimeout(resolve, 30));
 const focusId = () => evaluate(`(() => {
     const el = document.activeElement;
     if (!el || el === document.body) return 'BODY';
@@ -195,13 +197,15 @@ const closed = id => `!document.getElementById('${id}').open && !document.getEle
 const open = id => evaluate(`document.getElementById(${JSON.stringify(id)}).open`);
 
 async function waitFor(expression, label, attempts = 80) {
+    phase = label;
     for (let i = 0; i < attempts; i++) {
         if (await evaluate(expression)) return;
-        await evaluate('new Promise(resolve => setTimeout(resolve, 25))');
+        await new Promise(resolve => setTimeout(resolve, 25));
     }
     throw Error(`Timed out waiting for ${label}`);
 }
 
+let phase = 'startup';
 const checks = [];
 function check(ok, label) { assert.ok(ok, `FAILED: ${label}`); checks.push(label); }
 
@@ -210,6 +214,7 @@ async function run() {
     sessionId = (await send('Target.attachToTarget', { targetId: target.targetId, flatten: true }, null)).sessionId;
     await send('Runtime.enable');
     await send('Page.enable');
+    await send('Page.bringToFront');
     await send('Network.enable');
     // Fail every request that is not a synthetic file:// asset, then probe the
     // same interception: a network asset must be refused before it is sent.
@@ -380,7 +385,7 @@ function teardown() {
     try { child.kill('SIGKILL'); } catch (_) { /* already gone */ }
     setTimeout(() => { try { fs.rmSync(temp, { recursive: true, force: true }); } catch (_) { /* best effort */ } }, 200);
 }
-timer = setTimeout(() => { console.error(`CDP run timed out after ${TIMEOUT_MS}ms`); process.exitCode = 1; teardown(); }, TIMEOUT_MS);
+timer = setTimeout(() => { console.error(`CDP timed out at ${phase} after ${checks.length} passed checks (${TIMEOUT_MS}ms)`); process.exitCode = 1; teardown(); }, TIMEOUT_MS);
 run()
     .catch(error => { console.error(error && error.stack ? error.stack : error); process.exitCode = 1; })
     .finally(teardown);

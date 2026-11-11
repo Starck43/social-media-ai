@@ -9,6 +9,7 @@ from docx import Document
 from pypdf import PdfReader
 
 from app.services.knowledge.export import ExportError, ExportRevision, render_revision
+from tests.shared.pdf_rendering import require_pdf_renderer
 
 
 @pytest.fixture
@@ -27,6 +28,7 @@ def test_docx_contains_literal_content_and_revision_metadata(revision):
 
 
 def test_pdf_contains_unicode_literal_text_and_revision_metadata(revision):
+    require_pdf_renderer()
     exported = render_revision(revision, "pdf")
     pdf = PdfReader(BytesIO(exported.content))
     text = "\n".join(page.extract_text() for page in pdf.pages)

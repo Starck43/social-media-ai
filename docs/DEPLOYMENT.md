@@ -32,6 +32,9 @@ With a virtual environment, use its interpreter (for example,
 `.venv/bin/python app/main.py`). This single command starts the API/web process;
 `DEBUG=true` enables Uvicorn's reload watcher. `HOST` and `PORT` come from `.env`
 (defaults `0.0.0.0:8000`; set `HOST=127.0.0.1` to listen only on this machine).
+DOCX export needs no native renderer. PDF export requires WeasyPrint's Pango and
+HarfBuzz native libraries plus Cyrillic-capable fonts; see the
+[WeasyPrint system requirements](https://doc.courtbouillon.org/weasyprint/v66.0/first_steps.html#debian-11).
 The process uses the existing PostgreSQL and Redis services; it does not start
 them. It also does not start the separate scheduler/worker/messenger runtime.
 When that runtime is needed, start exactly one owner with `python -m app.runtime`.

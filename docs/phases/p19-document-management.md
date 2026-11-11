@@ -42,10 +42,10 @@ TZ criteria: AI letters from context (T02); templates (T02); every version saved
 2. [P19-T02](../tasks/p19-t02.md) — Templates and AI drafting with evidence and unsupported-claim marking · `P3` · `C4` · depends: [P19-T01](../audit/p19-t01.md), [P14-T02 accepted](../audit/p13-t04-p14-t04-business-crm.md) or [P15-T02](../tasks/p15-t02.md) (context sources)
 3. [P19-T03](../tasks/p19-t03.md) — Version history, diff and restore · `P3` · `C3` · depends: [P19-T01](../audit/p19-t01.md)
 4. [P19-T04](../tasks/p19-t04.md) — Document approval workflow bound to an immutable revision hash · `P3` · `C4` · depends: [P19-T01](../audit/p19-t01.md), [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
-5. [P19-T05](../tasks/p19-t05.md) — Export to DOCX/PDF and delivery via outbox · `P3` · `C3` · depends: [P19-T01](../audit/p19-t01.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md) — **partial:** renderer and encrypted spool accepted 2026-11-10 (`0628594c`, #456) — [audit](../audit/p19-t05.md); the export/send API, dispatch call site and tracking remain.
+5. [P19-T05 accepted](../audit/p19-t05.md) — **DONE 2026-11-11**: DOCX/PDF export, approved email attachments, atomic idempotent scheduling and durable delivered-revision provenance; accepted `e7c6e7a64459c14340f2a0d241b62f2a0d329bb8`, merge `fef205340cb06b98e3357d21b7300ac792c1a795` ([#465](https://github.com/Starck43/social-media-ai/pull/465)).
 6. [P19-T06](../tasks/p19-t06.md) — Document search · `P3` · `C2` · depends: [P19-T01](../audit/p19-t01.md)
 7. [P19-T07 accepted](../audit/p19-t07.md) — **DONE 2026-11-09**: `app/services/knowledge` to the 80% coverage gate; accepted `66d356e3`, package coverage 78.08% → 85.63%, test-only. Its finding — the `retrieval.py` boundary predicate contradicting its docstring — is registered as [P19-T09](../tasks/p19-t09.md), awaiting one owner choice.
 
 ## Dependencies and gates
 
-Delivery (T05) after [P15-T05](../tasks/p15-t05.md)/T06. Contacts/case links after [P13-T07 accepted](../audit/p13-t07.md).
+Delivery (T05) after [P15-T05](../tasks/p15-t05.md)/T06. Its retrieval-boundary finding [P19-T09](../audit/p19-t09.md) is accepted: one destination-clearance predicate, `f90c4a75`. Contacts/case links after [P13-T07 accepted](../audit/p13-t07.md).

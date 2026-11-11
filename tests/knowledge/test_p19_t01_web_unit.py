@@ -93,6 +93,8 @@ def test_document_management_template_escapes_content_and_confirms_deletion():
         can_create=True,
         can_update=True,
         can_delete=True,
+        # The real render() always injects perms (None hides optional controls).
+        perms=None,
         csrf="csrf-test",
         pending={"items": []},
         approval_key="test-key",

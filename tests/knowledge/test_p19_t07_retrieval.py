@@ -173,15 +173,15 @@ def test_filter_empty_scopes_excludes_non_public():
 @pytest.mark.parametrize(
     ("allowed", "expected_ids"),
     [
-        # Contract as implemented: a snippet is kept only when it meets the ceiling
-        # (snippet_level >= max_level), so it never exceeds it.
+        # `allowed` is the clearance the destination requires: a snippet survives
+        # only when its own boundary is at or above it (local_only < company < cloud).
         ("cloud", ["cloud"]),
         ("company", ["company", "cloud"]),
         ("local_only", ["local_only", "company", "cloud"]),
         ("LOCAL_ONLY", ["local_only", "company", "cloud"]),
     ],
 )
-def test_filter_boundary_ceiling(allowed, expected_ids):
+def test_filter_boundary_clearance(allowed, expected_ids):
     snippets = [
         snippet(id="local_only", data_boundary="local_only", boundary="local_only"),
         snippet(id="company", data_boundary="company", boundary="company"),
@@ -342,9 +342,11 @@ def test_assemble_numbers_multiple_blocks_and_separates_with_blank_line():
         ("cloud", ["Cloud"]),
         ("company", ["Company", "Cloud"]),
         ("local_only", ["Local", "Company", "Cloud"]),
+        ("LOCAL_ONLY", ["Local", "Company", "Cloud"]),
+        ("  Company ", ["Company", "Cloud"]),
     ],
 )
-def test_assemble_filters_by_boundary_ceiling(allowed, expected_titles):
+def test_assemble_filters_by_boundary_clearance(allowed, expected_titles):
     items = [
         snippet(title="Local", data_boundary="local_only", boundary="local_only"),
         snippet(title="Company", data_boundary="company", boundary="company"),
@@ -387,3 +389,45 @@ def test_assemble_uses_legacy_aliases():
     text = mod.assemble_llm_citations_context([legacy], "company")
     assert "[1] Legacy — legacy-src (legacy.md · hh · boundary:company)" in text
     assert "[OCR/Extraction note: page 1]" in text
+
+
+CONCERNING_BOUNDARIES = ("local_only", "company", "cloud")
+
+
+def boundary_matrix():
+    return [snippet(id=b, title=b, data_boundary=b, boundary=b) for b in CONCERNING_BOUNDARIES]
+
+
+@pytest.mark.parametrize("allowed", CONCERNING_BOUNDARIES)
+def test_both_gates_apply_one_shared_clearance_predicate(allowed):
+    items = boundary_matrix()
+    hits = mod.filter_snippets_by_acl(items, ["*"], allowed_boundary=allowed)
+    prompt = mod.assemble_llm_citations_context(items, allowed)
+    assert len(hits) == prompt.count("\n\n") + (1 if prompt else 0)
+    for boundary in CONCERNING_BOUNDARIES:
+        kept = any(item["id"] == boundary for item in hits)
+        assert (f"] {boundary} — " in prompt) is kept
+
+
+@pytest.mark.parametrize("allowed", CONCERNING_BOUNDARIES)
+def test_retrieval_clearance_agrees_with_the_destination_table(allowed):
+    """The ORM destination table and the retrieval gate must not drift apart."""
+    from app.models.managers.knowledge_manager import BOUNDARIES
+
+    hits = mod.filter_snippets_by_acl(boundary_matrix(), ["*"], allowed_boundary=allowed)
+    assert [item["id"] for item in hits] == list(BOUNDARIES[allowed])
+
+
+def test_local_only_evidence_never_reaches_a_cloud_destination():
+    items = boundary_matrix()
+    assert [s["id"] for s in mod.filter_snippets_by_acl(items, ["*"], allowed_boundary="cloud")] == ["cloud"]
+    assert [s["id"] for s in mod.search_knowledge_snippets("", items, ["*"], allowed_boundary="cloud")] == ["cloud"]
+    prompt = mod.assemble_llm_citations_context(items, "cloud")
+    assert "local_only" not in prompt and "] company — " not in prompt
+
+
+@pytest.mark.parametrize("allowed", ["", "  ", "secret", "public", None])
+def test_unknown_destination_clearance_returns_nothing_from_either_gate(allowed):
+    items = boundary_matrix()
+    assert mod.filter_snippets_by_acl(items, ["*"], allowed_boundary=allowed) == []
+    assert mod.assemble_llm_citations_context(items, allowed) == ""

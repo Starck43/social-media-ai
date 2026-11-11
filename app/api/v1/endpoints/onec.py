@@ -33,7 +33,20 @@ class PrivateOneCRoute(APIRoute):
         return handle
 
 
-router = APIRouter(route_class=PrivateOneCRoute)
+class ErrorOutput(BaseModel):
+    detail: str
+
+
+router = APIRouter(
+    route_class=PrivateOneCRoute,
+    responses={
+        400: {"model": ErrorOutput, "description": "Fixed input or connector error code"},
+        401: {"model": ErrorOutput, "description": "Bearer authentication required"},
+        404: {"model": ErrorOutput, "description": "Connection or approval unavailable"},
+        422: {"model": ErrorOutput, "description": "Invalid request; raw input is never echoed"},
+        500: {"model": ErrorOutput, "description": "Response unavailable"},
+    },
+)
 
 
 class ConnectInput(BaseModel):
@@ -41,8 +54,16 @@ class ConnectInput(BaseModel):
     label: str = Field(min_length=1, max_length=100, repr=False)
     base_url: str = Field(min_length=1, max_length=2048, repr=False)
     interface: str = Field(pattern="^(odata_standard|http_service)$")
-    login: SecretStr
-    password: SecretStr
+    login: SecretStr = Field(min_length=1, max_length=320)
+    password: SecretStr = Field(min_length=1, max_length=4096)
+
+
+class CredentialsInput(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid", json_schema_extra={"examples": [{"login": "demo", "password": "synthetic-only"}]}
+    )
+    login: SecretStr = Field(min_length=1, max_length=320)
+    password: SecretStr = Field(min_length=1, max_length=4096)
 
 
 class HostInput(BaseModel):
@@ -102,6 +123,22 @@ async def connections(request: Request, user: User = Depends(get_authenticated_u
 @router.delete("/connections/{connection_id}", status_code=204)
 async def disconnect(request: Request, connection_id: int = Path(gt=0), user: User = Depends(get_authenticated_user)):
     await _call(OneCConnectionService().disable, **_scope(request, user), connection_id=connection_id)
+
+
+@router.patch("/connections/{connection_id}/credentials", response_model=ConnectionOutput)
+async def replace_credentials(
+    body: CredentialsInput,
+    request: Request,
+    connection_id: int = Path(gt=0),
+    user: User = Depends(get_authenticated_user),
+):
+    return await _call(
+        OneCConnectionService().replace_credentials,
+        **_scope(request, user),
+        connection_id=connection_id,
+        login=body.login.get_secret_value(),
+        password=body.password.get_secret_value(),
+    )
 
 
 @router.post("/connections/{connection_id}/health-check", response_model=ConnectionOutput)

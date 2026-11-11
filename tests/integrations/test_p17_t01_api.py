@@ -108,3 +108,34 @@ def test_health_delegates_ids_to_authorized_service(monkeypatch):
     response = request("POST", "/connections/5/health-check")
     assert response.status_code == 200
     check.assert_awaited_once_with(tenant_id=11, actor_id=7, connection_id=5)
+
+
+def test_replace_credentials_delegates_scope_without_echo(monkeypatch):
+    result = {
+        "id": 5,
+        "label": "ERP",
+        "host": "erp.example.com",
+        "port": 443,
+        "base_path": "/base",
+        "interface": "odata_standard",
+        "state": "unverified",
+        "check_code": None,
+        "checked_at": None,
+        "is_active": True,
+    }
+    replace = AsyncMock(return_value=result)
+    monkeypatch.setattr(onec.OneCConnectionService, "replace_credentials", replace)
+    response = request("PATCH", "/connections/5/credentials", {"login": "test-login", "password": "test-password"})
+    assert response.status_code == 200
+    assert "test-login" not in response.text and "test-password" not in response.text
+    replace.assert_awaited_once_with(
+        tenant_id=11, actor_id=7, connection_id=5, login="test-login", password="test-password"
+    )
+
+
+def test_replace_validation_never_echoes_private_input():
+    response = request(
+        "PATCH", "/connections/5/credentials", {"login": "test-login", "password": "private-password", "tenant_id": 22}
+    )
+    assert response.status_code == 422 and response.json() == {"detail": "invalid_request"}
+    assert "private-password" not in response.text

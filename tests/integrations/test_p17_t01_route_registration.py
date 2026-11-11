@@ -15,6 +15,7 @@ def test_onec_routes_are_registered_with_bearer_auth():
         "/integrations/1c/connect": {"post"},
         "/integrations/1c/connections": {"get"},
         "/integrations/1c/connections/{connection_id}": {"delete"},
+        "/integrations/1c/connections/{connection_id}/credentials": {"patch"},
         "/integrations/1c/connections/{connection_id}/health-check": {"post"},
         "/integrations/1c/hosts": {"get", "post"},
         "/integrations/1c/hosts/{host_id}": {"delete"},

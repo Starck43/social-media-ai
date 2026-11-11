@@ -25,6 +25,7 @@ import pytest
 from app.services.research_delegation import (
     DEFAULT_RESEARCH_EVAL_FIXTURES,
     DELEGATION_WORKFLOW_VERSION,
+    DELEGATION_WORKFLOW_VERSION_WEB,
     ROLE_ALLOWED_PERMISSIONS,
     STEP_ORDER,
     ChildScope,
@@ -43,6 +44,7 @@ from app.services.research_delegation import (
     select_execution_path,
 )
 from app.services.task_pipeline import PipelineReviewRequired
+from app.services.web_research.service import WebResearchService
 from app.web.chat_workspace import build_task_cards
 
 __source_only__ = True
@@ -192,13 +194,181 @@ async def test_happy_path_provenance_citations_and_draft_only_bitrix24():
     # Because 1 unsupported claim was rejected, coverage_notes records it honestly and status is 'partial'
     assert outcome["status"] == "partial"
     assert any("неподтверждённых утверждений" in note for note in draft["coverage_notes"])
-
     b24 = draft["bitrix24_draft"]
     assert b24["state"] == "draft_only"
     assert b24["requires_command_approval"] is True
     assert b24["external_writes_performed"] == 0
     assert b24["approval_url"] == "/app/commands"
     assert len(saved_checkpoints) >= 3
+
+
+@pytest.mark.asyncio
+async def test_workflow_v2_fetches_only_requested_public_urls_and_keeps_v1_default():
+    """V2 uses the durable public-URL path, filters unrelated citations, and preserves v1 receipt behavior."""
+    origin = _make_origin(source_ids=(101,))
+    requested_url = "https://example.com/report"
+    calls: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    requested_hash = "a" * 64
+
+    async def collector(_scope: ChildScope, _caps: DelegationCaps) -> dict[str, Any]:
+        return {"items": [], "per_source": [{"source_id": 101, "outcome": "collected"}]}
+
+    async def web_runner(payload: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        calls.append((payload, kwargs))
+        return {
+            "provider_used": "stub",
+            "is_stub": False,
+            "citations": [
+                {
+                    "title": "Public page",
+                    "url": requested_url,
+                    "content_hash": requested_hash,
+                    "fetched_at": "2026-11-11T00:00:00Z",
+                    "citation_anchor": requested_url,
+                    "excerpt": "must not be copied into the receipt",
+                },
+                {
+                    "title": "Unrequested page",
+                    "url": "https://evil.example/",
+                    "content_hash": "b" * 64,
+                },
+            ],
+            "refusals": [],
+        }
+
+    async def analyzer(_scope: ChildScope, collected: dict[str, Any], _caps: DelegationCaps) -> dict[str, Any]:
+        assert collected["public_web"]["citations"] == [
+            {
+                "title": "Public page",
+                "url": requested_url,
+                "content_hash": requested_hash,
+                "fetched_at": "2026-11-11T00:00:00Z",
+                "citation_anchor": requested_url,
+            }
+        ]
+        return {"findings": [], "tokens_used": 100, "cost_usd": 0.001}
+
+    async def synthesizer(
+        _scope: ChildScope, _collected: dict[str, Any], _analyzed: dict[str, Any], _caps: DelegationCaps
+    ):
+        return {"summary": "Draft", "tokens_used": 100, "cost_usd": 0.001}
+
+    outcome = await execute_delegated_research(
+        task_id=51,
+        job_id=601,
+        attempt=1,
+        goal="Review this public page",
+        origin=origin,
+        collector_fn=collector,
+        analyzer_fn=analyzer,
+        synthesizer_fn=synthesizer,
+        workflow_version=DELEGATION_WORKFLOW_VERSION_WEB,
+        public_web_urls=(requested_url,),
+        public_web_runner=web_runner,
+    )
+
+    assert outcome["workflow_version"] == DELEGATION_WORKFLOW_VERSION_WEB
+    assert outcome["pipeline"]["delegation"]["workflow_version"] == DELEGATION_WORKFLOW_VERSION_WEB
+    assert calls[0][0] == {
+        "query": "Review this public page",
+        "target_urls": [requested_url],
+        "save_evidence": False,
+        "public_urls_only": True,
+    }
+    assert calls[0][1] == {
+        "tenant_id": origin.tenant_id,
+        "expected_actor_id": origin.actor_id,
+        "account_key": "agenttask:51",
+        "require_durable": True,
+    }
+    assert outcome["draft"]["citations"] == [
+        {
+            "source_type": "public_web",
+            "title": "Public page",
+            "url": requested_url,
+            "content_hash": requested_hash,
+            "fetched_at": "2026-11-11T00:00:00Z",
+            "citation_anchor": requested_url,
+        }
+    ]
+    assert "excerpt" not in str(outcome["draft"]["citations"])
+
+
+@pytest.mark.asyncio
+async def test_workflow_v2_requires_explicit_bounded_urls_and_v1_rejects_opt_in():
+    async def collector(_scope: ChildScope, _caps: DelegationCaps) -> dict[str, Any]:
+        return {"items": [], "per_source": [{"source_id": 101, "outcome": "collected"}]}
+
+    async def analyzer(_scope: ChildScope, _collected: dict[str, Any], _caps: DelegationCaps) -> dict[str, Any]:
+        return {"findings": []}
+
+    async def synthesizer(
+        _scope: ChildScope, _collected: dict[str, Any], _analyzed: dict[str, Any], _caps: DelegationCaps
+    ):
+        return {"summary": "Draft"}
+
+    common = {
+        "task_id": 52,
+        "job_id": 602,
+        "attempt": 1,
+        "goal": "Read pages",
+        "origin": _make_origin(source_ids=(101,)),
+        "collector_fn": collector,
+        "analyzer_fn": analyzer,
+        "synthesizer_fn": synthesizer,
+    }
+    with pytest.raises(DelegationAdmissionError, match="delegation_public_web_urls_required"):
+        await execute_delegated_research(**common, workflow_version=DELEGATION_WORKFLOW_VERSION_WEB)
+    with pytest.raises(DelegationCapExceededError, match="delegation_public_web_url_limit_exceeded"):
+        await execute_delegated_research(
+            **common,
+            workflow_version=DELEGATION_WORKFLOW_VERSION_WEB,
+            public_web_urls=("https://example.com/a", "https://example.com/b", "https://example.com/c"),
+            public_web_runner=lambda *_args, **_kwargs: {},
+        )
+    with pytest.raises(DelegationAdmissionError, match="delegation_web_research_requires_workflow_v2"):
+        await execute_delegated_research(**common, public_web_urls=("https://example.com/a",))
+
+
+@pytest.mark.asyncio
+async def test_agent_task_public_urls_only_mode_forces_stub_search_without_provider_discovery(monkeypatch):
+    service = WebResearchService()
+    captured: dict[str, Any] = {}
+
+    async def fake_research(data: dict[str, Any], **kwargs: Any) -> NS:
+        captured.update(data)
+        captured["require_durable"] = kwargs["require_durable"]
+        return NS(
+            query=data["query"],
+            provider_used="stub",
+            chromium_used_under_hood=False,
+            is_stub=False,
+            pages=[],
+            citation_coverage=0.0,
+            citations=[],
+            refusals=[],
+            summary_text="",
+        )
+
+    monkeypatch.setattr(service, "research", fake_research)
+    result = await service.run_research_task_step(
+        {
+            "query": "Check these",
+            "target_urls": ["https://example.com/a"],
+            "public_urls_only": True,
+            "save_evidence": False,
+        },
+        tenant_id=7,
+        account_key="agenttask:51",
+        require_durable=True,
+    )
+    assert captured["provider"] == "stub"
+    assert captured["fetch_top_n"] == 0
+    assert captured["target_urls"] == ["https://example.com/a"]
+    assert captured["save_evidence"] is False
+    assert captured["require_durable"] is True
+    assert result["provider_used"] == "stub"
+    assert result["is_stub"] is False
 
 
 @pytest.mark.asyncio
@@ -751,6 +921,60 @@ async def test_cancellation_partial_failure_and_chat_workspace_projection(monkey
     )
     assert "draft" in card_by_type
     assert card_by_type["draft"]["status"] == "draft_only"
+
+    v2_projection = project_delegated_run_for_workspace(
+        42,
+        "Public web task",
+        {
+            "pipeline": {
+                "delegation": {
+                    "workflow_version": DELEGATION_WORKFLOW_VERSION_WEB,
+                    "state": "running",
+                    "steps": {},
+                }
+            }
+        },
+        can_cancel=True,
+    )
+    assert v2_projection is not None
+    assert v2_projection["total_steps"] == 4
+    assert [step["step"] for step in v2_projection["steps"]] == [
+        "collect",
+        "web_research",
+        "analyze",
+        "synthesize",
+    ]
+    assert v2_projection["steps"][1]["status"] == "pending"
+
+    v2_completed = project_delegated_run_for_workspace(
+        42,
+        "Public web task",
+        {
+            "pipeline": {
+                "delegation": {
+                    "workflow_version": DELEGATION_WORKFLOW_VERSION_WEB,
+                    "state": "completed",
+                    "steps": {
+                        "collect": {
+                            "state": "completed",
+                            "result": {
+                                "status": "complete",
+                                "public_web": {
+                                    "is_stub": False,
+                                    "refusals": [],
+                                    "citations": [{"url": "https://example.com"}],
+                                },
+                            },
+                        }
+                    },
+                }
+            }
+        },
+        can_cancel=False,
+    )
+    assert v2_completed is not None
+    assert v2_completed["completed_steps"] == 2
+    assert v2_completed["steps"][1]["status"] == "completed"
 
     # Verify the emitted cancel_url matches the real registered route on app.main.app (web_router -> chat -> workspace)
     from fastapi.testclient import TestClient

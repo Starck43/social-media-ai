@@ -221,6 +221,9 @@ and execution permissions remain in the handwritten references and code.
 | PUT | /api/v1/users/{user_id} | update_user_api_v1_users__user_id__put |
 | POST | /api/v1/users/{user_id}/change-password | change_password_api_v1_users__user_id__change_password_post |
 | PUT | /api/v1/users/{user_id}/platform-role | update_platform_role_api_v1_users__user_id__platform_role_put |
+| POST | /api/v1/web-research/fetch | fetch_web_page_api_v1_web_research_fetch_post |
+| POST | /api/v1/web-research/search | run_web_research_api_v1_web_research_search_post |
+| GET | /api/v1/web-research/status | get_web_research_status_api_v1_web_research_status_get |
 | GET | /dashboard | analytics_dashboard_dashboard_get |
 | GET | /dashboard/topic-chains | topic_chains_dashboard_dashboard_topic_chains_get |
 | GET | /health | readiness_health_get |

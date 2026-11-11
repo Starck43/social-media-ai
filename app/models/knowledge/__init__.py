@@ -157,4 +157,6 @@ class DocumentTemplate(TenantScopedMixin, TimestampMixin, Base):
     )
 
 
+from app.services.web_research.models import WebResearchQuota  # noqa: E402,F401
 from .approval import DocumentApproval  # noqa: E402,F401
+

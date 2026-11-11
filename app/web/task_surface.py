@@ -17,11 +17,16 @@ TABS = (
     ("planner", "Мои дела", "/app/planner"),
     ("tasks", "Поручения агенту", "/app/tasks"),
     ("calendar", "Календарь", "/app/task-hub/calendar"),
+    ("sources", "Задачи из сервисов", "/app/task-hub/sources"),
 )
 
 
 def _can(request: Request, resource: str) -> bool:
     return bool(has_permission(get_current_user(), resource, ActionType.VIEW))
+
+
+def _can_task_sources(request: Request) -> bool:
+    return _can(request, "plannertask") and _can(request, "source")
 
 
 def task_tabs(request: Request):
@@ -32,6 +37,7 @@ def task_tabs(request: Request):
         if (tab[0] != "planner" or _can(request, "plannertask"))
         and (tab[0] != "tasks" or _can(request, "agenttask"))
         and (tab[0] != "calendar" or _can(request, "plannertask") or _can(request, "agenttask"))
+        and (tab[0] != "sources" or _can_task_sources(request))
     ]
 
 
@@ -63,6 +69,84 @@ async def task_calendar(
     return render(
         request, "web/task_calendar.html", section="tasks", tabs=task_tabs(request), active_tab="calendar", **data
     )
+
+
+@router.get("/task-hub/sources")
+async def task_sources_page(
+    request: Request,
+    cursor: str | None = Query(None, max_length=2000),
+):
+    if not _can_task_sources(request):
+        raise HTTPException(403, "Task source access denied")
+    from app.services.task_sources import task_source_service
+
+    try:
+        sources = await task_source_service.connections()
+    except PermissionError:
+        raise HTTPException(403, "Task source access denied") from None
+    except LookupError:
+        raise HTTPException(404, "Task source unavailable") from None
+    projection = {"state": "not_configured", "items": [], "next_cursor": None}
+    selected_id = sources.get("selected_connection_id")
+    if selected_id is not None:
+        try:
+            projection = await task_source_service.projection(connection_id=selected_id, cursor=cursor, limit=20)
+        except PermissionError:
+            raise HTTPException(403, "Task source access denied") from None
+        except LookupError:
+            raise HTTPException(404, "Task source unavailable") from None
+        except ValueError:
+            raise HTTPException(422, "Invalid task source cursor") from None
+        if isinstance(projection.get("items"), list):
+            from app.services.workspace.today import bitrix_task_status_label
+
+            projection = {
+                **projection,
+                "items": [
+                    {**item, "status_label": bitrix_task_status_label(item.get("status"))}
+                    for item in projection["items"]
+                    if isinstance(item, dict)
+                ],
+            }
+    return render(
+        request,
+        "web/task_sources.html",
+        section="tasks",
+        tabs=task_tabs(request),
+        active_tab="sources",
+        sources=sources,
+        projection=projection,
+        can_configure=has_permission(get_current_user(), "source", ActionType.CREATE),
+    )
+
+
+@router.post("/task-hub/sources/{connection_id}")
+async def task_source_configure(request: Request, connection_id: int):
+    if not _can_task_sources(request) or not has_permission(get_current_user(), "source", ActionType.CREATE):
+        raise HTTPException(403, "Task source access denied")
+    form = await request.form()
+    if (
+        not ensure_csrf(request, form.get("_csrf", ""))
+        or set(form.keys()) != {"_csrf", "enabled"}
+        or len(list(form.keys())) != len(list(form.multi_items()))
+    ):
+        raise HTTPException(403, "Invalid form")
+    enabled_value = form.get("enabled")
+    if enabled_value not in {"yes", "no"}:
+        raise HTTPException(422, "Invalid task source consent")
+    from app.services.task_sources import task_source_service
+
+    try:
+        await task_source_service.configure(
+            connection_id, enabled=enabled_value == "yes", selected=enabled_value == "yes"
+        )
+    except PermissionError:
+        raise HTTPException(403, "Task source unavailable") from None
+    except LookupError:
+        raise HTTPException(404, "Task source unavailable") from None
+    except ValueError:
+        raise HTTPException(422, "Invalid task source consent") from None
+    return RedirectResponse("/app/task-hub/sources", status_code=303)
 
 
 @router.get("/task-hub/new")

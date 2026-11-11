@@ -10,14 +10,39 @@ import json
 import os
 import sys
 
+_DRIVER_PREFIXES = ("postgresql+asyncpg://", "postgresql+psycopg://", "postgresql+psycopg2://")
+
+
+def libpq_dsn(url):
+    """Strip a SQLAlchemy driver suffix; libpq rejects it as an invalid DSN.
+
+    The application URL is `postgresql+asyncpg://…`, which psycopg2 cannot parse.
+    The password is not the issue: this environment authenticates through libpq,
+    so the same URL minus the suffix connects.
+    """
+    for prefix in _DRIVER_PREFIXES:
+        if url.startswith(prefix):
+            return "postgresql://" + url[len(prefix) :]
+    return url
+
 
 def snapshot(schema):
     import psycopg2
+    from dotenv import find_dotenv, load_dotenv
 
+    # `.env` normally holds POSTGRES_URL, and it lives in the checkout root, not
+    # in a linked worktree. Read it from the working directory too, so a plain
+    # `python scripts/ci/schema_inventory.py …` works from the main checkout.
+    load_dotenv(find_dotenv(usecwd=True))
+    load_dotenv()
     url = os.environ.get("TEST_POSTGRES_URL") or os.environ.get("POSTGRES_URL")
     if not url:
-        raise SystemExit("TEST_POSTGRES_URL or POSTGRES_URL must be set")
-    with psycopg2.connect(url) as conn, conn.cursor() as cur:
+        raise SystemExit(
+            "TEST_POSTGRES_URL or POSTGRES_URL must be set. Export the checkout's .env "
+            "(set -a; . ./.env; set +a) or pass TEST_POSTGRES_URL explicitly. "
+            "A password is not required when the database authenticates through libpq."
+        )
+    with psycopg2.connect(libpq_dsn(url)) as conn, conn.cursor() as cur:
 
         def rows(sql, *args):
             cur.execute(sql, args)

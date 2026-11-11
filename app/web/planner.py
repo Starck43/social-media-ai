@@ -81,6 +81,7 @@ async def planner_page(
             ("planner", "Мои дела", "/app/planner"),
             ("tasks", "Поручения агенту", "/app/tasks"),
             ("calendar", "Календарь", "/app/task-hub/calendar"),
+            ("sources", "Задачи из сервисов", "/app/task-hub/sources"),
         ],
         active_tab="planner",
         view=view,

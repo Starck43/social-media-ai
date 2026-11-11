@@ -38,7 +38,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed) · — · `P0` · `C3`
-- [P11-T34](docs/tasks/p11-t34.md) `0145` downgrade drops tables created by `0143`; blocks every isolated-schema bootstrap — **TODO** · unassigned · — · `P0` · `C2`
+- [P11-T34](docs/tasks/p11-t34.md) Reported `0145` downgrade data loss — description does not reproduce; reproduce-or-close — **DEFERRED** (owner: postponed; resume by re-running the reported command) · unassigned · — · `P0` · `C2`
 
 ### Priority P1
 
@@ -60,9 +60,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 - [Q-17](docs/tasks/q-17.md) Web test-suite debt in `tests/unit_web/` — **OPEN** · unassigned · raised while closing [P12-T16](docs/audit/p12-t16.md) · `P2` · `C3`
-- [P11-T31](docs/tasks/p11-t31.md) `tests/notifications/` stale fixtures against the current tenant and role contract — **TODO** · unassigned · — · `P2` · `C3`
-- [P11-T32](docs/tasks/p11-t32.md) `--cov-config=/dev/null` aborted coverage collection on `bot_actions` — reproduce or close — **TODO** · unassigned · — · `P2` · `C2`
-- [P11-T36](docs/tasks/p11-t36.md) `schema_inventory.py` rejects the app DSN and appears to demand a DB password — **IN_PROGRESS** · auditor · — · `P2` · `C1`
+- [P11-T31](docs/tasks/p11-t31.md) `tests/notifications/` stale fixtures against the current tenant and role contract — **BLOCKED** (shared `test_schema` is a stale metadata snapshot: version says `0145`, `alembic upgrade` hits `DuplicateTable`, bootstrap refuses on missing `outbox_messages.reply_evidence_required`; the suite hard-requires that target, so it cannot even collect) · opencode-executor · [card](docs/tasks/p11-t31.md#status-2026-11-11--blocked-on-the-shared-test_schema) · `P2` · `C3`
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: remaining roadmap after the accepted increment (provider byte authority, native original open, local-only execution, approved file actions) — **TODO** (increment accepted 2026-11-03, `6433ae6a`/`48caea61`) · unassigned · [increment audit](docs/audit/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
@@ -76,8 +74,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 ### Priority P3
 
 - [P20-T02](docs/tasks/p20-t02.md) Social triage, attention-item contract and morning brief — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
-- [P20-T09](docs/tasks/p20-t09.md) Inbox triage and agent-suggested replies — **IN_PROGRESS** · ai-studio-argon · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
-- [P20-T11](docs/tasks/p20-t11.md) Team work through connected task systems — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
@@ -89,9 +85,8 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P18-T07](docs/tasks/p18-t07.md) Packaging, signing and auto-update for Windows, macOS and Linux — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P19-T02](docs/tasks/p19-t02.md) Templates and AI drafting with evidence and unsupported-claim marking — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **IN_PROGRESS** · opencode-executor (resume: export/send API, findings F-1..F-3; renderer+spool merged via #456) · [hand-off](docs/tasks/p19-t05-handoff.md) · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C3`
-- [P19-T09](docs/tasks/p19-t09.md) `retrieval.py` boundary predicate contradicts its documented ACL contract — **TODO** · unassigned · raised while closing [P19-T07](docs/audit/p19-t07.md) · `P3` · `C2`
+- [P19-T02](docs/tasks/p19-t02.md) Templates and AI drafting with evidence and unsupported-claim marking — **IN_PROGRESS** · ai-studio-argon · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
+- [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **IN_PROGRESS** · Codex audit corrections ([PR #465](https://github.com/Starck43/social-media-ai/pull/465), reviewed head `6b563a6f`; retry identity and delivered-revision tracking under correction) · [hand-off](docs/tasks/p19-t05-handoff.md) · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C3`
 
 
 ## Deferred by explicit owner decision

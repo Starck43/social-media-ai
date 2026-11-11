@@ -568,6 +568,7 @@ GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
             "outbox_messages",
             "outbox_targets",
             "planner_tasks",
+            "thread_triage_decisions",
             "unified_messages",
         )
     ),

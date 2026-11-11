@@ -100,6 +100,49 @@ def _iso_or_empty(value: Any) -> str:
     return str(value or "")
 
 
+BITRIX_TASK_STATUS_LABELS = {
+    2: "Ожидает выполнения",
+    3: "В работе",
+    4: "Ожидает контроля",
+    5: "Завершена",
+    6: "Отложена",
+    7: "Отклонена",
+}
+
+
+def bitrix_task_status_label(value: Any) -> str:
+    """Map known Bitrix24 statuses to short UI text without echoing unknown values."""
+    if isinstance(value, bool):
+        return "Статус Bitrix24"
+    try:
+        status = int(value)
+    except (TypeError, ValueError):
+        return "Статус Bitrix24"
+    return BITRIX_TASK_STATUS_LABELS.get(status, "Статус Bitrix24")
+
+
+def _bitrix_due_day(value: Any, reference: datetime) -> date | None:
+    """Parse a due day without assigning a timezone to a naive provider timestamp."""
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        return value
+    elif isinstance(value, str) and value:
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    target_tz = reference.tzinfo or timezone.utc
+    return parsed.astimezone(target_tz).date()
+
+
 # ------------------------------------------------ Start-page preference (O-2) ----
 
 
@@ -400,6 +443,21 @@ class TodayRepository:
 
         return await planner_service.get(task_id)
 
+    async def external_tasks(self, workspace_id: int, user_id: int, limit: int = PROVIDER_LIMIT) -> dict[str, Any]:
+        """Read the selected task source for the authenticated connection owner."""
+        from app.core.permissions import get_current_user
+        from app.core.tenant_context import current_tenant_id, is_bypass
+        from app.services.task_sources import task_source_service
+
+        actor = get_current_user()
+        if is_bypass() or current_tenant_id() != workspace_id or actor is None or getattr(actor, "id", None) != user_id:
+            return {"state": "denied", "items": [], "next_cursor": None}
+        return await task_source_service.projection(
+            expected_tenant_id=workspace_id,
+            expected_user_id=user_id,
+            limit=min(max(int(limit), 1), PROVIDER_LIMIT),
+        )
+
     async def followups(self, workspace_id: int, limit: int = PROVIDER_LIMIT) -> list[Any]:
         from app.models import KnowledgeSnippet
 
@@ -419,10 +477,16 @@ class TodayRepository:
 
         return await task_manager.dashboard_upcoming(workspace_id, limit=limit, include_sources=show_sources)
 
-    async def unread_threads(self, workspace_id: int, limit: int = PROVIDER_LIMIT) -> list[Any]:
-        from app.models import MessageThread
+    async def unread_threads(
+        self,
+        workspace_id: int,
+        limit: int = PROVIDER_LIMIT,
+        *,
+        user_id: int | None = None,
+    ) -> list[Any]:
+        from app.models import MessageThread, ThreadTriageDecision
 
-        return (
+        threads = list(
             await MessageThread.objects.filter(
                 tenant_id=workspace_id,
                 is_archived=False,
@@ -430,6 +494,27 @@ class TodayRepository:
             .order_by(MessageThread.id.desc())
             .limit(limit * 3)
         )
+        if threads and _positive_int(user_id):
+            try:
+                uid = int(user_id)
+                decisions = await ThreadTriageDecision.objects.filter(
+                    tenant_id=workspace_id,
+                    decided_by_user_id=uid,
+                ).limit(limit * 6)
+                by_thread = {
+                    int(d.thread_id): d
+                    for d in decisions
+                    if getattr(d, "tenant_id", None) == workspace_id
+                    and getattr(d, "decided_by_user_id", None) == uid
+                    and _positive_int(getattr(d, "thread_id", None))
+                }
+                for th in threads:
+                    tid = getattr(th, "id", None)
+                    if _positive_int(tid) and int(tid) in by_thread:
+                        th.triage_override = by_thread[int(tid)]
+            except Exception:
+                pass
+        return threads
 
     async def personal_connections(self, user_id: int) -> list[Any]:
         from app.services.social.connections import statuses_needing_action
@@ -770,6 +855,141 @@ class TodayProjection:
                 errors.append("planner")
                 logger.warning("Today planner_tasks provider failed", exc_info=True)
 
+            task_source_reader = getattr(self.repo, "external_tasks", None)
+            if task_source_reader is not None and _can(self.perms, "source", "view"):
+                try:
+                    source_result = await task_source_reader(self.workspace_id, self.user_id, limit=PROVIDER_LIMIT)
+                    source_state = str(source_result.get("state", "source_unavailable"))
+                    if source_state in {"denied", "not_configured", "consent_required", "not_enabled"}:
+                        pass
+                    elif source_state in {
+                        "source_unavailable",
+                        "unavailable",
+                        "reauth",
+                        "reauth_required",
+                        "task_scope_required",
+                        "rate_limited",
+                    }:
+                        if source_state == "task_scope_required":
+                            unavailable = "Bitrix24 требует повторного подключения с доступом к задачам."
+                        elif source_state in {"reauth", "reauth_required"}:
+                            unavailable = "Bitrix24 требует повторного подключения."
+                        elif source_state == "rate_limited":
+                            unavailable = "Bitrix24 временно ограничил частоту запросов."
+                        else:
+                            unavailable = "Задачи Bitrix24 временно недоступны."
+                        source_status_label = {
+                            "task_scope_required": "Нужно разрешение Bitrix24",
+                            "reauth": "Нужно переподключение",
+                            "reauth_required": "Нужно переподключение",
+                            "rate_limited": "Ограничена частота запросов",
+                        }.get(source_state, "Источник недоступен")
+                        items.append(
+                            {
+                                "item_key": f"plan:task-source:{self.workspace_id}:{self.user_id}",
+                                "kind": "external_task_source",
+                                "id": "bitrix24",
+                                "title": unavailable,
+                                "summary": "Источник не считается пустым; проверьте подключение.",
+                                "status_label": source_status_label,
+                                "href": "/app/task-hub/sources",
+                                "chat_url": "/app/chat",
+                                "created_at": "",
+                                "stale_or_unavailable": True,
+                                "marker_label": unavailable,
+                            }
+                        )
+                    elif source_state in {"available", "ok", "synced"}:
+                        for external in source_result.get("items", [])[:PROVIDER_LIMIT]:
+                            if not isinstance(external, dict):
+                                continue
+                            source_ref = str(external.get("source_ref") or external.get("id") or "")
+                            if not source_ref or len(source_ref) > 300 or any(ch.isspace() for ch in source_ref):
+                                continue
+                            title = str(external.get("title") or "Задача Bitrix24")[:140]
+                            raw_status = external.get("status")
+                            if isinstance(raw_status, bool) or raw_status not in (2, 3, 4):
+                                continue
+                            status_label = bitrix_task_status_label(raw_status)
+                            due_at = external.get("due_at")
+                            due_text = _iso_or_empty(due_at)
+                            due_day = _bitrix_due_day(due_at, self.now)
+                            if due_day is not None and due_day > today_date:
+                                continue
+                            timing = (
+                                f"Просрочено ({due_day.isoformat()})"
+                                if due_day is not None and due_day < today_date
+                                else (
+                                    "Срок сегодня"
+                                    if due_day == today_date
+                                    else ("Без срока" if due_at is None else "Срок указан")
+                                )
+                            )
+                            items.append(
+                                {
+                                    "item_key": (
+                                        f"plan:bitrix24:{self.workspace_id}:{self.user_id}:"
+                                        f"{external.get('connection_id', '')}:{source_ref}"
+                                    ),
+                                    "kind": "external_task",
+                                    "id": source_ref,
+                                    "title": title,
+                                    "summary": " · ".join(
+                                        part
+                                        for part in (
+                                            "Bitrix24",
+                                            status_label,
+                                            timing,
+                                            f"Срок {due_text}" if due_text else "",
+                                        )
+                                        if part
+                                    ),
+                                    "status_label": status_label,
+                                    "href": str(external.get("url") or "/app/task-hub/sources"),
+                                    "chat_url": "/app/chat",
+                                    "created_at": due_text,
+                                    "stale_or_unavailable": False,
+                                    "marker_label": "",
+                                }
+                            )
+                        if source_result.get("next_cursor"):
+                            items.append(
+                                {
+                                    "item_key": f"plan:task-source-more:{self.workspace_id}:{self.user_id}",
+                                    "kind": "external_task_source",
+                                    "id": "bitrix24-more",
+                                    "title": "Есть ещё задачи Bitrix24",
+                                    "summary": "Откройте источник, чтобы просмотреть следующие страницы.",
+                                    "status_label": "Есть продолжение",
+                                    "href": "/app/task-hub/sources",
+                                    "chat_url": "/app/chat",
+                                    "created_at": "",
+                                    "stale_or_unavailable": False,
+                                    "marker_label": "",
+                                }
+                            )
+                except PermissionError:
+                    # A provider/tenant grant revoked after the page gate is a
+                    # denial, not a source outage visible to this actor.
+                    pass
+                except Exception:
+                    logger.warning("Today connected task source failed")
+                    items.append(
+                        {
+                            "item_key": f"plan:task-source:{self.workspace_id}:{self.user_id}",
+                            "kind": "external_task_source",
+                            "id": "bitrix24",
+                            "title": "Задачи Bitrix24 временно недоступны.",
+                            "summary": "Источник не считается пустым; проверьте подключение.",
+                            "status_label": "Источник недоступен",
+                            "href": "/app/task-hub/sources",
+                            "chat_url": "/app/chat",
+                            "created_at": "",
+                            "stale_or_unavailable": True,
+                            "marker_label": "Проверьте подключение Bitrix24.",
+                        }
+                    )
+
         if can_tasks:
             try:
                 for fup in await self.repo.followups(self.workspace_id, limit=PROVIDER_LIMIT):
@@ -873,50 +1093,92 @@ class TodayProjection:
             return section
 
         try:
-            rows = await self.repo.unread_threads(self.workspace_id, limit=PROVIDER_LIMIT)
+            import inspect
+
+            try:
+                unread_sig = inspect.signature(self.repo.unread_threads)
+                accepts_user_id = "user_id" in unread_sig.parameters or any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD for p in unread_sig.parameters.values()
+                )
+            except TypeError:
+                accepts_user_id = True
+            if accepts_user_id:
+                rows = await self.repo.unread_threads(self.workspace_id, limit=PROVIDER_LIMIT, user_id=self.user_id)
+            else:
+                rows = await self.repo.unread_threads(self.workspace_id, limit=PROVIDER_LIMIT)
         except Exception:
             logger.warning("Today unread_threads provider failed", exc_info=True)
             section.status = "unavailable"
             section.reason = "Входящие диалоги временно недоступны."
             return section
 
+        from app.services.communications.triage import InboxItemUnavailable, triage_thread_record
+
+        can_view_contact = _can(self.perms, "contact", "view")
         items: list[dict[str, Any]] = []
         for th in rows:
-            if getattr(th, "tenant_id", None) != self.workspace_id or not _positive_int(getattr(th, "id", None)):
+            try:
+                if getattr(th, "tenant_id", None) != self.workspace_id or not _positive_int(getattr(th, "id", None)):
+                    continue
+                if bool(getattr(th, "is_archived", False)):
+                    continue
+                unread = int(getattr(th, "unread_count", 0) or 0)
+                if unread <= 0:
+                    continue
+                triaged = triage_thread_record(
+                    th,
+                    tenant_id=self.workspace_id,
+                    user_id=self.user_id,
+                    can_view_contact=can_view_contact,
+                )
+                channel = str(getattr(th, "channel", "email") or "email")
+                subject = str(
+                    getattr(th, "subject_encrypted", None) or getattr(th, "subject", None) or f"Диалог #{th.id}"
+                )[:120]
+                unavail = bool(getattr(th, "is_unavailable", False) or getattr(th, "unavailable_at", None) is not None)
+                items.append(
+                    {
+                        "item_key": f"reply:thread:{self.workspace_id}:{th.id}",
+                        "provider": "communications.inbox_triage",
+                        "kind": "thread",
+                        "id": th.id,
+                        "channel": channel,
+                        "title": subject,
+                        "summary": f"Канал: {channel.upper()} · Непрочитанных: {unread} · {triaged.category_label}: {triaged.reason}",
+                        "status_label": f"{unread} непрочит.",
+                        "triage_category": triaged.category,
+                        "triage_label": triaged.category_label,
+                        "triage_reason": triaged.reason,
+                        "triage_basis": triaged.basis,
+                        "is_model_fact": triaged.is_model_fact,
+                        "recommended_priority": triaged.recommended_priority,
+                        "priority_basis": triaged.priority_basis,
+                        "data_boundary": triaged.data_boundary,
+                        "authoritative_ref": triaged.authoritative_ref,
+                        "proposals": [p.to_dict() for p in triaged.proposals],
+                        "href": f"/app/communications?thread_id={th.id}",
+                        "chat_url": "/app/chat?"
+                        + urlencode(
+                            {
+                                "context_type": "communication",
+                                "context_id": str(th.id),
+                                "boundary": "cloud",
+                            }
+                        ),
+                        "created_at": _iso_or_empty(getattr(th, "last_message_at", None)),
+                        "stale_or_unavailable": unavail,
+                        "marker_label": "Источник недоступен (только метаданные)" if unavail else "",
+                    }
+                )
+            except InboxItemUnavailable:
                 continue
-            if bool(getattr(th, "is_archived", False)):
+            except Exception:
+                logger.warning(
+                    "Today awaiting_reply skipped thread %s after triage error",
+                    getattr(th, "id", None),
+                    exc_info=True,
+                )
                 continue
-            unread = int(getattr(th, "unread_count", 0) or 0)
-            if unread <= 0:
-                continue
-            channel = str(getattr(th, "channel", "email") or "email")
-            subject = str(getattr(th, "subject_encrypted", None) or getattr(th, "subject", None) or f"Диалог #{th.id}")[
-                :120
-            ]
-            unavail = bool(getattr(th, "is_unavailable", False) or getattr(th, "unavailable_at", None) is not None)
-            items.append(
-                {
-                    "item_key": f"reply:thread:{self.workspace_id}:{th.id}",
-                    "kind": "thread",
-                    "id": th.id,
-                    "channel": channel,
-                    "title": subject,
-                    "summary": f"Канал: {channel.upper()} · Непрочитанных: {unread}",
-                    "status_label": f"{unread} непрочит.",
-                    "href": f"/app/communications?thread_id={th.id}",
-                    "chat_url": "/app/chat?"
-                    + urlencode(
-                        {
-                            "context_type": "communication",
-                            "context_id": str(th.id),
-                            "boundary": "cloud",
-                        }
-                    ),
-                    "created_at": _iso_or_empty(getattr(th, "last_message_at", None)),
-                    "stale_or_unavailable": unavail,
-                    "marker_label": "Источник недоступен (только метаданные)" if unavail else "",
-                }
-            )
         section.items, section.hidden_count = self._apply_actor_state(items)
         return section
 

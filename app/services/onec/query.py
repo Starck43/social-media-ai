@@ -354,7 +354,7 @@ def _compute_plan_fingerprint(
             "currency": default_currency,
         },
         ensure_ascii=True,
-         sort_keys=True,
+        sort_keys=True,
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode("ascii")).hexdigest()
@@ -646,10 +646,7 @@ def parse_odata_json_rows(
     if len(raw_items) > validated.effective_top or len(raw_items) > MAX_ROWS_PER_REQUEST:
         raise OneCQueryError("response_too_large")
 
-    rows = tuple(
-        _normalize_row(item, validated.selected_fields, validated.default_currency)
-        for item in raw_items
-    )
+    rows = tuple(_normalize_row(item, validated.selected_fields, validated.default_currency) for item in raw_items)
 
     next_token: str | None = None
     if len(rows) == validated.effective_top or has_server_next:
@@ -668,9 +665,7 @@ class OneCQueryCache:
         self._clock = clock
         self._store: dict[tuple[Any, ...], tuple[float, tuple[Mapping[str, Any], ...], str | None]] = {}
 
-    def get(
-        self, key: tuple[Any, ...]
-    ) -> tuple[tuple[Mapping[str, Any], ...], str | None] | None:
+    def get(self, key: tuple[Any, ...]) -> tuple[tuple[Mapping[str, Any], ...], str | None] | None:
         entry = self._store.get(key)
         if entry is None:
             return None
@@ -722,7 +717,11 @@ async def fetch_odata_bytes(
         raise OneCQueryError("invalid_credentials")
     if any(ord(ch) < 32 or ord(ch) == 127 for ch in login + password) or "SSLKEYLOGFILE" in os.environ:
         raise OneCQueryError("invalid_credentials")
-    if not isinstance(target_path, str) or not target_path.startswith("/") or any(ord(c) < 33 or ord(c) == 127 for c in target_path):
+    if (
+        not isinstance(target_path, str)
+        or not target_path.startswith("/")
+        or any(ord(c) < 33 or ord(c) == 127 for c in target_path)
+    ):
         raise OneCQueryError("invalid_query_target")
 
     writer = None
@@ -809,6 +808,18 @@ async def fetch_odata_bytes(
                 pass
 
 
+@dataclass(frozen=True)
+class OneCConnectionContext:
+    """Authorized connection material needed to interpret and execute a read-only query."""
+
+    endpoint: Any
+    credentials: Any = field(repr=False)
+    account_key: str
+    allowed_entity_sets: frozenset[str]
+    allowed_fields: Mapping[str, frozenset[str]]
+    metadata_sha256: str | None
+
+
 class OneCReadQueryService:
     """Authorized read-only 1C metadata and data extraction service (P17-T02).
 
@@ -825,12 +836,30 @@ class OneCReadQueryService:
         self._cache = cache if cache is not None else OneCQueryCache()
         self._history: deque[OneCQueryHistoryMetadata] = deque(maxlen=MAX_HISTORY_ENTRIES)
 
-    def list_history_metadata(self, *, tenant_id: int, actor_id: int | None = None) -> tuple[OneCQueryHistoryMetadata, ...]:
+    def list_history_metadata(
+        self, *, tenant_id: int, actor_id: int | None = None
+    ) -> tuple[OneCQueryHistoryMetadata, ...]:
         """Return PII-free query history metadata recorded for `tenant_id` (and optional `actor_id`)."""
         return tuple(
             entry
             for entry in self._history
             if entry.tenant_id == tenant_id and (actor_id is None or entry.actor_id == actor_id)
+        )
+
+    async def load_connection_context(
+        self, *, tenant_id: int, actor_id: int, connection_id: int
+    ) -> OneCConnectionContext:
+        """Return the authorized endpoint, allowlists and metadata pin for one connection."""
+        endpoint, credentials, account_key, allowed_sets, allowed_fields, metadata_sha256 = (
+            await self._load_authorized_connection(tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id)
+        )
+        return OneCConnectionContext(
+            endpoint=endpoint,
+            credentials=credentials,
+            account_key=account_key,
+            allowed_entity_sets=allowed_sets,
+            allowed_fields=allowed_fields,
+            metadata_sha256=metadata_sha256,
         )
 
     async def _load_authorized_connection(self, *, tenant_id: int, actor_id: int, connection_id: int):
@@ -866,7 +895,9 @@ class OneCReadQueryService:
             if endpoint.interface != "odata_standard":
                 raise OneCQueryError("unsupported_interface")
 
-            await self._hosts.require_approved(session=session, tenant_id=tenant_id, actor_id=actor_id, host=endpoint.host)
+            await self._hosts.require_approved(
+                session=session, tenant_id=tenant_id, actor_id=actor_id, host=endpoint.host
+            )
             secret = await session.get(WorkspaceConnectionSecret, connection_id)
             ciphertext = secret.secret_encrypted if secret is not None else ""
             try:
@@ -908,9 +939,7 @@ class OneCReadQueryService:
             _allowed_sets,
             _allowed_fields,
             expected_sha256,
-        ) = await self._load_authorized_connection(
-            tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id
-        )
+        ) = await self._load_authorized_connection(tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id)
         budget = budget_for(PROVIDER, account_key, connection_id=connection_id)
         try:
             xml_bytes = await fetch_odata_bytes(
@@ -960,9 +989,7 @@ class OneCReadQueryService:
             allowed_sets,
             allowed_fields,
             expected_sha256,
-        ) = await self._load_authorized_connection(
-            tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id
-        )
+        ) = await self._load_authorized_connection(tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id)
 
         # Validate the plan and allowlist BEFORE checking cache or consuming provider rate budget.
         validated = build_odata_query_target(

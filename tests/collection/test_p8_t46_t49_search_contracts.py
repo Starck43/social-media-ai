@@ -232,9 +232,9 @@ async def test_market_dispatch_requires_owner_even_with_test_only_evidence(monke
 
 
 @pytest.mark.asyncio
-async def test_music_has_an_independent_rights_gate_even_with_test_only_binding(monkeypatch):
+async def test_music_cannot_dispatch_even_with_a_test_only_binding(monkeypatch):
     music = registry.get_category("music")
-    assert music.status == "deferred" and music.reason == "separate_permission_evidence_required"
+    assert music.status == "unsupported" and music.reason == "no_promised_public_search_method"
     assert music.adapter_operation is None and music.official_method is None
     monkeypatch.setattr(
         registry, "VK_SEARCH_CATEGORIES", (replace(music, status="enabled", adapter_operation="search_audios"),)
@@ -255,7 +255,9 @@ def test_catalog_keeps_official_apps_method_and_all_gates_closed():
         assert catalog[category]["official_method"] == METHODS[category]
         assert catalog[category]["reason"] == "vk_method_profile_unverified"
         assert catalog[category]["evidence_ref"] == "docs/tasks/q-5.md"
-    assert catalog["music"]["reason"] == "separate_permission_evidence_required"
+    assert catalog["music"]["status"] == "unsupported"
+    assert catalog["music"]["reason"] == "no_promised_public_search_method"
+    assert catalog["music"]["official_method"] is None and catalog["music"]["executable"] is False
     assert not any(entry["executable"] for entry in catalog.values())
 
 

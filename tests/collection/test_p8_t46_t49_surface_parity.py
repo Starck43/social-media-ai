@@ -60,8 +60,8 @@ async def test_all_five_handlers_return_identical_catalog_and_rights_gates(monke
             assert entries[category]["status"] == "mocked", surface
             assert entries[category]["reason"] == "vk_method_profile_unverified", surface
         assert entries["apps"]["official_method"] == "apps.getCatalog", surface
-        assert entries["music"]["status"] == "deferred", surface
-        assert entries["music"]["reason"] == "separate_permission_evidence_required", surface
+        assert entries["music"]["status"] == "unsupported", surface
+        assert entries["music"]["reason"] == "no_promised_public_search_method", surface
         assert not any(entry["executable"] for entry in entries.values()), surface
     assert guard_calls == [("agenttask", "view", "/app/tasks")]
 

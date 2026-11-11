@@ -39,7 +39,9 @@ const rows = Array.from({ length: 40 }, (_, i) => `    <p>Строка ${i + 1}:
 
 function page({ mobile = true, launcher = true, bellOn = true } = {}) {
     return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Mirror Tailwind preflight sizing without loading the CDN. -->
+<style>*, *::before, *::after { box-sizing: border-box; }</style>
 <style>${readCss('theme.css')}</style>
 <style>${readCss('ui.css')}</style>
 <style>${readCss('shell.css')}</style>

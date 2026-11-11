@@ -83,7 +83,10 @@ ${dialogs}
 <script>
 window.__events = { input: 0, submits: 0, ignoredSubmits: 0, appOpens: {}, nativeShows: 0 };
 document.querySelector('[data-popover-value]').addEventListener('input', () => window.__events.input++);
-document.addEventListener('submit', event => { event.preventDefault(); if (event.target.hasAttribute('data-dock-form')) window.__events.submits++; }, true);
+document.addEventListener('submit', event => {
+    if (!event.defaultPrevented && event.target.hasAttribute('data-dock-form')) window.__events.submits++;
+    event.preventDefault();
+});
 // Real native reality: a modal 'show' is not a DOM event. Count the app
 // announcement the shell issues and any unexpected 'show' EVENT (a toggle
 // always fires a non-event 'show' member, which says nothing).
@@ -234,20 +237,19 @@ async function run() {
     check(await evaluate(`document.getElementById('model-popover').hidden`), 'Escape closes the option list');
     check(await evaluate(`document.querySelector('[data-popover-value]').value === 'balanced'`), 'Escape keeps the stored value');
     await key('ArrowUp');
-    check((await focusId()) === 'option:', 'ArrowUp from the trigger resumes on the placeholder selection');
-    // Two ArrowDown presses move exactly two entries: placeholder '' -> fast ->
-    // balanced. A skipped first move (the trigger keydown also handled by the
-    // option list) would land on 'deep' instead.
+    check((await focusId()) === 'option:balanced', 'ArrowUp from the trigger resumes on the stored selection');
+    // Two ArrowDown presses move balanced -> deep -> placeholder, without
+    // changing the stored value before activation.
     await key('ArrowDown'); await key('ArrowDown');
-    check((await focusId()) === 'option:balanced', 'two ArrowDown presses move exactly two options');
+    check((await focusId()) === 'option:', 'two ArrowDown presses move exactly two options');
     await key('Enter');
-    check(await evaluate(`document.querySelector('[data-popover-value]').value === 'balanced'`), 'Enter selects the highlighted option');
-    check(await evaluate(`document.querySelector('[data-popover-label]').textContent === 'Сбалансированная'`), 'trigger label follows the choice');
+    check(await evaluate(`document.querySelector('[data-popover-value]').value === ''`), 'Enter selects the highlighted option');
+    check(await evaluate(`document.querySelector('[data-popover-label]').textContent === 'Выберите модель'`), 'trigger label follows the choice');
     check(await evaluate('window.__events.input === 1'), 'selection dispatches exactly one input event');
     check((await focusId()) === 'model-trigger', 'selection returns focus to the trigger');
     // Re-selecting the placeholder stays a valid empty value.
     await key('ArrowDown'); await key('ArrowUp');
-    check((await focusId()) === 'option:balanced', 'the new selection is the resume point');
+    check((await focusId()) === 'option:deep', 'ArrowUp wraps from the new placeholder selection');
     await key('Home'); await key('Enter');
     check(await evaluate(`document.querySelector('[data-popover-value]').value === ''`), 'the placeholder option stores an empty value');
     check(await evaluate('window.__events.input === 2'), 'a second selection dispatches exactly one more input event');

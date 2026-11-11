@@ -49,9 +49,7 @@ def _render(page_body: str) -> str:
     # Only the content block is rendered: the page script (Alpine state, modal
     # toggles) is asserted separately from the parsed source.
     env = Environment(
-        loader=ChoiceLoader(
-            [DictLoader({"web/_task_tabs.html": ""}), FileSystemLoader(ROOT / "app/web/templates")]
-        ),
+        loader=ChoiceLoader([DictLoader({"web/_task_tabs.html": ""}), FileSystemLoader(ROOT / "app/web/templates")]),
         autoescape=True,
     )
     env.filters["ui_label"] = str

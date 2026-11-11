@@ -9,6 +9,10 @@ const vm = require('node:vm');
 
 const read = name => fs.readFileSync(path.join(__dirname, '../../app/static/js', name), 'utf8');
 
+// Active document; `focus()` resolves the owner document from the node itself,
+// exactly like the browser (a detached synthetic node owns no document).
+let activeDocument = null;
+
 // Minimal DOM double: enough for shell.js wiring and context_panel.js boot.
 // Focus and key event bubbling follow the browser closely enough that trigger
 // versus option focus moves are actually observable, not assumed away.
@@ -17,6 +21,10 @@ class Node_ {
         this.tagName = tag.toUpperCase(); this.dataset = {}; this.attributes = {}; this.children = [];
         this.listeners = {}; this.parent = null; this.hidden = false; this.disabled = false;
         this.isConnected = true; this.textContent = ''; this.value = '';
+        // Inline style is a real box the product writes into; scrollHeight is the
+        // unscrolled content height the popover placement measures.
+        this.style = { overflow: '', top: '', bottom: '', maxHeight: '' };
+        this.scrollHeight = 0;
     }
     get classList() {
         const self = this;
@@ -52,38 +60,72 @@ class Node_ {
         }
         return event;
     }
+    // dispatchEvent forwards the caller's actual Event/CustomEvent: type,
+    // detail, bubbles and target default exactly as the browser does, and
+    // preventDefault state stays readable on the same object.
+    dispatchEvent(event) {
+        if (!event || typeof event.type !== 'string') throw new TypeError('dispatchEvent expects an event');
+        const extra = { target: this, currentTarget: this, defaultPrevented: false, propagationStopped: false };
+        if (event instanceof Object) {
+            for (const name of ['preventDefault', 'stopPropagation', 'stopImmediatePropagation']) {
+                if (typeof event[name] === 'function') extra[name] = event[name].bind(event);
+            }
+        }
+        this.fire(event.type, { ...extra, ...(event.detail !== undefined ? { detail: event.detail } : {}) });
+        return !event.defaultPrevented;
+    }
     contains(other) { for (let node = other; node; node = node.parent) if (node === this) return true; return false; }
+    // Compound selector support for the selectors the shell actually queries:
+    // `.class`, `tag`, `[attr]`, `tag:not(...)`, `input[type="x"]`,
+    // `[contenteditable]:not([contenteditable="false"])` and combinations.
     closest(selector) {
-        const match = el => selector.split(',').map(s => s.trim()).some(part => {
-            if (part.startsWith('[data-') && part.endsWith(']')) return el.hasAttribute(part.slice(1, -1));
-            if (part.startsWith('input:')) return el.tagName === 'INPUT' && el.type === part.slice(7, -1);
-            return el.tagName === part.toUpperCase();
-        });
-        for (let node = this; node; node = node.parent) if (match(node)) return node;
+        for (let node = this; node; node = node.parent) if (matches(node, selector)) return node;
         return null;
     }
     querySelectorAll(selector) {
-        const parts = selector.split(',').map(s => s.trim());
-        const matches = el => parts.some(part => {
-            if (part.startsWith('[data-') && part.endsWith(']')) return el.hasAttribute(part.slice(1, -1));
-            if (part.startsWith('input:')) return el.tagName === 'INPUT' && el.type === part.slice(7, -1);
-            if (part.startsWith('.')) return (el.attributes.class || '').split(' ').includes(part.slice(1));
-            return el.tagName === part.toUpperCase();
-        });
         const found = [];
-        const visit = el => el.children.forEach(child => { if (matches(child)) found.push(child); visit(child); });
+        const visit = el => el.children.forEach(child => { if (matches(child, selector)) found.push(child); visit(child); });
         visit(this);
         return found;
     }
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
-    // Rendered only when the element and every ancestor are visible.
+    // Rendered only when the element and every ancestor are visible: a closed
+    // <dialog> and a closed <details> hide their whole subtree, as in the browser.
     getClientRects() { return this.isConnected && rendered(this) ? [{ width: 10, height: 10 }] : []; }
-    focus() { if (this.isConnected) document.activeElement = this; }
+    focus() { if (this.isConnected) (this.ownerDocument || activeDocument).activeElement = this; }
     getBoundingClientRect() { return { left: 0, right: 100, top: 0, bottom: 100 }; }
-    matches() { return true; }
+    matches(selector) { return matches(this, selector); }
 }
 
-const rendered = node => { for (let el = node; el; el = el.parent) if (el.hidden) return false; return true; };
+const rendered = node => {
+    for (let el = node; el; el = el.parent) {
+        if (el.hidden || el.tagName === 'INERT') return false;
+        if (el.tagName === 'DIALOG' && !el.open) return false;
+        if (el.tagName === 'DETAILS' && !el.open && el !== node) return false;
+    }
+    return true;
+};
+
+// One simple-selector matcher: `tag`, `.cls`, `[attr]`, `[attr="value"]` and
+// the `:not(compound)` / `:first-child` pseudo classes the shell selects with.
+const matches = (el, selector) => String(selector).split(',').map(part => part.trim()).filter(Boolean).some(part => {
+    const not = [];
+    const bare = part.replace(/:not\(([^)]*)\)/g, (_, inner) => { not.push(inner); return ''; });
+    const firstChild = /:first-child/.test(bare);
+    if (firstChild && el.parent?.children[0] !== el) return false;
+    const checks = bare.replace(/:first-child/g, '')
+        .match(/(^[a-zA-Z][\w-]*)|(\.[\w-]+)|(\[[^\]]+\])/g) || [];
+    const ok = checks.every(token => {
+        if (token.startsWith('.')) return (el.attributes.class || '').split(/\s+/).includes(token.slice(1));
+        if (token.startsWith('[')) {
+            const [, name, value] = token.slice(1, -1).match(/^([\w-]+)(?:=("?)([^"\]]*)\2)?$/) || [];
+            if (!name) return false;
+            return value === undefined ? el.hasAttribute(name) : el.getAttribute(name) === value;
+        }
+        return el.tagName === token.toUpperCase();
+    });
+    return ok && not.every(inner => !matches(el, inner));
+});
 
 function build({ issuePost = false } = {}) {
     const body = new Node_('body');
@@ -99,18 +141,37 @@ function build({ issuePost = false } = {}) {
         querySelectorAll: () => [],
         querySelector: () => null,
         addEventListener(name, fn) { (this.listeners[name] ||= []).push(fn); },
-        removeEventListener() {},
-        fire(name, event) { (this.listeners[name] || []).forEach(fn => fn(event)); },
+        removeEventListener(name, fn) { this.listeners[name] = (this.listeners[name] || []).filter(fn2 => fn2 !== fn); },
+        // Real events carry callable preventDefault/stopPropagation; the page
+        // click that opens a dock must be cancellable.
+        fire(name, extra = {}) {
+            const event = {
+                type: name, defaultPrevented: false, propagationStopped: false,
+                preventDefault() { this.defaultPrevented = true; }, stopPropagation() { this.propagationStopped = true; },
+                ...extra,
+            };
+            (this.listeners[name] || []).forEach(fn => fn(event));
+            return event;
+        },
     };
+    // Ancestors connect to the document: body -> html -> document element chain.
+    html.append(body);
+    body.ownerDocument = html.ownerDocument = document;
+    activeDocument = document;
     const storage = new Map();
     const window = {
         addEventListener() {}, location: { origin: 'http://shell.test' }, setInterval: () => 0, clearInterval() {},
-        dispatchEvent() {},
+        // App announcements dispatched on window must reach registered listeners.
+        listeners: {},
+        dispatchEvent(event) { (this.listeners[event?.type] || []).forEach(fn => fn(event)); return true; },
     };
     const context = {
         document, window, localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
-        URL, URLSearchParams, Event: class Event { constructor(type, options = {}) { this.type = type; this.bubbles = !!options.bubbles; } },
-        CustomEvent: class CustomEvent { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } },
+        URL, URLSearchParams,
+        // Events keep their defaults: an `input` Event bubbles, preventDefault is
+        // callable, and `target` is the dispatch target set by Node_.dispatchEvent.
+        Event: class Event { constructor(type, options = {}) { this.type = type; this.bubbles = !!options.bubbles; this.cancelable = !!options.cancelable; this.defaultPrevented = false; } preventDefault() { this.defaultPrevented = true; } stopPropagation() {} },
+        CustomEvent: class CustomEvent extends Event { constructor(type, options = {}) { super(type, options); this.detail = options.detail; } },
         matchMedia: () => ({ matches: false }), innerHeight: 800, setTimeout: (fn) => { fn(); return 0; }, clearTimeout() {},
         // Every <dialog> instance is recognized as a dialog, as in the browser.
         HTMLDialogElement: class HTMLDialogElement {
@@ -120,7 +181,7 @@ function build({ issuePost = false } = {}) {
         fetch: issuePost ? async url => { issues.push(String(url)); return { ok: false, status: 500, redirected: false, text: async () => '' }; } : async () => { throw Error('offline'); },
     };
     vm.createContext(context);
-    return { document, window, context, pageContent, body, issues: () => issues };
+    return { document, window, context, pageContent, body, html, issues: () => issues };
 }
 
 // Native reality: HTMLDialogElement.showModal() fires no 'show' event, only a
@@ -159,8 +220,9 @@ function buildShell() {
             panel.append(option); return option;
         });
     popover.append(hidden, trigger, panel);
-    // Real popovers are children of a rendered root, so key events bubble.
-    const root = new Node_('div'); root.append(popover);
+    // Real popovers are children of a rendered root, so key events bubble and
+    // the document click listener can see them.
+    const root = new Node_('div'); root.append(popover); env.body.append(root);
     document.querySelectorAll = selector => {
         if (selector === '[data-shell-popover]') return [popover];
         if (selector === '[data-dialog-open]') return [];
@@ -181,6 +243,10 @@ test('popover select: ArrowDown from trigger focuses the current selection once 
     assert.equal(s.panel.hidden, false);
     assert.equal(s.trigger.getAttribute('aria-expanded'), 'true');
     assert.equal(s.document.activeElement, s.options[2], 'one press moves once, not past the selection');
+    // Placement stays inside the viewport: the panel writes a real inline box.
+    assert.equal(s.panel.style.top, 'calc(100% + 4px)');
+    assert.equal(s.panel.style.bottom, 'auto');
+    assert.match(s.panel.style.maxHeight, /^\d+px$/);
 });
 
 test('popover select: hidden or inert options are skipped by entry and movement', () => {
@@ -260,6 +326,13 @@ test('popover select: typing inside an editable field is not hijacked', () => {
     const event = input.fire('keydown', key('ArrowDown'));
     assert.equal(event.defaultPrevented, false);
     assert.equal(s.document.activeElement, s.options[2]);
+    // Rich editable fields (and their inner elements) keep the key too.
+    const editable = new Node_('div'); editable.setAttribute('contenteditable', 'true');
+    const inner = new Node_('span'); editable.append(inner); s.panel.append(editable);
+    assert.equal(inner.fire('keydown', key('ArrowUp')).defaultPrevented, false);
+    assert.equal(s.document.activeElement, s.options[2]);
+    // A hidden input is not editable content: navigation still applies.
+    assert.equal(s.hidden.fire('keydown', key('Home')).defaultPrevented, true);
 });
 
 test('popover select: Escape closes and restores trigger focus without selecting', () => {
@@ -325,6 +398,7 @@ function buildDialogs() {
     // Nested launcher lives inside the dialog, never on the inert page behind it.
     const drawerTrigger = new Node_('button'); drawerTrigger.dataset.dialogOpen = 'navigation-drawer'; drawerTrigger.setAttribute('data-dialog-open', 'navigation-drawer');
     invite.append(hiddenField, roving, first, huge, last, concealed, inert, drawerTrigger);
+    env.body.append(invite, drawer);
     // A notification-style overlay: a native dialog that is not a shell dialog.
     const notification = new FakeDialog('notification-overlay', 'shell-notification-modal');
     const openTrigger = new Node_('button'); openTrigger.dataset.dialogOpen = 'invite-dialog'; openTrigger.setAttribute('data-dialog-open', 'invite-dialog');
@@ -462,9 +536,11 @@ test('dialog: repeated announcement and duplicate close events stay balanced', (
 test('dialog: double announcement of one opening counts once', () => {
     const d = buildDialogs();
     d.open(d.openTrigger);
+    // The launcher click itself announces, and the caller announces again; a
+    // dialog-local dispatch bubbles to the same document listener.
     d.document.fire('app:shell-dialog-open', { detail: { dialog: d.invite } });
     d.invite.fire('app:shell-dialog-open', { detail: { dialog: d.invite }, target: d.invite });
-    assert.equal(d.counts.appOpen, 3);
+    assert.equal(d.counts.appOpen, 3, 'one launcher activation plus two announcements');
     d.invite.close();
     assert.equal(d.env.document.body.style.overflow, '', 'one close releases the single claimed opening');
 });
@@ -481,11 +557,17 @@ test('dialog: missing or hidden launcher falls back to page content', () => {
     d.openTrigger.isConnected = false;
     d.invite.close();
     assert.equal(d.document.activeElement, d.env.pageContent);
-    // The nested launcher is connected but concealed: the dialog itself takes focus.
+    // The nested launcher is connected but concealed: the dialog itself takes
+    // focus while it is still open, and page content takes it once it closes.
     d.open(d.openTrigger);
     const concealedLauncher = new Node_('button'); concealedLauncher.hidden = true;
     d.invite.shellLauncher = concealedLauncher;
     d.invite.close();
+    assert.equal(d.document.activeElement, d.env.pageContent);
+    // An open dialog that still cannot use its launcher focuses itself.
+    d.open(d.openTrigger);
+    d.invite.shellLauncher = concealedLauncher;
+    d.invite.focus();
     assert.equal(d.document.activeElement, d.invite);
 });
 
@@ -504,6 +586,7 @@ function buildDock({ boundary = 'cloud' } = {}) {
     const chip = new Node_('div'); chip.setAttribute('data-dock-context-chip', '');
     const toggle = new Node_('button'); toggle.id = 'chat-dock-toggle';
     dock.append(close, input, send, typeInput, idInput, boundaryInput, refusal, chip);
+    env.body.append(dock);
     const source = new Node_('div');
     source.dataset.objectContext = '';
     source.setAttribute('data-object-context', '');
@@ -524,7 +607,7 @@ test('chat dock: shared close handler owns scroll depth and launcher focus', () 
     assert.equal(d.env.document.body.style.overflow, '');
     d.env.document.body.style.overflow = 'auto';
     let showEvents = 0;
-    d.dock.addEventListener('show', () => showEvents++);
+    d.dock.addEventListener('app:shell-dialog-open', () => showEvents++);
     d.toggle.fire('click');
     assert.equal(d.dock.open, true);
     assert.equal(showEvents, 1, 'one open event per launcher activation');
@@ -550,6 +633,7 @@ test('chat dock: page trigger restores that launcher, not the fixed toggle', () 
     assert.equal(d.dock.open, true, 'a second page click reopens once, not twice');
     d.dock.fire('keydown', key('Escape'));
     assert.equal(d.dock.open, false);
+    assert.equal(d.document.activeElement, trigger);
 });
 
 test('chat dock: the empty initial overflow is restored exactly after closing', () => {

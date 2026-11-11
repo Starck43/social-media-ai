@@ -48,4 +48,4 @@ TZ criteria: AI letters from context (T02); templates (T02); every version saved
 
 ## Dependencies and gates
 
-Delivery (T05) after [P15-T05](../tasks/p15-t05.md)/T06. Contacts/case links after [P13-T07 accepted](../audit/p13-t07.md).
+Delivery (T05) after [P15-T05](../tasks/p15-t05.md)/T06. Its retrieval-boundary finding [P19-T09](../audit/p19-t09.md) is accepted: one destination-clearance predicate, `f90c4a75`. Contacts/case links after [P13-T07 accepted](../audit/p13-t07.md).

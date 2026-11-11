@@ -43,9 +43,6 @@ async def web_research(
     preset: str = "general_search",
     target_urls: list[str] | None = None,
     max_results: int = 3,
-    *,
-    session: Any | None = None,
-    require_durable: bool = True,
 ) -> dict[str, Any]:
     try:
         result = await web_research_service.research(
@@ -56,8 +53,7 @@ async def web_research(
                 "max_results": max_results,
                 "save_evidence": False,
             },
-            session=session,
-            require_durable=require_durable,
+            require_durable=True,
         )
         return {
             "query": result.query,
@@ -104,15 +100,11 @@ async def web_research(
 async def web_fetch_page(
     url: str,
     preset: str = "site_brief",
-    *,
-    session: Any | None = None,
-    require_durable: bool = True,
 ) -> dict[str, Any]:
     try:
         page = await web_research_service.fetch_page(
             {"url": url, "preset": preset, "save_evidence": False},
-            session=session,
-            require_durable=require_durable,
+            require_durable=True,
         )
         return {
             "url": page.url,

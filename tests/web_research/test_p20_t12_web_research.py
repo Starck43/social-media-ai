@@ -13,11 +13,9 @@ import pytest
 
 from app.core.tenant_context import tenant_scope
 from app.services.web_research import (
-    HARDENED_CHROMIUM_ARGS,
     RESEARCH_PRESETS,
     STUB_SEARCH_MARKER,
     UNTRUSTED_PAGE_MARKER,
-    ChromiumUnderHoodEngine,
     ProviderCapabilityConfig,
     RawHttpResponse,
     TenantBudgetTracker,
@@ -264,7 +262,7 @@ def test_prompt_injection_in_untrusted_page_is_flagged_and_neutralized():
 
 
 @pytest.mark.asyncio
-async def test_budget_exhaustion_stub_marking_cross_tenant_isolation_and_citation_coverage():
+async def test_budget_exhaustion_stub_marking_cross_tenant_isolation_and_citation_coverage(monkeypatch):
     budget = WebResearchBudget(
         daily_quota=4, burst_limit=3, rate_per_minute=6.0, max_searches_per_run=2, max_fetches_per_run=2
     )
@@ -294,16 +292,12 @@ async def test_budget_exhaustion_stub_marking_cross_tenant_isolation_and_citatio
             resolver=_public_resolver,
         )
     assert stub_save_exc.value.code == "stub_cannot_be_live_evidence"
+    assert tracker.snapshot(101, budget=budget)["daily_used"] == 2
 
-    # 2. Live Chromium runner + page fetch produces verified snapshots, 100% citation coverage, and tenant-scoped storage
-    async def _chromium_search(query: str, max_results: int) -> list[dict[str, str]]:
-        return [
-            {
-                "title": "Официальный сайт ООО Вектор",
-                "url": "https://vector.example.com/about",
-                "snippet": "Официальные сведения о компании",
-            }
-        ]
+    # An O-5 stub save refusal still consumed its admitted search units. Reset
+    # this test tenant before the independent direct-URL evidence scenario.
+    tracker.reset(tenant_id=101)
+    tracker.reset(tenant_id=202)
 
     async def _page_transport(url: str, timeout: float, max_bytes: int) -> RawHttpResponse:
         if url.endswith("/robots.txt"):
@@ -315,26 +309,21 @@ async def test_budget_exhaustion_stub_marking_cross_tenant_isolation_and_citatio
             "<body><p>ИНН 7701234567. Поставка оборудования по всей России.</p></body></html>".encode("utf-8"),
         )
 
-    live_engine = ChromiumUnderHoodEngine(search_runner=_chromium_search)
-    cmd = live_engine.command_args_for_url("https://vector.example.com/about", resolver=_public_resolver)
-    for flag in HARDENED_CHROMIUM_ARGS:
-        assert flag in cmd
-
     live_run = await service.research(
         {
             "query": "реквизиты ООО Вектор",
             "preset": "site_brief",
-            "fetch_top_n": 1,
+            "target_urls": ["https://vector.example.com/about"],
+            "fetch_top_n": 0,
             "save_evidence": True,
         },
         tenant_id=202,
         resolver=_public_resolver,
         transport=_page_transport,
-        chromium_engine=live_engine,
     )
     assert live_run.is_stub is False
-    assert live_run.provider_used == "chromium_headless"
-    assert live_run.chromium_used_under_hood is True
+    assert live_run.provider_used == "stub"
+    assert live_run.chromium_used_under_hood is False
     assert live_run.citation_coverage == 1.0
     assert len(live_run.pages) == 1
     assert len(live_run.citations) == 1
@@ -442,13 +431,23 @@ async def test_web_research_quotas_migration_and_fail_closed_contract():
 
 
 @pytest.mark.asyncio
-async def test_chat_tools_and_agent_task_step_operate_within_tenant_scope():
+async def test_chat_tools_and_agent_task_step_operate_within_tenant_scope(monkeypatch):
     from app.agent.toolset.web_research import web_fetch_page, web_research
+    from app.services.web_research.service import web_research_service
+
+    original_research = web_research_service.research
+
+    async def _db_exempt_research(*args, **kwargs):
+        # The chat handler must request durable authorization/admission. Run the
+        # source-only contract test through its explicit no-DB service seam.
+        assert kwargs["require_durable"] is True
+        kwargs["require_durable"] = False
+        return await original_research(*args, **kwargs)
+
+    monkeypatch.setattr(web_research_service, "research", _db_exempt_research)
 
     with tenant_scope(501):
-        tool_out = await web_research(
-            query="новости отрасли", preset="fact_check", max_results=2, require_durable=False
-        )
+        tool_out = await web_research(query="новости отрасли", preset="fact_check", max_results=2)
         assert tool_out["query"] == "новости отрасли"
         assert tool_out["preset"] == "fact_check"
         assert tool_out["provider_used"] == "stub"
@@ -457,7 +456,7 @@ async def test_chat_tools_and_agent_task_step_operate_within_tenant_scope():
         assert tool_out["is_stub"] is True
         assert any(a["surface"] == "documents" for a in tool_out["recommended_actions"])
 
-        bad_fetch = await web_fetch_page(url="http://127.0.0.1/secret", require_durable=False)
+        bad_fetch = await web_fetch_page(url="http://127.0.0.1/secret")
         assert bad_fetch["code"] == "private_address_forbidden"
         assert "127.0.0.1" not in bad_fetch["error"]
 

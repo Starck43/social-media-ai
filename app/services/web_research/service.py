@@ -490,6 +490,10 @@ class WebResearchService:
     ) -> PageSnapshotOut:
         tid = _resolve_tenant_id(tenant_id)
         req = data if isinstance(data, WebFetchRequest) else WebFetchRequest.model_validate(data)
+        # Reject syntactically unsafe/private targets before charging a durable
+        # quota or opening a DB transaction. The actual fetch resolves again and
+        # pins the socket to that request's newly validated answer.
+        validate_public_url(req.url, policy=policy, resolver=resolver)
 
         if require_durable and session is not None:
             # A caller-owned transaction cannot be committed by this service,

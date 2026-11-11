@@ -1,7 +1,7 @@
 """P17-T01 workspace-level outbound destination approvals.
 
 Revision ID: p17t01_workspace_hosts
-Revises: 0151
+Revises: 0152
 The task revision is a placeholder; rebase and assign the final number at merge.
 """
 
@@ -13,7 +13,7 @@ from app.core.config import settings
 HOST_PATTERN = r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
 
 revision = "p17t01_workspace_hosts"
-down_revision = "0151"
+down_revision = "0152"
 branch_labels = None
 depends_on = None
 

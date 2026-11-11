@@ -48,3 +48,11 @@ tests = [
     "tests/communications/test_p15_t07_stats_unit.py",
     "tests/communications/test_p15_t07_migration_unit.py",
 ]
+
+[[package]]
+path = "app/services/knowledge"
+tests = ["tests/knowledge"]
+
+[[package]]
+path = "app/services/attachments"
+tests = ["tests/attachments", "tests/knowledge/test_p19_t05_export_spool_unit.py"]

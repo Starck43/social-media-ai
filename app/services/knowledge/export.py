@@ -117,12 +117,43 @@ class SpooledExport:
 ATTACHMENT_POSITION = 0
 
 
+def spool_rendered(
+    content: bytes,
+    mime: str,
+    *,
+    tenant_id: int,
+    outbox_message_id: int,
+    position: int = ATTACHMENT_POSITION,
+    revision_id: int,
+    revision_body_hash: str,
+) -> SpooledExport:
+    """Spool already-rendered bytes under the outbox scope; never re-render here.
+
+    Callers that rendered earlier (a hash-bound draft, an approval recheck) keep
+    the exact bytes: re-rendering could produce different bytes (PDF timestamps)
+    and break the `(sha256, size, mime)` reference the outbox approved.
+    """
+    from app.services.attachments import attachment_spool
+
+    item_id = f"outbox_{outbox_message_id}"
+    attachment_spool.purge_expired()
+    stored = attachment_spool.put(tenant_id, item_id, position, content, mime=mime)
+    return SpooledExport(
+        sha256=stored.sha256,
+        size=stored.size,
+        mime=stored.mime,
+        revision_id=revision_id,
+        revision_body_hash=revision_body_hash,
+    )
+
+
 def spool_revision(
     revision: ExportRevision,
     format: Literal["docx", "pdf"],
     *,
     tenant_id: int,
     outbox_message_id: int,
+    position: int = ATTACHMENT_POSITION,
 ) -> SpooledExport:
     """Render an already-approved revision and spool it under the outbox scope.
 
@@ -131,16 +162,13 @@ def spool_revision(
     approval check of its own -- the caller must have verified the
     `(revision_id, revision_body_hash)` pair before calling it.
     """
-    from app.services.attachments import attachment_spool
-
     rendered = render_revision(revision, format)
-    item_id = f"outbox_{outbox_message_id}"
-    attachment_spool.purge_expired()
-    stored = attachment_spool.put(tenant_id, item_id, ATTACHMENT_POSITION, rendered.content, mime=rendered.media_type)
-    return SpooledExport(
-        sha256=stored.sha256,
-        size=stored.size,
-        mime=stored.mime,
+    return spool_rendered(
+        rendered.content,
+        rendered.media_type,
+        tenant_id=tenant_id,
+        outbox_message_id=outbox_message_id,
+        position=position,
         revision_id=revision.revision_id,
         revision_body_hash=revision.content_hash,
     )

@@ -123,8 +123,10 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/documents/{document_id} | get_document_api_v1_documents__document_id__get |
 | PATCH | /api/v1/documents/{document_id} | update_document_api_v1_documents__document_id__patch |
 | POST | /api/v1/documents/{document_id}/approvals/{approval_id}/{action} | decide_approval_api_v1_documents__document_id__approvals__approval_id___action__post |
+| POST | /api/v1/documents/{document_id}/export/{format} | export_document_file_api_v1_documents__document_id__export__format__post |
 | POST | /api/v1/documents/{document_id}/request-approval | request_approval_api_v1_documents__document_id__request_approval_post |
 | POST | /api/v1/documents/{document_id}/restore/{revision_id} | restore_version_api_v1_documents__document_id__restore__revision_id__post |
+| POST | /api/v1/documents/{document_id}/send/email | send_document_via_email_api_v1_documents__document_id__send_email_post |
 | POST | /api/v1/documents/{document_id}/transition | transition_document_api_v1_documents__document_id__transition_post |
 | GET | /api/v1/documents/{document_id}/versions | list_versions_api_v1_documents__document_id__versions_get |
 | GET | /api/v1/documents/{document_id}/versions/diff | diff_versions_api_v1_documents__document_id__versions_diff_get |

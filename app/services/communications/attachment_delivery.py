@@ -41,31 +41,36 @@ class StitchedAttachment:
     revision_hash: str
 
 
+@dataclass(frozen=True)
+class RenderedApproval:
+    """The exact approved bytes, rendered once, plus the reference they hash to.
+
+    Callers that must bind the reference into an outbox draft before the message
+    id exists (draft -> spool -> schedule) render here and spool the *same* bytes
+    afterwards via `export.spool_rendered`; re-rendering could change the hash
+    (PDF timestamps) and break the approved reference.
+    """
+
+    content: bytes
+    reference: AttachmentRef
+    document_id: int
+    revision_id: int
+    revision_hash: str
+
+
 def _spool_item_id(outbox_message_id: int) -> str:
     if type(outbox_message_id) is not int or outbox_message_id <= 0:
         raise AttachmentStitchRefused("invalid_outbox_item")
     return f"outbox_{outbox_message_id}"
 
 
-async def spool_approved_revision(
-    session,
-    *,
-    tenant_id: int,
-    document_id: int,
-    revision_id: int,
-    approval_id: int,
-    outbox_message_id: int,
-    format: Literal["docx", "pdf"],
-) -> StitchedAttachment:
-    """Render exactly the approved bytes into the spool and return its reference.
+async def _verified_approved_revision(session, *, tenant_id, document_id, revision_id, approval_id):
+    """Lock and recheck approval+revision+document; return (document, revision).
 
     Reading the approval and the revision under the same lock is what makes the
     pair trustworthy: a revision edited between the check and the render would
     otherwise be spooled under the old approval.
     """
-    from app.services.knowledge.export import ExportError, ExportRevision, spool_revision
-
-    item_id = _spool_item_id(outbox_message_id)
     if type(tenant_id) is not int or tenant_id <= 0:
         raise AttachmentStitchRefused("invalid_tenant")
     if type(document_id) is not int or document_id <= 0 or type(revision_id) is not int or revision_id <= 0:
@@ -117,6 +122,78 @@ async def spool_approved_revision(
     )
     if document is None:
         raise AttachmentStitchRefused("document_unavailable")
+    return document, revision
+
+
+async def render_approved_revision(
+    session,
+    *,
+    tenant_id: int,
+    document_id: int,
+    revision_id: int,
+    approval_id: int,
+    format: Literal["docx", "pdf"],
+) -> RenderedApproval:
+    """Recheck the approval under locks and render the exact bytes once.
+
+    Performs no spool write; the caller owns where the bytes go and must keep
+    the returned reference bound to whatever it persists.
+    """
+    from app.services.knowledge.export import ExportError, ExportRevision, render_revision
+
+    document, revision = await _verified_approved_revision(
+        session,
+        tenant_id=tenant_id,
+        document_id=document_id,
+        revision_id=revision_id,
+        approval_id=approval_id,
+    )
+    try:
+        rendered = render_revision(
+            ExportRevision(
+                revision_id=revision.id,
+                content_hash=revision.content_hash,
+                title=document.title,
+                body_text=revision.body_text,
+            ),
+            format,
+        )
+    except ExportError as exc:
+        raise AttachmentStitchRefused(str(exc)) from None
+    return RenderedApproval(
+        content=rendered.content,
+        reference=AttachmentRef(
+            sha256=hashlib.sha256(rendered.content).hexdigest(),
+            size=len(rendered.content),
+            mime=rendered.media_type,
+        ),
+        document_id=document_id,
+        revision_id=revision_id,
+        revision_hash=revision.content_hash,
+    )
+
+
+async def spool_approved_revision(
+    session,
+    *,
+    tenant_id: int,
+    document_id: int,
+    revision_id: int,
+    approval_id: int,
+    outbox_message_id: int,
+    format: Literal["docx", "pdf"],
+) -> StitchedAttachment:
+    """Render exactly the approved bytes into the spool and return its reference."""
+    from app.services.knowledge.export import ExportError, ExportRevision, spool_revision
+
+    item_id = _spool_item_id(outbox_message_id)
+    document, revision = await _verified_approved_revision(
+        session,
+        tenant_id=tenant_id,
+        document_id=document_id,
+        revision_id=revision_id,
+        approval_id=approval_id,
+    )
 
     try:
         spooled = spool_revision(

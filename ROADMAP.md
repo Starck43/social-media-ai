@@ -50,6 +50,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
+- [P20-T13](docs/tasks/p20-t13.md) Web usability hardening while preserving the current visual style — **IN_PROGRESS** · opencode-p20-t13 · session `ses_e358bb5feffeNEyN3YgY2XIlCq` · `P2` · `C3`
+
 
 
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`

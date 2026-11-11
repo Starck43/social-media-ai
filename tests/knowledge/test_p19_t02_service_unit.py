@@ -419,16 +419,21 @@ async def test_provider_failure_and_malformed_output_never_create_deterministic_
     monkeypatch.setattr(document_service, "_references", AsyncMock(return_value=None))
     added = []
     session = SimpleNamespace(add=added.append)
+    from app.services.ai import llm_client
+    from app.services.tenancy import resolver
+
+    monkeypatch.setattr("app.core.tenant_context.current_tenant_id", lambda: 1)
+    monkeypatch.setattr(resolver, "current_daily_cost_limit", AsyncMock(return_value=0))
     monkeypatch.setattr(
-        service,
-        "_draft_with_pipeline",
-        AsyncMock(side_effect=ValueError("document_draft_provider_unavailable")),
+        llm_client,
+        "chat_with_fallback",
+        AsyncMock(side_effect=RuntimeError("provider details must not escape")),
     )
-    with pytest.raises(ValueError, match="document_draft_provider_unavailable"):
+    with pytest.raises(mod.DraftingUnavailable, match="document_draft_provider_unavailable"):
         await service.draft({"title": "Письмо", "document_type": "letter", "data_boundary": "cloud"}, session=session)
     assert added == []
 
-    with pytest.raises(ValueError, match="document_draft_invalid_output"):
+    with pytest.raises(mod.DraftingUnavailable, match="document_draft_invalid_output"):
         await service.draft(
             {"title": "Письмо", "document_type": "letter", "data_boundary": "cloud"},
             llm_callable=lambda _payload: {"paragraphs": []},
@@ -540,8 +545,36 @@ async def test_budget_exhaustion_or_unresolved_draft_attempt_blocks_dispatch(mon
     unresolved = SimpleNamespace(all=lambda: [(None, "unknown_usage")])
     with pytest.raises(ValueError, match="document_draft_budget_evidence_unavailable"):
         await service._draft_with_pipeline(
-            {"title": "Письмо"},
-            session=SimpleNamespace(execute=AsyncMock(return_value=unresolved)),
-            tenant_id=1,
+            {"title": "Письмо"}, session=SimpleNamespace(execute=AsyncMock(return_value=unresolved)), tenant_id=1
         )
     pipeline.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_provider_http_failure_is_sanitized_but_gates_and_cancellation_propagate(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    from app.services.ai import llm_client
+    from app.services.ai.budget_admission import BudgetAdmissionDenied
+    from app.services.tenancy import resolver
+
+    monkeypatch.setattr("app.core.tenant_context.current_tenant_id", lambda: 1)
+    monkeypatch.setattr(resolver, "current_daily_cost_limit", AsyncMock(return_value=0))
+    service = mod.DraftingService()
+    session = SimpleNamespace()
+
+    monkeypatch.setattr(llm_client, "chat_with_fallback", AsyncMock(side_effect=httpx.ConnectError("private endpoint")))
+    with pytest.raises(mod.DraftingUnavailable, match="document_draft_provider_unavailable") as unavailable:
+        await service._draft_with_pipeline({"title": "Письмо"}, session=session, tenant_id=1)
+    assert "private endpoint" not in str(unavailable.value)
+
+    for error in (BudgetAdmissionDenied("budget gate"), PermissionError("actor gate")):
+        monkeypatch.setattr(llm_client, "chat_with_fallback", AsyncMock(side_effect=error))
+        with pytest.raises(type(error), match="gate"):
+            await service._draft_with_pipeline({"title": "Письмо"}, session=session, tenant_id=1)
+
+    monkeypatch.setattr(llm_client, "chat_with_fallback", AsyncMock(side_effect=asyncio.CancelledError()))
+    with pytest.raises(asyncio.CancelledError):
+        await service._draft_with_pipeline({"title": "Письмо"}, session=session, tenant_id=1)

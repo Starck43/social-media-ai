@@ -25,7 +25,12 @@ from app.services.knowledge.document_contracts import (
     TemplateVersion,
 )
 from app.services.knowledge.documents import DocumentConflict, DocumentUnavailable, document_service
-from app.services.knowledge.drafting import DocumentDraftOut, DocumentDraftRequest, drafting_service
+from app.services.knowledge.drafting import (
+    DocumentDraftOut,
+    DocumentDraftRequest,
+    DraftingUnavailable,
+    drafting_service,
+)
 from app.services.knowledge.search import document_search_service
 from app.services.knowledge.versions import RestoreRequest, RevisionDiff, RevisionOut, version_service
 from app.types import ActionType
@@ -40,6 +45,8 @@ class DeletedOut(BusinessSchema):
 async def invoke(operation):
     try:
         return await operation
+    except DraftingUnavailable:
+        raise HTTPException(503) from None
     except DocumentUnavailable:
         raise HTTPException(404) from None
     except (DocumentConflict, ApprovalConflict):

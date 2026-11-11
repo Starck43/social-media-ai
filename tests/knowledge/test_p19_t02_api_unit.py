@@ -16,6 +16,7 @@ from app.services.knowledge.drafting import (
     HUMAN_REVIEW_MARKER,
     UNSUPPORTED_MARKER,
     DocumentDraftOut,
+    DraftingUnavailable,
     DraftParagraphOut,
     EvidenceRefOut,
 )
@@ -186,6 +187,14 @@ async def test_post_documents_draft_and_error_mapping(monkeypatch):
         )
         assert resp_409.status_code == 409
         assert "conflict_secret" not in resp_409.text
+
+        api.drafting_service.draft.side_effect = DraftingUnavailable("provider_token_or_url_secret")
+        resp_503 = await client.post(
+            "/api/v1/documents/draft",
+            json={"title": "Письмо", "document_type": "letter"},
+        )
+        assert resp_503.status_code == 503
+        assert "provider_token_or_url_secret" not in resp_503.text
 
 
 @pytest.mark.asyncio

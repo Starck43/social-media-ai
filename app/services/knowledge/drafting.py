@@ -36,6 +36,11 @@ from app.services.knowledge.documents import (
 UNSUPPORTED_MARKER = "[НЕ ПОДТВЕРЖДЕНО ИСТОЧНИКОМ]"
 HUMAN_REVIEW_MARKER = "[ТРЕБУЕТ ПРОВЕРКИ ЧЕЛОВЕКОМ]"
 
+
+class DraftingUnavailable(RuntimeError):
+    """No provider response is available to produce a document draft."""
+
+
 _DOUBLE_BRACE_RE = re.compile(r"\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}")
 _SINGLE_BRACE_RE = re.compile(r"(?<!\{)\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}(?!\})")
 _VALID_VAR_NAME_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,63}$")
@@ -612,20 +617,30 @@ class DraftingService:
             {"role": "system", "content": system},
             {"role": "user", "content": json.dumps(payload, ensure_ascii=False, allow_nan=False)},
         ]
-        response = await chat_with_fallback(
-            messages,
-            budget=remaining,
-            max_tokens=1800,
-            temperature=0.2,
-            accounting_purpose="document_draft",
-            personal_billing_purpose="document_draft",
-        )
+        try:
+            response = await chat_with_fallback(
+                messages,
+                budget=remaining,
+                max_tokens=1800,
+                temperature=0.2,
+                accounting_purpose="document_draft",
+                personal_billing_purpose="document_draft",
+            )
+        except Exception as error:
+            from httpx import HTTPError
+
+            from app.services.billing.errors import raise_personal_billing_block
+
+            raise_personal_billing_block(error)
+            if isinstance(error, (HTTPError, RuntimeError, ValueError)):
+                raise DraftingUnavailable("document_draft_provider_unavailable") from None
+            raise
         if not isinstance(response, dict) or not isinstance(response.get("content"), str):
-            raise ValueError("document_draft_provider_unavailable")
+            raise DraftingUnavailable("document_draft_provider_unavailable")
         try:
             output = _DraftResponse.model_validate_json(response["content"])
-        except Exception as error:
-            raise ValueError("document_draft_invalid_output") from error
+        except Exception:
+            raise DraftingUnavailable("document_draft_invalid_output") from None
         return [paragraph.model_dump() for paragraph in output.paragraphs]
 
     async def _collect_evidence(

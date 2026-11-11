@@ -8,6 +8,7 @@ from . import (  # noqa: F401
     communications,
     documents,
     llm,
+    onec,
     planner,
     reports,
     scenarios,

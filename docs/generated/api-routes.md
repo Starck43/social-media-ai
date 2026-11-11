@@ -147,6 +147,9 @@ and execution permissions remain in the handwritten references and code.
 | GET | /api/v1/integrations/1c/hosts | hosts_api_v1_integrations_1c_hosts_get |
 | POST | /api/v1/integrations/1c/hosts | approve_host_api_v1_integrations_1c_hosts_post |
 | DELETE | /api/v1/integrations/1c/hosts/{host_id} | revoke_host_api_v1_integrations_1c_hosts__host_id__delete |
+| POST | /api/v1/integrations/1c/query | run_query_api_v1_integrations_1c_query_post |
+| POST | /api/v1/integrations/1c/query/export | export_query_api_v1_integrations_1c_query_export_post |
+| GET | /api/v1/integrations/1c/query/history | query_history_api_v1_integrations_1c_query_history_get |
 | POST | /api/v1/integrations/bitrix/connect | connect_bitrix_portal_api_v1_integrations_bitrix_connect_post |
 | GET | /api/v1/integrations/bitrix/connections | list_bitrix_connections_api_v1_integrations_bitrix_connections_get |
 | DELETE | /api/v1/integrations/bitrix/connections/{connection_id} | delete_bitrix_connection_api_v1_integrations_bitrix_connections__connection_id__delete |

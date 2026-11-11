@@ -12,6 +12,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.models import DocumentRevision, KnowledgeDocument
+from app.models.actions.business_command import BusinessCommand
+from app.models.communications.outbox import OutboxMessage
+from app.models.knowledge.approval import DocumentApproval
 from app.services.attachments.spool import AttachmentSpool, SpoolRejected
 from app.services.communications.attachment_delivery import AttachmentStitchRefused
 from app.services.communications.attachments import AttachmentRejected
@@ -24,6 +28,7 @@ from app.services.knowledge.export_contracts import SendDocumentEmailIn
 BODY = "Договор №12 согласован.\n\nПодписанная сторона: ООО «Ромашка»."
 HASH = "sha256:" + hashlib.sha256(BODY.encode("utf-8")).hexdigest()
 DRAFT_HASH = "sha256:" + "b" * 64
+APPROVED_HASH = "sha256:" + "c" * 64
 IDENTITY = (1, 7, "owner", ("public",))
 
 
@@ -54,18 +59,42 @@ def services(monkeypatch):
     monkeypatch.setattr(delivery.document_service, "_actor", AsyncMock(return_value=IDENTITY))
     monkeypatch.setattr(delivery.document_service, "_doc", AsyncMock(return_value=_document()))
     monkeypatch.setattr(delivery.document_service, "_revision", AsyncMock(return_value=_revision()))
+    monkeypatch.setattr(delivery, "current_actor", AsyncMock(return_value=(1, 7)))
 
 
 @pytest.fixture
 def session():
-    """Phase-A lookups then the seam's three locked lookups, in call order."""
-    return SimpleNamespace(scalar=AsyncMock(side_effect=[_approval(), _approval(), _revision(), _document()]))
+    """Keep the ORM seam's model-query order visible without a database."""
+    calls = {OutboxMessage: 0}
+    command = SimpleNamespace(payload={"outbox_id": 77, "intent_hash": APPROVED_HASH}, preview_snapshot={})
+    message = SimpleNamespace(approved_hash=APPROVED_HASH)
+
+    async def scalar(statement):
+        entity = statement.column_descriptions[0]["entity"]
+        if entity is OutboxMessage:
+            calls[OutboxMessage] += 1
+            return None if calls[OutboxMessage] == 1 else message
+        return {
+            DocumentApproval: _approval(),
+            DocumentRevision: _revision(),
+            KnowledgeDocument: _document(),
+            BusinessCommand: command,
+        }.get(entity)
+
+    return SimpleNamespace(scalar=AsyncMock(side_effect=scalar), flush=AsyncMock(), command=command)
 
 
 @pytest.fixture
 def outbox(monkeypatch):
     draft = AsyncMock(return_value={"id": 77, "content_hash": DRAFT_HASH, "state": "validated"})
-    schedule = AsyncMock(return_value={"id": 77, "content_hash": DRAFT_HASH, "state": "approved"})
+    schedule = AsyncMock(
+        return_value={
+            "id": 77,
+            "content_hash": DRAFT_HASH,
+            "state": "approved",
+            "targets": [{"command_id": 88}],
+        }
+    )
     monkeypatch.setattr(delivery.outbox_store, "draft", draft)
     monkeypatch.setattr(delivery.outbox_store, "schedule", schedule)
     return SimpleNamespace(draft=draft, schedule=schedule)
@@ -128,6 +157,8 @@ async def test_send_renders_once_and_spools_the_drafted_bytes(services, session,
     schedule_in = outbox.schedule.call_args[0][0]
     assert schedule_in.message_id == 77
     assert schedule_in.expected_content_hash == DRAFT_HASH
+    assert session.command.preview_snapshot["document_export"]["document_id"] == 3
+    assert session.command.preview_snapshot["document_export"]["revision_id"] == 9
 
 
 async def test_occupied_position_with_matching_bytes_completes_the_retry(services, session, outbox, monkeypatch):

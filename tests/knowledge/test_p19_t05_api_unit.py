@@ -44,7 +44,8 @@ def app_with_auth_doubles():
 
     for route in api.router.routes:
         for dependency in route.dependant.dependencies:
-            app.dependency_overrides[dependency.call] = allow
+            if dependency.call is not api.require_idempotency_key:
+                app.dependency_overrides[dependency.call] = allow
     return app
 
 
@@ -149,11 +150,12 @@ async def test_send_email_returns_the_scheduled_outbox_item(monkeypatch):
     }
 
     async with AsyncClient(transport=ASGITransport(app=app_with_auth_doubles()), base_url="http://test") as client:
-        response = await client.post("/api/v1/documents/3/send/email", json=body)
+        response = await client.post("/api/v1/documents/3/send/email", json=body, headers={"Idempotency-Key": "send-3"})
 
     assert response.status_code == 201
     assert response.json()["state"] == "approved"
     assert service.call_args[0][0] == 3
+    assert service.call_args[0][2] == "send-3"
 
 
 @pytest.mark.asyncio
@@ -176,6 +178,24 @@ async def test_send_refusals_are_conflicts_not_silent_success(monkeypatch, error
     }
 
     async with AsyncClient(transport=ASGITransport(app=app_with_auth_doubles()), base_url="http://test") as client:
-        response = await client.post("/api/v1/documents/3/send/email", json=body)
+        response = await client.post("/api/v1/documents/3/send/email", json=body, headers={"Idempotency-Key": "send-3"})
 
     assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "headers",
+    [[], [("Idempotency-Key", "one"), ("Idempotency-Key", "two")], [("Idempotency-Key", "bad key")]],
+)
+async def test_send_requires_one_valid_idempotency_key(headers):
+    body = {
+        "format": "docx",
+        "contact_id": 4,
+        "body": "Договор во вложении",
+        "target": {"channel": "email", "connection_id": 1, "identity_id": 2},
+        "scheduled_at": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
+    }
+    async with AsyncClient(transport=ASGITransport(app=app_with_auth_doubles()), base_url="http://test") as client:
+        response = await client.post("/api/v1/documents/3/send/email", json=body, headers=headers)
+    assert response.status_code == 400

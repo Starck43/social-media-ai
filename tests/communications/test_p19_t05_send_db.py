@@ -15,6 +15,7 @@ from sqlalchemy import delete, func, select
 from app.channels.senders.contracts import SendResult
 from app.core.database import async_session_maker
 from app.models import DocumentRevision, KnowledgeDocument
+from app.models.actions.business_command import BusinessCommand
 from app.models.communications.outbox import OutboxAttachmentRef, OutboxMessage
 from app.models.knowledge.approval import DocumentApproval
 from app.services.attachments.spool import AttachmentSpool
@@ -121,7 +122,7 @@ def send_request(world):
     )
 
 
-async def test_send_schedules_spools_and_delivers_the_approved_bytes(outbox_world, spool, make_document):
+async def test_send_schedules_spools_and_delivers_the_approved_bytes(outbox_world, spool, make_document, monkeypatch):
     world = outbox_world
     doc_id, revision_id = await make_document()
     request = send_request(world)
@@ -151,6 +152,23 @@ async def test_send_schedules_spools_and_delivers_the_approved_bytes(outbox_worl
     # The delivered bytes are exactly the spooled render; the spool is discarded after.
     assert sender.call_args.args[1].attachments[0].content == data
     assert not (spool.root_dir / f"t_{world.tenants[0].id}" / f"outbox_{message_id}").exists()
+
+    monkeypatch.setattr(
+        "app.services.knowledge.export_delivery.render_approved_revision",
+        AsyncMock(side_effect=AssertionError("a sent replay must not render")),
+    )
+    with scope(world):
+        replay = await send_document_email(doc_id, request, "p19t05-send-1")
+    assert replay["id"] == message_id
+    assert replay["state"] == "sent"
+    async with async_session_maker() as session:
+        command = await session.scalar(
+            select(BusinessCommand).where(
+                BusinessCommand.tenant_id == world.tenants[0].id,
+                BusinessCommand.id == replay["targets"][0]["command_id"],
+            )
+        )
+    assert command.preview_snapshot["document_export"]["revision_body_hash"] == CONTENT_HASH
 
 
 async def test_unapproved_document_never_reaches_the_outbox(outbox_world, spool, make_document):
@@ -183,21 +201,69 @@ async def test_edited_revision_is_refused_on_the_body_hash(outbox_world, spool, 
     assert count == 0
 
 
-async def test_retry_with_the_same_key_replays_without_a_second_item(outbox_world, spool, make_document):
+async def test_retry_with_the_same_key_replays_bound_revision_without_render_or_spool_touch(
+    outbox_world, spool, make_document, monkeypatch
+):
     world = outbox_world
     doc_id, _ = await make_document()
+    request = send_request(world)
 
     with scope(world):
-        first = await send_document_email(doc_id, send_request(world), "p19t05-retry")
-        second = await send_document_email(doc_id, send_request(world), "p19t05-retry")
+        first = await send_document_email(doc_id, request, "p19t05-retry")
+        monkeypatch.setattr(
+            "app.services.knowledge.export_delivery.render_approved_revision",
+            AsyncMock(side_effect=AssertionError("an idempotent replay must not render")),
+        )
+        second = await send_document_email(doc_id, request, "p19t05-retry")
 
     assert first["id"] == second["id"]
     assert second["state"] == "approved"
+    command_id = second["targets"][0]["command_id"]
     async with async_session_maker() as session:
         count = await session.scalar(
             select(func.count()).select_from(OutboxMessage).where(OutboxMessage.tenant_id == world.tenants[0].id)
         )
+        command = await session.scalar(
+            select(BusinessCommand).where(
+                BusinessCommand.tenant_id == world.tenants[0].id,
+                BusinessCommand.id == command_id,
+            )
+        )
+        attachment_hash = await session.scalar(
+            select(OutboxAttachmentRef.sha256).where(OutboxAttachmentRef.outbox_message_id == first["id"])
+        )
     assert count == 1
+    provenance = command.preview_snapshot["document_export"]
+    assert provenance["document_id"] == doc_id
+    assert provenance["revision_id"] > 0
+    assert provenance["revision_body_hash"] == CONTENT_HASH
+    assert provenance["attachment_sha256"] == attachment_hash
+
+    changed_schedule = request.model_copy(update={"scheduled_at": request.scheduled_at + timedelta(minutes=1)})
+    with scope(world):
+        with pytest.raises(DocumentConflict, match="delivery_idempotency_mismatch"):
+            await send_document_email(doc_id, changed_schedule, "p19t05-retry")
+
+
+async def test_schedule_failure_rolls_back_draft_and_removes_owned_spool(
+    outbox_world, spool, make_document, monkeypatch
+):
+    world = outbox_world
+    doc_id, _ = await make_document()
+    request = send_request(world)
+    monkeypatch.setattr(store_module.outbox_store, "schedule", AsyncMock(side_effect=RuntimeError("schedule failed")))
+
+    with scope(world):
+        with pytest.raises(RuntimeError, match="schedule failed"):
+            await send_document_email(doc_id, request, "p19t05-schedule-rollback")
+
+    async with async_session_maker() as session:
+        count = await session.scalar(
+            select(func.count()).select_from(OutboxMessage).where(OutboxMessage.tenant_id == world.tenants[0].id)
+        )
+    assert count == 0
+    tenant_dir = spool.root_dir / f"t_{world.tenants[0].id}"
+    assert not tenant_dir.exists() or not any(tenant_dir.iterdir())
 
 
 async def test_export_renders_and_guards_staleness_and_tenant_boundaries(outbox_world, spool, make_document):

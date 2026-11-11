@@ -58,6 +58,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: remaining roadmap after the accepted increment (provider byte authority, native original open, local-only execution, approved file actions) — **IN_PROGRESS** (re-scope of the remaining roadmap; increment accepted 2026-11-03, `6433ae6a`/`48caea61`) · opencode-p12-t12 · claimed 2026-11-11 on `dev` `f14f60b6` · session `ses_e35c82e2fffeyIc34yFc702Ehw` · [increment audit](docs/audit/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **re-scope against accepted P12-T12 first (D21)** — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
+- [Q-20](docs/tasks/q-20.md) Test-schema guard coverage: `outbox_reply_evidence` PII marker — **IN_PROGRESS** · opencode-auditor · claimed 2026-11-11 on `dev` `9ef8b1ce` · found while applying `public` `0145`→`0151` · `P2` · `C2`
 
 Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q-18-owner-decisions.md)):
 

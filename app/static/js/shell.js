@@ -198,23 +198,28 @@
             const dialog = event.detail?.dialog || event.target;
             if (dialog instanceof HTMLDialogElement) claim(dialog);
         });
+        const finishClose = dialog => {
+            if (dialog.open || !dialog.shellDepth) return;
+            release(dialog);
+            document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
+                if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'false');
+            });
+            restoreFocus(dialog, dialog.shellLauncher);
+        };
+        // The open attribute is authoritative even if a reused native dialog's
+        // queued close event has not arrived. Both paths perform cleanup once.
+        const dialogObserver = new MutationObserver(records => {
+            records.forEach(record => finishClose(record.target));
+        });
         shellDialogs.forEach(dialog => {
+            dialogObserver.observe(dialog, { attributes: true, attributeFilter: ['open'] });
             dialog.addEventListener('cancel', event => {
                 if (event.defaultPrevented) return;
                 // Use the same explicit close path for Escape and close buttons.
                 event.preventDefault();
                 dialog.close();
             });
-            dialog.addEventListener('close', () => {
-                // A queued close from a previous opening must not release a new one.
-                if (dialog.open) return;
-                release(dialog);
-                document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
-                    if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'false');
-                });
-                // Native dialog normally restores focus; handle disappeared/hidden launchers.
-                restoreFocus(dialog, dialog.shellLauncher);
-            });
+            dialog.addEventListener('close', () => finishClose(dialog));
             dialog.addEventListener('keydown', event => {
                 if (event.key !== 'Tab') return;
                 const controls = tabbables(dialog);

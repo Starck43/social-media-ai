@@ -180,6 +180,10 @@ function build({ issuePost = false } = {}) {
         HTMLDialogElement: class HTMLDialogElement {
             static [Symbol.hasInstance](value) { return value instanceof Node_ && value.tagName === 'DIALOG'; }
         },
+        MutationObserver: class MutationObserver {
+            constructor(callback) { this.callback = callback; }
+            observe(node) { (node.attributeObservers ||= []).push(this.callback); }
+        },
         console,
         fetch: issuePost ? async url => { issues.push(String(url)); return { ok: false, status: 500, redirected: false, text: async () => '' }; } : async () => { throw Error('offline'); },
     };
@@ -190,6 +194,12 @@ function build({ issuePost = false } = {}) {
 // Native reality: HTMLDialogElement.showModal() fires no 'show' event, only a
 // native 'close' event on close(). The double reproduces exactly that.
 class FakeDialog extends Node_ {
+    get open() { return this._open || false; }
+    set open(value) {
+        if (this._open === value) return;
+        this._open = value;
+        (this.attributeObservers || []).forEach(callback => callback([{ target: this, attributeName: 'open' }]));
+    }
     constructor(id, klass = 'shell-dialog') {
         super('dialog');
         this.id = id; this.attributes.class = klass; this.open = false;
@@ -528,6 +538,17 @@ test('dialog: a queued close cannot release a dialog that has reopened', () => {
     assert.equal(d.env.document.body.style.overflow, 'hidden');
     assert.equal(d.openTrigger.getAttribute('aria-expanded'), 'true');
     d.invite.close();
+    assert.equal(d.env.document.body.style.overflow, '');
+});
+
+test('dialog: a native open-attribute removal cleans up even before a close event', () => {
+    const d = buildDialogs();
+    d.open(d.openTrigger);
+    d.invite.open = false;
+    assert.equal(d.env.document.body.style.overflow, '');
+    assert.equal(d.openTrigger.getAttribute('aria-expanded'), 'false');
+    assert.equal(d.document.activeElement, d.openTrigger);
+    d.invite.fire('close');
     assert.equal(d.env.document.body.style.overflow, '');
 });
 

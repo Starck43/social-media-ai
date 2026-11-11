@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import delete, select, text
+from sqlalchemy import String, cast, delete, select, text
 
 from app.core.access_catalog import workspace_grants
 from app.core.config import settings
@@ -82,7 +82,11 @@ async def brief_world(personal_world):
                     delete(ActionAuditEvent).where(
                         ActionAuditEvent.tenant_id == tenant_id,
                         ActionAuditEvent.action == "scheduling.task_admit",
-                        ActionAuditEvent.resource_id.in_(task_ids),
+                        ActionAuditEvent.resource_id.in_(
+                            select(cast(AgentTask.id, String)).where(
+                                AgentTask.tenant_id == tenant_id, AgentTask.job_type == "social.brief"
+                            )
+                        ),
                     )
                 )
                 await session.execute(delete(Job).where(Job.tenant_id == tenant_id, Job.agent_task_id.in_(task_ids)))
@@ -316,7 +320,7 @@ async def test_schedule_admission_notification_dedup_and_revoked_dispatch(brief_
         )
         membership.is_active = False
     with tenant_scope(tenant_id):
-        result = await reminder_notifications.dispatch_pending(now=occurrence + timedelta(minutes=5))
+        result = await reminder_notifications.dispatch_pending(now=datetime.now(UTC) + timedelta(minutes=1))
     assert result["blocked"] == 1
     transport.assert_not_awaited()
     async with async_session_maker() as session:

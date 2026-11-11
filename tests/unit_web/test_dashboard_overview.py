@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock
 import pytest
 from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
+from tests.shared.template_shell import shell_perms
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -103,7 +105,7 @@ def _render(offer, *, real_base=False, **extra):
         "pipeline": None,
         "_tz": "Europe/Moscow",
         "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query=""), query_params={}),
-        "perms": SimpleNamespace(can_manage_workspace=lambda target: False, is_owner=False, workspace_role="VIEWER"),
+        "perms": shell_perms(can_open_chat=True, can_manage_workspace=lambda target: False, workspace_role="viewer"),
         "member_level": None,
     }
     context.update(extra)

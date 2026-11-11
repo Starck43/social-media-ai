@@ -18,6 +18,7 @@ from fastapi import APIRouter
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from tests.shared.evidence_fixtures import workspace_double
+from tests.shared.template_shell import shell_perms
 from tests.source_import_isolation import load_isolated_source
 
 __source_only__ = True
@@ -259,7 +260,7 @@ def test_chat_template_renders_scoped_context_banner():
     env = _build_test_jinja_env()
     template = env.get_template("web/chat.html")
 
-    perms_mock = NS(
+    perms_mock = shell_perms(
         can_open_chat=True,
         is_owner=True,
         can_manage_workspace=lambda tid: False,

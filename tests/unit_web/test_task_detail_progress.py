@@ -382,7 +382,9 @@ def test_task_list_row_reports_queue_state_only_from_a_live_job():
     # below the table need the full request context this row contract excludes.
     row_template = source[start + opening : end].rstrip() + "\n"
 
-    env = Environment(autoescape=select_autoescape(("html",)))
+    # The content block pulls shared partials/macros, so the environment needs
+    # the real template loader; the shell chrome and data stay out of scope.
+    env = Environment(loader=FileSystemLoader(ROOT / "app/web/templates"), autoescape=select_autoescape(("html",)))
     template = env.from_string("{% block content %}" + row_template + "{% endblock %}")
     template.environment.filters["human_dt"] = lambda value, **_kwargs: "сегодня"
 

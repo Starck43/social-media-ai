@@ -28,6 +28,7 @@ from app.schemas.business import BusinessSchema
 from app.services.knowledge.document_contracts import Boundary, DocumentOut, DocumentType
 from app.services.knowledge.documents import (
     STATUS_DRAFT,
+    DocumentConflict,
     DocumentUnavailable,
     compute_content_hash,
     document_service,
@@ -573,10 +574,8 @@ class DraftingService:
         budget_limit = await current_daily_cost_limit()
         if not math.isfinite(float(budget_limit)) or float(budget_limit) < 0:
             raise ValueError("document_draft_budget_unavailable")
-        if float(budget_limit) == 0:
-            raise ValueError("document_draft_budget_exhausted")
         remaining = None
-        if budget_limit is not None:
+        if float(budget_limit) > 0:
             now = datetime.now(timezone.utc)
             day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             records = await session.execute(

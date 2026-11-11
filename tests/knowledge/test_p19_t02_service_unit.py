@@ -558,8 +558,7 @@ async def test_budget_exhaustion_or_unresolved_draft_attempt_blocks_dispatch(mon
     with pytest.raises(PermissionError, match="document_draft_payer_missing"):
         await service._remaining_budget(SimpleNamespace(), tenant_id=2)
     monkeypatch.setattr(resolver, "current_daily_cost_limit", AsyncMock(return_value=0.0))
-    with pytest.raises(ValueError, match="document_draft_budget_exhausted"):
-        await service._remaining_budget(SimpleNamespace(), tenant_id=1)
+    assert await service._remaining_budget(SimpleNamespace(), tenant_id=1) is None
     monkeypatch.setattr(resolver, "current_daily_cost_limit", AsyncMock(return_value=1.0))
     with pytest.raises(ValueError, match="document_draft_budget_exhausted"):
         await service._remaining_budget(

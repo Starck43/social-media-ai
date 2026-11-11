@@ -7,3 +7,4 @@ from .rate_budget import ProviderRateBudget
 from .telegram_login import TelegramLoginAttempt, TelegramLoginRequestKey
 from .trusted_outbound_host import TrustedOutboundHost
 from .trusted_outbound_host_event import TrustedOutboundHostEvent
+from .workspace_outbound_host import WorkspaceOutboundHost

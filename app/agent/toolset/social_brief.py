@@ -17,9 +17,9 @@ from app.agent.tools import tool
         "type": "object",
         "properties": {
             "days": {"type": "integer", "minimum": 1, "maximum": 31, "default": 1},
-            "timezone": {"type": "string", "maxLength": 64},
-            "start": {"type": "string", "format": "date"},
-            "end": {"type": "string", "format": "date"},
+            "timezone": {"type": "string", "pattern": r"^[A-Za-z0-9_+/-]{1,64}$"},
+            "start": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+            "end": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
         },
         "required": [],
         "additionalProperties": False,

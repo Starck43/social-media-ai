@@ -1,6 +1,7 @@
 """Read-only actor-scoped social morning brief API."""
 
 from datetime import date
+from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, HTTPException, Query, Request
@@ -31,10 +32,10 @@ def _validate_window(days: int, start: date | None, end: date | None) -> dict:
 )
 async def get_social_morning_brief(
     request: Request,
-    days: int = Query(1, ge=1, le=31),
-    timezone_name: str | None = Query(None, alias="tz", max_length=64),
-    start: date | None = Query(None),
-    end: date | None = Query(None),
+    days: Annotated[int, Query(ge=1, le=31)] = 1,
+    timezone_name: Annotated[str | None, Query(alias="tz", max_length=64)] = None,
+    start: Annotated[date | None, Query()] = None,
+    end: Annotated[date | None, Query()] = None,
 ):
     """Return a deterministic, read-only attention brief for the active actor."""
     actor = getattr(request.state, "api_user", None)

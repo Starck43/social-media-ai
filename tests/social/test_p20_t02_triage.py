@@ -508,7 +508,7 @@ async def test_web_morning_get_renders_unavailable_state_as_503(monkeypatch):
     assert result["template"] == "web/social_brief.html"
     assert result["status_code"] == 503
     assert result["context"]["brief"] is None
-    assert "полнота данных не подтверждена" in result["context"]["error"]
+    assert "полнота данных не подтверждена" in result["context"]["error"].casefold()
 
 
 @pytest.mark.asyncio

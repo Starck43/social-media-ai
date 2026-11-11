@@ -139,6 +139,13 @@ and execution permissions remain in the handwritten references and code.
 | PUT | /api/v1/files/connectors/{device_id}/roots | consent_api_v1_files_connectors__device_id__roots_put |
 | POST | /api/v1/files/search | search_api_v1_files_search_post |
 | GET | /api/v1/health | health_check_api_v1_health_get |
+| POST | /api/v1/integrations/1c/connect | connect_api_v1_integrations_1c_connect_post |
+| GET | /api/v1/integrations/1c/connections | connections_api_v1_integrations_1c_connections_get |
+| DELETE | /api/v1/integrations/1c/connections/{connection_id} | disconnect_api_v1_integrations_1c_connections__connection_id__delete |
+| POST | /api/v1/integrations/1c/connections/{connection_id}/health-check | health_check_api_v1_integrations_1c_connections__connection_id__health_check_post |
+| GET | /api/v1/integrations/1c/hosts | hosts_api_v1_integrations_1c_hosts_get |
+| POST | /api/v1/integrations/1c/hosts | approve_host_api_v1_integrations_1c_hosts_post |
+| DELETE | /api/v1/integrations/1c/hosts/{host_id} | revoke_host_api_v1_integrations_1c_hosts__host_id__delete |
 | POST | /api/v1/integrations/bitrix/connect | connect_bitrix_portal_api_v1_integrations_bitrix_connect_post |
 | GET | /api/v1/integrations/bitrix/connections | list_bitrix_connections_api_v1_integrations_bitrix_connections_get |
 | DELETE | /api/v1/integrations/bitrix/connections/{connection_id} | delete_bitrix_connection_api_v1_integrations_bitrix_connections__connection_id__delete |

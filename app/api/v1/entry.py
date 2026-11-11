@@ -20,6 +20,7 @@ from app.api.v1.endpoints import (
     llm_providers,
     monitoring,
     notifications,
+    onec,
     outbox,
     planner,
     roles,
@@ -51,6 +52,7 @@ router.include_router(web_research.router, dependencies=API_AUTH)
 router.include_router(outbox.router, dependencies=API_AUTH)
 router.include_router(communication.router, prefix="/communication", tags=["communication"], dependencies=API_AUTH)
 router.include_router(commands.router, dependencies=API_AUTH)
+router.include_router(onec.router, prefix="/integrations/1c", tags=["ERP / 1C"], dependencies=API_AUTH)
 router.include_router(bitrix.router, prefix="/integrations/bitrix", tags=["CRM"], dependencies=API_AUTH)
 # Public (no API_AUTH): signed one-click unsubscribe token authenticates the action without login (D16).
 router.include_router(bitrix.public_router, prefix="/integrations/bitrix", tags=["CRM"])

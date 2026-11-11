@@ -142,6 +142,7 @@ and execution permissions remain in the handwritten references and code.
 | POST | /api/v1/integrations/1c/connect | connect_api_v1_integrations_1c_connect_post |
 | GET | /api/v1/integrations/1c/connections | connections_api_v1_integrations_1c_connections_get |
 | DELETE | /api/v1/integrations/1c/connections/{connection_id} | disconnect_api_v1_integrations_1c_connections__connection_id__delete |
+| PATCH | /api/v1/integrations/1c/connections/{connection_id}/credentials | replace_credentials_api_v1_integrations_1c_connections__connection_id__credentials_patch |
 | POST | /api/v1/integrations/1c/connections/{connection_id}/health-check | health_check_api_v1_integrations_1c_connections__connection_id__health_check_post |
 | GET | /api/v1/integrations/1c/hosts | hosts_api_v1_integrations_1c_hosts_get |
 | POST | /api/v1/integrations/1c/hosts | approve_host_api_v1_integrations_1c_hosts_post |

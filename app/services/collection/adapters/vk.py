@@ -191,15 +191,14 @@ class VKCollectionAdapter(CollectionProvider):
         limit: int,
         cursor: str | None,
     ) -> Page[Candidate]:
-        """`audio.search` mocked contract (P8-T49).
+        """`audio.search` typed mapper, unreachable from the category registry.
 
-        Not bound in the search-category registry: music keeps its separate
-        permission gate (`deferred`, `separate_permission_evidence_required`)
-        because the official `audio` access right is granted only per request
-        via VK support. This operation exists so the contract is testable; it
-        must not be dispatched until that evidence is recorded, and no audio
-        scope may be requested for post research. An audio result is never a
-        Source.
+        VK disabled the public audio API on 2016-12-16 and the official method
+        index has no Audio/Music section, so the registry marks `music`
+        `unsupported` (`no_promised_public_search_method`) with no adapter
+        binding. This mapper is retained as a token-free contract fixture only:
+        nothing in the product dispatches it, and no audio scope may be
+        requested for post research. An audio result is never a Source.
         """
         return await self._category_search_page("audio.search", query, limit, cursor, self._audio, {})
 

@@ -43,6 +43,87 @@ def _resolve_tenant_id(explicit_tenant_id: int | None = None) -> int:
     return tid
 
 
+async def _authorize_actor_in_db(
+    session: Any,
+    tenant_id: int,
+    *,
+    require_create: bool = False,
+) -> tuple[int, int, str, tuple[str, ...]]:
+    """Re-verify active user, active workspace, active membership, and source grants in PostgreSQL."""
+    if session is None:
+        raise WebResearchRefusal("permission_denied")
+    try:
+        from sqlalchemy import select
+
+        from app.core.access_catalog import RESOURCES, workspace_grants
+        from app.core.permissions import get_current_user, has_permission
+        from app.core.tenant_context import is_bypass
+        from app.models import Tenant, TenantUser, User, WorkspaceRole
+        from app.types import ActionType
+    except Exception:
+        raise WebResearchRefusal("permission_denied") from None
+
+    ctx_tenant = current_tenant_id()
+    actor = get_current_user()
+    if (
+        is_bypass()
+        or type(tenant_id) is not int
+        or tenant_id <= 0
+        or (ctx_tenant is not None and ctx_tenant != tenant_id)
+        or actor is None
+        or not getattr(actor, "is_active", False)
+    ):
+        raise WebResearchRefusal("permission_denied")
+
+    required_action = ActionType.CREATE if require_create else ActionType.VIEW
+    try:
+        user_id = await session.scalar(
+            select(User.id).where(User.id == actor.id, User.is_active.is_(True)).with_for_update(read=True)
+        )
+        workspace_id = await session.scalar(
+            select(Tenant.id).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)).with_for_update(read=True)
+        )
+        member = await session.scalar(
+            select(TenantUser)
+            .where(
+                TenantUser.tenant_id == tenant_id,
+                TenantUser.user_id == actor.id,
+                TenantUser.is_active.is_(True),
+            )
+            .with_for_update(read=True)
+            .execution_options(populate_existing=True)
+        )
+        role = (
+            None
+            if member is None
+            else await session.scalar(
+                select(WorkspaceRole.codename).where(WorkspaceRole.id == member.role_id).with_for_update(read=True)
+            )
+        )
+    except Exception:
+        raise WebResearchRefusal("permission_denied") from None
+
+    grants = workspace_grants(role)
+    if (
+        user_id is None
+        or workspace_id is None
+        or ("source", ActionType.VIEW) not in grants
+        or ("source", required_action) not in grants
+        or not has_permission(actor, "source", ActionType.VIEW)
+        or not has_permission(actor, "source", required_action)
+    ):
+        raise WebResearchRefusal("permission_denied")
+
+    scopes = tuple(
+        f"{r.key}.{a.db_value}"
+        for r in RESOURCES
+        if r.workspace
+        for a in r.actions
+        if (r.model_name, a) in grants and has_permission(actor, r.model_name, a)
+    )
+    return tenant_id, int(user_id), str(role), (*scopes, "public")
+
+
 def _build_recommended_actions(
     preset: str,
     query: str,
@@ -116,6 +197,21 @@ class WebResearchService:
         self._tenant_snapshots: dict[int, list[dict[str, Any]]] = {}
         self._next_local_id: int = 1
 
+    def _resolved_capability(
+        self,
+        *,
+        chromium_engine: ChromiumUnderHoodEngine | None = None,
+        yandex_runner: YandexSearchRunner | None = None,
+    ):
+        engine = chromium_engine or self.chromium_engine
+        active_yandex = yandex_runner if yandex_runner is not None else self.yandex_runner
+        has_chromium_runner = getattr(engine, "_search_runner", None) is not None
+        return resolve_search_capability(
+            self.capability_config,
+            has_yandex_runner=active_yandex is not None,
+            has_chromium_runner=has_chromium_runner,
+        )
+
     def status(
         self,
         *,
@@ -124,7 +220,7 @@ class WebResearchService:
         budget: WebResearchBudget | None = None,
     ) -> WebResearchStatusOut:
         tid = _resolve_tenant_id(tenant_id)
-        cap = resolve_search_capability(self.capability_config)
+        cap = self._resolved_capability()
         budget_snap = self.budget_tracker.snapshot(tid, account_key, budget=budget)
         return WebResearchStatusOut(
             preferred_provider=cap.preferred_provider,
@@ -139,11 +235,129 @@ class WebResearchService:
             presets=list(RESEARCH_PRESETS.values()),
         )
 
+    async def status_async(
+        self,
+        *,
+        tenant_id: int | None = None,
+        account_key: str = "default",
+        budget: WebResearchBudget | None = None,
+        session: Any | None = None,
+        require_durable: bool = False,
+    ) -> WebResearchStatusOut:
+        tid = _resolve_tenant_id(tenant_id)
+        cap = self._resolved_capability()
+        if session is None and require_durable:
+            try:
+                from app.core.database import async_session_maker
+
+                async with async_session_maker() as managed_session, managed_session.begin():
+                    return await self.status_async(
+                        tenant_id=tid,
+                        account_key=account_key,
+                        budget=budget,
+                        session=managed_session,
+                        require_durable=True,
+                    )
+            except WebResearchRefusal:
+                raise
+            except Exception:
+                raise WebResearchRefusal("quota_state_unavailable") from None
+
+        if session is not None:
+            await _authorize_actor_in_db(session, tid, require_create=False)
+            budget_snap = await self.budget_tracker.snapshot_durable(session, tid, account_key, budget=budget)
+        else:
+            budget_snap = self.budget_tracker.snapshot(tid, account_key, budget=budget)
+
+        return WebResearchStatusOut(
+            preferred_provider=cap.preferred_provider,
+            default_under_hood=cap.default_under_hood,
+            yandex_configured=cap.yandex_configured,
+            yandex_live_enabled=cap.yandex_live_enabled,
+            chromium_default_active=cap.chromium_default_active,
+            is_live_capable=cap.is_live_capable,
+            label=cap.label,
+            note=cap.note,
+            budget=budget_snap,
+            presets=list(RESEARCH_PRESETS.values()),
+        )
+
     def list_saved_snapshots(self, *, tenant_id: int | None = None) -> list[dict[str, Any]]:
-        """Return evidence snapshots saved in the caller's tenant only (strict tenant isolation)."""
+        """Return in-memory evidence snapshots for DB-exempt unit tests."""
         tid = _resolve_tenant_id(tenant_id)
         rows = self._tenant_snapshots.get(tid, [])
         return [dict(item) for item in rows]
+
+    async def list_saved_snapshots_async(
+        self,
+        *,
+        tenant_id: int | None = None,
+        boundary: str = "cloud",
+        limit: int = 20,
+        session: Any | None = None,
+        require_durable: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return durable `KnowledgeSnippet` rows from PostgreSQL with fresh tenant/actor authorization."""
+        tid = _resolve_tenant_id(tenant_id)
+        if boundary not in {"local_only", "company", "cloud"}:
+            raise ValueError("invalid_boundary")
+
+        if session is None and require_durable:
+            try:
+                from app.core.database import async_session_maker
+
+                async with async_session_maker() as managed_session, managed_session.begin():
+                    return await self.list_saved_snapshots_async(
+                        tenant_id=tid,
+                        boundary=boundary,
+                        limit=limit,
+                        session=managed_session,
+                        require_durable=True,
+                    )
+            except WebResearchRefusal:
+                raise
+            except Exception:
+                raise WebResearchRefusal("provider_unavailable") from None
+
+        if session is None:
+            return self.list_saved_snapshots(tenant_id=tid)
+
+        _, _, _, allowed_scopes = await _authorize_actor_in_db(session, tid, require_create=False)
+        from sqlalchemy import select
+
+        from app.models import KnowledgeSnippet
+        from app.models.managers.knowledge_manager import BOUNDARIES
+
+        rows = (
+            await session.scalars(
+                select(KnowledgeSnippet)
+                .where(
+                    KnowledgeSnippet.tenant_id == tid,
+                    KnowledgeSnippet.context_type == "knowledge",
+                    KnowledgeSnippet.acl_scope.in_(allowed_scopes),
+                    KnowledgeSnippet.data_boundary.in_(BOUNDARIES[boundary]),
+                )
+                .order_by(KnowledgeSnippet.id.desc())
+                .limit(max(1, min(limit, 100)))
+            )
+        ).all()
+        return [
+            {
+                "id": int(row.id),
+                "tenant_id": int(row.tenant_id),
+                "context_type": row.context_type,
+                "title": row.title,
+                "source_ref": row.source_ref,
+                "citation_anchor": row.citation_anchor,
+                "revision_hash": row.revision_hash,
+                "excerpt": row.excerpt,
+                "data_boundary": row.data_boundary,
+                "extraction_limit_note": row.extraction_limit_note,
+                "fetched_at": row.created_at.isoformat() if getattr(row, "created_at", None) else "",
+                "prompt_injection_detected": "prompt-injection" in (row.extraction_limit_note or "").lower(),
+            }
+            for row in rows
+        ]
 
     async def save_snapshot_as_evidence(
         self,
@@ -152,16 +366,34 @@ class WebResearchService:
         tenant_id: int | None = None,
         boundary: str = "cloud",
         session: Any | None = None,
+        require_durable: bool = False,
     ) -> dict[str, Any]:
-        """Persist a verified live page snapshot as tenant-scoped evidence; block stub snapshots."""
+        """Persist a verified live page snapshot as tenant-scoped `KnowledgeSnippet`; block stub snapshots."""
         tid = _resolve_tenant_id(tenant_id)
         if snapshot.is_stub or STUB_SEARCH_MARKER in snapshot.title or STUB_SEARCH_MARKER in snapshot.excerpt:
             raise WebResearchRefusal("stub_cannot_be_live_evidence")
         if boundary not in {"local_only", "company", "cloud"}:
             raise ValueError("invalid_boundary")
 
-        snippet_id: int | None = None
+        if session is None and require_durable:
+            try:
+                from app.core.database import async_session_maker
+
+                async with async_session_maker() as managed_session, managed_session.begin():
+                    return await self.save_snapshot_as_evidence(
+                        snapshot,
+                        tenant_id=tid,
+                        boundary=boundary,
+                        session=managed_session,
+                        require_durable=True,
+                    )
+            except WebResearchRefusal:
+                raise
+            except Exception:
+                raise WebResearchRefusal("provider_unavailable") from None
+
         if session is not None:
+            await _authorize_actor_in_db(session, tid, require_create=True)
             from app.models import KnowledgeSnippet
 
             record = KnowledgeSnippet(
@@ -179,13 +411,14 @@ class WebResearchService:
             session.add(record)
             await session.flush()
             snippet_id = getattr(record, "id", None)
-
-        if snippet_id is None:
+            if type(snippet_id) is not int or snippet_id <= 0:
+                raise WebResearchRefusal("provider_unavailable")
+        else:
             snippet_id = self._next_local_id
             self._next_local_id += 1
 
         entry = {
-            "id": snippet_id,
+            "id": int(snippet_id),
             "tenant_id": tid,
             "context_type": "knowledge",
             "title": snapshot.title,
@@ -198,8 +431,21 @@ class WebResearchService:
             "prompt_injection_detected": snapshot.prompt_injection_detected,
         }
         self._tenant_snapshots.setdefault(tid, []).insert(0, entry)
-        snapshot.saved_snippet_id = snippet_id
+        snapshot.saved_snippet_id = int(snippet_id)
         return entry
+
+    async def _consume_budget(
+        self,
+        tid: int,
+        account_key: str,
+        *,
+        cost: int = 1,
+        budget: WebResearchBudget | None = None,
+        session: Any | None = None,
+    ) -> dict[str, int | float]:
+        if session is not None:
+            return await self.budget_tracker.consume_durable(session, tid, account_key, cost=cost, budget=budget)
+        return self.budget_tracker.consume(tid, account_key, cost=cost, budget=budget)
 
     async def fetch_page(
         self,
@@ -214,10 +460,38 @@ class WebResearchService:
         chromium_engine: ChromiumUnderHoodEngine | None = None,
         robots_override: str | None = None,
         session: Any | None = None,
+        require_durable: bool = False,
     ) -> PageSnapshotOut:
         tid = _resolve_tenant_id(tenant_id)
         req = data if isinstance(data, WebFetchRequest) else WebFetchRequest.model_validate(data)
-        self.budget_tracker.consume(tid, account_key, cost=1, budget=budget)
+
+        if session is None and require_durable:
+            try:
+                from app.core.database import async_session_maker
+
+                async with async_session_maker() as managed_session, managed_session.begin():
+                    return await self.fetch_page(
+                        req,
+                        tenant_id=tid,
+                        account_key=account_key,
+                        budget=budget,
+                        policy=policy,
+                        resolver=resolver,
+                        transport=transport,
+                        chromium_engine=chromium_engine,
+                        robots_override=robots_override,
+                        session=managed_session,
+                        require_durable=True,
+                    )
+            except WebResearchRefusal:
+                raise
+            except Exception:
+                raise WebResearchRefusal("quota_state_unavailable") from None
+
+        if session is not None:
+            await _authorize_actor_in_db(session, tid, require_create=bool(req.save_evidence))
+
+        await self._consume_budget(tid, account_key, cost=1, budget=budget, session=session)
 
         engine = chromium_engine or self.chromium_engine
         effective_mode = "http_plain" if req.fetch_mode in {"auto", "http_plain"} else "chromium_read_only"
@@ -239,6 +513,7 @@ class WebResearchService:
                 tenant_id=tid,
                 boundary=req.data_boundary,
                 session=session,
+                require_durable=require_durable,
             )
         return snapshot
 
@@ -253,7 +528,7 @@ class WebResearchService:
         yandex_runner: YandexSearchRunner | None,
     ) -> tuple[list[SearchHitOut], SearchProviderKind, bool, bool]:
         """Return `(hits, provider_used, chromium_used_under_hood, is_stub)`."""
-        cap = resolve_search_capability(self.capability_config)
+        cap = self._resolved_capability(chromium_engine=chromium_engine, yandex_runner=yandex_runner)
 
         if requested_provider == "stub":
             hits = build_stub_search_hits(query, max_results=max_results, provider="stub")
@@ -281,7 +556,7 @@ class WebResearchService:
                         )
                     )
                 return hits, "yandex_search_api", False, False
-            chosen = "chromium_headless"
+            chosen = "chromium_headless" if getattr(chromium_engine, "_search_runner", None) is not None else "stub"
 
         if chosen == "chromium_headless":
             hits, is_stub = await chromium_engine.search(
@@ -289,7 +564,9 @@ class WebResearchService:
                 max_results=max_results,
                 resolver=resolver,
             )
-            return hits, "chromium_headless", True, is_stub
+            if is_stub:
+                return hits, "stub", False, True
+            return hits, "chromium_headless", True, False
 
         hits = build_stub_search_hits(query, max_results=max_results, provider="stub")
         return hits, "stub", False, True
@@ -308,13 +585,41 @@ class WebResearchService:
         yandex_runner: YandexSearchRunner | None = None,
         robots_override: str | None = None,
         session: Any | None = None,
+        require_durable: bool = False,
     ) -> WebResearchRunOut:
         """Execute search -> public page fetch -> evidence-linked summary."""
         tid = _resolve_tenant_id(tenant_id)
         req = data if isinstance(data, WebSearchRequest) else WebSearchRequest.model_validate(data)
         cfg_budget = budget or self.budget_tracker.default_budget
 
-        budget_state = self.budget_tracker.consume(tid, account_key, cost=1, budget=cfg_budget)
+        if session is None and require_durable:
+            try:
+                from app.core.database import async_session_maker
+
+                async with async_session_maker() as managed_session, managed_session.begin():
+                    return await self.research(
+                        req,
+                        tenant_id=tid,
+                        account_key=account_key,
+                        budget=cfg_budget,
+                        policy=policy,
+                        resolver=resolver,
+                        transport=transport,
+                        chromium_engine=chromium_engine,
+                        yandex_runner=yandex_runner,
+                        robots_override=robots_override,
+                        session=managed_session,
+                        require_durable=True,
+                    )
+            except WebResearchRefusal:
+                raise
+            except Exception:
+                raise WebResearchRefusal("quota_state_unavailable") from None
+
+        if session is not None:
+            await _authorize_actor_in_db(session, tid, require_create=bool(req.save_evidence))
+
+        budget_state = await self._consume_budget(tid, account_key, cost=1, budget=cfg_budget, session=session)
         engine = chromium_engine or self.chromium_engine
         active_yandex = yandex_runner or self.yandex_runner
 
@@ -336,7 +641,7 @@ class WebResearchService:
 
         for target_url in urls_to_fetch:
             try:
-                budget_state = self.budget_tracker.consume(tid, account_key, cost=1, budget=cfg_budget)
+                budget_state = await self._consume_budget(tid, account_key, cost=1, budget=cfg_budget, session=session)
                 page = await fetch_public_page(
                     target_url,
                     fetch_mode="http_plain",
@@ -352,6 +657,7 @@ class WebResearchService:
                         tenant_id=tid,
                         boundary=req.data_boundary,
                         session=session,
+                        require_durable=require_durable,
                     )
                 pages.append(page)
             except WebResearchRefusal as exc:
@@ -362,7 +668,9 @@ class WebResearchService:
                         "message": exc.user_message,
                     }
                 )
-                if exc.code in {"budget_exhausted", "rate_limited"}:
+                if exc.code in {"budget_exhausted", "rate_limited", "quota_state_unavailable", "permission_denied"}:
+                    if exc.code in {"quota_state_unavailable", "permission_denied"}:
+                        raise
                     break
 
         overall_is_stub = search_is_stub and len(pages) == 0
@@ -388,7 +696,7 @@ class WebResearchService:
 
         if overall_is_stub:
             stub_warning = (
-                f"{STUB_SEARCH_MARKER} Поиск выполнен в режиме заглушки (O-5; движок по умолчанию: Chromium). "
+                f"{STUB_SEARCH_MARKER} Поиск выполнен в режиме заглушки O-5 (живой поиск и браузер P20-T05 не активированы). "
                 "Результаты помечены как демонстрационные и не могут использоваться как живые доказательства."
             )
             summary_lines.append(stub_warning)
@@ -400,7 +708,9 @@ class WebResearchService:
             cited_count = 0
             for idx, page in enumerate(pages, start=1):
                 inj_note = (
-                    " ⚠️ [Отфильтрована попытка prompt injection]" if page.prompt_injection_detected else ""
+                    " ⚠️ [Эвристические маркеры prompt injection — контент остаётся недоверенным]"
+                    if page.prompt_injection_detected
+                    else ""
                 )
                 summary_lines.append(
                     f"- **[{idx}] {page.title}** ({page.canonical_url}, `{page.content_hash[:19]}…`){inj_note}: "
@@ -451,6 +761,7 @@ class WebResearchService:
         resolver: Resolver = default_dns_resolver,
         chromium_engine: ChromiumUnderHoodEngine | None = None,
         session: Any | None = None,
+        require_durable: bool = False,
     ) -> dict[str, Any]:
         """Execute a web-research step inside an AgentTask workflow and return structured evidence metadata."""
         tid = _resolve_tenant_id(tenant_id)
@@ -470,6 +781,7 @@ class WebResearchService:
             resolver=resolver,
             chromium_engine=chromium_engine,
             session=session,
+            require_durable=require_durable,
         )
         return {
             "status": "completed",

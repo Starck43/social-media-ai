@@ -521,7 +521,7 @@ class ChromiumUnderHoodEngine:
                 )
             return hits, False
 
-        return build_stub_search_hits(clean_q, max_results=max_results, provider="chromium_headless"), True
+        return build_stub_search_hits(clean_q, max_results=max_results, provider="stub"), True
 
     async def fetch_rendered_page(
         self,

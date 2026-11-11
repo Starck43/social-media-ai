@@ -69,7 +69,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 ### Priority P3
 
 - [P20-T02](docs/tasks/p20-t02.md) Social triage, attention-item contract and morning brief — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
-- [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **IN_PROGRESS** · Codex audit · [audit PR #467](https://github.com/Starck43/social-media-ai/pull/467#issuecomment-6791334236) · `P3` · `C4` · owner 2026-11-11 (O-6): bounded public-web step enabled in the delegated workflow
+- [P20-T12](docs/tasks/p20-t12.md) Web research source: search and public page fetch — **READY** · Codex audit · [audit PR #467](https://github.com/Starck43/social-media-ai/pull/467#issuecomment-6791334236) · `P3` · `C4` · owner 2026-11-11 (O-6): bounded public-web step enabled in the delegated workflow
 
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 

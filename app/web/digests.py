@@ -81,6 +81,67 @@ async def digest_preview(
     return await _page(request, period, preview=True, group_by=group_by, time_breakdown=time_breakdown)
 
 
+@router.get("/morning")
+async def morning_brief_preview(request: Request, days: int = 1):
+    """Actor-scoped deterministic preview; no paid ranking or external send."""
+    from fastapi import HTTPException
+
+    from app.services.social.morning_brief import preview
+
+    if days not in range(1, 32):
+        raise HTTPException(400, "Invalid report window")
+    actor = getattr(request.state, "web_user", None)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if actor is None or tenant_id is None:
+        raise HTTPException(403, "Workspace and actor required")
+    key = f"social_triage:{tenant_id}:{actor.id}"
+    try:
+        brief = await preview(tenant_id, actor.id, days=days, overrides=request.session.get(key, {}))
+    except PermissionError:
+        raise HTTPException(403, "Social brief unavailable") from None
+    return render(request, "web/social_brief.html", section="digests", brief=brief, days=days)
+
+
+@router.post("/morning/correct")
+async def morning_brief_correct(
+    request: Request,
+    analysis_id: int = Form(...),
+    category: str = Form(...),
+    days: int = Form(1),
+    token: str = Form("", alias="_csrf"),
+):
+    from fastapi import HTTPException
+
+    from app.services.social.morning_brief import preview
+
+    if not ensure_csrf(request, token):
+        raise HTTPException(403, "Invalid CSRF")
+    actor = getattr(request.state, "web_user", None)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if actor is None or tenant_id is None or days not in range(1, 32):
+        raise HTTPException(403, "Workspace and actor required")
+    if category not in {"needs_attention", "can_wait", "uncertain", "restore"}:
+        raise HTTPException(400, "Invalid classification")
+    try:
+        brief = await preview(tenant_id, actor.id, days=days)
+    except PermissionError:
+        raise HTTPException(403, "Social brief unavailable") from None
+    reference = f"analysis:{analysis_id}"
+    if not any(item.authoritative_ref == reference for item in brief.items):
+        raise HTTPException(404, "Evidence unavailable")
+    key = f"social_triage:{tenant_id}:{actor.id}"
+    decisions = dict(request.session.get(key, {}))
+    if category == "restore":
+        decisions.pop(reference, None)
+    else:
+        # Bound cookie/session size. This state stores references and decisions only.
+        decisions.pop(reference, None)
+        decisions[reference] = category
+        decisions = dict(list(decisions.items())[-20:])
+    request.session[key] = decisions
+    return RedirectResponse(f"/app/digests/morning?days={days}", status_code=303)
+
+
 async def _page(
     request: Request,
     period: str | None,

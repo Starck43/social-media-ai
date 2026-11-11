@@ -366,8 +366,19 @@ class TodayRepository:
     """Default ORM repository with strict tenant predicates and bounded queries."""
 
     async def brief(self, workspace_id: int, user_id: int, scope: str) -> dict[str, Any] | None:
-        # P20-T02 brief generator is not yet wired; return None so the slot renders honestly.
-        return None
+        from app.services.social.morning_brief import preview
+
+        brief = await preview(workspace_id, user_id)
+        return {
+            "tenant_id": workspace_id,
+            "id": brief.generated_at.date().isoformat(),
+            "title": "Утренняя сводка",
+            "summary": f"Социальных результатов: {len(brief.items)}. Рекомендации требуют проверки. Другие источники пока не подключены.",
+            "href": "/app/digests/morning",
+            "created_at": brief.generated_at,
+            "stale_or_unavailable": True,
+            "marker_label": "Ограниченный охват сохранённых результатов",
+        }
 
     async def pending_actions(self, workspace_id: int, limit: int = PROVIDER_LIMIT) -> list[Any]:
         from app.models import AgentAction

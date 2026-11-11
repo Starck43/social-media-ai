@@ -1,0 +1,45 @@
+{% extends "web/base.html" %}
+{% block title %}Утренняя сводка — AI Monitor{% endblock %}
+{% block page_heading %}Утренняя сводка{% endblock %}
+{% block content %}
+<p>Социальные результаты за {{ brief.start }} — {{ brief.end }} ({{ brief.timezone }}).
+Дата у результата — дата анализа. Рекомендации по заголовкам требуют проверки свидетельств.</p>
+<form method="get">
+  <label for="brief-days">Окно, дней</label>
+  <input id="brief-days" name="days" type="number" min="1" max="31" value="{{ days }}">
+  <button type="submit">Показать</button>
+</form>
+<ul>{% for notice in brief.notices %}<li>{{ notice }}</li>{% endfor %}</ul>
+<p>Пока не подключены: {{ brief.missing_providers | join(', ') }}. Модели отключены; внешняя отправка не выполняется.</p>
+{% macro result(item) %}
+<article class="rounded-lg border p-4 my-3">
+  <h3>{{ item.title }}</h3>
+  <p>{{ {'needs_attention': 'Требует внимания', 'can_wait': 'Подождёт', 'uncertain': 'Не уверен'}[item.category] }} · {{ item.reason }}</p>
+  <p>Дата анализа: {{ item.freshness }} · Рекомендация: {{ item.recommended_priority }}/100 · {{ item.priority_basis }}</p>
+  {% for action in item.allowed_actions %}<a href="{{ action.href }}">{{ action.label }}</a>{% endfor %}
+  <form method="post" action="/app/digests/morning/correct">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input type="hidden" name="analysis_id" value="{{ item.authoritative_ref.split(':')[-1] }}">
+    <input type="hidden" name="days" value="{{ days }}">
+    <label>Исправить в этой сессии
+      <select name="category">
+        <option value="needs_attention">Требует внимания</option>
+        <option value="can_wait">Подождёт</option>
+        <option value="uncertain">Не уверен</option>
+        <option value="restore">Вернуть рекомендацию</option>
+      </select>
+    </label>
+    <button type="submit">Сохранить</button>
+  </form>
+</article>
+{% endmacro %}
+<h2>Приоритетные результаты</h2>
+{% for item in brief.top %}{{ result(item) }}{% endfor %}
+{% if brief.remaining %}
+<details><summary>Остальные результаты ({{ brief.remaining | length }})</summary>
+{% for item in brief.remaining %}{{ result(item) }}{% endfor %}
+</details>
+{% endif %}
+<p>Исправления действуют в текущей сессии; история провайдера не меняется.</p>
+<p><a href="/app/tasks">Расписания задач</a> · <a href="/app/digests">Дайджесты и доставка</a></p>
+{% endblock %}

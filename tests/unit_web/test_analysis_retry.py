@@ -467,7 +467,7 @@ def source_html(rights=True, can_view_tasks=None, can_create_tasks=None, **overr
         id=2939,
         tenant_id=7,
         name="Fixture",
-        platform=NS(name="VK", id=1),
+        platform=NS(name="VK", id=1, platform_type=NS(db_value="vk")),
         source_type=NS(display_name="User", db_value="user"),
         external_id="123",
         params={},

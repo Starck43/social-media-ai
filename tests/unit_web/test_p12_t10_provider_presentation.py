@@ -11,6 +11,12 @@ from tests.shared.settings_layout_fixtures import context, environment
 __source_only__ = True
 ROOT = Path(__file__).resolve().parents[2]
 
+# Calendar OAuth is registered in the catalog for its token endpoints only
+# (`app/web/settings_oauth.py` refuses it as a connector with
+# `calendar_selection_required`), so it deliberately carries no connector
+# presentation and no icon. Every other entry must be presentable.
+OAUTH_MECHANICS_ONLY = {"google_calendar"}
+
 
 def test_registry_covers_all_providers_and_keeps_mail_version():
     assert CATALOG_VERSION == 1
@@ -23,6 +29,7 @@ def test_registry_covers_all_providers_and_keeps_mail_version():
         "mailru_cloud",
         "bitrix24",
         "onec",
+        "google_calendar",
         "local_gateway",
     }
     assert {p.id for p in WORKSPACE_PROVIDERS} == {"mailru_mail", "yandex_mail"}
@@ -31,10 +38,15 @@ def test_registry_covers_all_providers_and_keeps_mail_version():
         "mailru_cloud",
         "bitrix24",
         "onec",
+        "google_calendar",
         "local_gateway",
     }
     assert all(not p.capabilities for p in PROVIDERS.values() if p.availability == "unavailable")
     for provider in PROVIDERS.values():
+        if provider.id in OAUTH_MECHANICS_ONLY:
+            assert provider.availability == "unavailable"
+            assert not provider.description and not provider.icon_asset and not provider.capabilities
+            continue
         assert provider.description and provider.category and provider.setup_hint and provider.auth_protocol
         assert provider.methods and provider.icon_asset.startswith("icons/providers/")
         icon = ROOT / "app/static" / provider.icon_asset
@@ -58,7 +70,7 @@ def test_shared_macros_escape_values_and_never_fill_secrets():
     assert "value=" not in password
 
 
-@pytest.mark.parametrize("provider_id", ["bitrix24", "onec", "yandex_disk", "mailru_cloud", "local_gateway"])
+@pytest.mark.parametrize("provider_id", ["bitrix24", "onec", "mailru_cloud", "local_gateway", "google_calendar"])
 def test_unavailable_provider_has_no_save_or_connect_form(provider_id):
     provider = PROVIDERS[provider_id]
     ctx = context("connections")
@@ -84,8 +96,40 @@ def test_unavailable_provider_has_no_save_or_connect_form(provider_id):
     assert "/app/settings/workspace-connections" not in html
 
 
+def test_yandex_disk_pilot_stays_read_only_without_the_write_capability():
+    """The pilot section replaced the generic "unavailable" copy for this provider.
+
+    It still must not offer a save or connect form unless the request carries
+    workspace write capability, and it must say what the pilot does not do.
+    """
+    provider = PROVIDERS["yandex_disk"]
+    ctx = context("connections")
+    ctx["connections"] = [
+        dict(
+            platform=provider.platform,
+            provider=provider,
+            title=provider.label,
+            purpose=provider.description,
+            is_oauth=False,
+            status=None,
+            manual_kinds=[],
+            rows=[],
+            details=None,
+        )
+    ]
+    html = environment().get_template("web/settings.html").render(**ctx)
+    assert provider.icon_asset in html
+    assert "Пилот" in html
+    assert "Запись и удаление в пилоте выключены" in html
+    for method in provider.methods:
+        for field in method.fields:
+            assert f'name="{field.name}"' not in html
+    assert "/app/settings/workspace-connections" not in html
+
+
 @pytest.mark.parametrize(
-    "provider_id", ["bitrix24", "onec", "yandex_disk", "mailru_cloud", "local_gateway", "vk", "telegram"]
+    "provider_id",
+    ["bitrix24", "onec", "yandex_disk", "mailru_cloud", "local_gateway", "google_calendar", "vk", "telegram"],
 )
 def test_workspace_manager_rejects_descriptors_outside_allowlist(provider_id):
     from app.integrations.catalog import InvalidConnectorInput

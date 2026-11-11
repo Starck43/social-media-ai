@@ -23,6 +23,7 @@ import pytest
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
 from tests.shared.evidence_fixtures import evidence_row, workspace_double
+from tests.shared.template_shell import shell_perms
 from tests.source_import_isolation import load_isolated_source as _isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -67,11 +68,10 @@ def _build_test_jinja_env() -> Environment:
 
 
 def _build_base_template_context() -> dict[str, Any]:
-    perms = NS(
+    perms = shell_perms(
         can=lambda *args: True,
+        can_open_chat=True,
         can_manage_workspace=lambda *a: False,
-        is_owner=False,
-        is_superuser_role=False,
         workspace_role="viewer",
     )
     return {
@@ -94,6 +94,14 @@ def _build_base_template_context() -> dict[str, Any]:
         "perms": perms,
         "is_superuser": False,
         "member_level": None,
+        # Mirrors the filter/view keys `communications_page` always passes.
+        "triage_category_filter": "",
+        "channel_filter": "",
+        "inbox_threads": [],
+        "merge_suggestions": [],
+        "selected_thread_detail": None,
+        "selected_thread_triage": None,
+        "triage_by_thread": {},
     }
 
 
@@ -315,7 +323,9 @@ def test_communications_jinja_template_strict_rendering():
     assert 'data-evidence-context-type="communication"' in rendered
     assert "Маршрут верифицирован" not in rendered
     assert "sha256:fixture" in rendered
-    assert "не отправить сообщение" in rendered
+    # The inbox never claims delivery: sending stays a separate, guarded outbox
+    # action (its lifecycle is asserted above), so no "sent" state can appear here.
+    assert "отправлено" not in rendered.lower()
 
 
 def test_followups_jinja_template_strict_rendering():
@@ -348,6 +358,8 @@ async def test_fastapi_domain_routers_communications_and_followups(monkeypatch):
         return NS(template=template_name, context=extra, status_code=200)
 
     fake_deps.render = fake_render
+    fake_deps.ensure_csrf = lambda request, token: True
+    fake_deps.perms_can = lambda request, model, action: True
 
     comm_web = load_isolated_source(
         "_p12_t04_web_communications",

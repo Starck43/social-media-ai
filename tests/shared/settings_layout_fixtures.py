@@ -8,6 +8,8 @@ from types import SimpleNamespace as NS
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
+from tests.shared.template_shell import shell_perms, shell_user
+
 ROOT = Path(__file__).resolve().parents[2]
 MODES = (
     "account",
@@ -75,18 +77,20 @@ def context(mode):
         agent_temperature=0.3,
         agent_system_prompt="Отвечай кратко и по делу.",
     )
-    perms = NS(
+    perms = shell_perms(
         can=lambda *args: True,
         can_manage_workspace=lambda target: manage and target == 7,
         can_manage_member=lambda role, target=None: manage and (target is None or target != "owner" or role == "owner"),
+        can_open_chat=workspace,
         is_owner=manage,
+        is_superuser_role=mode == "operator",
         workspace_role="owner" if manage else "viewer",
     )
     return dict(
         section="settings",
         tab=tab,
         tenant=tenant if workspace else None,
-        user=NS(
+        user=shell_user(
             id=101,
             username="sergey",
             email="sergey@fixture.invalid",

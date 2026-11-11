@@ -27,16 +27,15 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
    accepted `f66795cf0242200a53853bb2b1e9b01da595394d`, PR #271.
 5. [P8-T41](../tasks/p8-t41.md) — accept one bounded, evidence-linked
    VK research-to-digest journey at the exact integrated revision.
-6. [P8-T33](../tasks/p8-t33.md) — optional extension beyond the minimum pilot:
-   select a bounded set of verified VK result categories, with explicit cards
-   for any other requested categories before T33 closes. **IN_PROGRESS** · owner `notion-ai-p8-t33` · claim base `8c9f5222bbf5c8f69177ae4e3ad3df0682ec2877`.
-   Deferred category cards (owner decision 2026-10-31): [P8-T46](../tasks/p8-t46.md) video,
-   [P8-T47](../tasks/p8-t47.md) apps/games, [P8-T48](../tasks/p8-t48.md) owner-scoped market
-   items, [P8-T49](../tasks/p8-t49.md) music. Clips and channels stay `unsupported` in the
-   registry (no promised public search method; channels only partially map to communities).
-   Deferred cards claimed 2026-11-01: P8-T46/T47/T48/T49 **IN_PROGRESS** · owners
-   `notion-ai-p8-t46`/`notion-ai-p8-t47`/`notion-ai-p8-t48`/`notion-ai-p8-t49` · claim
-   base 9857f411a8292c29a41818121d0029e23c407178.
+6. **VK search-result categories — mocked slice accepted 2026-11-11**
+   ([audit](../audit/p8-t33-search-categories.md), [#295](https://github.com/Starck43/social-media-ai/pull/295)
+   `9857f411` + [#298](https://github.com/Starck43/social-media-ai/pull/298) `8a687f4f`):
+   [P8-T33](../tasks/p8-t33.md) registry/`people`, [P8-T46](../tasks/p8-t46.md) video,
+   [P8-T47](../tasks/p8-t47.md) apps/games, [P8-T48](../tasks/p8-t48.md) owner-scoped market —
+   all `mocked`, 217 contract checks passed. [P8-T49](../tasks/p8-t49.md) music is `unsupported`
+   ([audit](../audit/p8-t49.md), #469): no public search method since the 2016 audio API shutdown.
+   Clips and channels stay `unsupported`. Live enablement of the four `mocked` categories is
+   [Q-5](../tasks/q-5.md) and nothing else; no category is user-available today.
 
 T38 can proceed from the integrated T29 foundation without waiting for the
 live VK gate. T39 reuses the accepted shared execution-scope/mutation policy in

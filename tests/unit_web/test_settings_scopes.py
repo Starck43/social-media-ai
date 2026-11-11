@@ -202,6 +202,13 @@ def gateway(monkeypatch):
             build_workspace_connectors=lambda **kwargs: [],
             credential_matches_workspace=lambda meta, tenant_id: True,
         ),
+        # The account tab reads the start-page preference; `today` reaches the
+        # real `app.web` package initializer, which is outside this isolated
+        # fixture, so it is declared as a dependency like the ORM doubles.
+        "app.services.workspace.today": dict(
+            available_start_pages=lambda perms: [],
+            get_user_start_page=lambda user_id, session: "dashboard",
+        ),
         "app.services.ai.llm_client": dict(default_model_sort_key=lambda m: m.name),
         "app.services.ai.personal_catalog": dict(chat_model_options=model_options),
     }
@@ -357,6 +364,7 @@ def test_no_workspace_exception_is_limited_to_personal_account_and_settings_read
         ("POST", "/app/settings/workspace", True),
         ("GET", "/app/settings/invites", True),
         ("GET", "/app/tasks", True),
+        ("GET", "/app/settings/telegram-accounts", False),
     ]:
         assert (
             bool(
@@ -374,6 +382,9 @@ def test_no_workspace_exception_is_limited_to_personal_account_and_settings_read
                             "/app/billing/account",
                             "/app/billing/account/daily-limit",
                         },
+                        # Computed once per request before the guard; a personal
+                        # connector path skips workspace reads.
+                        "personal_connector": path == "/app/settings/telegram-accounts",
                     },
                 )
             )

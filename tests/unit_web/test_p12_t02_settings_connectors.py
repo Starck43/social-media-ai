@@ -289,8 +289,10 @@ async def test_settings_page_connections_tab_populates_workspace_connectors(monk
         if isinstance(node, ast.AnnAssign) and getattr(node.target, "id", "") == "SELF_SERVICE_KINDS":
             self_service_kinds = ast.literal_eval(node.value)
 
-    # Business descriptors must not enable generic secret collection.
-    assert set(self_service_kinds) == {"vk", "telegram"}
+    # Business descriptors must not enable generic secret collection. Telegram
+    # personal accounts now connect through their own page (P12-T14), so only the
+    # VK user token remains a self-service kind here.
+    assert set(self_service_kinds) == {"vk"}
     allowed_kinds = {kind for kinds in self_service_kinds.values() for kind, _ in kinds}
     for forbidden in ("bot_token", "app_id", "client_secret"):
         assert forbidden not in allowed_kinds

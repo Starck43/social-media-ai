@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock
 import pytest
 from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
+from tests.shared.template_shell import shell_perms, shell_user
+
 ROOT = Path(__file__).resolve().parents[2]
 WEB = ROOT / "app/web/templates"
 
@@ -46,7 +48,9 @@ def environment():
 
 def context(*, manager=False, tenant=True, operator=False):
     return dict(
-        user=SimpleNamespace(username="<script>stored</script>", is_platform_admin=operator),
+        user=shell_user(
+            username="<script>stored</script>", is_platform_admin=operator, has_admin_access=lambda: operator
+        ),
         tenant=SimpleNamespace(id=7, name='<img src=x onerror="bad()">') if tenant else None,
         request=SimpleNamespace(query_params={}),
         section="dashboard",
@@ -54,8 +58,11 @@ def context(*, manager=False, tenant=True, operator=False):
         flashes=[],
         connection_alerts=[],
         member_level=None,
-        perms=SimpleNamespace(
-            can_manage_workspace=lambda target: manager and target == 7, workspace_role="MANAGER", is_owner=manager
+        perms=shell_perms(
+            can_manage_workspace=lambda target: manager and target == 7,
+            can_open_chat=tenant,
+            workspace_role="manager",
+            is_owner=manager,
         ),
         nav=[SimpleNamespace(key="dashboard", href="/app/", ready=True, label="Обзор", icon="home")],
         workspaces=[],
@@ -86,7 +93,7 @@ def test_menu_is_content_gated_and_stored_values_are_inert(manager):
     assert 'id="context-panel"' not in markup
     assert 'action="/app/logout"' in markup
     assert 'name="_csrf"' in markup
-    assert 'href="/admin/"' in markup  # Entry is authenticated, actions remain model-gated.
+    assert 'href="/admin/"' not in markup  # Entry needs platform admin access, not just a session.
 
 
 def test_no_workspace_has_account_utilities_but_no_workspace_data_or_invite_fetch():
@@ -182,9 +189,10 @@ def test_invite_buttons_expose_dialog_target_in_both_shells():
 
 
 @pytest.mark.parametrize("operator", [True, False])
-def test_admin_entry_link_is_available_to_every_authenticated_role(operator):
+def test_admin_entry_follows_platform_admin_access_not_workspace_role(operator):
     markup = environment().get_template("shell-fixture.html").render(**context(operator=operator))
-    assert 'href="/admin/"' in markup  # Per-model authorization is independent of entry.
+    # The entry follows the platform role; per-model authorization stays independent of it.
+    assert ('href="/admin/"' in markup) is operator
 
 
 def test_workspace_switch_keeps_post_and_csrf():
@@ -251,7 +259,7 @@ def test_theme_and_collapse_leave_navbar_and_keep_unique_control_targets():
     "codename,role_id,expected",
     [
         ("owner", 1, "Владелец"),
-        ("MANAGER", 1, "Менеджер"),
+        ("manager", 1, "Менеджер"),
         ("UNKNOWN", 1, "Роль не назначена"),
         (None, None, "Роль не назначена"),
     ],
@@ -267,7 +275,7 @@ def test_workspace_role_caption_reuses_canonical_labels_without_app_imports(code
         for n in ast.walk(tree)
         if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "level" for t in n.targets)
     )
-    role = SimpleNamespace(codename=SimpleNamespace(name=codename)) if codename else None
+    role = SimpleNamespace(codename=SimpleNamespace(value=codename)) if codename else None
     scope = dict(
         member_roles=SimpleNamespace(resolve=roles["resolve"], key_of=roles["key_of"]),
         membership=SimpleNamespace(role=role, role_id=role_id),

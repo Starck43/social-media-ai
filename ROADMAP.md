@@ -68,7 +68,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 
 ### Priority P3
 
-- [P20-T02](docs/tasks/p20-t02.md) Social triage, attention-item contract and morning brief — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
+- [P20-T02](docs/tasks/p20-t02.md) Social triage, attention-item contract and morning brief — **IN_PROGRESS** · codex-p20-t02 · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C4`
 
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 

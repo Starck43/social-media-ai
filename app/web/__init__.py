@@ -29,6 +29,7 @@ from .jobs import router as jobs_router
 from .knowledge import router as knowledge_router
 from .notifications import router as notifications_router
 from .onboarding import router as onboarding_router
+from .onec import router as onec_router
 from .planner import router as planner_router
 from .reply import router as reply_router
 from .scenarios import router as scenarios_router
@@ -73,6 +74,7 @@ web_router.include_router(jobs_router)
 web_router.include_router(knowledge_router)
 web_router.include_router(notifications_router)
 web_router.include_router(onboarding_router)
+web_router.include_router(onec_router)
 web_router.include_router(scenarios_router)
 web_router.include_router(settings_router)
 web_router.include_router(settings_llm_router)

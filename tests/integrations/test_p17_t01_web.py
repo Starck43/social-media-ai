@@ -87,3 +87,14 @@ def test_oversized_body_does_not_call_service(monkeypatch):
     response = request("/hosts", "_csrf=valid&host=" + "a" * 65536)
     assert response.status_code == 403
     approve.assert_not_awaited()
+
+
+def test_web_router_and_settings_card_are_wired():
+    from pathlib import Path
+
+    from app.web import web_router
+
+    matches = [route for route in web_router.routes if getattr(route, "original_router", None) is onec.router]
+    assert len(matches) == 1
+    settings = Path("app/web/templates/web/settings.html").read_text()
+    assert 'href="/app/settings/onec"' in settings

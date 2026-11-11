@@ -62,7 +62,6 @@ async def _seed_contact_and_case(world, workspace=0):
             tenant_id=world.tenants[workspace].id,
             display_name_encrypted="ООО «СтройИнвест»",
             preferred_channel="email",
-            data_boundary="cloud",
         )
         session.add(contact)
         case_snip = KnowledgeSnippet(
@@ -105,6 +104,12 @@ async def test_template_rendering_missing_variable_blocks_and_ai_draft_persists_
         )
 
         # 1. Missing `claim_date` blocks rendering and creates zero documents
+        async with async_session_maker() as session:
+            documents_before = await session.scalar(
+                select(func.count())
+                .select_from(KnowledgeDocument)
+                .where(KnowledgeDocument.tenant_id == world.tenants[0].id)
+            )
         with pytest.raises(ValueError, match="missing_template_variables:claim_date"):
             await drafting_service.draft(
                 {
@@ -114,16 +119,23 @@ async def test_template_rendering_missing_variable_blocks_and_ai_draft_persists_
                     "variables": {"company_name": "ООО «СтройИнвест»", "claim_no": 18},
                 }
             )
+        async with async_session_maker() as session:
+            documents_after = await session.scalar(
+                select(func.count())
+                .select_from(KnowledgeDocument)
+                .where(KnowledgeDocument.tenant_id == world.tenants[0].id)
+            )
+        assert documents_after == documents_before
 
-        # 2. Valid template + CRM contact + Case evidence + AI LLM output with one supported
+        # 2. Valid template + allowlisted CRM context + Case evidence + AI LLM output with one supported
         #    and one unsupported legal/financial claim
         def fake_llm(payload):
             case_ref = f"case:{case_id}"
             return {
                 "paragraphs": [
                     {
-                        "text": payload["rendered_template"],
-                        "evidence_refs": [case_ref, f"contact:{contact_id}"],
+                        "text": "Работы по монтажу вентиляции выполнены в полном объёме 2026-10-25.",
+                        "evidence_refs": [case_ref],
                     },
                     {
                         "text": "Дополнительно обязуемся выплатить неустойку 250 000 руб. по мировому соглашению.",
@@ -153,6 +165,7 @@ async def test_template_rendering_missing_variable_blocks_and_ai_draft_persists_
         assert drafted.approved_by is None
         assert drafted.decision_actor_user_id is None
         assert drafted.counterparty == "ООО «СтройИнвест»"
+        assert [item.ref for item in drafted.evidence] == [f"case:{case_id}"]
         assert drafted.has_unsupported_claims is True
         assert drafted.requires_human_review is True
         assert UNSUPPORTED_MARKER in drafted.body_text

@@ -120,7 +120,9 @@ def test_dns_resolution_to_private_ip_and_dns_rebinding_are_refused():
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))]
 
     seen: dict[str, set[str]] = {}
-    url_1, _ = validate_public_url("https://rebind.example.com/step1", resolver=_rebinding_resolver, seen_resolutions=seen)
+    url_1, _ = validate_public_url(
+        "https://rebind.example.com/step1", resolver=_rebinding_resolver, seen_resolutions=seen
+    )
     assert url_1 == "https://rebind.example.com/step1"
 
     with pytest.raises(WebResearchRefusal) as rebind_exc:
@@ -373,6 +375,7 @@ async def test_web_research_quotas_migration_and_fail_closed_contract():
     try:
         from alembic.config import Config
         from alembic.script import ScriptDirectory
+
         from app.models import Base
         from app.services.web_research.models import WebResearchQuota
 
@@ -443,7 +446,9 @@ async def test_chat_tools_and_agent_task_step_operate_within_tenant_scope():
     from app.agent.toolset.web_research import web_fetch_page, web_research
 
     with tenant_scope(501):
-        tool_out = await web_research(query="новости отрасли", preset="fact_check", max_results=2)
+        tool_out = await web_research(
+            query="новости отрасли", preset="fact_check", max_results=2, require_durable=False
+        )
         assert tool_out["query"] == "новости отрасли"
         assert tool_out["preset"] == "fact_check"
         assert tool_out["provider_used"] == "stub"
@@ -452,12 +457,12 @@ async def test_chat_tools_and_agent_task_step_operate_within_tenant_scope():
         assert tool_out["is_stub"] is True
         assert any(a["surface"] == "documents" for a in tool_out["recommended_actions"])
 
-        bad_fetch = await web_fetch_page(url="http://127.0.0.1/secret")
+        bad_fetch = await web_fetch_page(url="http://127.0.0.1/secret", require_durable=False)
         assert bad_fetch["code"] == "private_address_forbidden"
         assert "127.0.0.1" not in bad_fetch["error"]
 
         service = WebResearchService()
-        step_out = await service.run_research_task_step({"query": "мониторинг цен"})
+        step_out = await service.run_research_task_step({"query": "мониторинг цен"}, require_durable=False)
         assert step_out["status"] == "completed"
         assert step_out["provider_used"] == "stub"
         assert step_out["chromium_used_under_hood"] is False

@@ -205,12 +205,38 @@ class WebResearchService:
     ):
         engine = chromium_engine or self.chromium_engine
         active_yandex = yandex_runner if yandex_runner is not None else self.yandex_runner
-        has_chromium_runner = getattr(engine, "_search_runner", None) is not None
+        # Injected runners are test seams, not activation approval. O-5 keeps
+        # production on the stub until a separately reviewed provider/pilot.
+        has_chromium_runner = False
         return resolve_search_capability(
             self.capability_config,
             has_yandex_runner=active_yandex is not None,
             has_chromium_runner=has_chromium_runner,
         )
+
+    async def _authorize_and_consume_durable(
+        self,
+        tenant_id: int,
+        account_key: str,
+        *,
+        cost: int,
+        budget: WebResearchBudget | None,
+        require_create: bool,
+    ) -> dict[str, int | float]:
+        """Commit one authorization and quota admission before any external I/O."""
+        try:
+            from app.core.database import async_session_maker
+
+            async with async_session_maker() as session:
+                async with session.begin():
+                    await _authorize_actor_in_db(session, tenant_id, require_create=require_create)
+                    return await self.budget_tracker.consume_durable(
+                        session, tenant_id, account_key, cost=cost, budget=budget
+                    )
+        except WebResearchRefusal:
+            raise
+        except Exception:
+            raise WebResearchRefusal("quota_state_unavailable") from None
 
     def status(
         self,
@@ -465,33 +491,23 @@ class WebResearchService:
         tid = _resolve_tenant_id(tenant_id)
         req = data if isinstance(data, WebFetchRequest) else WebFetchRequest.model_validate(data)
 
-        if session is None and require_durable:
-            try:
-                from app.core.database import async_session_maker
-
-                async with async_session_maker() as managed_session, managed_session.begin():
-                    return await self.fetch_page(
-                        req,
-                        tenant_id=tid,
-                        account_key=account_key,
-                        budget=budget,
-                        policy=policy,
-                        resolver=resolver,
-                        transport=transport,
-                        chromium_engine=chromium_engine,
-                        robots_override=robots_override,
-                        session=managed_session,
-                        require_durable=True,
-                    )
-            except WebResearchRefusal:
-                raise
-            except Exception:
-                raise WebResearchRefusal("quota_state_unavailable") from None
-
-        if session is not None:
+        if require_durable and session is not None:
+            # A caller-owned transaction cannot be committed by this service,
+            # and must never retain locks while a page is fetched.
+            raise WebResearchRefusal("quota_state_unavailable")
+        if require_durable:
+            await self._authorize_and_consume_durable(
+                tid,
+                account_key,
+                cost=1,
+                budget=budget,
+                require_create=bool(req.save_evidence),
+            )
+        elif session is not None:
             await _authorize_actor_in_db(session, tid, require_create=bool(req.save_evidence))
-
-        await self._consume_budget(tid, account_key, cost=1, budget=budget, session=session)
+            await self._consume_budget(tid, account_key, cost=1, budget=budget, session=session)
+        else:
+            await self._consume_budget(tid, account_key, cost=1, budget=budget)
 
         engine = chromium_engine or self.chromium_engine
         effective_mode = "http_plain" if req.fetch_mode in {"auto", "http_plain"} else "chromium_read_only"
@@ -592,34 +608,21 @@ class WebResearchService:
         req = data if isinstance(data, WebSearchRequest) else WebSearchRequest.model_validate(data)
         cfg_budget = budget or self.budget_tracker.default_budget
 
-        if session is None and require_durable:
-            try:
-                from app.core.database import async_session_maker
-
-                async with async_session_maker() as managed_session, managed_session.begin():
-                    return await self.research(
-                        req,
-                        tenant_id=tid,
-                        account_key=account_key,
-                        budget=cfg_budget,
-                        policy=policy,
-                        resolver=resolver,
-                        transport=transport,
-                        chromium_engine=chromium_engine,
-                        yandex_runner=yandex_runner,
-                        robots_override=robots_override,
-                        session=managed_session,
-                        require_durable=True,
-                    )
-            except WebResearchRefusal:
-                raise
-            except Exception:
-                raise WebResearchRefusal("quota_state_unavailable") from None
-
-        if session is not None:
+        if require_durable and session is not None:
+            raise WebResearchRefusal("quota_state_unavailable")
+        if require_durable:
+            budget_state = await self._authorize_and_consume_durable(
+                tid,
+                account_key,
+                cost=1,
+                budget=cfg_budget,
+                require_create=bool(req.save_evidence),
+            )
+        elif session is not None:
             await _authorize_actor_in_db(session, tid, require_create=bool(req.save_evidence))
-
-        budget_state = await self._consume_budget(tid, account_key, cost=1, budget=cfg_budget, session=session)
+            budget_state = await self._consume_budget(tid, account_key, cost=1, budget=cfg_budget, session=session)
+        else:
+            budget_state = await self._consume_budget(tid, account_key, cost=1, budget=cfg_budget)
         engine = chromium_engine or self.chromium_engine
         active_yandex = yandex_runner or self.yandex_runner
 
@@ -641,7 +644,20 @@ class WebResearchService:
 
         for target_url in urls_to_fetch:
             try:
-                budget_state = await self._consume_budget(tid, account_key, cost=1, budget=cfg_budget, session=session)
+                if require_durable:
+                    budget_state = await self._authorize_and_consume_durable(
+                        tid,
+                        account_key,
+                        cost=1,
+                        budget=cfg_budget,
+                        require_create=bool(req.save_evidence),
+                    )
+                elif session is not None:
+                    budget_state = await self._consume_budget(
+                        tid, account_key, cost=1, budget=cfg_budget, session=session
+                    )
+                else:
+                    budget_state = await self._consume_budget(tid, account_key, cost=1, budget=cfg_budget)
                 page = await fetch_public_page(
                     target_url,
                     fetch_mode="http_plain",
@@ -721,8 +737,7 @@ class WebResearchService:
 
         if refusals:
             summary_lines.append(
-                "Отклонённые адреса: "
-                + "; ".join(f"{r['url']} ({r['code']}: {r['message']})" for r in refusals)
+                "Отклонённые адреса: " + "; ".join(f"{r['url']} ({r['code']}: {r['message']})" for r in refusals)
             )
 
         recommended_actions = _build_recommended_actions(
@@ -761,7 +776,7 @@ class WebResearchService:
         resolver: Resolver = default_dns_resolver,
         chromium_engine: ChromiumUnderHoodEngine | None = None,
         session: Any | None = None,
-        require_durable: bool = False,
+        require_durable: bool = True,
     ) -> dict[str, Any]:
         """Execute a web-research step inside an AgentTask workflow and return structured evidence metadata."""
         tid = _resolve_tenant_id(tenant_id)

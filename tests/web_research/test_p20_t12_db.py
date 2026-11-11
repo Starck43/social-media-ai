@@ -21,7 +21,7 @@ from app.core.access_catalog import workspace_grants
 from app.core.database import async_session_maker
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
-from app.models import KnowledgeSnippet
+from app.models import KnowledgeSnippet, Tenant
 from app.services.web_research import (
     ChromiumUnderHoodEngine,
     RawHttpResponse,
@@ -70,6 +70,20 @@ async def test_live_page_snapshot_persists_to_knowledge_snippet_and_enforces_dur
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
 
     async def _transport(url: str, timeout: float, max_bytes: int) -> RawHttpResponse:
+        # The web request is in flight while fresh sessions can update-lock the
+        # workspace and quota rows. Admission must have committed before I/O.
+        async with async_session_maker() as probe, probe.begin():
+            await probe.scalar(
+                select(Tenant.id).where(Tenant.id == research_world.tenants[0].id).with_for_update(nowait=True)
+            )
+            await probe.scalar(
+                select(WebResearchQuota.tenant_id)
+                .where(
+                    WebResearchQuota.tenant_id == research_world.tenants[0].id,
+                    WebResearchQuota.account_key == "default",
+                )
+                .with_for_update(nowait=True)
+            )
         if url.endswith("/robots.txt"):
             return RawHttpResponse(200, {"content-type": "text/plain"}, b"User-agent: *\nAllow: /\n")
         return RawHttpResponse(
@@ -94,82 +108,72 @@ async def test_live_page_snapshot_persists_to_knowledge_snippet_and_enforces_dur
 
     # 1. Stub results are refused when saving evidence; durable quota row is recorded in PostgreSQL
     with _scoped(research_world, workspace=0, role="owner"):
-        async with async_session_maker() as session, session.begin():
-            with pytest.raises(WebResearchRefusal) as stub_exc:
-                await service.research(
-                    {"query": "stub check", "provider": "stub", "save_evidence": True},
-                    budget=budget,
-                    resolver=_resolver,
-                    session=session,
-                    require_durable=True,
-                )
-            assert stub_exc.value.code == "stub_cannot_be_live_evidence"
-
-        async with async_session_maker() as session, session.begin():
-            live_out = await service.research(
-                {"query": "партнёр", "preset": "site_brief", "fetch_top_n": 1, "save_evidence": True},
+        with pytest.raises(WebResearchRefusal) as stub_exc:
+            await service.research(
+                {"query": "stub check", "provider": "stub", "save_evidence": True},
                 budget=budget,
                 resolver=_resolver,
-                transport=_transport,
-                session=session,
                 require_durable=True,
             )
-            assert live_out.is_stub is False
-            snippet_id = live_out.citations[0].saved_snippet_id
-            assert snippet_id is not None
+        assert stub_exc.value.code == "stub_cannot_be_live_evidence"
+
+        live_out = await service.research(
+            {"query": "партнёр", "preset": "site_brief", "fetch_top_n": 1, "save_evidence": True},
+            budget=budget,
+            resolver=_resolver,
+            transport=_transport,
+            require_durable=True,
+        )
+        assert live_out.is_stub is False
+        snippet_id = live_out.citations[0].saved_snippet_id
+        assert snippet_id is not None
 
         # 2. Fresh PostgreSQL session sees persisted KnowledgeSnippet and durable quota count
-        async with async_session_maker() as s2, s2.begin():
-            status_out = await service.status_async(budget=budget, session=s2, require_durable=True)
-            assert status_out.budget["daily_used"] == 2
-            assert status_out.budget["daily_remaining"] == 2
+        status_out = await service.status_async(budget=budget, require_durable=True)
+        assert status_out.budget["daily_used"] == 2
+        assert status_out.budget["daily_remaining"] == 2
 
-            saved_rows = await service.list_saved_snapshots_async(session=s2, require_durable=True)
-            assert len(saved_rows) == 1
-            assert saved_rows[0]["id"] == snippet_id
-            assert saved_rows[0]["source_ref"] == "https://partner.example.com/profile"
+        saved_rows = await service.list_saved_snapshots_async(require_durable=True)
+        assert len(saved_rows) == 1
+        assert saved_rows[0]["id"] == snippet_id
+        assert saved_rows[0]["source_ref"] == "https://partner.example.com/profile"
 
-            # Exhaust remaining 2 daily quota units for tenant 0 across a new service instance (survives restart!)
-            fresh_service = WebResearchService(chromium_engine=ChromiumUnderHoodEngine(search_runner=_search))
+        # Exhaust remaining 2 daily quota units for tenant 0 across a new service instance (survives restart!)
+        fresh_service = WebResearchService(chromium_engine=ChromiumUnderHoodEngine(search_runner=_search))
+        await fresh_service.research(
+            {"query": "повторный запрос", "fetch_top_n": 1, "save_evidence": False},
+            budget=budget,
+            resolver=_resolver,
+            transport=_transport,
+            require_durable=True,
+        )
+        with pytest.raises(WebResearchRefusal) as quota_exc:
             await fresh_service.research(
-                {"query": "повторный запрос", "fetch_top_n": 1, "save_evidence": False},
+                {"query": "сверх лимита", "fetch_top_n": 0, "save_evidence": False},
                 budget=budget,
                 resolver=_resolver,
                 transport=_transport,
-                session=s2,
                 require_durable=True,
             )
-            with pytest.raises(WebResearchRefusal) as quota_exc:
-                await fresh_service.research(
-                    {"query": "сверх лимита", "fetch_top_n": 0, "save_evidence": False},
-                    budget=budget,
-                    resolver=_resolver,
-                    transport=_transport,
-                    session=s2,
-                    require_durable=True,
-                )
-            assert quota_exc.value.code == "budget_exhausted"
+        assert quota_exc.value.code == "budget_exhausted"
 
     # 3. Viewer without source.create is refused when attempting save_evidence=True
     with _scoped(research_world, workspace=0, role="viewer"):
-        async with async_session_maker() as s_viewer, s_viewer.begin():
-            with pytest.raises(WebResearchRefusal) as perm_exc:
-                await service.research(
-                    {"query": "viewer save attempt", "fetch_top_n": 1, "save_evidence": True},
-                    budget=budget,
-                    resolver=_resolver,
-                    transport=_transport,
-                    session=s_viewer,
-                    require_durable=True,
-                )
-            assert perm_exc.value.code == "permission_denied"
+        with pytest.raises(WebResearchRefusal) as perm_exc:
+            await service.research(
+                {"query": "viewer save attempt", "fetch_top_n": 1, "save_evidence": True},
+                budget=budget,
+                resolver=_resolver,
+                transport=_transport,
+                require_durable=True,
+            )
+        assert perm_exc.value.code == "permission_denied"
 
     # 4. Cross-tenant isolation: tenant 1 has full untouched quota and cannot see tenant 0's KnowledgeSnippet
     with _scoped(research_world, workspace=1, role="owner"):
-        async with async_session_maker() as s_other, s_other.begin():
-            other_status = await service.status_async(budget=budget, session=s_other, require_durable=True)
-            assert other_status.budget["daily_used"] == 0
-            other_rows = await service.list_saved_snapshots_async(session=s_other, require_durable=True)
-            assert other_rows == []
+        other_status = await service.status_async(budget=budget, require_durable=True)
+        assert other_status.budget["daily_used"] == 0
+        other_rows = await service.list_saved_snapshots_async(require_durable=True)
+        assert other_rows == []
         foreign = await KnowledgeSnippet.objects.visible("cloud", id=snippet_id).first()
         assert foreign is None

@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 
-from app.api.deps import get_db
 from app.services.web_research.contracts import RESEARCH_PRESETS, WebResearchRefusal
 from app.services.web_research.service import web_research_service
 from app.types import ActionType
@@ -17,12 +15,7 @@ router = APIRouter(prefix="/knowledge/research")
 def _require_research_view(request: Request) -> int:
     user = getattr(request.state, "web_user", None)
     tenant_id = getattr(request.state, "tenant_id", None)
-    if (
-        user is None
-        or type(tenant_id) is not int
-        or tenant_id <= 0
-        or not perms_can(request, "source", "view")
-    ):
+    if user is None or type(tenant_id) is not int or tenant_id <= 0 or not perms_can(request, "source", "view"):
         raise HTTPException(status_code=403, detail="Веб-исследование недоступно в текущем пространстве")
     return tenant_id
 
@@ -33,19 +26,16 @@ async def web_research_page(
     q: str = Query("", max_length=400),
     preset: str = Query("general_search", max_length=40),
     url: str = Query("", max_length=2000),
-    db: AsyncSession = Depends(get_db),
 ):
     tenant_id = _require_research_view(request)
     active_preset = preset if preset in RESEARCH_PRESETS else "general_search"
     try:
         status = await web_research_service.status_async(
             tenant_id=tenant_id,
-            session=db,
             require_durable=True,
         )
         saved_snapshots = await web_research_service.list_saved_snapshots_async(
             tenant_id=tenant_id,
-            session=db,
             require_durable=True,
         )
     except WebResearchRefusal as exc:
@@ -76,7 +66,6 @@ async def web_research_submit(
     preset: str = Form("general_search", max_length=40),
     target_url: str = Form("", max_length=2000),
     save_evidence: bool = Form(False),
-    db: AsyncSession = Depends(get_db),
 ):
     tenant_id = _require_research_view(request)
     if not ensure_csrf(request, csrf_token):
@@ -101,7 +90,6 @@ async def web_research_submit(
                 "save_evidence": bool(save_evidence and clean_url),
             },
             tenant_id=tenant_id,
-            session=db,
             require_durable=True,
         )
     except WebResearchRefusal as exc:
@@ -114,12 +102,10 @@ async def web_research_submit(
     try:
         status = await web_research_service.status_async(
             tenant_id=tenant_id,
-            session=db,
             require_durable=True,
         )
         saved_snapshots = await web_research_service.list_saved_snapshots_async(
             tenant_id=tenant_id,
-            session=db,
             require_durable=True,
         )
     except WebResearchRefusal as exc:

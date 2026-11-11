@@ -81,7 +81,11 @@ ${dialogs}
 <script>${readJs('shell.js')}</script>
 <script>${readJs('context_panel.js')}</script>
 <script>
-window.__events = { input: 0, submits: 0, ignoredSubmits: 0, appOpens: {}, nativeShows: 0 };
+window.__events = { input: 0, submits: 0, ignoredSubmits: 0, appOpens: {}, nativeShows: 0, errors: [], closes: {} };
+window.addEventListener('error', event => window.__events.errors.push(event.message));
+document.addEventListener('close', event => {
+    window.__events.closes[event.target.id] = (window.__events.closes[event.target.id] || 0) + 1;
+}, true);
 document.querySelector('[data-popover-value]').addEventListener('input', () => window.__events.input++);
 document.addEventListener('submit', event => {
     if (!event.defaultPrevented && event.target.hasAttribute('data-dock-form')) window.__events.submits++;
@@ -205,6 +209,7 @@ async function waitFor(expression, label, attempts = 80) {
     const diagnostic = await evaluate(`({
         active: document.activeElement?.id || document.activeElement?.tagName,
         overflow: document.body.style.overflow,
+        events: window.__events,
         dialogs: [...document.querySelectorAll('dialog')].map(dialog => ({
             id: dialog.id, open: dialog.open, managed: !!dialog.shellDepth,
             launcher: dialog.shellLauncher?.id

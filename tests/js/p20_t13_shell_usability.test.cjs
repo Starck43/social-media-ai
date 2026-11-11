@@ -509,6 +509,28 @@ test('dialog: an empty original overflow is restored empty, not replaced', () =>
     assert.equal(d.env.document.body.style.overflow, '', 'and restored as empty');
 });
 
+test('dialog: native cancel uses the explicit close and cleanup path', () => {
+    const d = buildDialogs();
+    d.env.document.body.style.overflow = 'auto';
+    d.open(d.openTrigger);
+    const event = d.invite.fire('cancel');
+    assert.equal(event.defaultPrevented, true);
+    assert.equal(d.invite.open, false);
+    assert.equal(d.env.document.body.style.overflow, 'auto');
+    assert.equal(d.document.activeElement, d.openTrigger);
+});
+
+test('dialog: a queued close cannot release a dialog that has reopened', () => {
+    const d = buildDialogs();
+    d.open(d.openTrigger);
+    d.invite.fire('close');
+    assert.equal(d.invite.open, true);
+    assert.equal(d.env.document.body.style.overflow, 'hidden');
+    assert.equal(d.openTrigger.getAttribute('aria-expanded'), 'true');
+    d.invite.close();
+    assert.equal(d.env.document.body.style.overflow, '');
+});
+
 test('dialog: nested dialogs keep the body locked until the outermost closes', () => {
     const d = buildDialogs();
     d.env.document.body.style.overflow = 'auto';

@@ -199,7 +199,15 @@
             if (dialog instanceof HTMLDialogElement) claim(dialog);
         });
         shellDialogs.forEach(dialog => {
+            dialog.addEventListener('cancel', event => {
+                if (event.defaultPrevented) return;
+                // Use the same explicit close path for Escape and close buttons.
+                event.preventDefault();
+                dialog.close();
+            });
             dialog.addEventListener('close', () => {
+                // A queued close from a previous opening must not release a new one.
+                if (dialog.open) return;
                 release(dialog);
                 document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
                     if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'false');

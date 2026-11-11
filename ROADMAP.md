@@ -50,7 +50,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P20-T13](docs/tasks/p20-t13.md) Web usability hardening while preserving the current visual style — **IN_PROGRESS** · opencode-p20-t13 · session `ses_e358bb5feffeNEyN3YgY2XIlCq` · `P2` · `C3`
+- [P20-T13](docs/tasks/p20-t13.md) Web usability hardening while preserving the current visual style — **READY** · opencode-p20-t13 · [PR #473](https://github.com/Starck43/social-media-ai/pull/473) · `P2` · `C3`
 
 
 

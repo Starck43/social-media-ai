@@ -5,21 +5,22 @@ ownership. Synthetic rows belong to ``personal_world`` only and are removed, the
 absent, in the ``draft_world`` teardown.
 """
 
+import json
 from contextlib import ExitStack
 
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text, update
 
 from app.core.access_catalog import workspace_grants
 from app.core.config import settings
 from app.core.database import async_session_maker
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
-from app.models import Contact, DocumentRevision, KnowledgeDocument, KnowledgeSnippet
+from app.models import Contact, DocumentRevision, KnowledgeDocument, KnowledgeSnippet, Tenant, User
 from app.models.knowledge import DocumentTemplate
 from app.services.knowledge.document_contracts import TemplateCreate
-from app.services.knowledge.documents import DocumentUnavailable, document_service
+from app.services.knowledge.documents import DocumentConflict, DocumentUnavailable, document_service
 from app.services.knowledge.drafting import (
     HUMAN_REVIEW_MARKER,
     UNSUPPORTED_MARKER,
@@ -205,3 +206,62 @@ async def test_template_rendering_missing_variable_blocks_and_ai_draft_persists_
                     "case_evidence_id": case_id,
                 }
             )
+
+
+async def test_provider_runs_without_identity_locks_and_context_changes_abort_persistence(draft_world, monkeypatch):
+    from app.services.ai import llm_client
+
+    world = draft_world
+    _, case_id = await _seed_contact_and_case(world)
+    tenant_id = world.tenants[0].id
+    user_id = world.users[0].id
+
+    provider_calls = 0
+
+    async def lock_probe(messages, **kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        payload = json.loads(messages[1]["content"])
+        async with async_session_maker() as session, session.begin():
+            await session.execute(text("SET LOCAL lock_timeout = '750ms'"))
+            await session.scalar(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update())
+            await session.scalar(select(User.id).where(User.id == user_id).with_for_update())
+            if provider_calls == 2:
+                evidence_id = payload["evidence"][0]["evidence_id"]
+                await session.execute(
+                    update(KnowledgeSnippet)
+                    .where(KnowledgeSnippet.tenant_id == tenant_id, KnowledgeSnippet.id == evidence_id)
+                    .values(excerpt="Changed while provider was running.")
+                )
+        evidence = payload["evidence"][0]
+        return {
+            "content": json.dumps(
+                {"paragraphs": [{"text": evidence["excerpt"], "evidence_refs": [evidence["ref"]]}]},
+                ensure_ascii=False,
+            )
+        }
+
+    monkeypatch.setattr(llm_client, "chat_with_fallback", lock_probe)
+
+    request = {
+        "title": "Письмо",
+        "document_type": "letter",
+        "data_boundary": "cloud",
+        "case_evidence_id": case_id,
+    }
+    with scope(world):
+        first = await drafting_service.draft(request)
+        assert first.status == "draft"
+        async with async_session_maker() as session:
+            count_after_first = await session.scalar(
+                select(func.count()).select_from(KnowledgeDocument).where(KnowledgeDocument.tenant_id == tenant_id)
+            )
+
+        with pytest.raises(DocumentConflict, match="document_draft_context_changed"):
+            await drafting_service.draft(request)
+        async with async_session_maker() as session:
+            count_after_change = await session.scalar(
+                select(func.count()).select_from(KnowledgeDocument).where(KnowledgeDocument.tenant_id == tenant_id)
+            )
+        assert count_after_change == count_after_first
+        assert provider_calls == 2

@@ -31,6 +31,18 @@
     <form method="post" action="/app/settings/onec/connections/{{ row.id }}/health" class="inline"><input type="hidden" name="_csrf" value="{{ csrf }}"><button class="ui-control">Проверить доступ</button></form>
     <form method="post" action="/app/settings/onec/connections/{{ row.id }}/disable" class="inline"><input type="hidden" name="_csrf" value="{{ csrf }}"><button class="ui-control">Отключить</button></form>
     {% endif %}
+    <details class="mt-3">
+      <summary>Заменить учётные данные{% if not row.is_active %} и восстановить подключение{% endif %}</summary>
+      <p class="ui-muted">Заново укажите логин и пароль. Предыдущий результат проверки будет сброшен.</p>
+      <form method="post" action="/app/settings/onec/connections/{{ row.id }}/credentials" class="mt-2 space-y-2">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <label for="onec-relogin-{{ row.id }}">Логин</label>
+        <input class="ui-control" id="onec-relogin-{{ row.id }}" name="login" maxlength="320" autocomplete="username" required>
+        <label for="onec-repassword-{{ row.id }}">Новый пароль</label>
+        <input class="ui-control" id="onec-repassword-{{ row.id }}" name="password" type="password" maxlength="4096" autocomplete="new-password" required>
+        <button class="ui-control">Сохранить учётные данные</button>
+      </form>
+    </details>
   </article>
   {% else %}<p>Подключения пока не сохранены.</p>{% endfor %}
 </section>

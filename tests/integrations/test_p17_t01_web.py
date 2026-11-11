@@ -98,3 +98,25 @@ def test_web_router_and_settings_card_are_wired():
     assert len(matches) == 1
     settings = Path("app/web/templates/web/settings.html").read_text()
     assert 'href="/app/settings/onec"' in settings
+
+
+def test_replace_form_reactivates_by_id_and_never_echoes_secret(monkeypatch):
+    monkeypatch.setattr(onec, "ensure_csrf", lambda request, token: token == "valid")
+    monkeypatch.setattr(onec, "add_flash", lambda *args: None)
+    replace = AsyncMock()
+    monkeypatch.setattr(onec.OneCConnectionService, "replace_credentials", replace)
+    response = request("/connections/19/credentials", "_csrf=valid&login=synthetic-user&password=synthetic-password")
+    assert response.status_code == 303 and response.headers["cache-control"] == "no-store"
+    assert "synthetic-password" not in response.text + response.headers["location"]
+    replace.assert_awaited_once_with(
+        tenant_id=11, actor_id=7, connection_id=19, login="synthetic-user", password="synthetic-password"
+    )
+
+
+def test_replace_form_requires_csrf_before_service(monkeypatch):
+    monkeypatch.setattr(onec, "ensure_csrf", lambda request, token: False)
+    replace = AsyncMock()
+    monkeypatch.setattr(onec.OneCConnectionService, "replace_credentials", replace)
+    response = request("/connections/19/credentials", "_csrf=bad&login=user&password=synthetic-secret")
+    assert response.status_code == 403 and "synthetic-secret" not in response.text
+    replace.assert_not_awaited()

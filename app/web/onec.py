@@ -96,6 +96,26 @@ async def connect(request: Request):
     return _private(RedirectResponse(BACK, status_code=303))
 
 
+@router.post("/connections/{connection_id}/credentials")
+async def replace_credentials(request: Request, connection_id: int):
+    form = await _validated(request, {"login", "password"})
+    if form is None:
+        return _private(HTMLResponse("Некорректная форма или сессия истекла", status_code=403))
+    try:
+        await OneCConnectionService().replace_credentials(
+            **_scope(request), connection_id=connection_id, login=form["login"], password=form["password"]
+        )
+    except ConnectionDenied:
+        return _private(HTMLResponse("Подключение недоступно", status_code=403))
+    except (OneCConnectionError, OneCCredentialError, TrustedHostError):
+        add_flash(
+            request, "error", "Проверьте учётные данные и разрешение хоста; такое подключение могло уже существовать."
+        )
+    else:
+        add_flash(request, "success", "Данные сохранены; подключение включено, доступ ещё не проверен.")
+    return _private(RedirectResponse(BACK, status_code=303))
+
+
 @router.post("/connections/{connection_id}/{operation}")
 async def action(request: Request, connection_id: int, operation: str):
     form = await _validated(request, set())

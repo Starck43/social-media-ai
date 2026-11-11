@@ -153,7 +153,7 @@ const measure = () => evaluate(`(() => {
     const bell = document.querySelector('.shell-notification-dock');
     const bar = document.querySelector('.shell-mobile-bar');
     const last = document.getElementById('last-action');
-    const rect = el => el ? el.getBoundingClientRect() : null;
+    const rect = el => el ? el.getBoundingClientRect().toJSON() : null;
     const shown = el => !!el && getComputedStyle(el).display !== 'none' && !!el.getClientRects().length;
     const overflowX = () => document.documentElement.scrollWidth - document.documentElement.clientWidth;
     const base = {

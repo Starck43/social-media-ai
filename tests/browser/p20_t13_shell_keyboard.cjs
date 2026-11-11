@@ -171,7 +171,8 @@ async function evaluate(expression) {
 const CODES = { ArrowDown: 40, ArrowUp: 38, Home: 36, End: 35, Tab: 9, Escape: 27, Enter: 13 };
 async function key(name, { shift = false } = {}) {
     const base = { key: name, code: name, windowsVirtualKeyCode: CODES[name], nativeVirtualKeyCode: CODES[name], modifiers: shift ? 8 : 0 };
-    await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base });
+    await send('Input.dispatchKeyEvent', { type: name === 'Enter' ? 'keyDown' : 'rawKeyDown', ...base,
+        ...(name === 'Enter' ? { text: '\r', unmodifiedText: '\r' } : {}) });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
     await settle();
 }
@@ -244,7 +245,7 @@ async function run() {
     check((await focusId()) === 'option:', 'two ArrowDown presses move exactly two options');
     await key('Enter');
     check(await evaluate(`document.querySelector('[data-popover-value]').value === ''`), 'Enter selects the highlighted option');
-    check(await evaluate(`document.querySelector('[data-popover-label]').textContent === 'Выберите модель'`), 'trigger label follows the choice');
+    check(await evaluate(`document.querySelector('[data-popover-label]').textContent === 'Автовыбор'`), 'trigger label follows the choice');
     check(await evaluate('window.__events.input === 1'), 'selection dispatches exactly one input event');
     check((await focusId()) === 'model-trigger', 'selection returns focus to the trigger');
     // Re-selecting the placeholder stays a valid empty value.

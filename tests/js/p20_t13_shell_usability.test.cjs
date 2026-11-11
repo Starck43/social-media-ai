@@ -36,10 +36,10 @@ class Node_ {
         };
     }
     setAttribute(name, value) { this.attributes[name] = String(value); if (name === 'hidden') this.hidden = true; if (name === 'disabled') this.disabled = true; if (name === 'tabindex') this._tabindex = Number(value); if (name === 'type') this.type = String(value); }
-    getAttribute(name) { return Object.hasOwn(this.attributes, name) ? this.attributes[name] : null; }
+    getAttribute(name) { return Object.hasOwn(this.attributes, name) ? this.attributes[name] : (name === 'type' ? this.type || null : null); }
     removeAttribute(name) { delete this.attributes[name]; if (name === 'hidden') this.hidden = false; if (name === 'open') this.open = false; }
-    hasAttribute(name) { return Object.hasOwn(this.attributes, name); }
-    get tabIndex() { return this._tabindex ?? (this.disabled ? -1 : 0); }
+    hasAttribute(name) { return name === 'hidden' ? this.hidden : Object.hasOwn(this.attributes, name); }
+    get tabIndex() { return this._tabindex ?? (this.hasAttribute('tabindex') ? Number(this.getAttribute('tabindex')) : (this.disabled || this.type === 'hidden' ? -1 : 0)); }
     set innerHTML(value) { this.children = []; this._html = value; }
     get innerHTML() { return this._html || ''; }
     append(...nodes) { nodes.forEach(node => { node.parent = this; this.children.push(node); }); }
@@ -109,6 +109,7 @@ const rendered = node => {
 // One simple-selector matcher: `tag`, `.cls`, `[attr]`, `[attr="value"]` and
 // the `:not(compound)` / `:first-child` pseudo classes the shell selects with.
 const matches = (el, selector) => String(selector).split(',').map(part => part.trim()).filter(Boolean).some(part => {
+    if (!(el instanceof Node_)) return false;
     const not = [];
     const bare = part.replace(/:not\(([^)]*)\)/g, (_, inner) => { not.push(inner); return ''; });
     const firstChild = /:first-child/.test(bare);
@@ -118,7 +119,7 @@ const matches = (el, selector) => String(selector).split(',').map(part => part.t
     const ok = checks.every(token => {
         if (token.startsWith('.')) return (el.attributes.class || '').split(/\s+/).includes(token.slice(1));
         if (token.startsWith('[')) {
-            const [, name, value] = token.slice(1, -1).match(/^([\w-]+)(?:=("?)([^"\]]*)\2)?$/) || [];
+            const [, name, , value] = token.slice(1, -1).match(/^([\w-]+)(?:=("?)([^"\]]*)\2)?$/) || [];
             if (!name) return false;
             return value === undefined ? el.hasAttribute(name) : el.getAttribute(name) === value;
         }
@@ -156,6 +157,7 @@ function build({ issuePost = false } = {}) {
     };
     // Ancestors connect to the document: body -> html -> document element chain.
     html.append(body);
+    html.parent = document;
     body.ownerDocument = html.ownerDocument = document;
     activeDocument = document;
     const storage = new Map();

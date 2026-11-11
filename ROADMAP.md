@@ -86,7 +86,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); 
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P18-T07](docs/tasks/p18-t07.md) Packaging, signing and auto-update for Windows, macOS and Linux — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P19-T02](docs/tasks/p19-t02.md) Templates and AI drafting with evidence and unsupported-claim marking — **IN_PROGRESS** · ai-studio-argon · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
-- [P19-T05](docs/tasks/p19-t05.md) Export to DOCX/PDF and delivery via outbox — **IN_PROGRESS** · Codex audit corrections ([PR #465](https://github.com/Starck43/social-media-ai/pull/465), reviewed head `6b563a6f`; retry identity and delivered-revision tracking under correction) · [hand-off](docs/tasks/p19-t05-handoff.md) · [chat](https://app.notion.com/chat?t=41270de96af9809baa8f00a970673bd3) · `P3` · `C3`
 
 
 ## Deferred by explicit owner decision

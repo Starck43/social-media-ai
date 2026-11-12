@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import re
 import xml.etree.ElementTree as ET
+import xml.parsers.expat as expat
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -198,10 +199,42 @@ def _check_safe_xml_bytes(raw_bytes: bytes) -> str:
     except UnicodeDecodeError:
         raise OneCMetadataError("invalid_metadata_xml") from None
 
-    upper_head = text[:8192].upper()
-    if "<!DOCTYPE" in upper_head or "<!ENTITY" in upper_head or "<?XML-STYLESHEET" in upper_head:
-        raise OneCMetadataError("unsafe_xml_forbidden")
     return text
+
+
+def _raise_unsafe_xml(*_args: Any) -> None:
+    raise OneCMetadataError("unsafe_xml_forbidden")
+
+
+def _refuse_stylesheet_pi(target: str, _data: str) -> None:
+    if str(target).lower() == "xml-stylesheet":
+        raise OneCMetadataError("unsafe_xml_forbidden")
+
+
+def _refuse_unsafe_xml(text: str) -> None:
+    """Refuse DTDs, entity declarations and xml-stylesheet PIs wherever they appear.
+
+    The expat handlers fire at the declaration itself, so a DOCTYPE padded behind a long
+    comment is caught as reliably as one in the first kilobyte. The scan is a real parse:
+    malformed payloads are left for the structural parse below to reject as invalid XML.
+    """
+    # Expat reports a top-level `<!ENTITY` as malformed XML before any handler fires, so
+    # that one shape is refused up front to keep the same fixed code; everything else is
+    # decided by the parser itself, at whatever offset the declaration appears.
+    if "<!ENTITY" in text.upper():
+        raise OneCMetadataError("unsafe_xml_forbidden")
+    parser = expat.ParserCreate(encoding="utf-8")
+    parser.StartDoctypeDeclHandler = _raise_unsafe_xml
+    parser.EntityDeclHandler = _raise_unsafe_xml
+    parser.UnparsedEntityDeclHandler = _raise_unsafe_xml
+    parser.ExternalEntityRefHandler = _raise_unsafe_xml
+    parser.ProcessingInstructionHandler = _refuse_stylesheet_pi
+    try:
+        parser.Parse(text.encode("utf-8"), True)
+    except OneCMetadataError:
+        raise
+    except expat.ExpatError:
+        return
 
 
 def parse_odata_metadata_xml(
@@ -218,6 +251,7 @@ def parse_odata_metadata_xml(
         raise OneCMetadataError("invalid_metadata_xml")
 
     xml_text = _check_safe_xml_bytes(raw_bytes)
+    _refuse_unsafe_xml(xml_text)
     metadata_sha256 = hashlib.sha256(raw_bytes).hexdigest()
 
     try:

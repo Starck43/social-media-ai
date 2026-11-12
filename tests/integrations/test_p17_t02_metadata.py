@@ -164,6 +164,25 @@ def test_unsafe_or_malformed_metadata_fails_closed(payload, expected_code):
     assert exc.value.code == expected_code
 
 
+def _padded(payload: bytes, padding: int = 9000) -> bytes:
+    return b"<!-- " + b"x" * padding + b" -->" + payload
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'<!DOCTYPE edmx:Edmx SYSTEM "evil.dtd"><edmx:Edmx/>',
+        b'<!DOCTYPE edmx:Edmx [<!ENTITY x SYSTEM "file:///etc/passwd">]><edmx:Edmx/>',
+        b'<?xml-stylesheet type="text/xsl" href="evil.xsl"?><edmx:Edmx/>',
+    ],
+)
+def test_displaced_dtd_is_refused_anywhere_in_the_payload(payload):
+    # The guard is parser-level: padding past the old 8 KiB window no longer helps.
+    with pytest.raises(OneCMetadataError) as exc:
+        parse_odata_metadata_xml(_padded(payload))
+    assert exc.value.code == "unsafe_xml_forbidden"
+
+
 def test_oversized_metadata_is_rejected():
     huge = b"x" * (MAX_BODY_BYTES + 1)
     with pytest.raises(OneCMetadataError, match="metadata_too_large"):

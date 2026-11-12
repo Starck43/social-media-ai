@@ -59,7 +59,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P21-T07](docs/tasks/p21-t07.md) Prompt and tool safety coverage audit — **TODO** · unassigned · independent; feeds P21-T02 · `P2` · `C3`
 - [P21-T08](docs/tasks/p21-t08.md) Unified model catalog, plan grants and generation policy — **TODO** · unassigned · depends on P21-T02; activation requires P21-T03/T04/T05/T06 · `P2` · `C4`
 
-- [P20-T13](docs/tasks/p20-t13.md) Web usability hardening while preserving the current visual style — **READY** · opencode-p20-t13 · [PR #473](https://github.com/Starck43/social-media-ai/pull/473) · `P2` · `C3`
 
 
 

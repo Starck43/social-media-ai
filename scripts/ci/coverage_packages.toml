@@ -65,4 +65,5 @@ tests = [
     "tests/integrations/test_p17_t02_service.py",
     "tests/integrations/test_p17_t03_nl_query.py",
     "tests/integrations/test_p17_t03_export.py",
+    "tests/integrations/test_p17_t06_continuation.py",
 ]

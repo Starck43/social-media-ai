@@ -23,6 +23,7 @@
 | P17 | [1C:Enterprise integration](p17-onec-erp.md) |
 | P18 | [Local file connector](p18-local-file-connector.md) |
 | P19 | [Document management](p19-document-management.md) |
+| P21 | [AI model operations and dispatch safety](p21-ai-operations.md) |
 
 P13–P19 implement the owner's business-module TZ; the adapted specification,
 review findings and owner decisions are in [BUSINESS_MODULES](../BUSINESS_MODULES.md).

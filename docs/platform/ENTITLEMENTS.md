@@ -1,9 +1,9 @@
 # Product capability entitlements
 
-P2-T15 foundation, catalog version 1. This is a source contract, not independent
-behavioral acceptance or evidence for any arbitrary target database. Current
-status, deferred validation and resume point live in the [P2-T15 card](../tasks/p2-t15.md)
-and its PR; deployment migration guidance is in [DEPLOYMENT](DEPLOYMENT.md).
+P2-T15 foundation, catalog version 1. The focused behavioral acceptance is
+recorded in the [P2-T15 audit](../audit/p2-t15.md); it is not evidence for an
+arbitrary target database. Deployment migration guidance is in
+[DEPLOYMENT](DEPLOYMENT.md).
 
 ## Scope
 
@@ -95,17 +95,14 @@ product packaging, new screen or non-social integration is implemented.
 
 ## Deferred validation
 
-This heading preserves the original resume anchor. The owner resumed the
-postponed validation on 2026-11-11 and reassigned it on 2026-11-12. The focused
-branch evidence now covers pure decisions/wildcards/expiry edges, cross-tenant
-and actor attribution, task and execution gates, queued downgrade/expiry,
-source/search derivation, concurrent quota races/idempotency, durable log
-retention, structured denials, API/CLI/chat/admin/settings rendering, historical
-0117 upgrade/downgrade/re-apply and cleanup on an exclusively owned synthetic
-PostgreSQL schema. Exact commands, tested revision, counts and cleanup evidence
-live in the [P2-T15 card](../tasks/p2-t15.md#resumed-validation-2026-11-12).
+This heading preserves the original resume anchor. Validation resumed on
+2026-11-11 and was [accepted on 2026-11-12](../audit/p2-t15.md), covering pure
+decisions/wildcards/expiry edges, cross-tenant and actor attribution, task and
+execution gates, queued downgrade/expiry, source/search derivation, concurrent
+quota races/idempotency, durable log retention, structured denials,
+API/CLI/chat/admin/settings rendering, historical 0117
+upgrade/downgrade/re-apply and isolated-schema cleanup.
 
-Independent audit, integration of the validation revision and target-specific
-deployment approval remain open. The focused evidence does not certify an
-arbitrary external schema, live providers, production rollout or final product
-packaging.
+Target-specific deployment approval remains separate. The accepted evidence
+does not certify an arbitrary external schema, live providers, production
+rollout or final product packaging.

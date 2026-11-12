@@ -19,10 +19,10 @@ and VK collection slice; its remaining evidence gates are open. Follow-up work i
 P8-T38–P8-T41, additional VK categories are P8-T33, and non-social connectors
 P8-T34 are deferred beyond the social milestone.
 
-The general capability-entitlement foundation is integrated through
-[P2-T15](../tasks/p2-t15.md), but its validation and independent acceptance remain
-owner-deferred to project end; see [ENTITLEMENTS](../platform/ENTITLEMENTS.md). Catalog v1
-grants all known capabilities on the existing plans, not paid-plan packaging.
+The general capability-entitlement foundation and its focused validation are
+[accepted in P2-T15](../audit/p2-t15.md); see
+[ENTITLEMENTS](../platform/ENTITLEMENTS.md). Catalog v1 grants all known
+capabilities on the existing plans, not paid-plan packaging.
 Registered-user service-plan purchase and commercial connector packaging are
 not shipped or authorized by that foundation. The P2-T16 configuration
 foundation (YooKassa provider selection and env field contract) was accepted

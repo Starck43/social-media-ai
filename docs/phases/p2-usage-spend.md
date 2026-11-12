@@ -6,11 +6,10 @@
 
 **Plan — active task cards:**
 
-1. [P2-T15](../tasks/p2-t15.md) — define and enforce plan entitlements for
-   connector operations. Contract, model and migration 0117 (re-parented onto
-   0116) integrated into dev 2026-10-27 as merge `67acbd53`; the owner resumed
-   validation on 2026-11-11. Focused validation is recorded in the task card;
-   independent audit remains open. Existing tenant tier quotas and personal LLM
+1. [P2-T15](../audit/p2-t15.md) — **DONE 2026-11-12** · accepted head
+   `c4f3f566`, merge `737345d5`; capability decisions, execution gates,
+   workspace isolation, quota concurrency/idempotency, durable usage and
+   inspection surfaces validated. Existing tenant tier quotas and personal LLM
    payer consent remain separate contracts.
 2. [P2-T16](../audit/p2-t16.md) — YooKassa subscription-payment configuration
    foundation; accepted 2026-10-27 (PR #254 head `5de6ff36`, merged

@@ -19,8 +19,8 @@ from app.services.onec.metadata import parse_odata_metadata_xml
 from app.services.onec.query import (
     MAX_METADATA_CACHE_ENTRIES,
     METADATA_CACHE_TTL_SECONDS,
-    OneCQueryError,
     OneCMetadataCache,
+    OneCQueryError,
     OneCReadQueryService,
 )
 

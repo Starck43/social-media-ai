@@ -21,11 +21,13 @@ for the operation, not all parents/related/history links.
 | Identity / ownership / permissions / cutover | [TENANCY](TENANCY.md), [ACCESS_MIGRATION](ACCESS_MIGRATION.md) |
 | Contacts, identities, consent and contact privacy | [CONTACTS](CONTACTS.md) |
 | ORM / deletion | [MODELS](MODELS.md), [MODEL_DELETION](MODEL_DELETION.md) |
+| Local file connector / private file workspace contracts | [FILE_WORKSPACE_ROADMAP](FILE_WORKSPACE_ROADMAP.md) |
 | Interfaces | [API](API.md), [CLI](CLI.md), [ADMIN](ADMIN.md) |
 | Environment / deployment | [CONFIGURATION](CONFIGURATION.md), [DEPLOYMENT](DEPLOYMENT.md) |
+| Read-only operator inventories (membership, source ownership) | [OPERATOR_INVENTORIES](OPERATOR_INVENTORIES.md) |
 | Test procedures / reusable fixtures | [tests/AGENTS](../tests/AGENTS.md), [shared test presets](../tests/shared/README.md) |
 | Release criteria | [BUSINESS_PRODUCTION_READINESS](BUSINESS_PRODUCTION_READINESS.md) |
-| Earlier deliveries / scaling decisions | [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md) → phase/audit/PR evidence |
+| Earlier deliveries / scaling decisions | [IMPLEMENTATION_STATUS](archive/IMPLEMENTATION_STATUS.md) → phase/audit/PR evidence |
 
 ## File ownership
 
@@ -35,6 +37,9 @@ for the operation, not all parents/related/history links.
   checks and PR handoff. ROADMAP alone owns open status/owner/dialogue.
 - `docs/audit/`: accepted task summaries, blocked diagnostics and lazy historical
   evidence. Accepted orphan tasks leave only an audit here.
+- `docs/archive/`: history that current work no longer needs — superseded routers,
+  closed one-off reviews/validations and completed task cards whose audit already
+  carries the result. Nothing here is a current contract.
 - Technical contracts remain in `docs/`; shared test JSON is in
   `tests/shared/fixtures/`. There is no `docs/design` or `docs/validation` folder.
 

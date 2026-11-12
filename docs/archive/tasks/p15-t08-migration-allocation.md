@@ -1,7 +1,7 @@
 # Reply-evidence migration `0149` — allocation record for P15-T08
 
-Registry: [ROADMAP](../../ROADMAP.md#priority-p3); the task row and owner live there.
-Card: [P15-T08](p15-t08.md) · Request: PR [#448](https://github.com/Starck43/social-media-ai/pull/448) comment 2026-11-09
+Registry: [ROADMAP](../../../ROADMAP.md#priority-p3); the task row and owner live there.
+Card: [P15-T08](../../tasks/p15-t08.md) · Request: PR [#448](https://github.com/Starck43/social-media-ai/pull/448) comment 2026-11-09
 
 - **Revision:** `0149`
 - **Parent:** `0148` (`down_revision = "0148"`) — P19-T04 approval, merged first
@@ -29,7 +29,7 @@ The DDL requested in #448, reviewed and limited to:
    the `outbox_reply_evidence` column block after `inbound_message_id`) and the auditor confirms it, so
    the migration file matches one reviewed statement rather than a reconstruction of it.
 2. **No shared-relation changes beyond item 1.** No `business_commands.payload` overloading, no new
-   rights, no queue, no attachment columns; attachments stay in [P15-T14](p15-t14.md).
+   rights, no queue, no attachment columns; attachments stay in [P15-T14](../../audit/p15-t14.md).
 3. **One head.** `0149` leaves exactly one Alembic head.
 4. **Cycle evidence** on an isolated schema: `0148 → 0149`, empty downgrade `0149 → 0148`, and a
    refused downgrade with evidence present.
@@ -57,7 +57,7 @@ The DDL requested in #448, reviewed and limited to:
 ## Superseded numbering (2026-11-09, owner-directed)
 
 - The numbers in this note are **history, not a reservation**. Under the
-  [migration numbering rules](../COLLABORATION.md#migration-numbering-and-parallel-tasks)
+  [migration numbering rules](../../COLLABORATION.md#migration-numbering-and-parallel-tasks)
   a task writes a placeholder revision and the number is assigned at merge.
 - P19-T04 and P15-T08 both follow the live `dev` head `0147` and both ship a
   placeholder revision. The agent that integrates them in `dev` assigns the next
@@ -70,7 +70,7 @@ The DDL requested in #448, reviewed and limited to:
 ## Superseded numbering (2026-11-09, owner-directed)
 
 - The numbers above are **history, not a reservation**. Under the
-  [migration numbering rules](../COLLABORATION.md#migration-numbering-and-parallel-tasks)
+  [migration numbering rules](../../COLLABORATION.md#migration-numbering-and-parallel-tasks)
   a task writes a placeholder revision and the number is assigned at merge.
 - Both tasks follow the live `dev` head and ship a placeholder revision. The
   integrator assigns the next free numbers in integration order, rewrites only

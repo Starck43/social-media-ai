@@ -8,7 +8,9 @@ VK OAuth/manual user tokens retain their existing personal flow. Telegram
 workspace consent and same-user cross-workspace reuse are specified in
 [personal account reuse](CONNECTOR_ACCOUNT_REUSE.md); that draft foundation is not
 yet a completed authorization/runtime journey. Mail configuration does not gain
-credential reuse implicitly. A descriptor alone is not an adapter; see the provider-specific sections below.
+credential reuse implicitly. A descriptor alone is not an adapter; see the provider-specific sections below. The accepted
+[connector and job extension seams](CONNECTOR_JOB_EXTENSION_SPEC.md) record
+what a new connector or job type may add, and that no capability is selected yet.
 
 ## Storage boundaries
 

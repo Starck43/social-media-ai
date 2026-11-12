@@ -18,7 +18,7 @@ optional display/hint policy, not durable state. D separates personal/workspace
 settings, owned/granted context, guest-web-chat denial and global-admin entry.
 See [notifications](../NOTIFICATIONS.md#current-web-bell-and-display-policy),
 [settings/access](../TENANCY.md#web-settings-and-ownedgranted-workspace-context)
-and [delivered evidence](../IMPLEMENTATION_STATUS.md). Subsequent owner-local
+and [delivered evidence](../archive/IMPLEMENTATION_STATUS.md). Subsequent owner-local
 home/A/B checks do not certify all C/D, accessibility or inherited runtime gaps.
 The A page inventory and source-pinned verification below are historical evidence;
 later patches must not relabel those tests as combined-tree acceptance.

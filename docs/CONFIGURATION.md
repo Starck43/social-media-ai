@@ -576,7 +576,10 @@ Two kinds of secret, resolved by `app/services/social/credentials.py`:
   UI/API, one encrypted personal authorization and explicit independent workspace
   grants/source selections; no old-vault or environment session import/fallback.
   `TELEGRAM_ACCOUNT_RUNTIME_ENABLED=false` is the default and rollout hold.
-  See [account reuse and recovery](CONNECTOR_ACCOUNT_REUSE.md).
+  See [account reuse and recovery](CONNECTOR_ACCOUNT_REUSE.md) and the
+  [personal-session isolation contract](TELEGRAM_SESSION_SECURITY.md) — sessions
+  are still stored per user, not per workspace, so do not present that slice as
+  workspace isolation.
 - **Application / infrastructure config** (VK `app_id`, `client_secret`,
   service token; Telegram/MAX bot tokens) is one-per-deployment and read from
   the **environment** (`.env`), not from the DB.

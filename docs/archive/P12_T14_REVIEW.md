@@ -10,7 +10,7 @@ scope and checks are ready for independent review. The owner now
 Live-provider validation remains unrun and is waived as a pre-merge requirement;
 the owner performs it after integration. Runtime activation stays separate.
 
-**Current status and actions:** start with the [task card handoff](audit/p12-t14.md); [validation](P12_T14_CONTINUATION_VALIDATION.md) owns test evidence and release gaps. The checkpoints below are historical.
+**Current status and actions:** start with the [task card handoff](../audit/p12-t14.md); [validation](P12_T14_CONTINUATION_VALIDATION.md) owns test evidence and release gaps. The checkpoints below are historical.
 
 ## Review map
 
@@ -26,7 +26,7 @@ the owner performs it after integration. Runtime activation stays separate.
    selected owner checks, one encrypted personal authorization and explicit
    per-workspace grants, reuse/detach/local-revoke API and durable bounded Telegram
    phone/code/2FA machine API. See
-   [account reuse](CONNECTOR_ACCOUNT_REUSE.md) for the delivery limits.
+   [account reuse](../CONNECTOR_ACCOUNT_REUSE.md) for the delivery limits.
 5. **Migration graph:** linear `0123` -> `0124` -> `p12t14_accounts` -> `p12t14_tg_login` -> `p12t14_tg_runtime` ->
    `p12t14_tg_recovery` -> `p12t14_tg_retention`, not the former
    slice-only sibling arrangement. No legacy Telegram session import.

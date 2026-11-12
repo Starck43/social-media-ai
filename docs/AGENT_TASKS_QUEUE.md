@@ -422,6 +422,10 @@ admin, the CLI, the agent tool, the bootstrap and the runner). The two must
 agree, because a schedule is written once at creation and re-advanced after
 every fire.
 
+Capacity, correlation identifiers and SLO selection stay with the accepted
+[capacity and telemetry specification](CAPACITY_TELEMETRY_SPEC.md): the health
+banners above are warning thresholds, not measured objectives.
+
 ## Why not Celery
 
 One VPS, one operator: Redis and a Celery worker add two moving parts for a

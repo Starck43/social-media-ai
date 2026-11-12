@@ -47,7 +47,7 @@ See [access transition](ACCESS_MIGRATION.md) and [tenancy](TENANCY.md).
 
 Field inventories omit inherited fields where indicated. Exact types, defaults,
 nullability and constraints remain in the linked declarations. Planned work and
-PR branches are not current schema: see [delivered evidence](IMPLEMENTATION_STATUS.md)
+PR branches are not current schema: see [delivered evidence](archive/IMPLEMENTATION_STATUS.md)
 and the [phase board](phases/README.md). Merge, migration application, runtime
 activation and whole-gate acceptance are distinct states.
 
@@ -379,7 +379,7 @@ payer-bound replay; conflicting evidence raises. Its insert-only contract is
 **not a migration-installed immutability trigger**: 0092 installs none, and its
 downgrade drops the journal. Do not infer the stronger 0093–0095 storage guards
 or safe automatic rollback from this journal's name. See
-[accounting scope and evidence](IMPLEMENTATION_STATUS.md).
+[accounting scope and evidence](archive/IMPLEMENTATION_STATUS.md).
 
 ### `llm_dispatch_receipts` — storage merged, runtime unwired
 
@@ -433,7 +433,7 @@ requires the enabled receipt/event guards. Metadata bootstrap lacks those guards
 and is not approved. Direct SQL is not an alternative pricing API.
 
 Existing isolated/owner-local validation is attributed in
-[IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); this update did not repeat it.
+[IMPLEMENTATION_STATUS](archive/IMPLEMENTATION_STATUS.md); this update did not repeat it.
 Application to another target, retention/offboarding and rollout require separate
 review/approval. Ordinary downgrade refuses deletion. Both the
 event and parent receipt block tenant deletion when retained. See the
@@ -472,7 +472,7 @@ commits receipt, reservation and balance changes in one owned transaction. Exact
 replay returns false: **not permission to dispatch again**. There is no terminal
 settlement/release, automatic baseline provisioning or all-client HTTP wiring in
 this merged slice. Baseline/bound production and activation remain open. See
-[delivered scope](IMPLEMENTATION_STATUS.md) and
+[delivered scope](archive/IMPLEMENTATION_STATUS.md) and
 [budget validation attribution](audit/llm-budget-pg-runner.md).
 
 ## Tenant-scoped scheduling and delivery
@@ -824,7 +824,7 @@ production deployment.
 Before running this ORM against any target, verify its actual revision and
 catalog compatibility under the project's approval rules. Existing owner-local
 0096 application/validation and limited 0093–0095 storage evidence are separately
-attributed in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); they are not a
+attributed in [IMPLEMENTATION_STATUS](archive/IMPLEMENTATION_STATUS.md); they are not a
 claim about every environment or a production deployment.
 
 0093–0095 ordinary downgrades refuse evidence deletion; 0096 is forward-only

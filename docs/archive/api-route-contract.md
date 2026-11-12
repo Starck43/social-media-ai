@@ -1,7 +1,7 @@
 # Public API route and compatibility inventory
 
 This is a source inventory for P11-T08, read with the mounted route index in
-[`generated/api-routes.md`](generated/api-routes.md). The generated index is
+[`generated/api-routes.md`](../generated/api-routes.md). The generated index is
 metadata only; it does not describe authorization or hidden legacy routes.
 
 ## Mounted surface and authentication
@@ -31,7 +31,7 @@ Only `GET /api/v1/connector-accounts/personal` and
 Bearer-authenticated account-self-service exceptions, not middleware-public.
 They list only own identity metadata or locally invalidate an owned authorization
 and its consents without a workspace/key/provider call. No prefix-wide exception
-or provider revocation is introduced. See [account reuse](CONNECTOR_ACCOUNT_REUSE.md).
+or provider revocation is introduced. See [account reuse](../CONNECTOR_ACCOUNT_REUSE.md).
 
 The current route/auth groups are:
 
@@ -76,7 +76,7 @@ consumer/deprecation decision. Legacy `POST /api/v1/credentials/login` retains
 its fixed unsupported 409 and is now declared deprecated with that response in
 OpenAPI, not a misleading 200 credential result. New connector-account responses
 have explicit metadata-only models and a non-echoing fixed 500 for invalid
-internal projections; see the [response/client contract](CONNECTOR_ACCOUNT_REUSE.md#response-contract-and-client-migration).
+internal projections; see the [response/client contract](../CONNECTOR_ACCOUNT_REUSE.md#response-contract-and-client-migration).
 This does not unify other endpoints' error formats or prove real clients migrated.
 
 Notification handlers retain hidden `/notifications/...` aliases in addition

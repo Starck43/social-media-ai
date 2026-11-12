@@ -2,7 +2,7 @@
 
 PR [#391](https://github.com/Starck43/social-media-ai/pull/391) (`feat/p15-inbox-base`, head
 `a309eb1a`, base `dev` `8bb693d4`), stack `P15-T01..T04` under the binding contract in
-[p15-stack-kickoff](../tasks/p15-stack-kickoff.md).
+[p15-stack-kickoff](../archive/tasks/p15-stack-kickoff.md).
 
 Verdict: **not accepted at `a309eb1a`** (eleven blocking findings; B-0 added after the
 first posting, see the note under it). The store, the migration and the isolation

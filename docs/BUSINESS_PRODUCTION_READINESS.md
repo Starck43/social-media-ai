@@ -3,7 +3,7 @@
 This document owns the stable engineering and release gates. It does not claim
 that a deployment, database revision or security review has passed. Current
 priority and ownership live in [ROADMAP](../ROADMAP.md); delivered
-foundations are indexed in [implementation status](IMPLEMENTATION_STATUS.md).
+foundations are indexed in [implementation status](archive/IMPLEMENTATION_STATUS.md).
 
 Recommended first release: a managed, invite-only B2B monitoring service with
 explicitly supported collection paths, human-controlled external actions and

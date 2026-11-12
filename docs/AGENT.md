@@ -113,7 +113,7 @@ migration or persisted confirmation-format change is involved.
 
 The integrated compare-and-consume boundary (PR #105) admits at most one handler
 invocation for the same stored intent across cooperating processes. Owner-local
-bounded acceptance is attributed in [implementation status](IMPLEMENTATION_STATUS.md);
+bounded acceptance is attributed in [implementation status](archive/IMPLEMENTATION_STATUS.md);
 this documentation audit does not rerun or broaden that evidence. This is not an external-effect transaction fence
 or exactly-once delivery guarantee. A crash after consumption can leave an action
 unexecuted, and an uncertain commit is not automatically replayed. Privileged

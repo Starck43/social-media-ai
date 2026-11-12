@@ -4,7 +4,7 @@ Historical source-pinned checks and integration notes. They are not current acce
 
 Historical source-pinned sandbox checks are linked from the original PRs. Owner-local
 A/B acceptance recorded 77 checks at `807c0c7`; this did not certify C/D or a
-release. See [IMPLEMENTATION_STATUS](../IMPLEMENTATION_STATUS.md).
+release. See [IMPLEMENTATION_STATUS](../archive/IMPLEMENTATION_STATUS.md).
 
 ## Historical transport scope and status
 

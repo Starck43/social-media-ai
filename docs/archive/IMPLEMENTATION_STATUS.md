@@ -7,13 +7,13 @@ current subsystem contract. Historical checks never certify a new revision.
 Full pre-compaction evidence and boundaries remain available with
 `git show 17fc7894066aad64703ff24d009f2fe8ff82e109:docs/IMPLEMENTATION_STATUS.md`.
 New deliveries append one short outcome/evidence row; detailed results belong
-in the parent phase archive or PR, not here. Active work: [ROADMAP](../ROADMAP.md).
+in the parent phase archive or PR, not here. Active work: [ROADMAP](../../ROADMAP.md).
 
 ## Personal LLM catalog and workspace-safe bindings
 
 P3-T93–T96 source accepted at `b34353645fe37de53c97c4d022c05af0044dc8ba`
 (#229/#230); source integration is not deployment/migration acceptance.
-[Exact execution attribution and limitations](audit/personal-llm-ownership.md).
+[Exact execution attribution and limitations](../audit/personal-llm-ownership.md).
 
 ## Delivered foundations
 
@@ -37,7 +37,7 @@ P3-T93–T96 source accepted at `b34353645fe37de53c97c4d022c05af0044dc8ba`
 | LLM analyzer journal foundation — DONE | Tenant-bound attempt identity, tariff snapshot, Decimal USD and explicit unknown costs. | [PR #114](https://github.com/Starck43/social-media-ai/pull/114) |
 | LLM non-analyzer journal capture — DONE | Separate attempt evidence for fallback chat, model probes and digest summaries. | [PR #163](https://github.com/Starck43/social-media-ai/pull/163) |
 | Web and operations | Truthful outcomes, secure cookies, readiness and redacted operational signals. | [PR #27](https://github.com/Starck43/social-media-ai/pull/27) |
-| NULL-role display | Unknown roles display no inferred owner level or implicit grant. | [tenancy contract](TENANCY.md#roles-and-permissions) |
+| NULL-role display | Unknown roles display no inferred owner level or implicit grant. | [tenancy contract](../TENANCY.md#roles-and-permissions) |
 | Home pipeline strip | Read-only staged/analysis counts and bounded active-job preview. | `c598b70` |
 | Manual digest-send permission parity | Agent/web send both require digestrun.create. | [PR #176](https://github.com/Starck43/social-media-ai/pull/176) |
 | Development workflow | Earlier local/remote coordination foundations; current policy is AGENTS/COLLABORATION. | [PR #183](https://github.com/Starck43/social-media-ai/pull/183) |
@@ -49,9 +49,9 @@ P3-T93–T96 source accepted at `b34353645fe37de53c97c4d022c05af0044dc8ba`
 | Test-bootstrap evidence protection | Read-only unknown-table/column/UNIQUE drift guards before schema writes. | [PR #179](https://github.com/Starck43/social-media-ai/pull/179) |
 | Home overview cleanup | Permission-gated overview, bounded previews and scoped setup/chat links. | [PR #185](https://github.com/Starck43/social-media-ai/pull/185) |
 | Shell and workspace attention | Scoped notification state, revocation/CSRF guards and partial-refresh recovery. | [A #188](https://github.com/Starck43/social-media-ai/pull/188) |
-| Access-model restructuring | Separate platform/workspace roles, resource permissions and private AI memory. | [ACCESS_MIGRATION.md](ACCESS_MIGRATION.md) |
+| Access-model restructuring | Separate platform/workspace roles, resource permissions and private AI memory. | [ACCESS_MIGRATION.md](../ACCESS_MIGRATION.md) |
 | Notification display — C browser-local slice | Caller-keyed local display preferences and device quiet hours at that source revision. | [PR #190](https://github.com/Starck43/social-media-ai/pull/190) |
 | Settings/access contexts — D bounded slice | Lazy permitted settings tabs, scoped membership controls and explicit workspace context. | [PR #191](https://github.com/Starck43/social-media-ai/pull/191) |
 
 An evidence link certifies only its original scope/SHA; read the full limitations
-there before reusing it. Current contracts: [subsystem index](DOCS_INDEX.md).
+there before reusing it. Current contracts: [subsystem index](../DOCS_INDEX.md).

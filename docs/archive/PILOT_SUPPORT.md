@@ -6,7 +6,7 @@ This nomination and every service target below require the owner's explicit
 approval of an exact document commit. Assignment to write the draft is not a
 signature, pilot launch, operational SLA or permission to perform external actions.
 
-Task record: [P8-T13 audit](audit/p8-t13.md). Parent: [P8](phases/p8-first-value-ui.md).
+Task record: [P8-T13 audit](../audit/p8-t13.md). Parent: [P8](../phases/p8-first-value-ui.md).
 This is a manual operating contract over existing signals, not new telemetry,
 a support integration, a delivery feature or production-readiness acceptance.
 
@@ -17,7 +17,7 @@ a support integration, a delivery feature or production-readiness acceptance.
   Unlisted workspaces/tasks are outside this contract, not silently included.
 - Use existing supported collection/analysis/digest paths and existing permissions.
   An operationally unverified VK search method does not become supported through
-  this document. [Q-5](tasks/q-5.md) and release gates remain independent.
+  this document. [Q-5](../tasks/q-5.md) and release gates remain independent.
 - Proposed service hours: Monday–Friday, 09:00–18:00 **Europe/Kirov** (UTC+03:00),
   without an implied holiday or 24/7 rota. Outside those hours, record the event;
   the response clock resumes at the next service opening. Safety restrictions
@@ -45,9 +45,9 @@ A fresh heartbeat proves event-loop presence only: not queue, worker, listener,
 provider, source-data freshness, analysis quality or delivery success. Never
 substitute `/livez`, `/readyz`, API uptime or an old runtime id for this signal.
 
-Sources: [runtime configuration](CONFIGURATION.md#optional-same-host-runtime-observation),
-[HTTP probes](DEPLOYMENT.md#2-interpret-the-http-probes-correctly),
-[runtime signal](../app/core/runtime_presence.py), [HTTP route](../app/core/health.py).
+Sources: [runtime configuration](../CONFIGURATION.md#optional-same-host-runtime-observation),
+[HTTP probes](../DEPLOYMENT.md#2-interpret-the-http-probes-correctly),
+[runtime signal](../../app/core/runtime_presence.py), [HTTP route](../../app/core/health.py).
 P8-T10 code `d7213c6b` and P8-T11 integration `83c1f79a` are included in this
 contract's source base. T10's remaining registry closure belongs to the owner;
 it does not block this draft or certify production operation.
@@ -114,7 +114,7 @@ and within 12 hours of observing completion; do not rely on a seven-day Job
 history. Retained evidence is not permission to change retention or dump raw
 results. If a row disappears before evidence capture, report `unavailable` and
 coverage loss, never reconstruct a successful result from task `last_status`.
-See [job retention](AGENT_TASKS_QUEUE.md#job-history-and-one-time-runs).
+See [job retention](../AGENT_TASKS_QUEUE.md#job-history-and-one-time-runs).
 
 All targets below are **proposed v1 thresholds**, not measured baselines or
 promises that current code already achieves them. Report numerator, denominator,
@@ -173,9 +173,9 @@ claimed to exist: the authorized operator keeps this manual evidence log.
   `sorted_latencies[ceil(0.95*n)-1]`; label that subset and its coverage, never
   use its percentile to conceal unfinished jobs. n=0 gives `no_sample`.
 
-Source fields/semantics: [Job](../app/models/scheduling/job.py),
-[permission-aware task results](../app/services/task_results.py),
-[task run receipts](AGENT_TASKS_PLAN.md#explicit-task-plans).
+Source fields/semantics: [Job](../../app/models/scheduling/job.py),
+[permission-aware task results](../../app/services/task_results.py),
+[task run receipts](../AGENT_TASKS_PLAN.md#explicit-task-plans).
 `AgentTask.last_status=queued` is historical admission evidence, not completion.
 Database `started_at`/`finished_at` are not claimed to be exposed by every UI/API;
 this manual metric uses receipt observation times, not a new timestamp endpoint.
@@ -208,9 +208,9 @@ this manual metric uses receipt observation times, not a new timestamp endpoint.
   is unavailable or references cannot be correlated, label the review **partial**.
   No claim of complete cohort delivery coverage or clean PASS from that view.
 
-Sources: [bell aggregate](../app/services/notifications/delivery_signal.py),
-[delivery outcomes](../app/services/digest/delivery_outcomes.py),
-[P8-T11 audit](audit/p8-t11.md). This contract consumes existing delivery
+Sources: [bell aggregate](../../app/services/notifications/delivery_signal.py),
+[delivery outcomes](../../app/services/digest/delivery_outcomes.py),
+[P8-T11 audit](../audit/p8-t11.md). This contract consumes existing delivery
 semantics; it does not create sends, retries, acknowledgements or recovery rules.
 
 ### M4 — owner-rated usefulness tied to existing outcomes

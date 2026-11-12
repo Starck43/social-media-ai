@@ -572,7 +572,7 @@ not from the source list.
   model page's metadata/mock/billed-request modes. Provider probes still need explicit
   review of their distinct payer/accounting path; do not infer that this model
   probe candidate accepts provider connection testing or the broader P2 cutover.
-  See [accounting scope](IMPLEMENTATION_STATUS.md).
+  See [accounting scope](archive/IMPLEMENTATION_STATUS.md).
 
 Only `LLMModel` has `is_default`; providers do not. Model capability/default
 selection and encrypted key access are described in [MODELS](MODELS.md).
@@ -745,7 +745,7 @@ safety.
 
 Platform/workspace access migration procedure: [ACCESS_MIGRATION](ACCESS_MIGRATION.md).
 Canonical entity fields and migration state: [MODELS](MODELS.md). Source-pinned
-acceptance is indexed in [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); it does
+acceptance is indexed in [IMPLEMENTATION_STATUS](archive/IMPLEMENTATION_STATUS.md); it does
 not establish a deployed database revision.
 
 ## Reusable horizontal relationship picker (P8-T36)
@@ -878,3 +878,11 @@ reserved `_migration_0120` archival key when editing migrated JSON. See
 ### Evidence and document indexes
 
 `/admin/knowledge-registry` is a read-only, paginated index of snippets, documents and revisions. It uses the existing evidence managers and source-view permission, including their workspace ACL and data-boundary filters. Even a platform owner must select an active membership and is capped by that membership’s grants; contents and editing are not exposed.
+
+## One-off operator inventories
+
+Two read-only inventories support access and credential review: messenger
+bootstrap membership/bindings and source identity (owner) coverage. They change
+nothing, print no external IDs or secrets, and require confirmed target,
+authorization, least-privilege identity and approved output handling. Commands,
+cursors and the revocation/rollback cautions: [operator inventories](OPERATOR_INVENTORIES.md).

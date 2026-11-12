@@ -54,7 +54,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P21-T01](docs/tasks/p21-t01.md) AI model operations and dispatch-safety plan — **IN_PROGRESS** · opencode-p21-t01 · session `ses_e354e565fffeD23W3LsJFPutDs` · `P2` · `C3`
+- [P21-T01](docs/tasks/p21-t01.md) AI model operations and dispatch-safety plan — **READY** · opencode-p21-t01 · session `ses_e354e565fffeD23W3LsJFPutDs` · `P2` · `C3`
 - [P21-T05](docs/tasks/p21-t05.md) Provider rate limits and circuit-breaker wiring — **TODO** · unassigned · depends on P21-T02 · `P2` · `C4`
 - [P21-T06](docs/tasks/p21-t06.md) Credential boundary and rotation hardening — **TODO** · unassigned · owner gate for accepted security/crypto contract · `P2` · `C4`
 - [P21-T07](docs/tasks/p21-t07.md) Prompt and tool safety coverage audit — **TODO** · unassigned · independent; feeds P21-T02 · `P2` · `C3`

@@ -78,6 +78,7 @@ from .llm import (
     LLMOutcomeEvent,
     LLMProvider,
 )
+from .onec import OneCQueryHistory
 from .notifications import DigestRun, Notification, NotificationDelivery, NotificationPreference, NotificationReceipt
 from .planner import PlannerEventRun, PlannerEventSettings, PlannerReminder, PlannerTask
 from .scheduling import AgentTask, Job

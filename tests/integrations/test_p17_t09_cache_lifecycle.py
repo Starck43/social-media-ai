@@ -88,7 +88,11 @@ def service_fixture(monkeypatch, *, clock=None, metadata_cache=None, query_cache
     session = Session(row, SimpleNamespace(secret_encrypted="ciphertext-v1"))
     service = OneCReadQueryService(
         cache=query_cache if query_cache is not None else OneCQueryCache(clock=clock or (lambda: 1000.0)),
-        metadata_cache=metadata_cache if metadata_cache is not None else query_mod.OneCMetadataCache(clock=clock or (lambda: 1000.0)),
+        metadata_cache=(
+            metadata_cache
+            if metadata_cache is not None
+            else query_mod.OneCMetadataCache(clock=clock or (lambda: 1000.0))
+        ),
     )
 
     @asynccontextmanager
@@ -308,13 +312,28 @@ def api_request(method, path, body=None):
 def fake_connections(monkeypatch):
     _, onec = api_app()
     calls: list[tuple[int, int]] = []
-    monkeypatch.setattr(onec, "invalidate_metadata_catalog", lambda tenant_id, connection_id: calls.append((tenant_id, connection_id)))
+    monkeypatch.setattr(
+        onec, "invalidate_metadata_catalog", lambda tenant_id, connection_id: calls.append((tenant_id, connection_id))
+    )
     monkeypatch.setattr(
         onec,
         "OneCConnectionService",
         lambda: SimpleNamespace(
             disable=AsyncMock(return_value=None),
-            replace_credentials=AsyncMock(return_value={"id": 5, "label": "l", "host": "h", "port": 443, "base_path": "/b", "interface": "odata_standard", "state": "verified", "check_code": None, "checked_at": None, "is_active": True}),
+            replace_credentials=AsyncMock(
+                return_value={
+                    "id": 5,
+                    "label": "l",
+                    "host": "h",
+                    "port": 443,
+                    "base_path": "/b",
+                    "interface": "odata_standard",
+                    "state": "verified",
+                    "check_code": None,
+                    "checked_at": None,
+                    "is_active": True,
+                }
+            ),
             list_for_actor=AsyncMock(return_value=[]),
         ),
     )
@@ -363,4 +382,3 @@ def test_reading_the_connections_does_not_invalidate_the_catalog(fake_connection
     response = api_request("GET", "/connections")
     assert response.status_code == 200
     assert fake_connections == []
-

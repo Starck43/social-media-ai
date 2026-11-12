@@ -61,6 +61,48 @@ class PersonalInbox:
 
             with tenant_scope(event.tenant_id):
                 return await reminder_notifications.destination(event, self.user.id)
+        if event.related_entity_type == "social_morning_brief":
+            from urllib.parse import urlencode
+
+            from app.core.permissions import permission_scope
+            from app.models import AgentTask
+            from app.services.social.brief_schedule import report_window_from_message, schedule_for_task
+            from app.services.social.morning_brief import preview
+
+            if not positive_id(event.related_entity_id):
+                return None
+            with tenant_scope(event.tenant_id):
+                task = await AgentTask.objects.get(id=event.related_entity_id)
+                if task is None:
+                    return None
+                try:
+                    schedule = schedule_for_task(task)
+                except ValueError:
+                    return None
+                window = report_window_from_message(event, task=task, user_id=self.user.id)
+                if window is None or schedule.user_id != self.user.id:
+                    return None
+                try:
+                    with permission_scope(self.user, member_grants=self._grants[event.tenant_id]):
+                        await preview(
+                            event.tenant_id,
+                            self.user.id,
+                            days=schedule.days,
+                            timezone_name=schedule.timezone,
+                            report_start=window[0],
+                            report_end=window[1],
+                        )
+                except Exception:
+                    return None
+                query = urlencode(
+                    {
+                        "tz": schedule.timezone,
+                        "days": schedule.days,
+                        "start": window[0].isoformat(),
+                        "end": window[1].isoformat(),
+                    }
+                )
+                return f"/app/digests/morning?{query}"
         # A receipt is personal and workspace membership was freshly checked.
         # Only this exact event kind gets a fixed, server-owned settings route.
         if (

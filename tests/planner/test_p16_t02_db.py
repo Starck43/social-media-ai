@@ -31,6 +31,7 @@ from app.services.planner.reminders import reminder_service
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable, planner_service
 from app.types import ActionType
 from tests.shared.fixtures.personal_workspace import personal_world  # noqa: F401
+from tests.support.schema_guard import require_isolated_schema
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 UTC = timezone.utc
@@ -38,7 +39,7 @@ UTC = timezone.utc
 
 @pytest.fixture(autouse=True)
 def reminder_database_gate(monkeypatch):
-    assert settings.DB_SCHEMA in {"test_schema", "test_p16_t02"}, "planner reminders require an isolated test schema"
+    assert require_isolated_schema().startswith("test_"), "planner reminders require an isolated test schema"
     assert settings.DB_SCHEMA == settings.DB_TEST_SCHEMA, "planner reminder schema must match explicit test target"
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
 

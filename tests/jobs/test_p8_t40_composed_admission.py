@@ -1,6 +1,6 @@
 """P8-T40 PostgreSQL admission evidence for composed plans and schedules.
 
-Requires the approved root-conftest test_schema redirect. Jobs remain queued;
+Requires the approved root-conftest redirect to an explicit isolated test schema. Jobs remain queued;
 no worker, VK API, model provider or digest delivery is invoked.
 """
 
@@ -18,25 +18,32 @@ _conftest = next(
     (module for module in tuple(sys.modules.values()) if getattr(module, "__file__", None) == str(_conftest_path)),
     None,
 )
-if _conftest is None or getattr(_conftest, "TEST_SCHEMA", None) != "test_schema":
-    raise RuntimeError("STOP: root conftest/test_schema redirect required; never use --noconftest")
+_test_schema = getattr(_conftest, "TEST_SCHEMA", None)
+if _conftest is None or not isinstance(_test_schema, str) or not _test_schema.startswith("test_"):
+    raise RuntimeError("STOP: root conftest/isolated test schema redirect required; never use --noconftest")
 _target = urlsplit(getattr(_conftest, "TEST_DATABASE_URL", ""))
 if (
     _target.hostname not in {"localhost", "127.0.0.1"}
     or (_target.port or 5432) != 5432
     or _target.path != "/social_manager"
 ):
-    raise RuntimeError("STOP: only the approved local social_manager/test_schema is allowed")
+    raise RuntimeError("STOP: only an isolated test schema in local social_manager is allowed")
 
 import pytest
 from test_p8_t29_social_launch import Workspace
 
+from app.core.config import settings
 from app.core.tenant_context import tenant_scope
 from app.models import AgentTask, Job
 from app.models.managers.agent_task_manager import AgentTaskManager
 from app.services.billing.payer import configure_current_personal_account
 from app.services.task_launch import launch_social_task
 from app.services.task_plans import apply_task_plan
+from tests.support.schema_guard import require_isolated_schema
+
+# Same working-schema refusal as new task DB suites; never relax the target to public.
+if require_isolated_schema() != _test_schema or settings.DB_SCHEMA != settings.DB_TEST_SCHEMA:
+    raise RuntimeError("STOP: explicit isolated schema must match the conftest redirect")
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 

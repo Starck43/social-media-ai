@@ -21,6 +21,7 @@ BUSINESS_TAGS = {
     "comms": "Communications",
     "planner": "Planner",
     "calendar": "Calendar",
+    "social": "Social",
     "onec": "1C",
     "files": "Files",
     "documents": "Documents",

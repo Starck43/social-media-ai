@@ -1,6 +1,6 @@
 """P8-T29 social launch receipts and payer boundaries.
 
-Requires the ordinary root conftest and its approved test_schema redirect.
+Requires the ordinary root conftest and its explicit isolated test-schema redirect.
 The tests enqueue mockable work but never call a VK API or execute a job.
 """
 
@@ -20,18 +20,20 @@ _conftest = next(
     (module for module in tuple(sys.modules.values()) if getattr(module, "__file__", None) == str(_conftest_path)),
     None,
 )
-if _conftest is None or getattr(_conftest, "TEST_SCHEMA", None) != "test_schema":
-    raise RuntimeError("STOP: root conftest/test_schema redirect required; never use --noconftest")
+_test_schema = getattr(_conftest, "TEST_SCHEMA", None)
+if _conftest is None or not isinstance(_test_schema, str) or not _test_schema.startswith("test_"):
+    raise RuntimeError("STOP: root conftest/isolated test schema redirect required; never use --noconftest")
 _target = urlsplit(getattr(_conftest, "TEST_DATABASE_URL", ""))
 if (
     _target.hostname not in {"localhost", "127.0.0.1"}
     or (_target.port or 5432) != 5432
     or _target.path != "/social_manager"
 ):
-    raise RuntimeError("STOP: only the approved local social_manager/test_schema is allowed")
+    raise RuntimeError("STOP: only an isolated test schema in local social_manager is allowed")
 
 import pytest
 
+from app.core.config import settings
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import (
@@ -54,6 +56,10 @@ from app.services.task_launch import launch_identity, launch_social_task
 from app.services.task_plans import apply_task_plan, materialize_task_plan_window, parse_task_plan, task_plan_block
 from app.types import SourceType
 from tests.p11_t12_audit_cleanup import purge_tenant_audit_events
+from tests.support.schema_guard import require_isolated_schema
+
+if require_isolated_schema() != _test_schema or settings.DB_SCHEMA != settings.DB_TEST_SCHEMA:
+    raise RuntimeError("STOP: explicit isolated schema must match the conftest redirect")
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 

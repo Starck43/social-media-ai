@@ -12,6 +12,7 @@ from . import (  # noqa: F401
     planner,
     reports,
     scenarios,
+    social_brief,
     sources,
     system,
     tasks,

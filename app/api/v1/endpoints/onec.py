@@ -20,7 +20,7 @@ from app.models.managers.workspace_outbound_host_manager import WorkspaceHostErr
 from app.services.onec.export import OneCExportError
 from app.services.onec.history import OneCHistoryEntry, OneCHistoryError, OneCQueryHistoryRepository
 from app.services.onec.nl_query import OneCNaturalLanguageError, OneCQueryAnswerService
-from app.services.onec.query import OneCQueryError
+from app.services.onec.query import OneCQueryError, invalidate_metadata_catalog
 from app.services.user.auth import get_authenticated_user
 
 
@@ -128,7 +128,9 @@ async def connections(request: Request, user: User = Depends(get_authenticated_u
 
 @router.delete("/connections/{connection_id}", status_code=204)
 async def disconnect(request: Request, connection_id: int = Path(gt=0), user: User = Depends(get_authenticated_user)):
-    await _call(OneCConnectionService().disable, **_scope(request, user), connection_id=connection_id)
+    scope = _scope(request, user)
+    await _call(OneCConnectionService().disable, **scope, connection_id=connection_id)
+    invalidate_metadata_catalog(scope["tenant_id"], connection_id)
 
 
 @router.patch("/connections/{connection_id}/credentials", response_model=ConnectionOutput)
@@ -138,18 +140,24 @@ async def replace_credentials(
     connection_id: int = Path(gt=0),
     user: User = Depends(get_authenticated_user),
 ):
-    return await _call(
+    scope = _scope(request, user)
+    result = await _call(
         OneCConnectionService().replace_credentials,
-        **_scope(request, user),
+        **scope,
         connection_id=connection_id,
         login=body.login.get_secret_value(),
         password=body.password.get_secret_value(),
     )
+    invalidate_metadata_catalog(scope["tenant_id"], connection_id)
+    return result
 
 
 @router.post("/connections/{connection_id}/health-check", response_model=ConnectionOutput)
 async def health_check(request: Request, connection_id: int = Path(gt=0), user: User = Depends(get_authenticated_user)):
-    return await _call(OneCHealthService().check, **_scope(request, user), connection_id=connection_id)
+    scope = _scope(request, user)
+    result = await _call(OneCHealthService().check, **scope, connection_id=connection_id)
+    invalidate_metadata_catalog(scope["tenant_id"], connection_id)
+    return result
 
 
 @router.get("/hosts", response_model=list[HostOutput])

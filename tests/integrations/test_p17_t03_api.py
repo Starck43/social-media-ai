@@ -1,6 +1,7 @@
 """API wiring for natural-language 1C queries, export and history with mocked services."""
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -119,6 +120,8 @@ def test_query_returns_table_summary_and_history_id(monkeypatch):
     assert body["rows"][0]["Цена"] == "10,00 ₽"
     assert body["history_id"] == 42
     assert body["next_page_token"] == "next-token"
+    assert body["truncated"] is False
+    assert body["chart"] == [{"label": "Товар", "value": "10.00"}]
     assert "Catalog_Товары" in body["interpretation"]
     kwargs = answer.await_args.kwargs
     assert kwargs["tenant_id"] == 11 and kwargs["actor_id"] == 7 and kwargs["connection_id"] == 5
@@ -149,6 +152,20 @@ def test_query_maps_denied_and_plan_errors(monkeypatch):
 def test_query_rejects_invalid_body():
     assert request("POST", "/query", {"connection_id": 0, "question": ""}).status_code == 422
     assert request("POST", "/query", {"connection_id": 5, "question": "ok", "extra": 1}).status_code == 422
+
+
+def test_query_reports_truncation(monkeypatch):
+    answer = make_answer()
+    answer = OneCAnswer(
+        question=answer.question,
+        interpretation=answer.interpretation,
+        result=answer.result,
+        table=replace(answer.table, truncated=True),
+        history_id=answer.history_id,
+    )
+    monkeypatch.setattr(onec.OneCQueryAnswerService, "answer", AsyncMock(return_value=answer))
+    body = request("POST", "/query", {"connection_id": 5, "question": "покажи товары"}).json()
+    assert body["truncated"] is True
 
 
 def test_query_continues_from_a_stored_plan_without_a_question(monkeypatch):

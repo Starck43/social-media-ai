@@ -176,6 +176,11 @@ class QueryInput(BaseModel):
     page_token: str | None = Field(default=None, max_length=256)
 
 
+class ChartPoint(BaseModel):
+    label: str
+    value: str
+
+
 class QueryOutput(BaseModel):
     connection_id: int
     history_id: int | None
@@ -187,6 +192,8 @@ class QueryOutput(BaseModel):
     columns: list[str]
     rows: list[dict[str, str]]
     row_count: int
+    truncated: bool
+    chart: list[ChartPoint]
     next_page_token: str | None
 
 
@@ -257,6 +264,8 @@ async def run_query(body: QueryInput, request: Request, user: User = Depends(get
             columns=[],
             rows=[],
             row_count=0,
+            truncated=False,
+            chart=[],
             next_page_token=None,
         )
     table = answer.table
@@ -272,6 +281,8 @@ async def run_query(body: QueryInput, request: Request, user: User = Depends(get
         columns=list(table.columns),
         rows=[dict(zip(table.columns, row)) for row in table.rows],
         row_count=len(table.rows),
+        truncated=table.truncated,
+        chart=[ChartPoint(label=label, value=value) for label, value in table.chart],
         next_page_token=answer.result.next_page_token if answer.result else None,
     )
 

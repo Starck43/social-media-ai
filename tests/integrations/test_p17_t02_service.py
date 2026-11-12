@@ -23,6 +23,7 @@ from app.services.onec import query as query_mod
 from app.services.onec.metadata import parse_odata_metadata_xml
 from app.services.onec.query import (
     OneCFilterPredicate,
+    OneCMetadataCache,
     OneCQueryCache,
     OneCQueryError,
     OneCQueryPlan,
@@ -158,7 +159,8 @@ def service_fixture(monkeypatch, *, allowed_sets=None, allowed_fields=None, stat
     session = Session(row, secret)
     clock_now = [100.0]
     cache = OneCQueryCache(clock=lambda: clock_now[0])
-    service = OneCReadQueryService(cache=cache)
+    # A private metadata cache keeps the process-level catalog cache out of this test.
+    service = OneCReadQueryService(cache=cache, metadata_cache=OneCMetadataCache(clock=lambda: clock_now[0]))
 
     @asynccontextmanager
     async def owned_session():
@@ -382,11 +384,19 @@ async def test_service_enforces_connection_state_budget_policy_and_metadata_fetc
         await service.fetch_metadata_catalog(tenant_id=11, actor_id=7, connection_id=5)
     row.config["metadata_sha256"] = catalog.metadata_sha256
 
-    # Metadata rate_limited and connection_unavailable
+    # A warm catalog cache answers without contacting the provider (P17-T08).
+    transport = AsyncMock(return_value=SYNTHETIC_METADATA_XML.encode("utf-8"))
+    monkeypatch.setattr(query_mod, "fetch_odata_bytes", transport)
+    await service.fetch_metadata_catalog(tenant_id=11, actor_id=7, connection_id=5)
+    assert transport.await_count == 0
+
+    # Metadata rate_limited and connection_unavailable (cold cache: the provider is called)
+    service._metadata_cache.invalidate_connection(11, 5)
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", AsyncMock(side_effect=ProviderDeferred(10)))
     with pytest.raises(OneCQueryError, match="rate_limited"):
         await service.fetch_metadata_catalog(tenant_id=11, actor_id=7, connection_id=5)
 
+    service._metadata_cache.invalidate_connection(11, 5)
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", AsyncMock(side_effect=BudgetConnectionUnavailable()))
     with pytest.raises(ConnectionDenied):
         await service.fetch_metadata_catalog(tenant_id=11, actor_id=7, connection_id=5)

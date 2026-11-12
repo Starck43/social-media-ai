@@ -46,6 +46,7 @@ TZ criteria: connect via REST (T01); read-only queries (T02); NL translation (T0
 6. [P17-T06 accepted](../audit/p17-t06.md) — 1C query continuation from the stored plan · done 2026-11-12 · accepted SHA `bec2fb8e` · `P3` · `C4` · depends: [P17-T03 accepted](../audit/p17-t03.md)
 7. [P17-T07 accepted](../audit/p17-t07.md) — 1C query hardening follow-ups (DTD guard, export marking, float path, API shape) · done 2026-11-12 · accepted SHA `1f1ee61d` · `P3` · `C3` · depends: [P17-T03 accepted](../audit/p17-t03.md)
 8. [P17-T08 accepted](../audit/p17-t08.md) — 1C catalog cache and history status values · done 2026-11-12 · accepted SHA `4ab761ab` · `P3` · `C3` · depends: [P17-T03 accepted](../audit/p17-t03.md)
+9. [P17-T09](../tasks/p17-t09.md) — 1C cache lifecycle and request-cost follow-ups · `P3` · `C3` · depends: [P17-T03 accepted](../audit/p17-t03.md), [P17-T06 accepted](../audit/p17-t06.md), [P17-T08 accepted](../audit/p17-t08.md)
 
 ## Dependencies and gates
 

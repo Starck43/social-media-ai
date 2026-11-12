@@ -104,7 +104,7 @@ authoritative reference and route, redacted title, reason, recommended priority
 with its basis, due/expiry, owner-reported state, allowed actions (links to the
 owner's actions), data boundary and freshness. Message bodies are never copied
 ([D11](audit/q-19-messaging-decisions.md)). Each module contributes a provider
-when its own task lands; [P20-T02](tasks/p20-t02.md) defines the contract with
+when its own task lands; [P20-T02](audit/p20-t02.md) defines the contract with
 social results as the first provider.
 
 ## Correspondence

@@ -42,7 +42,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P1
 
-- [P21-T02](docs/tasks/p21-t02.md) Single LLM dispatch seam and resolution contract — **TODO** · unassigned · depends on P21-T01 · `P1` · `C3`
+- [P21-T02](docs/tasks/p21-t02.md) Single LLM dispatch seam and resolution contract — **TODO** · unassigned · [planning prerequisite accepted](docs/audit/p21-t01.md) · `P1` · `C3`
 - [P21-T03](docs/tasks/p21-t03.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T02; owner gate for money/cutover · `P1` · `C4`
 - [P21-T04](docs/tasks/p21-t04.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T02/P21-T03; feeds P2-T09 · `P1` · `C4`
 
@@ -54,8 +54,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P21-T01](docs/tasks/p21-t01.md) AI model operations and dispatch-safety plan — **READY** · opencode-p21-t01 · session `ses_e354e565fffeD23W3LsJFPutDs` · `P2` · `C3`
-- [P21-T05](docs/tasks/p21-t05.md) Provider rate limits and circuit-breaker wiring — **TODO** · unassigned · depends on P21-T02 · `P2` · `C4`
+- [P21-T05](docs/tasks/p21-t05.md) Provider rate limits and bounded backpressure — **TODO** · unassigned · depends on P21-T02 · `P2` · `C4`
 - [P21-T06](docs/tasks/p21-t06.md) Credential boundary and rotation hardening — **TODO** · unassigned · owner gate for accepted security/crypto contract · `P2` · `C4`
 - [P21-T07](docs/tasks/p21-t07.md) Prompt and tool safety coverage audit — **TODO** · unassigned · independent; feeds P21-T02 · `P2` · `C3`
 - [P21-T08](docs/tasks/p21-t08.md) Unified model catalog, plan grants and generation policy — **TODO** · unassigned · depends on P21-T02; activation requires P21-T03/T04/T05/T06 · `P2` · `C4`

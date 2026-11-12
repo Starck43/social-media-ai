@@ -14,6 +14,7 @@ from . import (  # noqa: F401
     sources,
     system,
     tasks,
+    web_research,
 )
 
 planner.register_planner_tools()

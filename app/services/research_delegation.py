@@ -10,8 +10,8 @@ Key invariants:
   `collect` (`collector`) -> `analyze` (`analyzer`) -> `synthesize` (`synthesizer`).
 - Specialist roles are implementation roles only, never new privileged identities
   or unrestricted agents. No dynamic agent creation, rooms, or marketplace.
-- Web research steps (`web_research`, `web_search`, `browser`) are fail-closed
-  until `P20-T12` is accepted.
+- Workflow v1 rejects web research steps; opt-in workflow v2 may read at most two
+  explicitly selected public URLs through P20-T12's durable HTTP fetch service.
 - Child scopes may only narrow the originating actor/workspace, source IDs,
   permissions, tools, and model/data boundaries (`local_only` < `company` < `cloud`).
 - Authorization and payer/budget quotas are rechecked at admission and before each step.
@@ -37,7 +37,9 @@ from typing import Any, Awaitable, Callable, Literal, Mapping
 
 from app.services.task_pipeline import PipelineReviewRequired
 
-DELEGATION_WORKFLOW_VERSION = 1
+DELEGATION_WORKFLOW_VERSION = 1  # Accepted P20-T04 default; callers pin v1 for old receipts.
+DELEGATION_WORKFLOW_VERSION_WEB = 2
+SUPPORTED_WORKFLOW_VERSIONS = frozenset({DELEGATION_WORKFLOW_VERSION, DELEGATION_WORKFLOW_VERSION_WEB})
 SpecialistRole = Literal["collector", "analyzer", "synthesizer"]
 DelegationStepName = Literal["collect", "analyze", "synthesize"]
 
@@ -53,6 +55,7 @@ STEP_LABELS_RU: dict[DelegationStepName, str] = {
     "analyze": "Анализ с доказательствами (аналитик)",
     "synthesize": "Сборка черновика отчёта (синтезатор)",
 }
+PUBLIC_WEB_STEP_LABEL_RU = "Чтение заданных публичных веб-страниц"
 
 # Strict boundary ordering: child scopes may only stay equal or narrow toward local_only.
 BOUNDARY_RANK: dict[str, int] = {
@@ -410,9 +413,11 @@ def inspect_and_neutralize_source_item(
     }
 
 
-def _delegation_checkpoint_base(*, job_id: int, task_id: int, attempt: int) -> dict[str, Any]:
+def _delegation_checkpoint_base(
+    *, job_id: int, task_id: int, attempt: int, workflow_version: int = DELEGATION_WORKFLOW_VERSION
+) -> dict[str, Any]:
     return {
-        "workflow_version": DELEGATION_WORKFLOW_VERSION,
+        "workflow_version": workflow_version,
         "job_id": job_id,
         "task_id": task_id,
         "attempt": attempt,
@@ -422,11 +427,13 @@ def _delegation_checkpoint_base(*, job_id: int, task_id: int, attempt: int) -> d
     }
 
 
-def validate_delegation_checkpoint(value: Any, *, job_id: int, task_id: int) -> dict[str, Any]:
+def validate_delegation_checkpoint(
+    value: Any, *, job_id: int, task_id: int, workflow_version: int = DELEGATION_WORKFLOW_VERSION
+) -> dict[str, Any]:
     """Validate persisted delegation receipt inside pipeline checkpoint; fail closed on corruption."""
     if (
         not isinstance(value, dict)
-        or value.get("workflow_version") != DELEGATION_WORKFLOW_VERSION
+        or value.get("workflow_version") != workflow_version
         or value.get("job_id") != job_id
         or value.get("task_id") != task_id
         or not isinstance(value.get("steps"), dict)
@@ -452,7 +459,7 @@ def validate_delegation_checkpoint(value: Any, *, job_id: int, task_id: int) -> 
 
     usage = value.get("usage") if isinstance(value.get("usage"), dict) else {"tokens": 0, "spend_usd": 0.0}
     return {
-        "workflow_version": DELEGATION_WORKFLOW_VERSION,
+        "workflow_version": workflow_version,
         "job_id": job_id,
         "task_id": task_id,
         "attempt": value["attempt"],
@@ -501,6 +508,9 @@ async def execute_delegated_research(
     cancel_checker: CancelChecker | None = None,
     prior_checkpoint: Mapping[str, Any] | None = None,
     include_bitrix24_draft: bool = False,
+    workflow_version: int = DELEGATION_WORKFLOW_VERSION,
+    public_web_urls: tuple[str, ...] = (),
+    public_web_runner: Callable[..., Awaitable[dict[str, Any]] | dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Execute bounded 3-step specialist research workflow over existing checkpoint receipts."""
     if (
@@ -518,6 +528,26 @@ async def execute_delegated_research(
         raise DelegationAdmissionError("delegation_collector_required")
 
     origin.validate()
+    if type(workflow_version) is not int or workflow_version not in SUPPORTED_WORKFLOW_VERSIONS:
+        raise DelegationAdmissionError("delegation_workflow_version_unsupported")
+    if workflow_version == DELEGATION_WORKFLOW_VERSION and public_web_urls:
+        raise DelegationAdmissionError("delegation_web_research_requires_workflow_v2")
+    if workflow_version == DELEGATION_WORKFLOW_VERSION_WEB:
+        if not public_web_urls:
+            raise DelegationAdmissionError("delegation_public_web_urls_required")
+        if (
+            not isinstance(public_web_urls, (tuple, list))
+            or len(public_web_urls) > 2
+            or any(not isinstance(url, str) or not url.strip() for url in public_web_urls)
+        ):
+            raise DelegationCapExceededError("delegation_public_web_url_limit_exceeded")
+        if public_web_runner is None:
+            from app.services.web_research.service import web_research_service
+
+            async def _durable_public_web_runner(payload: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+                return await web_research_service.run_research_task_step(payload, **kwargs)
+
+            public_web_runner = _durable_public_web_runner
     effective_caps = caps or DelegationCaps()
     effective_caps.validate()
 
@@ -533,9 +563,13 @@ async def execute_delegated_research(
         raise DelegationCapExceededError("delegation_source_count_exceeded")
 
     checkpoint = (
-        validate_delegation_checkpoint(dict(prior_checkpoint), job_id=job_id, task_id=task_id)
+        validate_delegation_checkpoint(
+            dict(prior_checkpoint), job_id=job_id, task_id=task_id, workflow_version=workflow_version
+        )
         if prior_checkpoint is not None
-        else _delegation_checkpoint_base(job_id=job_id, task_id=task_id, attempt=attempt)
+        else _delegation_checkpoint_base(
+            job_id=job_id, task_id=task_id, attempt=attempt, workflow_version=workflow_version
+        )
     )
 
     started_monotonic = time.monotonic()
@@ -677,7 +711,7 @@ async def execute_delegated_research(
             "attempt": attempt,
             "source_ids": list(child_scope.source_ids),
             "boundary": child_scope.data_boundary,
-            "workflow_version": DELEGATION_WORKFLOW_VERSION,
+            "workflow_version": workflow_version,
             "result": step_result,
         }
         await _save_ckpt()
@@ -790,10 +824,10 @@ async def execute_delegated_research(
             raise RuntimeError("all_sources_failed")
 
         surviving_sources = sorted({row["source_id"] for row in sanitized_items}) or list(collector_scope.source_ids)
-        return {
+        result = {
             "step": "collect",
             "role": "collector",
-            "workflow_version": DELEGATION_WORKFLOW_VERSION,
+            "workflow_version": workflow_version,
             "status": status,
             "source_ids": surviving_sources,
             "items": sanitized_items,
@@ -807,6 +841,66 @@ async def execute_delegated_research(
             "tokens_used": int(raw.get("tokens_used") or 0),
             "cost_usd": float(raw.get("cost_usd") or 0.0),
         }
+        if workflow_version == DELEGATION_WORKFLOW_VERSION_WEB:
+            assert public_web_runner is not None
+            web_result = await _maybe_await(
+                public_web_runner(
+                    {
+                        "query": goal[:500],
+                        "target_urls": list(public_web_urls),
+                        "save_evidence": False,
+                        "public_urls_only": True,
+                    },
+                    tenant_id=origin.tenant_id,
+                    expected_actor_id=origin.actor_id,
+                    account_key=f"agenttask:{task_id}",
+                    require_durable=True,
+                )
+            )
+            if not isinstance(web_result, Mapping):
+                raise DelegationAdmissionError("delegation_public_web_result_invalid")
+            citations = web_result.get("citations")
+            if not isinstance(citations, list) or len(citations) > 5:
+                raise DelegationAdmissionError("delegation_public_web_citations_invalid")
+            is_stub = bool(web_result.get("is_stub", True))
+            safe_citations = []
+            for citation in citations:
+                if not isinstance(citation, Mapping):
+                    continue
+                url = str(citation.get("url") or "")[:500]
+                digest = str(citation.get("content_hash") or "")
+                if (
+                    is_stub
+                    or url not in public_web_urls
+                    or not url.startswith(("https://", "http://"))
+                    or not re.fullmatch(r"[0-9a-f]{64}", digest)
+                ):
+                    continue
+                safe_citations.append(
+                    {
+                        "title": str(citation.get("title") or "")[:200],
+                        "url": url,
+                        "content_hash": digest,
+                        "fetched_at": str(citation.get("fetched_at") or "")[:40],
+                        "citation_anchor": str(citation.get("citation_anchor") or url)[:500],
+                    }
+                )
+            result["public_web"] = {
+                "provider_used": str(web_result.get("provider_used") or "stub")[:40],
+                "is_stub": is_stub,
+                "citations": safe_citations,
+                "refusals": [
+                    {
+                        "code": str(row.get("code") or "provider_unavailable")[:80],
+                        "message": str(row.get("message") or "Public page was refused")[:240],
+                    }
+                    for row in (web_result.get("refusals") or [])[: len(public_web_urls)]
+                    if isinstance(row, Mapping)
+                ],
+            }
+            if result["public_web"]["is_stub"] or result["public_web"]["refusals"] or not safe_citations:
+                result["status"] = "partial"
+        return result
 
     collect_result, cancelled = await _run_step("collect", collector_scope, 0, 0.0, _do_collect)
     if cancelled:
@@ -880,7 +974,7 @@ async def execute_delegated_research(
         return {
             "step": "analyze",
             "role": "analyzer",
-            "workflow_version": DELEGATION_WORKFLOW_VERSION,
+            "workflow_version": workflow_version,
             "status": status,
             "source_ids": list(analyzer_scope.source_ids),
             "findings": verified_findings,
@@ -921,6 +1015,9 @@ async def execute_delegated_research(
             f for f in analyze_result.get("findings", []) if isinstance(f, dict) and f.get("supported")
         ]
         citations = [f["citation"] for f in supported_findings if isinstance(f.get("citation"), dict)]
+        web_result = collect_result.get("public_web") if isinstance(collect_result.get("public_web"), Mapping) else {}
+        web_citations = web_result.get("citations") if isinstance(web_result.get("citations"), list) else []
+        citations.extend({"source_type": "public_web", **item} for item in web_citations if isinstance(item, Mapping))
 
         coverage_notes: list[str] = []
         if collect_result.get("status") == "partial":
@@ -938,6 +1035,10 @@ async def execute_delegated_research(
                 f"Отклонено неподтверждённых утверждений без прямой ссылки на источник: "
                 f"{analyze_result['counts']['unsupported']}."
             )
+        if web_result.get("is_stub"):
+            coverage_notes.append("Веб-источники не получены: режим поиска O-5 помечен как заглушка.")
+        if web_result.get("refusals"):
+            coverage_notes.append(f"Отклонено публичных веб-адресов: {len(web_result['refusals'])}.")
 
         summary_text = str(raw.get("summary") or f"Черновик исследования по цели: {goal[:160]}")[:4000]
         bitrix24_draft = None
@@ -958,7 +1059,7 @@ async def execute_delegated_research(
         return {
             "step": "synthesize",
             "role": "synthesizer",
-            "workflow_version": DELEGATION_WORKFLOW_VERSION,
+            "workflow_version": workflow_version,
             "status": status,
             "source_ids": list(synthesizer_scope.source_ids),
             "summary": summary_text,
@@ -1000,7 +1101,7 @@ def _build_final_outcome(
     synth_res = steps.get("synthesize", {}).get("result", {}) if isinstance(steps.get("synthesize"), dict) else {}
     return {
         "status": status,
-        "workflow_version": DELEGATION_WORKFLOW_VERSION,
+        "workflow_version": int(checkpoint.get("workflow_version") or DELEGATION_WORKFLOW_VERSION),
         "reused_steps": list(reused_steps),
         "usage": dict(checkpoint.get("usage", {"tokens": 0, "spend_usd": 0.0})),
         "external_writes_performed": 0,
@@ -1055,6 +1156,20 @@ def project_delegated_run_for_workspace(
                     "citations_count": 0,
                 }
             )
+            if (
+                step_key == "collect"
+                and int(delegation.get("workflow_version") or 1) == DELEGATION_WORKFLOW_VERSION_WEB
+            ):
+                projected_steps.append(
+                    {
+                        "step": "web_research",
+                        "role": "collector",
+                        "label": PUBLIC_WEB_STEP_LABEL_RU,
+                        "status": "pending",
+                        "source_count": 0,
+                        "citations_count": 0,
+                    }
+                )
             continue
         st = str(row.get("state") or "pending")
         step_res = row.get("result") if isinstance(row.get("result"), Mapping) else {}
@@ -1076,16 +1191,41 @@ def project_delegated_run_for_workspace(
                 "citations_count": c_count,
             }
         )
+        if step_key == "collect" and int(delegation.get("workflow_version") or 1) == DELEGATION_WORKFLOW_VERSION_WEB:
+            web_result = step_res.get("public_web") if isinstance(step_res.get("public_web"), Mapping) else {}
+            web_citations = web_result.get("citations") if isinstance(web_result.get("citations"), list) else []
+            web_status = (
+                "pending"
+                if row.get("state") != "completed"
+                else (
+                    "partial"
+                    if web_result.get("is_stub") or web_result.get("refusals") or not web_citations
+                    else "completed"
+                )
+            )
+            if web_status == "completed":
+                completed_count += 1
+            projected_steps.append(
+                {
+                    "step": "web_research",
+                    "role": "collector",
+                    "label": PUBLIC_WEB_STEP_LABEL_RU,
+                    "status": web_status,
+                    "source_count": len(web_citations),
+                    "citations_count": len(web_citations),
+                }
+            )
 
     overall_state = str(delegation.get("state") or result.get("job_status") or "running")
     is_active = overall_state in {"running", "started", "pending"}
     return {
         "task_id": task_id,
         "name": str(task_name)[:160],
-        "workflow_version": DELEGATION_WORKFLOW_VERSION,
+        "workflow_version": int(delegation.get("workflow_version") or DELEGATION_WORKFLOW_VERSION),
         "status": overall_state,
         "completed_steps": completed_count,
-        "total_steps": len(STEP_ORDER),
+        "total_steps": len(STEP_ORDER)
+        + int(int(delegation.get("workflow_version") or 1) == DELEGATION_WORKFLOW_VERSION_WEB),
         "steps": projected_steps,
         "can_cancel": bool(can_cancel and is_active),
         "cancel_url": f"/app/chat/workspace/tasks/{task_id}/cancel" if (can_cancel and is_active) else None,

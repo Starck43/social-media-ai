@@ -56,3 +56,11 @@ tests = ["tests/knowledge"]
 [[package]]
 path = "app/services/attachments"
 tests = ["tests/attachments", "tests/knowledge/test_p19_t05_export_spool_unit.py"]
+
+[[package]]
+path = "app/services/onec"
+tests = [
+    "tests/integrations/test_p17_t02_metadata.py",
+    "tests/integrations/test_p17_t02_query_builder.py",
+    "tests/integrations/test_p17_t02_service.py",
+]

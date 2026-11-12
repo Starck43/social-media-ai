@@ -139,6 +139,14 @@ and execution permissions remain in the handwritten references and code.
 | PUT | /api/v1/files/connectors/{device_id}/roots | consent_api_v1_files_connectors__device_id__roots_put |
 | POST | /api/v1/files/search | search_api_v1_files_search_post |
 | GET | /api/v1/health | health_check_api_v1_health_get |
+| POST | /api/v1/integrations/1c/connect | connect_api_v1_integrations_1c_connect_post |
+| GET | /api/v1/integrations/1c/connections | connections_api_v1_integrations_1c_connections_get |
+| DELETE | /api/v1/integrations/1c/connections/{connection_id} | disconnect_api_v1_integrations_1c_connections__connection_id__delete |
+| PATCH | /api/v1/integrations/1c/connections/{connection_id}/credentials | replace_credentials_api_v1_integrations_1c_connections__connection_id__credentials_patch |
+| POST | /api/v1/integrations/1c/connections/{connection_id}/health-check | health_check_api_v1_integrations_1c_connections__connection_id__health_check_post |
+| GET | /api/v1/integrations/1c/hosts | hosts_api_v1_integrations_1c_hosts_get |
+| POST | /api/v1/integrations/1c/hosts | approve_host_api_v1_integrations_1c_hosts_post |
+| DELETE | /api/v1/integrations/1c/hosts/{host_id} | revoke_host_api_v1_integrations_1c_hosts__host_id__delete |
 | POST | /api/v1/integrations/bitrix/connect | connect_bitrix_portal_api_v1_integrations_bitrix_connect_post |
 | GET | /api/v1/integrations/bitrix/connections | list_bitrix_connections_api_v1_integrations_bitrix_connections_get |
 | DELETE | /api/v1/integrations/bitrix/connections/{connection_id} | delete_bitrix_connection_api_v1_integrations_bitrix_connections__connection_id__delete |
@@ -221,6 +229,9 @@ and execution permissions remain in the handwritten references and code.
 | PUT | /api/v1/users/{user_id} | update_user_api_v1_users__user_id__put |
 | POST | /api/v1/users/{user_id}/change-password | change_password_api_v1_users__user_id__change_password_post |
 | PUT | /api/v1/users/{user_id}/platform-role | update_platform_role_api_v1_users__user_id__platform_role_put |
+| POST | /api/v1/web-research/fetch | fetch_web_page_api_v1_web_research_fetch_post |
+| POST | /api/v1/web-research/search | run_web_research_api_v1_web_research_search_post |
+| GET | /api/v1/web-research/status | get_web_research_status_api_v1_web_research_status_get |
 | GET | /dashboard | analytics_dashboard_dashboard_get |
 | GET | /dashboard/topic-chains | topic_chains_dashboard_dashboard_topic_chains_get |
 | GET | /health | readiness_health_get |

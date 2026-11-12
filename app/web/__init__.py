@@ -29,6 +29,7 @@ from .jobs import router as jobs_router
 from .knowledge import router as knowledge_router
 from .notifications import router as notifications_router
 from .onboarding import router as onboarding_router
+from .onec import router as onec_router
 from .planner import router as planner_router
 from .reply import router as reply_router
 from .scenarios import router as scenarios_router
@@ -41,6 +42,7 @@ from .tasks import router as tasks_router
 from .telegram_login import router as telegram_login_router
 from .trusted_hosts import router as trusted_hosts_router
 from .vk import router as vk_router
+from .web_research import router as web_research_router
 
 web_router = APIRouter(
     prefix="/app",
@@ -72,6 +74,7 @@ web_router.include_router(jobs_router)
 web_router.include_router(knowledge_router)
 web_router.include_router(notifications_router)
 web_router.include_router(onboarding_router)
+web_router.include_router(onec_router)
 web_router.include_router(scenarios_router)
 web_router.include_router(settings_router)
 web_router.include_router(settings_llm_router)
@@ -82,5 +85,6 @@ web_router.include_router(task_surface_router)
 web_router.include_router(telegram_login_router)
 web_router.include_router(trusted_hosts_router)
 web_router.include_router(vk_router)
+web_router.include_router(web_research_router)
 
 __all__ = ["web_router"]

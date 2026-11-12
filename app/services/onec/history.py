@@ -19,7 +19,7 @@ from app.utils.crypto import encrypt_secret
 
 MAX_HISTORY_ROWS = 50
 MAX_STORED_PLAN_BYTES = 20000
-VALID_STATUSES = frozenset({"planned", "executed", "refused", "exported"})
+VALID_STATUSES = frozenset({"executed", "exported"})
 VALID_EXPORT_FORMATS = frozenset({"xlsx", "pdf"})
 
 

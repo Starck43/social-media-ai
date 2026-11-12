@@ -12,6 +12,7 @@ from app.integrations.onec.health import OneCHealthService
 from app.models.managers.trusted_outbound_host_manager import TrustedHostError
 from app.models.managers.workspace_connection_manager import ConnectionDenied
 from app.models.managers.workspace_outbound_host_manager import WorkspaceHostError, WorkspaceOutboundHostManager
+from app.services.onec.query import invalidate_metadata_catalog
 
 from .deps import add_flash, ensure_csrf, render
 from .settings import _personal_access
@@ -102,9 +103,11 @@ async def replace_credentials(request: Request, connection_id: int):
     if form is None:
         return _private(HTMLResponse("Некорректная форма или сессия истекла", status_code=403))
     try:
+        scope = _scope(request)
         await OneCConnectionService().replace_credentials(
-            **_scope(request), connection_id=connection_id, login=form["login"], password=form["password"]
+            **scope, connection_id=connection_id, login=form["login"], password=form["password"]
         )
+        invalidate_metadata_catalog(scope["tenant_id"], connection_id)
     except ConnectionDenied:
         return _private(HTMLResponse("Подключение недоступно", status_code=403))
     except (OneCConnectionError, OneCCredentialError, TrustedHostError):
@@ -124,13 +127,16 @@ async def action(request: Request, connection_id: int, operation: str):
     if connection_id <= 0 or operation not in {"health", "disable"}:
         return _private(HTMLResponse("Действие недоступно", status_code=404))
     try:
+        scope = _scope(request)
         if operation == "health":
-            result = await OneCHealthService().check(**_scope(request), connection_id=connection_id)
+            result = await OneCHealthService().check(**scope, connection_id=connection_id)
+            invalidate_metadata_catalog(scope["tenant_id"], connection_id)
             add_flash(
                 request, "success" if result["state"] == "verified" else "error", "Проверка: " + result["check_code"]
             )
         else:
-            await OneCConnectionService().disable(**_scope(request), connection_id=connection_id)
+            await OneCConnectionService().disable(**scope, connection_id=connection_id)
+            invalidate_metadata_catalog(scope["tenant_id"], connection_id)
             add_flash(request, "success", "Подключение отключено; локальный секрет удалён.")
     except ConnectionDenied:
         return _private(HTMLResponse("Подключение недоступно", status_code=403))

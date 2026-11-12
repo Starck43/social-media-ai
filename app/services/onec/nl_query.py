@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Awaitable, Callable, Mapping, Sequence
@@ -27,6 +27,7 @@ from app.services.onec.query import (
     ALLOWED_FILTER_OPERATORS,
     DEFAULT_ROWS_PER_REQUEST,
     MAX_ROWS_PER_REQUEST,
+    OneCConnectionContext,
     OneCFilterPredicate,
     OneCQueryError,
     OneCQueryPlan,
@@ -571,14 +572,22 @@ class OneCQueryAnswerService:
         tenant_id: int,
         actor_id: int,
         connection_id: int,
-        question: str,
+        question: str | None = None,
         history: OneCQueryHistoryRepository,
         reader: OneCReadQueryService | None = None,
         catalog: OneCMetadataCatalog | None = None,
         cache_ttl_seconds: int = 0,
         page_token: str | None = None,
+        history_id: int | None = None,
         resolver: Any = None,
     ) -> OneCAnswer:
+        """Answer one question, or continue a stored one when `history_id` is supplied.
+
+        A continuation never calls the planner: it rebuilds the stored plan, binds the
+        client's `page_token` to that plan's own fingerprint and executes it again. That
+        keeps a second page reachable even when the model would describe the same
+        question with a different field order.
+        """
         reader = reader if reader is not None else OneCReadQueryService()
         context = await reader.load_connection_context(
             tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id
@@ -590,17 +599,31 @@ class OneCQueryAnswerService:
                 connection_id=connection_id,
                 **({"resolver": resolver} if resolver is not None else {}),
             )
-        interpretation = await self._planner.interpret(
-            question,
-            catalog,
-            allowed_entity_sets=context.allowed_entity_sets,
-            allowed_fields_by_entity=context.allowed_fields,
-            expected_metadata_sha256=context.metadata_sha256,
-            base_path=context.endpoint.base_path,
-            page_token=page_token,
-        )
+        if history_id is not None:
+            interpretation = await self._continue_from_history(
+                history,
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+                connection_id=connection_id,
+                history_id=history_id,
+                catalog=catalog,
+                context=context,
+                page_token=page_token,
+            )
+        else:
+            if not question or not question.strip():
+                raise OneCNaturalLanguageError("question_required")
+            interpretation = await self._planner.interpret(
+                question,
+                catalog,
+                allowed_entity_sets=context.allowed_entity_sets,
+                allowed_fields_by_entity=context.allowed_fields,
+                expected_metadata_sha256=context.metadata_sha256,
+                base_path=context.endpoint.base_path,
+                page_token=page_token,
+            )
         if isinstance(interpretation, OneCPlanDraft):
-            return OneCAnswer(question=question, clarification=interpretation.clarification)
+            return OneCAnswer(question=question or "", clarification=interpretation.clarification)
 
         kwargs: dict[str, Any] = {}
         if resolver is not None:
@@ -615,24 +638,64 @@ class OneCQueryAnswerService:
             **kwargs,
         )
         table = format_result(result)
-        history_id = await history.record(
-            tenant_id=tenant_id,
-            actor_id=actor_id,
-            connection_id=connection_id,
-            entity_set=interpretation.validated.entity_spec.name,
-            plan_json=plan_to_json(interpretation.plan),
-            plan_fingerprint=interpretation.validated.plan_fingerprint,
-            question=question,
-            row_count=result.row_count,
-            duration_ms=result.history_metadata.duration_ms,
-            status="executed",
-        )
+        if history_id is None:
+            recorded_id = await history.record(
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+                connection_id=connection_id,
+                entity_set=interpretation.validated.entity_spec.name,
+                plan_json=plan_to_json(interpretation.plan),
+                plan_fingerprint=interpretation.validated.plan_fingerprint,
+                question=question or "",
+                row_count=result.row_count,
+                duration_ms=result.history_metadata.duration_ms,
+                status="executed",
+            )
+        else:
+            recorded_id = history_id
         return OneCAnswer(
-            question=question,
+            question=question or "",
             interpretation=interpretation,
             result=result,
             table=table,
-            history_id=history_id,
+            history_id=recorded_id,
+        )
+
+    async def _continue_from_history(
+        self,
+        history: OneCQueryHistoryRepository,
+        *,
+        tenant_id: int,
+        actor_id: int,
+        connection_id: int,
+        history_id: int,
+        catalog: OneCMetadataCatalog,
+        context: OneCConnectionContext,
+        page_token: str | None,
+    ) -> OneCQueryInterpretation:
+        """Rebuild an authorized stored plan and validate it again before execution."""
+        stored = await history.load_plan(tenant_id=tenant_id, actor_id=actor_id, history_id=history_id)
+        if stored.connection_id != connection_id:
+            # A row from another connection must not be executed against this one.
+            raise OneCNaturalLanguageError("history_not_found")
+        plan = plan_from_json(stored.plan_json)
+        if page_token is not None:
+            plan = replace(plan, page_token=page_token)
+        try:
+            validated = build_odata_query_target(
+                plan,
+                catalog,
+                allowed_entity_sets=context.allowed_entity_sets,
+                allowed_fields_by_entity=context.allowed_fields,
+                expected_metadata_sha256=context.metadata_sha256,
+                base_path=context.endpoint.base_path,
+            )
+        except (OneCQueryError, OneCMetadataError) as exc:
+            raise OneCNaturalLanguageError(exc.code) from None
+        return OneCQueryInterpretation(
+            plan=plan,
+            validated=validated,
+            description=describe_plan(plan, validated.entity_spec),
         )
 
     async def export(

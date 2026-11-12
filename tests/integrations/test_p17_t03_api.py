@@ -151,6 +151,24 @@ def test_query_rejects_invalid_body():
     assert request("POST", "/query", {"connection_id": 5, "question": "ok", "extra": 1}).status_code == 422
 
 
+def test_query_continues_from_a_stored_plan_without_a_question(monkeypatch):
+    answer = AsyncMock(return_value=make_answer())
+    monkeypatch.setattr(onec.OneCQueryAnswerService, "answer", answer)
+    response = request("POST", "/query", {"connection_id": 5, "history_id": 42, "page_token": "next-token"})
+    assert response.status_code == 200
+    assert response.json()["history_id"] == 42
+    kwargs = answer.await_args.kwargs
+    assert kwargs["history_id"] == 42 and kwargs["page_token"] == "next-token" and kwargs["question"] is None
+
+
+def test_query_requires_a_question_without_a_stored_plan(monkeypatch):
+    answer = AsyncMock(return_value=make_answer())
+    monkeypatch.setattr(onec.OneCQueryAnswerService, "answer", answer)
+    response = request("POST", "/query", {"connection_id": 5})
+    assert response.status_code == 400 and response.json()["detail"] == "question_required"
+    answer.assert_not_awaited()
+
+
 def test_history_lists_actor_entries(monkeypatch):
     entry = OneCHistoryEntry(
         id=1,

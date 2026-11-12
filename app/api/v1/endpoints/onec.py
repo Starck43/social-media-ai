@@ -170,7 +170,8 @@ async def revoke_host(request: Request, host_id: int = Path(gt=0), user: User = 
 class QueryInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     connection_id: int = Field(gt=0)
-    question: str = Field(min_length=1, max_length=1000)
+    question: str | None = Field(default=None, min_length=1, max_length=1000)
+    history_id: int | None = Field(default=None, gt=0)
     cache_ttl_seconds: int = Field(default=0, ge=0, le=300)
     page_token: str | None = Field(default=None, max_length=256)
 
@@ -232,6 +233,8 @@ async def _call_query(fn, **kwargs):
 @router.post("/query", response_model=QueryOutput)
 async def run_query(body: QueryInput, request: Request, user: User = Depends(get_authenticated_user)):
     scope = _query_scope(request, user)
+    if body.history_id is None and not (body.question or "").strip():
+        raise HTTPException(400, "question_required")
     answer = await _call_query(
         OneCQueryAnswerService().answer,
         **scope,
@@ -240,6 +243,7 @@ async def run_query(body: QueryInput, request: Request, user: User = Depends(get
         history=OneCQueryHistoryRepository(),
         cache_ttl_seconds=body.cache_ttl_seconds,
         page_token=body.page_token,
+        history_id=body.history_id,
     )
     if answer.clarification is not None:
         return QueryOutput(

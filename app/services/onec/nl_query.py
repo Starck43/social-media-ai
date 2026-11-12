@@ -207,6 +207,11 @@ def _parse_iso_date(value: Any) -> date | datetime:
         raise OneCNaturalLanguageError("invalid_date") from None
 
 
+def _reject_json_float(_text: str) -> Any:
+    """Refuse JSON floats: filters are typed, and a float in a model answer signals a bad plan."""
+    raise OneCNaturalLanguageError("float_forbidden")
+
+
 def parse_plan_draft(payload: str | bytes | Mapping[str, Any]) -> OneCPlanDraft:
     """Parse a model response into an untrusted draft, rejecting anything off-schema."""
     if isinstance(payload, (str, bytes)):
@@ -214,7 +219,9 @@ def parse_plan_draft(payload: str | bytes | Mapping[str, Any]) -> OneCPlanDraft:
         if len(text) > 20000:
             raise OneCNaturalLanguageError("plan_too_large")
         try:
-            data = json.loads(text, parse_float=Decimal)
+            data = json.loads(text, parse_float=_reject_json_float)
+        except OneCNaturalLanguageError:
+            raise
         except (json.JSONDecodeError, InvalidOperation, UnicodeDecodeError):
             raise OneCNaturalLanguageError("invalid_plan_payload") from None
     elif isinstance(payload, Mapping):
@@ -774,6 +781,12 @@ class OneCQueryAnswerService:
             **kwargs,
         )
         file = export_result(result, format, title=title)  # type: ignore[arg-type]
+        if history_id is not None:
+            # A stored result keeps its single history row; only the export is marked.
+            await history.mark_exported(
+                tenant_id=tenant_id, actor_id=actor_id, history_id=history_id, exported_format=format
+            )
+            return file, history_id
         new_history_id = await history.record(
             tenant_id=tenant_id,
             actor_id=actor_id,

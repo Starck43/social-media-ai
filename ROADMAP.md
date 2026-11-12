@@ -42,6 +42,10 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P1
 
+- [P21-T02](docs/tasks/p21-t02.md) Single LLM dispatch seam and resolution contract — **TODO** · unassigned · depends on P21-T01 · `P1` · `C3`
+- [P21-T03](docs/tasks/p21-t03.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T02; owner gate for money/cutover · `P1` · `C4`
+- [P21-T04](docs/tasks/p21-t04.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T02/P21-T03; feeds P2-T09 · `P1` · `C4`
+
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
 - [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **DEFERRED** (owner: park after local mock/DB increment until runtime journey and bounded live VK evidence, 2026-10-29) · notion-ai-p8-t41 · [Closeout](https://github.com/Starck43/social-media-ai/pull/279#issuecomment-6492303448) · resume `dev` at `295268d9` · `P1` · `C4`
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
@@ -50,14 +54,11 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P21-T01](docs/tasks/p21-t01.md) AI model operations and dispatch-safety plan — **IN_PROGRESS** · opencode-p21-t01 · session `ses_e354e565fffeD23W3LsJFPutDs` · `P2` · `C3`
-- [P21-T02](docs/tasks/p21-t02.md) Single LLM dispatch seam and resolution contract — **TODO** · unassigned · depends on P21-T01 · `P1` · `C3`
-- [P21-T03](docs/tasks/p21-t03.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T02; owner gate for money/cutover · `P1` · `C4`
-- [P21-T04](docs/tasks/p21-t04.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T02/P21-T03; feeds P2-T09 · `P1` · `C4`
+- [P21-T01](docs/tasks/p21-t01.md) AI model operations and dispatch-safety plan — **READY** · opencode-p21-t01 · session `ses_e354e565fffeD23W3LsJFPutDs` · `P2` · `C3`
 - [P21-T05](docs/tasks/p21-t05.md) Provider rate limits and circuit-breaker wiring — **TODO** · unassigned · depends on P21-T02 · `P2` · `C4`
 - [P21-T06](docs/tasks/p21-t06.md) Credential boundary and rotation hardening — **TODO** · unassigned · owner gate for accepted security/crypto contract · `P2` · `C4`
 - [P21-T07](docs/tasks/p21-t07.md) Prompt and tool safety coverage audit — **TODO** · unassigned · independent; feeds P21-T02 · `P2` · `C3`
-- [P21-T08](docs/tasks/p21-t08.md) Model configuration consolidation and legacy cleanup — **TODO** · unassigned · depends on P21-T02; owner gate for schema/API changes · `P2` · `C3`
+- [P21-T08](docs/tasks/p21-t08.md) Unified model catalog, plan grants and generation policy — **TODO** · unassigned · depends on P21-T02; activation requires P21-T03/T04/T05/T06 · `P2` · `C4`
 
 - [P20-T13](docs/tasks/p20-t13.md) Web usability hardening while preserving the current visual style — **READY** · opencode-p20-t13 · [PR #473](https://github.com/Starck43/social-media-ai/pull/473) · `P2` · `C3`
 
@@ -171,6 +172,10 @@ Document management (TZ module 6); use the P19 cards in the execution queue.
 ## [P20](docs/phases/p20-proactive-assistant.md)
 
 Proactive assistant and unified workspace; use the P20 cards in the execution queue.
+
+## [P21](docs/phases/p21-ai-operations.md)
+
+Model catalogs, plan grants and dispatch-safety review; implementation is not activated.
 
 ## Questions
 

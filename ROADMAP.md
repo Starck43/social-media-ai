@@ -88,7 +88,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULE
 ## Deferred by explicit owner decision
 
 - [P2-T08](docs/tasks/p2-t08.md) corporate/shared billing accounts — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P3` · `C4`
-- [P2-T15](docs/tasks/p2-t15.md) extensible capability entitlements foundation — **READY** · opencode-p2-t15 · [PR #480](https://github.com/Starck43/social-media-ai/pull/480) at `853730a0`; focused validation PASS (60 source/surface + 8 PostgreSQL/migration), exact-candidate cleanup verified; owner-authorized self-audit pending · `P3` · `C4`
+- [P2-T15](docs/tasks/p2-t15.md) extensible capability entitlements foundation — **READY** · opencode-p2-t15 · [PR #481](https://github.com/Starck43/social-media-ai/pull/481) at `c4f3f566`; focused validation PASS (60 source/surface + 8 PostgreSQL/migration), exact-candidate cleanup verified; owner-authorized self-audit pending · `P3` · `C4`
 - [Q-12](docs/tasks/q-12.md) Self-service email password recovery for the public phase — **DEFERRED** · product-owner · pre-production: email confirmation first, then recovery · `P3` · `C4`
 
 ## Phase navigation

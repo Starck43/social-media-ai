@@ -299,16 +299,19 @@ the source SHA. Reviewer/executor records the resolved SHA as evidence.
 ## Tests
 
 Read [test-runner](../.agents/skills/test-runner/SKILL.md) and
-[tests/AGENTS](../tests/AGENTS.md) for test work only. Codex uses OpenCode first:
-from the target checkout, `opencode run --agent build --file <task-file>` with
-instructions to invoke configured `tester` via the V2 `subagent` tool. Its model
+[tests/AGENTS](../tests/AGENTS.md) for test work only. Route test runs in the
+delegation order: the [Perch route](../.agents/skills/perch-task/SKILL.md)
+(`perch run --json`; only Codex may invoke third-party agents), then the `free-pi`
+subagent (`free-pi/deepseek-v4.1-flash#medium`), then the configured OpenCode
+`build` with the V2 `tester` subagent: from the target checkout,
+`opencode run --agent build --file <task-file>` with instructions to invoke
+`tester` via the V2 `subagent` tool. Tester model
 `river/deepseek-ai/DeepSeek-V4.1-Flash-1017` and subagent mode come from
 `~/.config/opencode/opencode.jsonc`; do not override them or select tester as
 parent. Tester only runs the supplied command and analyzes output; parent owns
-preparation/cleanup. Explicit test authoring is a separate assignment.
-If unavailable, use Perch via [the Perch route](../.agents/skills/perch-task/SKILL.md)
-(`perch run --json`), then a native Codex child; permission/HEAD/ownership
-failures are not bypass permissions. Other agents use native test children.
+preparation/cleanup. Explicit test authoring is a separate assignment. Fall to
+the next route only when the previous one is unavailable or fails, and report
+which route ran; permission/HEAD/ownership failures are not bypass permissions.
 Collect affected paths after enum/import/layout changes. DB scopes use root
 conftest; disable it only for proven no-DB isolation. No broad suite without
 explicit owner request; auditor retest decisions follow Acceptance above.

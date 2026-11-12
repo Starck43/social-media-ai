@@ -20,7 +20,7 @@ class TrustedOutboundHost(Base):
     """One destination the server may reach on behalf of any connector.
 
     No `tenant_id`, by the owner-authorized exception of 2026-11-04
-    (docs/BUSINESS_MODULES.md, "Tenant isolation"): the row is a platform-wide
+    (docs/product/BUSINESS_MODULES.md, "Tenant isolation"): the row is a platform-wide
     technical fact that holds no customer data and is global by nature — it
     authorizes our egress, not a workspace's content. Only the installation
     administrator (`is_superuser_role`) can see or change it; a tenant actor can

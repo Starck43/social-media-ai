@@ -1,7 +1,7 @@
 # Collection plan: task-owned typed collection
 
 Historical design/evidence; not current task ownership, migration authorization
-or proof at a newer revision. Current contracts are routed by [DESIGN](../DESIGN.md).
+or proof at a newer revision. Current contracts are routed by [DESIGN](../product/DESIGN.md).
 
 Status: design accepted by the owner on 2026-10-21; implementation is tracked
 by [P5-T14](../phases/p5-ai-boundaries.md). Stage A delivered the payload
@@ -33,8 +33,8 @@ contract pinned); its live dry-run waits for Q-5. Stages C–D4 are merged into
 `dev` (integration merges
 `3e4da0d` and `fc7ff52`). Until P5-T14
 is `READY`/`DONE`, runtime behavior in
-[COLLECTION](../COLLECTION.md), [task selection](../COLLECTION.md#task-selection-contract) and
-[MODELS](../MODELS.md) still applies except for the stage-C selection path
+[COLLECTION](../connectors/COLLECTION.md), [task selection](../connectors/COLLECTION.md#task-selection-contract) and
+[MODELS](../agent/MODELS.md) still applies except for the stage-C selection path
 described there. Stage B implementation plan:
 [collection plan — stage B](collection-stage-b-history.md).
 

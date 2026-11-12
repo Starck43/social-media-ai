@@ -3,7 +3,7 @@
 # P10 — Source-audit hardening (gate: the audited runtime defects are closed)
 
 Phase scope and accepted-task history. [Active index](../../ROADMAP.md#p10);
-detailed cards are siblings in this directory. [Product direction](../PRODUCT_PLAN.md#foundation-directions).
+detailed cards are siblings in this directory. [Product direction](../product/PRODUCT_PLAN.md#foundation-directions).
 Historical instructions/permissions below are evidence, not current policy.
 
 Goal: implement the runtime fixes from the source-pinned audit. Baseline
@@ -201,7 +201,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   No app startup, real DB/keys/providers, migration/reset or deployment.
   Deferred: existing-catalog ORM/CLI and zero-write/no-dispatch acceptance in
   the approved owner environment at the published PR SHA; coordinator review.
-  Commands/limits: [CLI handoff](../CLI.md#llm-cli-validation-handoff).
+  Commands/limits: [CLI handoff](../platform/CLI.md#llm-cli-validation-handoff).
   Coordinator source review on current dev `dea6e4d985f0d5962ad959e86d19429d85688d95`
   confirms the provider-list schema, shared mock probe, validation and
   fail-closed real-probe path are present, with focused CLI contract and parser
@@ -370,7 +370,7 @@ implementation; serialize shared-file lanes and all DB acceptance under R10.
   is the authenticated console reset (platform admin + `user.update` for
   another account, current password for self, owner refused on both pages),
   documented as the accepted mechanism in
-  [ADMIN password routes](../ADMIN.md#password-routes-outside-sqladmin)
+  [ADMIN password routes](../platform/ADMIN.md#password-routes-outside-sqladmin)
   together with the out-of-band owner-recovery procedure and its
   token-revocation limitation (stateless JWTs: a reset does not sign live
   sessions out). The legacy `GET/POST /admin/reset-password`, its template and

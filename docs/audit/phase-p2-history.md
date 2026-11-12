@@ -3,7 +3,7 @@
 # P2 — Complete usage and spend (gate: usage and spend are complete and attributable)
 
 Phase scope and accepted-task history. [Active index](../../ROADMAP.md#p2);
-detailed cards are siblings in this directory. [Product direction](../PRODUCT_PLAN.md#foundation-directions).
+detailed cards are siblings in this directory. [Product direction](../product/PRODUCT_PLAN.md#foundation-directions).
 Historical instructions/permissions below are evidence, not current policy.
 
 Goal: no request starts without committed admission under the current cap;

@@ -59,7 +59,7 @@ class VKClient(BaseClient):
     # successful collection rather than an error.
     narrowed_by: NarrowedAccess | None = None
 
-    # Source.params["mode"] values (see docs/COLLECTION.md).
+    # Source.params["mode"] values (see docs/connectors/COLLECTION.md).
     MODE_API = "api"  # L1: service token only
     MODE_USER = "user"  # L2: user token only
     MODE_AUTO = "auto"  # default: L1, falling back to L2 on a layer-1 error

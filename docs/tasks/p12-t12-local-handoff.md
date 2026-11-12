@@ -1,8 +1,8 @@
 # P12-T12 — integrated increment and remaining roadmap
 
 Entry: [task card](p12-t12.md), [validation](../archive/P12_FILE_WORKSPACE_VALIDATION.md),
-[implementation](../FILE_WORKSPACE_PRIVATE_IMPLEMENTATION.md),
-[original plan reconciliation](../FILE_WORKSPACE_ROADMAP.md).
+[implementation](../file-workspace/FILE_WORKSPACE_PRIVATE_IMPLEMENTATION.md),
+[original plan reconciliation](../file-workspace/FILE_WORKSPACE_ROADMAP.md).
 
 ## Completion evidence
 

@@ -1,4 +1,4 @@
-"""Sources CRUD for `/app/sources` (docs/API.md).
+"""Sources CRUD for `/app/sources` (docs/platform/API.md).
 
 List + add + edit + toggle + delete + a per-source detail page. Sources are
 scoped to the current workspace.
@@ -64,7 +64,7 @@ def _clean_params(base: dict | None = None) -> dict:
     """A copy of the source's collection params for editing.
 
     Whose items are analysed is a task property (`tracked_users`), never a source
-    property (`docs/COLLECTION.md#task-selection-contract`), so nothing author-related is
+    property (`docs/connectors/COLLECTION.md#task-selection-contract`), so nothing author-related is
     written here.
     """
     return dict(base or {})

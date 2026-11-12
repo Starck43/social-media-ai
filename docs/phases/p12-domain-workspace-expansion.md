@@ -1,6 +1,6 @@
 # P12 — Domain workspace and navigation expansion
 
-[Product direction](../PRODUCT_PLAN.md#expansion-sequence) · [ROADMAP](../../ROADMAP.md#p12)
+[Product direction](../product/PRODUCT_PLAN.md#expansion-sequence) · [ROADMAP](../../ROADMAP.md#p12)
 
 **Goal:** Expand the `/app` web workspace from a flat 10-item social monitoring menu into a structured 5-domain business assistant (`Обзор и ИИ-чат`, `Мониторинг и источники`, `База знаний и документы`, `Коммуникации и фоллоу-апы`, `Кейсы и система`) while preserving 100% route continuity (`/app/settings` retains all 7 existing tabs and consolidates all external connectors under `/app/settings?tab=connections`).
 
@@ -17,7 +17,7 @@
 3. **Explicit Workspace Connections (P12-T08):**
    - `Platform.params` remains global non-secret API configuration. Versioned provider/method/form contracts live in `app/integrations/catalog/`.
    - Mail.ru/Yandex Mail instances use `WorkspaceConnection` with explicit tenant + owner and separate encrypted `WorkspaceConnectionSecret` (migration 0121). Configuration, storage and IMAP login checks are implemented; synchronization and sending are not.
-   - This supersedes the earlier proposal to scope new business connections only through `UserCredential.meta`. Existing personal VK/Telegram credentials and legacy consumers remain unchanged and are not auto-bound to a workspace. See [connector contract](../CONNECTOR_CONFIGURATION.md).
+   - This supersedes the earlier proposal to scope new business connections only through `UserCredential.meta`. Existing personal VK/Telegram credentials and legacy consumers remain unchanged and are not auto-bound to a workspace. See [connector contract](../connectors/CONNECTOR_CONFIGURATION.md).
 4. **Cloud Drive & Document Connection Flow (`SourceType.DRIVE_FOLDER`):**
    - The existing descriptor contract (not an implemented drive adapter or the new mail-connection storage): mounted folders on Yandex Disk (`https://cloud-api.yandex.net/v1/disk/resources`) or Mail.ru Cloud WebDAV (`https://webdav.cloud.mail.ru`) are persisted as `Source(platform_id=..., source_type=SourceType.DRIVE_FOLDER, external_id="disk:/Договоры 2026", params={"credential_id": cred.id, "allowed_extensions": [".pdf", ".docx", ".xlsx"]})`.
 5. **Zero-Conflict Parallelism Rule (`app/web/nav.py` & `app/web/__init__.py`):**
@@ -126,7 +126,7 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 ## Business-module continuation (P13–P19)
 
 The owner's business-module TZ continues the P12 connectors and domain workspaces
-in [P13–P19](../BUSINESS_MODULES.md): Bitrix24 and 1C adapters behind the existing
+in [P13–P19](../product/BUSINESS_MODULES.md): Bitrix24 and 1C adapters behind the existing
 catalog descriptors, a persistent outbox and inbox on top of P12-T04, document
 management extending the P12-T03/T11 document store, and a local file connector
 reusing the P12-T12 file-workspace contracts once [PR #327](https://github.com/Starck43/social-media-ai/pull/327)

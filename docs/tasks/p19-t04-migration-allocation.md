@@ -67,7 +67,7 @@ Exactly the DDL proposed in the P19-T04 card, reviewed and accepted for allocati
 ## Superseded numbering (2026-11-09, owner-directed)
 
 - The numbers in this note are **history, not a reservation**. Under the
-  [migration numbering rules](../COLLABORATION.md#migration-numbering-and-parallel-tasks)
+  [migration numbering rules](../process/COLLABORATION.md#migration-numbering-and-parallel-tasks)
   a task writes a placeholder revision and the number is assigned at merge.
 - P19-T04 and P15-T08 both follow the live `dev` head `0147` and both ship a
   placeholder revision. The agent that integrates them in `dev` assigns the next
@@ -80,7 +80,7 @@ Exactly the DDL proposed in the P19-T04 card, reviewed and accepted for allocati
 ## Superseded numbering (2026-11-09, owner-directed)
 
 - The numbers above are **history, not a reservation**. Under the
-  [migration numbering rules](../COLLABORATION.md#migration-numbering-and-parallel-tasks)
+  [migration numbering rules](../process/COLLABORATION.md#migration-numbering-and-parallel-tasks)
   a task writes a placeholder revision and the number is assigned at merge.
 - Both tasks follow the live `dev` head and ship a placeholder revision. The
   integrator assigns the next free numbers in integration order, rewrites only

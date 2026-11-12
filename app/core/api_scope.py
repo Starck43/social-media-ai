@@ -119,7 +119,7 @@ class ApiScopeMiddleware:
             or personal_notifications
             or _is_personal_connector_path(path, request.method)
         ):
-            # Account-level, not workspace-level (`docs/API.md`, Authorization):
+            # Account-level, not workspace-level (`docs/platform/API.md`, Authorization):
             # the caller's own profile and password follow the account, so an
             # API-only registration without a membership can still use them, and
             # a suspended workspace cannot take away self-service that never

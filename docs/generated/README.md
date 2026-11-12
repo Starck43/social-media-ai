@@ -8,7 +8,7 @@ Only stable metadata is generated here:
 - [Typer parameters](cli-options.md): flags/arguments, types, requiredness and
   declared defaults; factories are never evaluated (`<dynamic>`).
 
-[API policy/examples](../API.md) and [CLI policy/examples](../CLI.md) remain
+[API policy/examples](../platform/API.md) and [CLI policy/examples](../platform/CLI.md) remain
 handwritten. An OpenAPI security annotation, CLI flag or default is not evidence
 of authorization, tenant isolation, readiness or permission to execute a command.
 No audit history is regenerated or reattributed.

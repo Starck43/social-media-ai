@@ -1,6 +1,6 @@
 """Prompt system on the base_prompt + media_overrides + summary_prompt model.
 
-Prompt-variable validation for docs/AI_PIPELINE_AND_PROMPTS.md.
+Prompt-variable validation for docs/agent/AI_PIPELINE_AND_PROMPTS.md.
 (`validate_prompt` over `AVAILABLE_VARIABLES`) and prompt assembly
 (`PromptBuilder.get_prompt` with base_prompt + media_overrides + JSON
 detection). The tests pin the documented contract, not the old five-prompt

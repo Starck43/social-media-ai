@@ -1,6 +1,6 @@
 """Bounded, inert UTF-8 extraction; no I/O, authorization or retained storage.
 
-Only the isolated helper contract in docs/FILE_WORKSPACE_PLAIN_TEXT.md is
+Only the isolated helper contract in docs/file-workspace/FILE_WORKSPACE_PLAIN_TEXT.md is
 implemented. Real reads, processing policy and version lineage belong to the
 owning service. These defensive limits are not approved production budgets.
 """

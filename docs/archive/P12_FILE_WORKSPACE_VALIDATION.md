@@ -10,7 +10,7 @@ They remain UNRUN. Runtime activation and deployment are separate.
 The increment delivers the private catalog, bounded cloud text attachment and
 selected-line preview, scoped consent and encrypted-result lifecycle, automatic
 bounded expiry, schema bootstrap fences and explicit rotation purge approval.
-The [reconciled original plan](../FILE_WORKSPACE_ROADMAP.md) retains the broader
+The [reconciled original plan](../file-workspace/FILE_WORKSPACE_ROADMAP.md) retains the broader
 P12-T12 roadmap and P12-T15 responsibilities; unsupported immutable provider-byte
 versions, native original-open, local-only execution and approved writes are not
 reported as implemented.

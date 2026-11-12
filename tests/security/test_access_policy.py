@@ -515,7 +515,7 @@ def test_operator_http_identity_loss_fails_closed_even_with_data_bypass():
     from app.core.permissions import platform_request_scope
 
     # The bypass is data access, never a grant: the console answers with the
-    # operator's own `role_permission` rows (`docs/ADMIN.md`), and only the
+    # operator's own `role_permission` rows (`docs/platform/ADMIN.md`), and only the
     # platform owner holds the wildcard. Identity loss refuses either way.
     actor = user("admin")
     with tenant_scope(bypass=True), platform_request_scope(), permission_scope(actor):

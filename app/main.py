@@ -123,7 +123,7 @@ def create_application() -> FastAPI:
     application.include_router(entry.router, prefix="/api/v1")
     application.include_router(health_router)
 
-    # Client-facing UI (docs/API.md): pages under /app, tenant-scoped.
+    # Client-facing UI (docs/platform/API.md): pages under /app, tenant-scoped.
     # Kept out of OpenAPI docs — it is HTML, not a machine API.
     application.include_router(web_router, include_in_schema=False)
 
@@ -150,7 +150,7 @@ def create_application() -> FastAPI:
     # two (Starlette nests in reverse order of the calls). It must run *before*
     # the platform bypass opens: it replaces the caller's scope entirely, and an
     # inner layer could only widen it again. Owner keeps the bypass
-    # (`docs/ADMIN.md` — "everyone else their own").
+    # (`docs/platform/ADMIN.md` — "everyone else their own").
     application.add_middleware(AdminScopeMiddleware)
 
     # Console CSRF: every mutating /admin/* request carries a session-bound

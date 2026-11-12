@@ -26,7 +26,7 @@ the owner performs it after integration. Runtime activation stays separate.
    selected owner checks, one encrypted personal authorization and explicit
    per-workspace grants, reuse/detach/local-revoke API and durable bounded Telegram
    phone/code/2FA machine API. See
-   [account reuse](../CONNECTOR_ACCOUNT_REUSE.md) for the delivery limits.
+   [account reuse](../connectors/CONNECTOR_ACCOUNT_REUSE.md) for the delivery limits.
 5. **Migration graph:** linear `0123` -> `0124` -> `p12t14_accounts` -> `p12t14_tg_login` -> `p12t14_tg_runtime` ->
    `p12t14_tg_recovery` -> `p12t14_tg_retention`, not the former
    slice-only sibling arrangement. No legacy Telegram session import.

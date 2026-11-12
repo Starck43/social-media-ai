@@ -1,6 +1,6 @@
 # P14 — Bitrix24 CRM integration (TZ module 1)
 
-[Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p14)
+[Product direction](../product/PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../product/BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p14)
 
 **Phase status: IN_PROGRESS.** Core T01–T06 are accepted as of 2026-11-08; the separately deferred on-premise authorization task P14-T08 remains tracked in ROADMAP. Registration: [P13-T01 accepted](../audit/p13-t01.md).
 Owner estimate (TZ): 3–4 weeks — not a repository commitment.

@@ -5,7 +5,7 @@
 Metadata navigation only. Authentication, authorization, tenant scope, side effects
 and execution permissions remain in the handwritten references and code.
 
-[Policy and examples](../CLI.md).
+[Policy and examples](../platform/CLI.md).
 
 | Command | Parameter | Kind | Type | Required | Default |
 | --- | --- | --- | --- | --- | --- |

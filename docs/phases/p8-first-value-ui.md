@@ -1,6 +1,6 @@
 # P8 — First value and support UI
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p8) · [full historical notes](../audit/phase-p8-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p8) · [full historical notes](../audit/phase-p8-history.md)
 
 **Goal:** A first-time owner reaches value and support can diagnose what happened.
 

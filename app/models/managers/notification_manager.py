@@ -25,7 +25,7 @@ class NotificationManager(BaseManager["Notification"]):
     """Workspace-wide notification feed.
 
     ``is_read`` is a shared workspace flag, not a per-user acknowledgement (see
-    docs/NOTIFICATIONS.md). Methods return read and unread rows unless a filter
+    docs/business/NOTIFICATIONS.md). Methods return read and unread rows unless a filter
     says otherwise; all filtering, counting and bulk changes run in SQL.
     """
 

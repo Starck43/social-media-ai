@@ -45,8 +45,8 @@ A fresh heartbeat proves event-loop presence only: not queue, worker, listener,
 provider, source-data freshness, analysis quality or delivery success. Never
 substitute `/livez`, `/readyz`, API uptime or an old runtime id for this signal.
 
-Sources: [runtime configuration](../CONFIGURATION.md#optional-same-host-runtime-observation),
-[HTTP probes](../DEPLOYMENT.md#2-interpret-the-http-probes-correctly),
+Sources: [runtime configuration](../platform/CONFIGURATION.md#optional-same-host-runtime-observation),
+[HTTP probes](../platform/DEPLOYMENT.md#2-interpret-the-http-probes-correctly),
 [runtime signal](../../app/core/runtime_presence.py), [HTTP route](../../app/core/health.py).
 P8-T10 code `d7213c6b` and P8-T11 integration `83c1f79a` are included in this
 contract's source base. T10's remaining registry closure belongs to the owner;
@@ -114,7 +114,7 @@ and within 12 hours of observing completion; do not rely on a seven-day Job
 history. Retained evidence is not permission to change retention or dump raw
 results. If a row disappears before evidence capture, report `unavailable` and
 coverage loss, never reconstruct a successful result from task `last_status`.
-See [job retention](../AGENT_TASKS_QUEUE.md#job-history-and-one-time-runs).
+See [job retention](../agent/AGENT_TASKS_QUEUE.md#job-history-and-one-time-runs).
 
 All targets below are **proposed v1 thresholds**, not measured baselines or
 promises that current code already achieves them. Report numerator, denominator,
@@ -175,7 +175,7 @@ claimed to exist: the authorized operator keeps this manual evidence log.
 
 Source fields/semantics: [Job](../../app/models/scheduling/job.py),
 [permission-aware task results](../../app/services/task_results.py),
-[task run receipts](../AGENT_TASKS_PLAN.md#explicit-task-plans).
+[task run receipts](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans).
 `AgentTask.last_status=queued` is historical admission evidence, not completion.
 Database `started_at`/`finished_at` are not claimed to be exposed by every UI/API;
 this manual metric uses receipt observation times, not a new timestamp endpoint.

@@ -1,6 +1,6 @@
 # P11 — Structure, interfaces and scale readiness
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p11)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p11)
 
 **Phase status: DONE 2026-10-31.** All registered selected items below are accepted.
 The modular-monolith boundaries, shared use-cases, supported tooling and operator

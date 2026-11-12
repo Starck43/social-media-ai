@@ -1,4 +1,4 @@
-"""Scenario editor `/app/scenarios/{id}` (docs/API.md).
+"""Scenario editor `/app/scenarios/{id}` (docs/platform/API.md).
 
 The editor posts the *whole* scenario as one form, so these tests treat the
 rendered form as the contract: they scrape the inputs off the page instead of

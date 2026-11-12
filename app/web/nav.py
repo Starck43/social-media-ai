@@ -1,4 +1,4 @@
-"""The `/app` navigation as data (docs/API.md).
+"""The `/app` navigation as data (docs/platform/API.md).
 
 Section labels and routes live here, not in the template, so a page cannot
 appear and leave a dead link behind. `render()` puts `nav` into the context and

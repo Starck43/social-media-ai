@@ -1,7 +1,7 @@
 # Collection plan — stage B implementation handoff
 
 Historical design/evidence; not current task ownership, migration authorization
-or proof at a newer revision. Current contracts are routed by [DESIGN](../DESIGN.md).
+or proof at a newer revision. Current contracts are routed by [DESIGN](../product/DESIGN.md).
 
 Status: stage B implementation is complete and committed as `c6bd826`; 49
 no-DB tests passed through the primary OpenCode test-runner at that commit.

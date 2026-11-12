@@ -3,7 +3,7 @@
 # P3 — Identity and approvals (gate: identity, permissions and approvals fail closed)
 
 Phase scope and accepted-task history. [Active index](../../ROADMAP.md);
-detailed cards are siblings in this directory. [Product direction](../PRODUCT_PLAN.md#foundation-directions).
+detailed cards are siblings in this directory. [Product direction](../product/PRODUCT_PLAN.md#foundation-directions).
 Historical instructions/permissions below are evidence, not current policy.
 
 Goal: unknown, removed or revoked actors fail closed; approval is actor-bound,

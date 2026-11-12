@@ -1,7 +1,7 @@
-"""Workspace settings `/app/settings` (docs/API.md).
+"""Workspace settings `/app/settings` (docs/platform/API.md).
 
 Scoped sections on one page. What belongs here and what stays in `/admin` is not
-a preference — it follows `docs/TENANCY.md`:
+a preference — it follows `docs/platform/TENANCY.md`:
 
 * **workspace** — the profile of the current workspace, and of nothing else.
 * **team** — memberships in `tenant_users`; a personal secret is only usable by

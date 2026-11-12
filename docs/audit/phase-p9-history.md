@@ -3,7 +3,7 @@
 # P9 — Safe activation and platform access (gate: every external write capability activates only through a contract)
 
 Phase scope and accepted-task history. [Active index](../../ROADMAP.md#p9);
-detailed cards are siblings in this directory. [Product direction](../PRODUCT_PLAN.md#foundation-directions).
+detailed cards are siblings in this directory. [Product direction](../product/PRODUCT_PLAN.md#foundation-directions).
 Historical instructions/permissions below are evidence, not current policy.
 
 Goal: every external write capability is disabled by default and activated

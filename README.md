@@ -7,10 +7,10 @@ chat. Product direction makes the AI chat the primary workspace for clarifying
 requests, previewing and launching work, checking progress/results and following
 up; the permitted social-task journey is accepted in [P8-T39](docs/audit/p8-t39.md).
 Dedicated source, scenario, task, schedule and digest pages remain directly
-accessible for setup and management. The planned workspace ([design](docs/WORKSPACE_UX.md))
+accessible for setup and management. The planned workspace ([design](docs/product/WORKSPACE_UX.md))
 adds «Сегодня», an inbox and a universal task surface beside the chat; managed,
 self-hosted and hybrid core/data-node deployments, own models and a desktop client
-are future directions ([topology](docs/PLATFORM_TOPOLOGY.md)), not shipped features.
+are future directions ([topology](docs/product/PLATFORM_TOPOLOGY.md)), not shipped features.
 MAX transport does not imply MAX collection;
 planned integrations are not shipped features. Source integration alone does
 not certify production readiness.
@@ -21,25 +21,25 @@ API/admin may run separately. Do not start duplicate runtime owners.
 
 ## Development hierarchy
 
-[Architecture](docs/DESIGN.md) → [product directions](docs/PRODUCT_PLAN.md) →
+[Architecture](docs/product/DESIGN.md) → [product directions](docs/product/PRODUCT_PLAN.md) →
 [numbered phases](docs/phases/README.md) → [ROADMAP](ROADMAP.md) → one active
 `docs/tasks/<id>.md` → accepted `docs/audit/<id>.md`.
 This hierarchy defines ownership, not a mandatory reading chain; follow AGENTS'
 lazy task-reading rule rather than loading every ancestor.
 
-**First session:** README, [DESIGN](docs/DESIGN.md), [AGENTS](AGENTS.md).
+**First session:** README, [DESIGN](docs/product/DESIGN.md), [AGENTS](AGENTS.md).
 **Task:** one queue row/card and its selected skill; then only relevant links.
-[Prompt examples](docs/PROMPT_EXAMPLES.md) cover local/remote work and PR audit.
+[Prompt examples](docs/process/PROMPT_EXAMPLES.md) cover local/remote work and PR audit.
 [Subsystem index](docs/DOCS_INDEX.md) routes API, models, setup and release gates.
 
 ## Run locally
 
 Python 3.14+, PostgreSQL 14+, a private `.env` and configured encryption keys are
-required. Use [CONFIGURATION](docs/CONFIGURATION.md) for settings and
-[DEPLOYMENT](docs/DEPLOYMENT.md) for supported setup/migrations/runtime commands.
+required. Use [CONFIGURATION](docs/platform/CONFIGURATION.md) for settings and
+[DEPLOYMENT](docs/platform/DEPLOYMENT.md) for supported setup/migrations/runtime commands.
 Configure providers/models through the supported admin interfaces; external
 publication remains gated. Never infer permission to change a public/production
-schema from a quick-start command; follow [database policy](docs/COLLABORATION.md#database).
+schema from a quick-start command; follow [database policy](docs/process/COLLABORATION.md#database).
 
 ## Offline verification
 
@@ -58,10 +58,10 @@ version comes from `app/version.py`; no repository/DB identifier is renamed.
 Existing flat environment keys/defaults remain supported. `Settings.database`,
 `.security`, `.collection` and `.llm` expose frozen subsystem snapshots from the
 resolved settings object, with no second environment reader. See
-[configuration precedence and safe diagnostics](docs/CONFIGURATION.md#configuration-precedence).
+[configuration precedence and safe diagnostics](docs/platform/CONFIGURATION.md#configuration-precedence).
 
 
 VK/Telegram API endpoints, VK API version and VK OAuth URLs are now read exclusively from the
 shared `Platform.params` JSON. Legacy endpoint/version environment keys are
 one-time migration inputs, not runtime overrides; see
-[shared platform configuration](docs/CONFIGURATION.md#shared-platform-configuration).
+[shared platform configuration](docs/platform/CONFIGURATION.md#shared-platform-configuration).

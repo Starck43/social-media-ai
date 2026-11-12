@@ -1,7 +1,7 @@
 """Tests for VK screen_name -> numeric ID resolution during collection.
 
 A VK source can store either a numeric ID or a short name (screen_name) in
-`external_id` (docs/TENANCY.md, admin "Внешний ID источника"). The VK API only
+`external_id` (docs/platform/TENANCY.md, admin "Внешний ID источника"). The VK API only
 accepts numeric `owner_id`, so `VKClient` resolves a screen_name once per run:
 `users.get` for a person, then `groups.getById` for a community, and finally
 `utils.resolveScreenName` as a last resort (it answers 1051 for this app

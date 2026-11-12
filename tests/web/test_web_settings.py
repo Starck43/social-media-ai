@@ -1,6 +1,6 @@
 """`/app/settings` — workspace, team, personal keys, channels (stage G).
 
-The page is where `docs/TENANCY.md` stops being a document and becomes UI, so
+The page is where `docs/platform/TENANCY.md` stops being a document and becomes UI, so
 the tests below pin the three rules that decide who owns what:
 
 * **a workspace owns itself** — profile and team use a bound settings capability,

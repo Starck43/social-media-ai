@@ -1,6 +1,6 @@
 # Access migration history
 
-Historical source-pinned operations and checks, not a procedure or permission to repeat them. Current database policy in [COLLABORATION](../COLLABORATION.md#database) supersedes this record.
+Historical source-pinned operations and checks, not a procedure or permission to repeat them. Current database policy in [COLLABORATION](../process/COLLABORATION.md#database) supersedes this record.
 
 ## Local development execution evidence (2026-10-15)
 
@@ -56,4 +56,4 @@ The test catalog contains three platform roles, five workspace roles and 31
 resource identities, with no unmapped or retired resource metadata. Ordinary
 pytest startup now validates schema/reference completeness read-only and does
 not create, migrate or seed the shared target. Separate schema preparation
-follows the target, backup and cleanup rules in [database policy](../COLLABORATION.md#database).
+follows the target, backup and cleanup rules in [database policy](../process/COLLABORATION.md#database).

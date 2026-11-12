@@ -167,7 +167,7 @@ def test_platform_role_shape_does_not_grant_web_admin_bypass(codename):
     user = User(is_active=True, role=PlatformRole(codename=codename, permissions=[]))
     assert user.has_admin_access() is (codename in {"admin", "operator"})
     # The scope-bypass predicate follows ownership only: an `admin` reaches the
-    # console by its stored grants, never by a code-level bypass (docs/ADMIN.md).
+    # console by its stored grants, never by a code-level bypass (docs/platform/ADMIN.md).
     assert user._is_superuser_role() is (codename == "superuser")
 
 

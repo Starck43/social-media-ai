@@ -1,6 +1,6 @@
 # P17 — 1C:Enterprise integration (TZ module 4)
 
-[Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p17)
+[Product direction](../product/PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../product/BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p17)
 
 **Phase status: PLANNED** (registered by [P13-T01 accepted](../audit/p13-t01.md); ROADMAP owns task status).
 Owner estimate (TZ): 4–5 weeks — not a repository commitment.

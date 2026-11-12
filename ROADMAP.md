@@ -2,8 +2,8 @@
 
 Status/owner, execution priority and complexity are authoritative here; scope,
 dependencies, documents read and checks live in each linked task card.
-Lifecycle: [COLLABORATION](docs/COLLABORATION.md#tasks); status transitions:
-[state machine](docs/COLLABORATION.md#state-machine). Legacy dialogue “—” means
+Lifecycle: [COLLABORATION](docs/process/COLLABORATION.md#tasks); status transitions:
+[state machine](docs/process/COLLABORATION.md#state-machine). Legacy dialogue “—” means
 not recorded; source recovery links remain in the card.
 
 ## Priority and complexity
@@ -69,7 +69,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **TODO** · unassigned · D21 ownership settled by the [P12-T12 re-scope](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) 2026-11-11: extends P12-T12 grant management, never a second one; the mutation stage needs its own scoped authorization · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 
-Business modules P13–P19 ([adapted TZ and review](docs/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q-18-owner-decisions.md)):
+Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q-18-owner-decisions.md)):
 
 - [P14-T08](docs/tasks/p14-t08.md) Bitrix24 on-premise authorization form on top of the P14-T09 seam — **DEFERRED** (owner, 2026-11-04: no on-premise customer; resumes with P14-T09) · `P2` · `C3`
 

@@ -1,6 +1,6 @@
 """Unit and template tests for P20-T07 («Сегодня»: read-time attention and decisions home).
 
-Covers all acceptance criteria in `docs/tasks/p20-t07.md` and `docs/WORKSPACE_UX.md#today-page`:
+Covers all acceptance criteria in `docs/tasks/p20-t07.md` and `docs/product/WORKSPACE_UX.md#today-page`:
 - Section order (`brief`, `decisions`, `today_plan`, `awaiting_reply`, `attention`, `recent_results`)
 - Cross-tenant and permission filtering per provider
 - Provider failure isolation (one failing provider shows its reason, never blanks the page)

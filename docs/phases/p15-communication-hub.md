@@ -1,6 +1,6 @@
 # P15 — Unified communication hub (TZ module 2)
 
-[Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p15)
+[Product direction](../product/PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../product/BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p15)
 
 **Phase status: IN_PROGRESS** (P15-T06 accepted 2026-11-07; remaining work is governed by ROADMAP).
 Owner estimate (TZ): 5–6 weeks — not a repository commitment.
@@ -25,7 +25,7 @@ TZ 2.1–2.5, adapted:
 
 ## Data model (adapted)
 
-`unified_contacts` → contact core ([CONTACTS](../CONTACTS.md); [P13-T07 audit](../audit/p13-t07.md)); `unified_messages` (unique `(tenant_id, connection_id, channel, original_id)`, R-09); `message_threads`; `message_content_cache` (D3, TTL); `contact_channel_stats`; `scheduled_messages` → `outbox_messages` + `outbox_targets`.
+`unified_contacts` → contact core ([CONTACTS](../business/CONTACTS.md); [P13-T07 audit](../audit/p13-t07.md)); `unified_messages` (unique `(tenant_id, connection_id, channel, original_id)`, R-09); `message_threads`; `message_content_cache` (D3, TTL); `contact_channel_stats`; `scheduled_messages` → `outbox_messages` + `outbox_targets`.
 
 Conventions: integer keys, `TenantScopedMixin`, `settings.DB_SCHEMA`, Alembic revision = next free after rebasing on `dev` (R-01, R-20).
 

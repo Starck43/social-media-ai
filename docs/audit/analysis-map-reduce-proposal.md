@@ -1,7 +1,7 @@
 # Map-reduce analysis pipeline (bounded output for any model)
 
 Historical design/evidence; not current task ownership, migration authorization
-or proof at a newer revision. Current contracts are routed by [DESIGN](../DESIGN.md).
+or proof at a newer revision. Current contracts are routed by [DESIGN](../product/DESIGN.md).
 
 Status: **deferred / not in the current plan** (2026-10-21). P5-T05 was dropped
 under owner instruction: it existed as design only, the current pilot uses the

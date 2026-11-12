@@ -3,7 +3,7 @@
 # P5 — Safe AI boundaries (gate: AI boundaries hold on typed output and hostile input)
 
 Phase scope and accepted-task history. [Active index](../../ROADMAP.md#p5);
-detailed cards are siblings in this directory. [Product direction](../PRODUCT_PLAN.md#foundation-directions).
+detailed cards are siblings in this directory. [Product direction](../product/PRODUCT_PLAN.md#foundation-directions).
 Historical instructions/permissions below are evidence, not current policy.
 
 Goal: invalid typed output cannot gain authority; partial evidence coverage is
@@ -12,7 +12,7 @@ safely.
 
 ## Social execution boundary
 
-The [universal task contract](../AGENT_TASKS_PLAN.md#explicit-task-plans) reuses collection lanes and typed analysis. One-off research stays inside fresh rights and payer limits; schedules and sends retain confirmation. Retrieved content cannot grant authority. This direction is not new acceptance evidence.
+The [universal task contract](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans) reuses collection lanes and typed analysis. One-off research stays inside fresh rights and payer limits; schedules and sends retain confirmation. Retrieved content cannot grant authority. This direction is not new acceptance evidence.
 
 ## Closed tasks
 
@@ -526,7 +526,7 @@ The [universal task contract](../AGENT_TASKS_PLAN.md#explicit-task-plans) reuses
       classification reads the source defensively, so an unreadable type costs
       one evidence row instead of the run. The VK search family stays closed
       for this app profile — the owner action is in
-      [VK Standalone application](../VK_STANDALONE_APP.md) (Q-9).
+      [VK Standalone application](../connectors/VK_STANDALONE_APP.md) (Q-9).
     - Three-question form and visible lanes (code `17acb3f`, owner feedback of
       2026-10-22): the collection period is the first fieldset of the
       collection block, the source block is named «Источники», the selection's

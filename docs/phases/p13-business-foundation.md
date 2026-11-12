@@ -1,6 +1,6 @@
 # P13 — Business-module foundation
 
-[Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p13)
+[Product direction](../product/PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../product/BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p13)
 
 **Phase status: PLANNED** (registered by [P13-T01 accepted](../audit/p13-t01.md); ROADMAP owns task status).
 Owner estimate (TZ): Spread across modules (no separate TZ estimate) — not a repository commitment.
@@ -15,12 +15,12 @@ Owner estimate (TZ): Spread across modules (no separate TZ estimate) — not a r
 
 ## Adapted requirements
 
-- Shared requirements table and review findings: [BUSINESS_MODULES](../BUSINESS_MODULES.md#shared-requirements).
+- Shared requirements table and review findings: [BUSINESS_MODULES](../product/BUSINESS_MODULES.md#shared-requirements).
 - Every later module consumes: `app/core/pii.py` ([P13-T02 accepted](../audit/p13-t02.md)), [contact core](../audit/p13-t07.md), `app/integrations/ratelimit` ([P13-T03 accepted](../audit/p13-t03.md)), `app/services/commands` ([P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)), [audit codes and API conventions](../audit/p13-t05.md), coverage script and mocks ([P13-T06 accepted](../audit/p13-t06.md)), OAuth framework ([P13-T08 accepted](../audit/p13-t04-p14-t04-business-crm.md)).
 
 ## Data model (adapted)
 
-- `contacts`, `contact_identities` (encrypted value + blind index), `contact_consents`, `contact_merge_journal` ([CONTACTS](../CONTACTS.md); [P13-T07 audit](../audit/p13-t07.md)).
+- `contacts`, `contact_identities` (encrypted value + blind index), `contact_consents`, `contact_merge_journal` ([CONTACTS](../business/CONTACTS.md); [P13-T07 audit](../audit/p13-t07.md)).
 - `provider_rate_budgets` ([P13-T03 accepted](../audit/p13-t03.md)).
 - `business_commands`, `business_command_targets` ([P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)).
 
@@ -55,13 +55,13 @@ Conventions: integer keys, `TenantScopedMixin`, `settings.DB_SCHEMA`, Alembic re
 
 Owner-requested dispatch plan (2026-11-03, [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f)).
 Unresolved doubts that hit an owner trigger go to the card's "Open doubts" section and
-are named in the PR body ([owner questions](../COLLABORATION.md#owner-questions)).
+are named in the PR body ([owner questions](../process/COLLABORATION.md#owner-questions)).
 It sets order and lane only; ROADMAP keeps status/owner and a claim is still
 required. A wave starts when its trigger holds, not on a date.
 
 **Lanes.** *Remote* = Git/PR execution without real PostgreSQL; `test_schema`
 checks for its PR come from the local helper as a PR comment
-([remote → local DB help](../PROMPT_EXAMPLES.md#remote-work--local-db-help--audit)).
+([remote → local DB help](../process/PROMPT_EXAMPLES.md#remote-work--local-db-help--audit)).
 *Local* = normally tasks up to `C3`, tasks with migrations or live provider/sandbox
 evidence, and DB validation of remote PRs. The explicitly listed remote Wave 0
 assignments are exceptions to the complexity guideline. All owner decisions (D1–D9) are answered and recorded in

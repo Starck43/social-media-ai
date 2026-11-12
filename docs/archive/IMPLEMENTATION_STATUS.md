@@ -37,7 +37,7 @@ P3-T93–T96 source accepted at `b34353645fe37de53c97c4d022c05af0044dc8ba`
 | LLM analyzer journal foundation — DONE | Tenant-bound attempt identity, tariff snapshot, Decimal USD and explicit unknown costs. | [PR #114](https://github.com/Starck43/social-media-ai/pull/114) |
 | LLM non-analyzer journal capture — DONE | Separate attempt evidence for fallback chat, model probes and digest summaries. | [PR #163](https://github.com/Starck43/social-media-ai/pull/163) |
 | Web and operations | Truthful outcomes, secure cookies, readiness and redacted operational signals. | [PR #27](https://github.com/Starck43/social-media-ai/pull/27) |
-| NULL-role display | Unknown roles display no inferred owner level or implicit grant. | [tenancy contract](../TENANCY.md#roles-and-permissions) |
+| NULL-role display | Unknown roles display no inferred owner level or implicit grant. | [tenancy contract](../platform/TENANCY.md#roles-and-permissions) |
 | Home pipeline strip | Read-only staged/analysis counts and bounded active-job preview. | `c598b70` |
 | Manual digest-send permission parity | Agent/web send both require digestrun.create. | [PR #176](https://github.com/Starck43/social-media-ai/pull/176) |
 | Development workflow | Earlier local/remote coordination foundations; current policy is AGENTS/COLLABORATION. | [PR #183](https://github.com/Starck43/social-media-ai/pull/183) |
@@ -49,7 +49,7 @@ P3-T93–T96 source accepted at `b34353645fe37de53c97c4d022c05af0044dc8ba`
 | Test-bootstrap evidence protection | Read-only unknown-table/column/UNIQUE drift guards before schema writes. | [PR #179](https://github.com/Starck43/social-media-ai/pull/179) |
 | Home overview cleanup | Permission-gated overview, bounded previews and scoped setup/chat links. | [PR #185](https://github.com/Starck43/social-media-ai/pull/185) |
 | Shell and workspace attention | Scoped notification state, revocation/CSRF guards and partial-refresh recovery. | [A #188](https://github.com/Starck43/social-media-ai/pull/188) |
-| Access-model restructuring | Separate platform/workspace roles, resource permissions and private AI memory. | [ACCESS_MIGRATION.md](../ACCESS_MIGRATION.md) |
+| Access-model restructuring | Separate platform/workspace roles, resource permissions and private AI memory. | [ACCESS_MIGRATION.md](../platform/ACCESS_MIGRATION.md) |
 | Notification display — C browser-local slice | Caller-keyed local display preferences and device quiet hours at that source revision. | [PR #190](https://github.com/Starck43/social-media-ai/pull/190) |
 | Settings/access contexts — D bounded slice | Lazy permitted settings tabs, scoped membership controls and explicit workspace context. | [PR #191](https://github.com/Starck43/social-media-ai/pull/191) |
 

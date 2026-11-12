@@ -1,0 +1,845 @@
+# Data Model Reference
+
+This repository model reference describes the current checked-in ORM and
+migration definitions. The source migration chain now extends from
+`baseline_0118` through `0119`–`0123`; the milestone table below records the
+relevant additions. This is not a target-database record: it does not establish
+the revision or integrity of any running database. The table inventory is
+derived from checked-in model declarations.
+Schema comes from `settings.DB_SCHEMA`; never hardcode it in application code.
+
+
+### Personal catalog (integrated; deployment rollout separate)
+
+PR #229 and UI dependency #230 are integrated in dev
+`b34353645fe37de53c97c4d022c05af0044dc8ba`. This model reference and inventory
+describe source definitions, not a fresh database inspection. The personal-catalog
+integration itself did not upgrade a deployment schema; Q-14 later reconciled the
+local public/test schemas to the frozen baseline, which does not prove any other
+target's state. PostgreSQL/ASGI and browser evidence remains pinned to the original
+execution SHAs; none is attributed as a rerun on final dev. See
+[implementation evidence](../audit/personal-llm-ownership.md) and the [Q-14 baseline
+audit](../audit/q-14.md).
+
+The public facade is [app.models](../../app/models/__init__.py); canonical definitions
+live in domain packages. [bootstrap](../../app/models/bootstrap.py) binds managers
+once after class registration. Import declarations from their owning leaf modules
+or domain package; do not add flat `app.models.<model>` modules or cross-domain
+aliases. Keep `base.py`, `bootstrap.py`, `scenario_schema_guard.py` and
+`managers/` as shared infrastructure. `app.models` remains the intentional
+aggregate facade; it imports domain packages directly and manager registration
+imports from `app.models.managers`.
+
+`Role` aliases `PlatformRole`; it is not another mapper. `BotAction` and
+`AgentAction` are the same mapped class declared in
+`app.models.actions.agent_action`; use that canonical path or the `app.models`
+facade, not a scheduling alias. Legacy flat, `analysis.llm_*`, and
+`scheduling.{bot_action,digest_run}` import/pickle paths are intentionally not
+supported.
+
+The explicit helper exports `LLMStrategyType` and `TenantScopedMixin` are
+available from `app.models.analysis.agent_scenario`; `Decimal` and `PeriodType`
+from `app.models.analysis.ai_analytics`; and `TenantScopedMixin` from
+`app.models.scheduling.job`. These are the same objects imported by the
+canonical leaves, not new types or wildcard exports of implementation imports.
+Internal model/manager imports use canonical domain paths.
+See [access transition](../platform/ACCESS_MIGRATION.md) and [tenancy](../platform/TENANCY.md).
+
+Field inventories omit inherited fields where indicated. Exact types, defaults,
+nullability and constraints remain in the linked declarations. Planned work and
+PR branches are not current schema: see [delivered evidence](../archive/IMPLEMENTATION_STATUS.md)
+and the [phase board](../phases/README.md). Merge, migration application, runtime
+activation and whole-gate acceptance are distinct states.
+
+### Table inventory
+
+At the pinned review revision, the source defined **53 mapped tables and 3 association tables**:
+
+| Domain | Mapped tables | Association tables |
+| --- | --- | --- |
+| Identity | `users`, `roles`, `permissions`, `model_types`, `user_credentials`, `login_attempts` | `role_permission` |
+| Tenancy | `tenants`, `tenant_users`, `tenant_invites`, `tenant_channels`, `workspace_roles`, `entitlement_usage` | `workspace_role_permission` |
+| Collection | `platforms`, `sources`, `collected_items`, `collection_seen`, `collection_candidates`, `collection_lane_runs` | — |
+| Analysis | `agent_scenarios`, `ai_analytics`, `analyzed_content_receipts` | — |
+| LLM | `llm_providers`, `llm_models`, `llm_attempts`, `llm_dispatch_receipts`, `llm_outcome_events`, `llm_budget_days`, `llm_budget_reservations` | — |
+| Billing | `personal_billing_accounts`, `task_billing_payers`, `personal_llm_dispatches`, `personal_billing_cutovers`, `personal_legacy_attribution_consents`, `personal_legacy_attributions`, `personal_llm_billing_incidents`, `personal_llm_bound_policies`, `personal_llm_budget_days`, `personal_llm_ledger_entries`, `personal_llm_reservation_states`, `personal_llm_reservations` | — |
+| Scheduling | `agent_tasks`, `jobs` | `agent_task_sources` |
+| Actions | `bot_actions` (public AgentAction / legacy BotAction, one mapper) | — |
+| Audit | `action_audit_events`, `workspace_offboarding_events` | — |
+| Notifications | `notifications`, `digest_runs`, `notification_preferences`, `notification_receipts` | — |
+| Agent | `agent_sessions`, `agent_messages`, `agent_memory`, `agent_feedback` | — |
+
+Personal billing tables remain separate from workspace membership; task payer
+changes require explicit consent. Reviewed daily baselines, bound policies,
+reservations and immutable ledger settlement are separate from legacy analytics
+projections. The models do not imply a billing cutover or a target-schema state.
+
+[NotificationPreference](../../app/models/notifications/notification_preference.py)
+stores per-user bell presentation settings, optimistic version and quiet hours;
+its user FK cascades on deletion. Preference persistence is not notification
+acknowledgement, recipient permission or messenger delivery.
+
+## Base classes and isolation boundaries
+
+[Source: base.py](../../app/models/base.py), [BaseManager](../../app/models/managers/base_manager.py).
+
+- `Base` supplies schema-aware metadata and a class-level manager placeholder. It does not define generic instance `save()`/`delete()` methods; specialized models may define their own methods.
+- `TimestampMixin` supplies non-null `created_at` and `updated_at`, `DateTime(timezone=True)`, server default `now()`; `updated_at` also has SQLAlchemy `onupdate=now()`.
+- `TenantScopedMixin` supplies non-null `tenant_id` FK → `tenants.id`, `ON DELETE CASCADE`, and the `__tenant_scoped__` marker. It does not itself enforce query authorization.
+- Normal BaseManager querysets apply tenant criteria and fail without context for marked models; create rejects mismatched tenants. Explicit bypass, caller-built/raw SQL and association helpers require separate authorization. This is not automatic PostgreSQL row-level security or a guarantee that every direct SQL path is safe.
+- `Tenant`, `TenantUser`, `TenantInvite`, `TenantChannel` do not inherit the marker, even though the latter three contain workspace FKs. Their managers/callers must enforce ownership explicitly. The tenant row itself has no `tenant_id`.
+
+## Catalog and identity tables
+
+These tables do not all share one authorization boundary: social Platform is
+global; providers/models are personal in the integrated 0109 personal-catalog contract.
+Timestamp fields apply to the catalog/identity models below except `platforms`.
+Association tables have no timestamps. LLM evidence/budget timestamp exceptions
+are stated in their own section.
+
+### `platforms`
+
+[Source](../../app/models/collection/platform.py). Global catalog, never user- or
+tenant-owned. Fields: `id` PK; `name` String(50), unique/non-null (display name);
+`platform_type` native enum, globally unique (`uq_platforms_type`); `base_url`
+String(255), non-null (public site URL, not API configuration); `params` mutable
+JSON object, non-null; `is_active` nullable Boolean, default true. No rate-limit
+columns, `created_at` or `updated_at` are declared. Reverse relationship: `sources`.
+
+`params` owns API endpoints/version, VK OAuth URLs and arbitrary non-secret provider parameters.
+Creation materializes defaults once; existing reads never overlay environment
+values. Top-level JSON edits are tracked; replace a nested object to persist
+nested edits. Migration 0120 consolidates compatible type variants, preserves
+source IDs and records inert rollback evidence in reserved `_migration_0120`.
+Conflicting config/public URLs or colliding source identities abort transactionally;
+no user's value silently wins. Historical rollback evidence is not a runtime
+configuration source. See [migration safeguards](../platform/CONFIGURATION.md#shared-platform-configuration).
+
+### `roles`
+
+[Source](../../app/models/identity/role.py). ORM `PlatformRole` (temporary import alias `Role`), physical table `roles`: `id` PK; unique checked string `codename` (`user`, `operator`, `admin`); nullable text `description`. No duplicate `name`. User assignments and `role_permission` remain platform-only.
+
+### `role_permission`
+
+[Source](../../app/models/identity/role.py). Composite PK (`role_id`, `permission_id`), both FK columns to roles/permissions. No timestamps or tenant column. Association updates are not tenant-scoped queryset operations.
+
+### `workspace_roles` and `workspace_role_permission`
+
+[Source](../../app/models/tenancy/workspace_role.py). Independent role catalog with timestamps: `id` PK; unique checked `codename` (`owner`, `admin`, `manager`, `analyst`, `viewer`); nullable text `description`. The association has composite PK (`role_id`, `permission_id`) referencing workspace roles and permissions. Effective workspace grants use the fixed catalog presets.
+
+### `model_types`
+
+[Source](../../app/models/identity/model_type.py). Application model metadata, NOT the LLM capability enum. Fields: `id` PK; unique/non-null `resource_key` String(100); non-null `model_name` and `table_name` String(100) (neither is declared unique in the ORM); `description` nullable Text; `is_managed` Boolean, default true. Reverse relationship: permissions.
+
+### `permissions`
+
+[Source](../../app/models/identity/permission.py). Fields: `id` PK; `name` non-null text label; `action_type` native action enum; `model_type_id` FK to resource metadata. Unique (`model_type_id`, `action_type`). No stored `description` column. `codename` is a computed property (`resource_key.action`), not a stored column. Exact registered keys and explicit one-release legacy aliases resolve through the shared catalog.
+
+### `users`
+
+[Source](../../app/models/identity/user.py). Fields: `id` PK; `username` String(50) and `email` String(100), each unique/indexed/non-null; `hashed_password` String(255); `is_active` Boolean; non-null `role_id` FK → roles. No `is_superuser` column or `notifications` relationship is declared on User. Platform operator identity and workspace membership are separate concepts.
+
+### `login_attempts`
+
+[Source](../../app/models/identity/login_attempt.py); revision `0111`. Global
+infrastructure table for the shared login budget, not tenant-owned. Fields: `id`
+PK; `scope` String(16) (`account` or `address`); `identifier` String(255) — the
+casefolded username/email or the client address, never a secret; `failed_count`
+Integer; `last_attempt_at` timestamp with time zone; nullable `locked_until`
+timestamp with time zone; timestamps. Unique (`scope`, `identifier`). A
+successful login deletes the account row; the address row decays with
+`LOGIN_TIMEOUT_MINUTES`.
+
+### Workspace provider connections (0121)
+
+[Source](../../app/models/integrations/connection.py). `workspace_connections` is
+explicitly tenant-scoped and caller-owned: integer `id`, tenant/owner FKs CASCADE,
+platform/provider/method, catalog schema version, label, normalized account key,
+non-secret JSON config, active flag, constrained verification state, nullable
+check code/time and timestamps. Unique `(tenant_id, owner_user_id, provider_id,
+auth_method, account_key)` permits multiple distinct mailboxes, not duplicate
+instances of the same account in one owner's workspace.
+
+`workspace_connection_secrets` has a one-to-one PK/FK `connection_id` CASCADE,
+Fernet ciphertext and timestamps. Disable clears the ciphertext. These are
+internal records, not new generic CRUD/permission resources. Use the guarded
+transactional manager, never raw model managers for interactive operations.
+No personal `user_credentials` row is migrated or shared implicitly. Details:
+[connector configuration](../connectors/CONNECTOR_CONFIGURATION.md).
+
+### `llm_providers`
+
+[Source](../../app/models/llm/llm_provider.py). Fields: `id` PK; `owner_user_id` non-null indexed FK → users RESTRICT; `uid` String(100), non-null/unique per owner; `name` String(255), non-null (display label, not globally unique); `description` nullable Text; `api_format` String(20), non-null/default `openai`; `base_url` String(500), non-null; `auth_header` nullable String(200); `encrypted_api_key` nullable Text; `is_active` Boolean. Relationship: models. No `is_default` column. Secret accessor is **`get_api_key()`**, masked display `decrypted_key_masked()`; never log plaintext. Personal catalog shared across one user's workspaces. Numeric ID/owner are immutable; display name and UID are editable. Credential decryption requires the personal owner, not an operator override. Composite unique (`id`, `owner_user_id`) supports model ownership FK.
+
+### `llm_models`
+
+[Source](../../app/models/llm/llm_model.py).
+
+| Column group | Declaration / meaning |
+| --- | --- |
+| `id`, `provider_id`, `owner_user_id` | Integer PK; indexed provider/owner IDs; owner FK → users RESTRICT, composite (`provider_id`, `owner_user_id`) FK → provider (`id`, `owner_user_id`) CASCADE |
+| `name`, `model_id`, `description` | String(100), String(100), nullable Text |
+| `model_type` | String(20), default text; `capabilities` is computed by splitting commas, not a column/native capability enum |
+| `custom_endpoint_path` | Nullable **String(200)**, added by 0086 |
+| `input_cost_per_1k`, `output_cost_per_1k` | Non-null Float, default 0; legacy physical names hold raw USD rates per `pricing_token_unit` |
+| `pricing_token_unit` | Non-null Integer, `1000` or `1000000`; old rows keep 1000, new rows default to 1000000 |
+| `cache_read_cost_per_1m`, `cache_write_5m_cost_per_1m`, `cache_write_1h_cost_per_1m` | Nullable Numeric(18,8), always USD per 1M; NULL is unconfigured and zero is explicit zero |
+| `last_request_cost`, `last_request_cost_at` | Nullable Float and timezone-unspecified DateTime |
+| `last_used_at`, `last_success_at`, `last_error_at` | Nullable timezone-unspecified DateTime |
+| `use_count`, `fail_count` | Non-null Integer, default/server default 0 |
+| `max_tokens`, `default_temperature` | Non-null Integer default 4096; Float default 0.3 |
+| `is_active`, `is_default` | Boolean defaults true/false |
+
+Relationships: provider and text/image/video scenario model references. Only models carry the default flag; migration 0091 removed the provider-level flag. `LLMModelManager.set_default()` clears overlapping defaults per capability **within the same user**, under an owner row lock. The public personal catalog service performs bundle/default writes atomically; raw manager default/owner reassignment is prohibited. Standard/quality resolution prefers that flag, cost-efficient resolution sorts by combined tariff first, and multimodal resolution prefers broader capabilities within the default rank; all exclude inactive providers. Every capability — text, image, video and audio — resolves inside the acting owner's personal catalog: `resolve_default_model`, the analyzer's bounded failover queue and `get_model_for_capability` share one ownership predicate and drop another owner's model or provider before ranking, so a fallback never decrypts a key it does not own. `AGENT_MODEL` is a name lookup through that same gate, not an ownership bypass. Cost evidence resolves its tariff row by the attempt's `llm_model_id` (allocated before the HTTP call), not by name; a legacy name-only envelope is matched inside the acting catalog and stays unknown when the name is ambiguous, so no workspace is ever priced with another user's rates. These are application invariants, not database unique constraints. API-supported formats/capabilities and fallback behavior are client/schema contracts, not validated merely by these String columns. Do not assume API compatibility means tenant-private/local model routing is implemented.
+
+SQLAdmin LLM create/edit is disabled in the integrated 0109 personal-catalog contract; configuration goes
+through owner-checked personal services/UI. `pricing_token_unit` does not convert
+raw amounts by itself. New models default to USD per 1M; existing models retain the
+legacy 1K unit until explicitly classified. Cache fields are always USD per
+1M; blank cache rates remain NULL while zero is explicit. The API/tool boundary
+also exposes canonical per-1M prices and true per-1K compatibility fields.
+The short model check is the shared local
+`probe_short()` service used by web settings and admin, not a provider-health or
+accounting acceptance test. See [admin testing modes and price display](../platform/ADMIN.md#llm-testing-and-prices)
+for the separate short/mock/explicit paid-probe contracts. Migration 0107
+defines the cache tariff columns; it does not itself apply the schema or update
+existing model prices.
+
+## Workspace and personal credential tables
+
+All tables in this section have TimestampMixin. The tables are not marked with TenantScopedMixin.
+
+### `tenants`
+
+[Source](../../app/models/tenancy/tenant.py). Fields: `id`, `name` String(100), unique `slug` String(50), `plan` **String(20), default `pro`**, `timezone` String(50), `is_active`, `daily_cost_limit` Float(default 5), `max_sources` Integer(default 20), nullable `agent_style` JSON, `agent_model` String(100) (legacy, not runtime authority), nullable `agent_model_id` FK → llm_models SET NULL (0109), `agent_max_tokens` Integer(default 1024), `agent_temperature` Float(default 0.3), `agent_system_prompt` Text.
+
+Declared CHECK allows **starter/pro/business**; `personal` is historical, migrated in 0071. `PLAN_LIMITS` is a class-level policy, not a table. `effective_limits()` takes min(column override, finite tier ceiling); unlimited business ceilings ignore those column overrides. Source budgets/features/retention policy declarations do not demonstrate complete spend accounting or cleanup.
+
+### `tenant_users`
+
+[Source](../../app/models/tenancy/tenant_user.py). Fields: `id`; non-null `tenant_id` FK CASCADE; `channel` String(20) (includes web membership); `external_user_id` String(100); nullable `user_id` FK → users CASCADE; nullable `role_id` FK → workspace_roles SET NULL; `is_active`; `ai_chat_enabled` Boolean, default false. Unique (`tenant_id`, `channel`, `external_user_id`); PostgreSQL partial unique index (`tenant_id`, `user_id`) where user_id IS NOT NULL. Only the explicit `owner` role grants ownership; NULL or unknown roles fail closed.
+
+### `tenant_invites`
+
+[Source](../../app/models/tenancy/tenant_invite.py). **Workspace-owned**, not an unowned global invite. Fields: `id`; non-null `tenant_id` FK CASCADE; unique `code_hash` String(64); nullable `role_id` FK → workspace_roles SET NULL; nullable `expires_at` timezone-aware DateTime; `max_uses` Integer(default 1), `used_count` Integer(default 0), `is_active` Boolean(default true).
+
+### `tenant_channels`
+
+[Source](../../app/models/tenancy/tenant_channel.py). Fields: `id`, non-null `tenant_id` FK CASCADE; `channel` String(20), `chat_id` String(100), `kind` String(20, default private); Boolean `is_digest_target` default false and `is_active` default true. Unique **(`channel`, `chat_id`)** globally; the same chat is not bound independently to multiple workspaces.
+
+### `user_credentials`
+
+[Source](../../app/models/identity/user_credential.py). Personal vault: `id`; non-null `user_id` FK → users CASCADE; `platform`, `kind` String(30); nullable `label` String(100); non-null `secret_encrypted` Text; nullable `expires_at` timezone-aware DateTime and `meta` JSON; `is_active` default true. Indexes on user_id and (user_id, platform). No tenant_id. Membership/owner resolution is required before workspace use; global storage is not unrestricted shared access. `reveal()` decrypts the secret; deployment/application secrets stay in configuration.
+
+## Tenant-scoped collection and analysis
+
+Collection and analysis tables below inherit tenant_id and timestamps. LLM
+evidence/budget tables have the separate timestamp and deletion rules below.
+
+### `sources`
+
+[Source](../../app/models/collection/source.py). Fields: `id`; non-null `platform_id` FK CASCADE; `name` String(255); native `source_type` enum; `external_id` String(100); `params` JSON; `is_active`; nullable `last_checked` timezone-aware DateTime, `last_item_id` String(100), `owner_task_id` Integer FK → `agent_tasks` CASCADE, and `owner_user_id` Integer FK → `users` with `ON DELETE SET NULL` (0123).
+
+Unique **(`tenant_id`, `platform_id`, `external_id`)**. There is no column named `user_id` and no scenario FK. `owner_user_id` records the member who added the source. An explicit `params.token_owner`, when present, is authoritative and is revalidated against active workspace membership; an invalid or stale override does not fall through to `owner_user_id`. If no override is present, the recorded owner is revalidated. There is no workspace-owner fallback; without a valid personal owner, collection uses the deployment credential only. The public Source API does not expose `owner_user_id`. Relationships: platform, tenant, analytics; tasks through association table. Task selects scenario, with workspace default for taskless runs.
+
+`owner_task_id` was added by 0108 for task-scoped query lanes. A lane is hidden
+from the global source list and excluded from the task's empty-set/"all active"
+fallback; only an explicit link activates it. See
+[collection plan](../audit/collection-plan-history.md).
+
+### `collected_items`
+
+[Source](../../app/models/collection/collected_item.py). Fields: `id`; nullable `run_id` Integer; non-null `source_id` Integer; nullable `external_id` String(255); non-null `content_hash` String(64); nullable `platform` String(50), `published_at` timezone-aware DateTime, `media_type` String(20), `text` Text, `metrics`/`author` JSON, `permalink` String(500); nullable `attachments` JSON snapshot added by 0089; non-null `analyze_attempts` default 0 and `give_up_after_attempts` default 3. Migration 0108 adds `content_type` String(20) non-null default `post`, nullable `parent_external_id` String(255), `lane_id` String(100), `selection_status` String(20) and `selection_reason` String(64). For attachments, NULL means legacy/unknown and `[]` means explicitly none; snapshots contain only normalized allowlisted fields, not provider payloads or credentials.
+
+**source_id and run_id are logical references, NOT declared FKs.** Unique non-partial index (`source_id`, `content_type`, `external_id`); multiple NULL external IDs remain legal in PostgreSQL. Other indexes: tenant, source/hash, run, source/published, tenant/selection. A failed analysis is not evidence that raw content can be deleted; actual retention/cleanup belongs to runtime policy.
+
+Stage C writes only `selected`/`needs_review` rows; rejected text is not
+stored. Analysis reads `selected` rows and legacy `NULL` rows (staged before
+stage C, which still pass through the old analysis-time selection once);
+`needs_review` waits for an operator. Rejected identities/counts live in
+`collection_seen`/`collection_lane_runs`. See
+[collection plan](../audit/collection-plan-history.md).
+
+### `collection_seen`
+
+[Source](../../app/models/collection/collection_seen.py). Dedupe/new-item ledger
+added by 0108; stores no text. Fields: `id`; `source_id` FK CASCADE;
+`content_type` String(20); `external_id` String(255); `content_hash` String(64);
+`first_seen_at`/`last_seen_at` timezone-aware; `status` String(20) default
+`new`; tenant and timestamps.
+
+Unique **(`tenant_id`, `source_id`, `content_type`, `external_id`)**. Index
+(`tenant_id`, `source_id`). Writers synthesise `hash:<content_hash>` when the
+platform gives no external id. A later run may replace `status`; the ledger is
+not a permanent rejection.
+
+### `collection_candidates`
+
+[Source](../../app/models/collection/collection_candidate.py). Discovered
+people/communities and engagement actors. Fields: `id`; `platform` String(50);
+`kind` String(20); `external_id` String(255); nullable `name`, `url`, `city`,
+`city_source`, `city_confidence` Float, `metrics`/`evidence` JSON; `status`
+String(20) default `new`; nullable `source_id` FK SET NULL; nullable
+`discovered_by` String(100); tenant and timestamps.
+
+Unique **(`tenant_id`, `platform`, `kind`, `external_id`)**. Index
+(`tenant_id`, `status`). A confirmed candidate may link/create a Source; the
+row is not a collection target by itself. Collection writes are
+insert-if-absent: a re-collection keeps the first evidence and never resets an
+operator's `confirmed`/`rejected` decision.
+
+### `collection_lane_runs`
+
+[Source](../../app/models/collection/collection_lane_run.py). Per-job, per-lane
+counts and bounds. Fields: `id`; nullable `job_id`/`task_id` Integer (logical
+references, no FK so pruning jobs cannot destroy evidence); `lane_id`
+String(100); `lane_type` String(30); nullable `query` Text; non-null
+`fetched`/`selected`/`needs_review`/`rejected` default 0; nullable
+`limit_count` Integer (the SQL-safe name for a lane bound); boolean
+`limit_reached`; nullable `next_cursor`, `total_available`, `error_code`,
+`unsupported_reason`, `started_at`, `finished_at`; tenant and timestamps.
+
+Indexes (`tenant_id`, `job_id`) and (`tenant_id`, `task_id`). This is the
+operator answer to "what did the run actually do?"; rejected text is not stored.
+
+### `agent_scenarios`
+
+[Source](../../app/models/analysis/agent_scenario.py). Fields: `id`, `name` String(255); nullable `description`, `base_prompt`, `summary_prompt` Text; nullable `content_types`, `analysis_types`, `scope`, `media_overrides`, `output_schema` JSON; nullable `max_tokens` Integer; `is_active` Boolean; non-null `is_default` Boolean default false; nullable `text_llm_model_id`, `image_llm_model_id`, `video_llm_model_id` FKs SET NULL; nullable native `llm_strategy` enum. `ai_prompt` is a compatibility property, not a column.
+
+Methodology belongs here; schedule, source selection, triggers and approval guards belong to tasks. `analyze_type` was removed in 0083; do not draw a direct Source→Scenario FK. Query grouping is not a stored scenario field. `content_types` is the scenario's **supported media** list (text/video/image), not a collection scope: collection types, phrases and limits live in `agent_tasks.payload.collection`. Legacy `ContentType` values are read for compatibility (posts/comments/mentions/reactions → text, videos/reels → video, stories → image).
+
+### `ai_analytics`
+
+[Source](../../app/models/analysis/ai_analytics.py). Fields: `id`; non-null `source_id` FK CASCADE; nullable `analysis_date` **Date**; non-null native `period_type` enum; nullable `content_hash` String(64); non-null `analysis_fingerprint` String(64) default/server default `legacy` (versioned semantic identity of the analysis context; legacy rows are unattributed); nullable `topic_chain_id` String(100), `chain_label`/`normalized_label` String(255); nullable `parent_analysis_id` self-FK SET NULL; non-null `summary_data` JSON; nullable `response_payload`, `main_topics`, `media_types` JSON; nullable `prompt_text` Text, `llm_model`/`provider_type` String(100), `request_tokens`/`response_tokens` Integer, `estimated_cost` Numeric(14,6).
+
+Cost unit is **USD cents**, unlike USD Float columns elsewhere. NULL cost does not prove zero spend. Unique (`source_id`, `analysis_date`, `period_type`, `analysis_fingerprint`) as `uq_analytics_source_date_period_context`; indexed source, date, chain, source/hash and tenant. No provider_type index is declared here. Migration 0104 added the fingerprint and widened this uniqueness so distinct semantic contexts can coexist for one source/period; no historical receipts are backfilled. LLM/model strings are historical attribution, not provider/model FKs. Relationships: source and parent/children.
+
+### `analyzed_content_receipts` — durable success coverage
+
+[Source](../../app/models/analysis/analyzed_content_receipt.py),
+[manager](../../app/models/managers/analyzed_content_receipt_manager.py),
+[migration 0104](../../migrations/versions/baseline_0118.py) (from Git history before the Q-14 squash).
+
+Fields: `id` PK; non-null `source_id` FK → sources CASCADE; non-null
+`content_hash` String(64) and `analysis_fingerprint` String(64); nullable
+`scenario_id` FK → agent_scenarios SET NULL and `analytics_id` FK →
+ai_analytics SET NULL; non-null timezone-aware `analyzed_at` server default
+now(). Unique (`tenant_id`, `source_id`, `content_hash`,
+`analysis_fingerprint`) as `uq_analyzed_content_receipt_identity`; index
+(tenant_id, source_id).
+
+Durable proof that a source item was successfully analyzed in one context.
+Receipts have no expiry: they survive analytics-row deletion (`analytics_id`
+SET NULL) and raw `collected_items` cleanup (the receipt has no FK to the raw
+table), so a repeated item is skipped even after its result row is pruned.
+Receipt lookup fails closed, and receipts are written only for successfully
+covered hashes in the same transaction as their analytics result. Migration
+0104 adds `analysis_fingerprint` to `ai_analytics` with a `legacy` server
+default applying to existing and new analytics rows; the receipts table itself
+has no such default, so receipt rows require a real analysis fingerprint and
+historical merged hashes are not backfilled into receipts.
+
+## Tenant-scoped LLM accounting and admission storage
+
+These five tables inherit the tenant-scoped marker, **not TimestampMixin**.
+`llm_attempts`, receipts and outcome events declare only server-created
+`created_at`; neither budget table declares timestamps. Receipts, outcome events
+and both budget tables override the inherited payer FK to **RESTRICT**.
+`llm_attempts` retains the inherited **CASCADE** payer FK. None of these tables
+has a registered SQLAdmin model view; ORM registration is not admin exposure.
+
+### `llm_attempts` — captured attempt journal
+
+[Source](../../app/models/llm/llm_attempt.py),
+[manager](../../app/models/managers/llm_attempt_manager.py),
+[migration 0092](../../migrations/versions/baseline_0118.py) (from Git history before the Q-14 squash).
+
+Fields: `id` PK; globally unique/non-null `attempt_key` String(64); non-null
+`purpose`, `stage`, `cost_certainty`, `outcome` String(32); nullable plain Integer
+`source_id`, `job_id`, `agent_task_id`, `llm_model_row_id`; nullable Date
+`analysis_date`; nullable `model_id`, `provider_name` String(200); nullable
+Numeric(18,8) tariff snapshots `input_cost_per_1k`, `output_cost_per_1k`, plus
+nullable `pricing_token_unit`; nullable Numeric(18,8) cache-read and TTL-specific
+write tariff snapshots (USD per 1M);
+nullable JSONB `cache_usage` and nullable `pricing_policy_version` (`NULL` means
+legacy evidence). New cache-bearing writes use `cache-tariff-v2` with a required
+1K or 1M unit; legacy `provider-price-v1` snapshots retain 1K semantics and a
+NULL/1000 unit.
+Integer `prompt_tokens`, `completion_tokens`; nullable Numeric(18,9) **Decimal USD**
+`cost_usd`; nullable JSONB `cache_usage`; timezone-aware non-null server
+`created_at`. Indexes: tenant,
+(source_id, analysis_date), job. No source/job/task/model FKs or `updated_at`.
+
+Captured analyzer stages, fallback chat attempts, digest summaries and the agent
+model-test tool use this journal. Admin connection/model probes are a separate
+unresolved payer/accounting boundary, not evidence of all-path capture. Unknown
+usage/tariff stays explicit; NULL cost is never silently free or zero. The
+specialized `record_attempt()` acknowledges an owned committed insert or an exact
+payer-bound replay; conflicting evidence raises. Its insert-only contract is
+**not a migration-installed immutability trigger**: 0092 installs none, and its
+downgrade drops the journal. Do not infer the stronger 0093–0095 storage guards
+or safe automatic rollback from this journal's name. See
+[accounting scope and evidence](../archive/IMPLEMENTATION_STATUS.md).
+
+### `llm_dispatch_receipts` — storage merged, runtime unwired
+
+[Source](../../app/models/llm/llm_dispatch_receipt.py); migration
+definition 0093 follows 0092. This is preparation evidence, not a paid attempt,
+provider outcome or HTTP authorization. The reservation manager can persist a
+receipt atomically with a reservation, but paid clients are not wired to require
+that admission.
+
+Fields: `id`; explicit `tenant_id` FK **RESTRICT**; unique raw `dispatch_id`
+String(32); `purpose`/`stage` String(32); timezone-aware `prepared_at` and its UTC
+`utc_day`; non-null Integer `llm_model_row_id`, `llm_provider_row_id` plus non-null
+`model_id`, `provider_name` String(200); nullable Decimal USD
+`input_cost_per_1k`, `output_cost_per_1k` raw rates and nullable selected
+`pricing_token_unit`; nullable cache-read/TTL-write rates Numeric(18,8), always
+USD per 1M; `tariff_state` (`known`, `free`, `undefined`) and
+`pricing_policy_version`; nullable plain `source_id`, `job_id`,
+`agent_task_id`, `agent_session_id`; server-created timezone-aware `created_at`.
+Execution/model references have no foreign keys. No prompt, secrets, cost,
+reservation or outcome columns exist. Invalid rates remain NULL, not zero.
+
+The definition contains UPDATE/DELETE/TRUNCATE rejection triggers and a
+tenant/day index. Model metadata alone does not install those triggers. Payer
+deletion may be blocked; ordinary downgrade refuses evidence deletion, even
+when empty. Schema application, offboarding and evidence-preserving rollback
+need separate review/approval. See the
+[storage boundary](AI_PIPELINE_AND_PROMPTS.md#preparation-receipt-storage-foundation-not-activated).
+
+### `llm_outcome_events` — storage merged, runtime unwired
+
+[Source](../../app/models/llm/llm_outcome_event.py); migration definition 0094
+follows 0093. Append-only observations/reconciliations reference a preparation
+receipt; they are not a settlement, dispatch authorization or aggregate spend.
+Several events may describe one attempt: **never sum their costs as independent
+attempts**.
+
+Fields: `id`; explicit `tenant_id` FK RESTRICT; globally unique `event_id`
+String(32); `dispatch_id` FK to the receipt's unique identity, RESTRICT;
+`event_kind`, timezone-aware `observed_at`, `dispatch_state`, `outcome`; nullable
+Integer `prompt_tokens`, `completion_tokens`; nullable JSONB `cache_usage`;
+`provider_price_state`, nullable decimal-only
+`provider_cost_raw` String(128), nullable Decimal USD `cost_usd` Numeric(18,9);
+`cost_certainty`, `price_source`, `pricing_policy_version`; server `created_at`.
+No prompt, credentials, raw provider response or mutable model reference is kept.
+
+The definition rejects UPDATE/DELETE/TRUNCATE. An insert trigger binds payer,
+policy and observation time to the receipt, verifies resolved provider amount
+consistency and refuses a free tariff unless both frozen rates are explicitly
+zero under the matching policy version. The manager also recomputes all pricing from the persisted receipt and
+requires the enabled receipt/event guards. Metadata bootstrap lacks those guards
+and is not approved. Direct SQL is not an alternative pricing API.
+
+Existing isolated/owner-local validation is attributed in
+[IMPLEMENTATION_STATUS](../archive/IMPLEMENTATION_STATUS.md); this update did not repeat it.
+Application to another target, retention/offboarding and rollout require separate
+review/approval. Ordinary downgrade refuses deletion. Both the
+event and parent receipt block tenant deletion when retained. See the
+[outcome boundary](AI_PIPELINE_AND_PROMPTS.md#immutable-outcome-event-storage-foundation-not-activated).
+
+### `llm_budget_days` — reviewed balance foundation, runtime unwired
+
+[Source](../../app/models/llm/llm_budget.py),
+[migration 0095](../../scripts/migrations/legacy_definitions/0095_add_llm_budget_reservations.py).
+Fields: `id` PK; explicit non-null `tenant_id` FK RESTRICT; non-null Date `utc_day`;
+non-null Numeric(18,9) **Decimal USD** `settled_usd`, `reserved_usd`; non-null
+Integer `undefined_count`, `unbounded_count`; non-null Boolean `frozen`
+default/server default true; non-null `baseline_version` String(64). No timestamps.
+Unique (`tenant_id`, `utc_day`); CHECKs bound nonnegative amounts and counts.
+There are no zero defaults for balances/counts: a reviewed baseline is required.
+The merged manager does not provision daily baselines or refund at expiry/day
+rollover. Draft work such as PR #197 is not part of this source baseline.
+
+### `llm_budget_reservations` — receipt-bound storage, runtime unwired
+
+[Source](../../app/models/llm/llm_budget.py),
+[manager](../../app/models/managers/llm_budget_manager.py),
+[migration 0095](../../scripts/migrations/legacy_definitions/0095_add_llm_budget_reservations.py).
+Fields: `id` PK; non-null `tenant_id` FK RESTRICT; non-null Date `utc_day`;
+globally unique/non-null `dispatch_id` String(32), FK to receipt identity RESTRICT;
+non-null `ceiling_state` String(16), `undefined_policy_version` String(32);
+nullable Numeric(18,9) **Decimal USD** `ceiling_usd`, `cap_usd`; nullable
+`bound_version` String(64). No timestamps. Composite FK (`tenant_id`, `utc_day`)
+references the payer/day unique key with RESTRICT. CHECKs enforce identity,
+`bounded`/`unbounded`/`undefined` state, amount/cap consistency and policy version.
+
+0095 defines UPDATE/DELETE/TRUNCATE rejection and receipt-binding INSERT guards.
+`reserve_receipt()` requires installed guards and an explicit active payer,
+locks payer/day, validates the current cap and reviewed unfrozen baseline, then
+commits receipt, reservation and balance changes in one owned transaction. Exact
+replay returns false: **not permission to dispatch again**. There is no terminal
+settlement/release, automatic baseline provisioning or all-client HTTP wiring in
+this merged slice. Baseline/bound production and activation remain open. See
+[delivered scope](../archive/IMPLEMENTATION_STATUS.md) and
+[budget validation attribution](../audit/llm-budget-pg-runner.md).
+
+## Tenant-scoped scheduling and delivery
+
+Every table below inherits tenant_id and timestamps, except agent_task_sources.
+
+### `agent_tasks`
+
+[Source](../../app/models/scheduling/agent_task.py). Fields: `id`, `name` String(100), `cron_expr` String(100), `job_type` String(20), `payload` JSON; `is_active`; nullable `next_run_at`/`last_run_at` timezone-aware DateTime, `last_status` String(20), `last_error` Text; nullable native `trigger_type`/`action_type` enums and `trigger_config` JSON; nullable `rate_limit_per_hour`/`cooldown_seconds` Integer; nullable `blacklist`/`whitelist` JSON; nullable `agent_scenario_id` FK SET NULL. Migration 0088 removed the unused `requires_approval` column; approval and dry-run behavior belongs to action/runtime contracts, including `BotAction` state.
+
+Unique (`tenant_id`, `name`); relationships: tenant, scenario, sources through association. job_type/payload and textual last_status are application contracts, not DB enums. See [task reference](AGENT_TASKS_QUEUE.md) for supported operations.
+
+### `agent_task_sources`
+
+[Source](../../app/models/scheduling/agent_task.py). Composite PK (`agent_task_id`, `source_id`), both FK CASCADE. No tenant_id/timestamps. Caller must validate both endpoints belong to the allowed workspace. Empty source assignment means all active sources according to task behavior, not a database constraint.
+
+### `jobs`
+
+[Source](../../app/models/scheduling/job.py). Fields: `id`; nullable `agent_task_id` FK SET NULL; non-null `job_type` String(20), `payload` JSON, **`status` String(20)** (not enum); non-null `run_at` timezone-aware DateTime; nullable `locked_at`, **`started_at`, `finished_at`** timezone-aware DateTime; non-null `attempts` Integer(default 0), `max_attempts` Integer(settings default, server default 3); nullable `result` JSON, `error` Text, `llm_cost` Float **USD**. Indexes: tenant, (status, run_at), agent_task_id. NULL cost is none/unknown, not guaranteed zero. Queue claims do not establish distributed connector leases.
+
+### `digest_runs`
+
+[Source](../../app/models/notifications/digest_run.py).
+
+| Column | Declaration |
+| --- | --- |
+| `id`, `agent_task_id` | Integer PK; nullable task FK SET NULL |
+| `period` | Non-null String(10); not a DB enum. Supported periods are caller contracts |
+| `period_start`, `period_end` | Non-null **Date**, not DateTime |
+| `channel`, `chat_id` | Non-null String(20); nullable String(100) |
+| `status` | Non-null **String(20)**, default pending; not native enum |
+| `message_id` | Nullable String(100) |
+| `content`, `error` | Nullable Text |
+| `delivery_state` | Nullable JSON, **JSONB on PostgreSQL**, migration 0087 |
+| `llm_cost` | Nullable Float, **USD**, none/unknown allowed |
+
+Unique (`agent_task_id`, `period_start`, `period_end`); nullable task FK means manual runs are not uniquely constrained as scheduled runs are. There is **no `results` JSON column**. Nullable checkpoint history must not be interpreted as definitely unsent.
+Scheduled creation uses an atomic factory and delivery/re-entry fences; merged
+per-part helpers do not mean automatic recipient-level resume is active. Partial
+or ambiguous delivery stops for review; see [DIGEST](../business/DIGEST.md).
+
+### `notifications` and `notification_receipts`
+
+[Event](../../app/models/notifications/notification.py) remains workspace-origin
+storage: id/title String(200)/message Text, native name-stored notification_type,
+legacy shared is_read, nullable generic entity attribution. P4-T02 adds severity
+(info/warning/action_required), optional dedup_key (unique tenant/key when present)
+and timezone-aware expires_at. Attribution is not an FK or an execution receipt.
+
+[Receipt](../../app/models/notifications/notification_receipt.py) is **global-user
+owned**, without TenantScopedMixin: id, notification_id FK CASCADE, user_id FK
+CASCADE, read_at/dismissed_at/snoozed_until and timestamps. Unique event/user;
+indexed user_id. Explicit actor-constrained manager joins active origin membership
+and workspace/account state; it never uses tenant bypass to read an inbox.
+The same user sees addressed events from own and invited spaces. Existing shared
+flags do not imply recipients; migration 0113 creates no historical receipts.
+See [notification contract](../business/NOTIFICATIONS.md) for navigation and transport separation.
+
+## Platform-scoped offboarding evidence
+
+`WorkspaceOffboardingEvent` maps `workspace_offboarding_events`, a permanent
+platform journal with numeric actor/workspace identities but no actor or workspace
+foreign keys, so the receipt survives deletion of either subject. Only a
+succeeded operation is stored; reason and retention policy are allowlisted and
+mutation/truncation are rejected by database guards. The full authorization,
+transaction and rollback contract is in [WORKSPACE_OFFBOARDING](../platform/WORKSPACE_OFFBOARDING.md).
+
+## Tenant-scoped conversation, memory and action audit
+
+All tables here are tenant-scoped; timestamps are listed per model.
+
+The cross-surface action-audit store is
+[ActionAuditEvent](../../app/models/audit/action_audit_event.py), with a dedicated
+append-only tenant manager. It keeps safe identifiers and outcomes only; it is
+not a payment/delivery receipt or a second billing ledger. See the
+[P11-T12 contract and limitations](../business/ACTION_AUDIT.md).
+
+### `action_audit_events`
+
+Fields: `id`, unique opaque `event_id`, `tenant_id`, `occurred_at`, `actor_kind`,
+`actor_id`, allowlisted `action`, optional `resource_kind`/`resource_id`,
+`outcome`, optional safe `reason_code`, `request_id`, `job_id`, and
+`receipt_ref`. Only `succeeded` and `unknown` are stored; denied and
+rolled-back outcomes use the separate safe diagnostic logger. The table has
+tenant/time and tenant/outcome/time indexes. Ordinary updates, deletes and
+truncation are blocked by a database trigger; retention cleanup is the sole
+application delete path. See the contract for the limits of that guard and
+retention policy.
+
+### `agent_sessions`
+
+[Source](../../app/models/agent/agent_session.py). Fields: `id`, `channel` String(20), `chat_id` String(100); `kind` String(20, default private); `is_owner` false, `is_active` true; nullable `state` JSON, `last_message_at` timezone-aware DateTime. Unique **(`tenant_id`, `channel`, `chat_id`)**: the same chat in two workspaces is two conversations, never a shared transcript (web `chat_id` is the user id, and a web membership exists per workspace). `update_offset`/`pending_confirmation` are properties derived from state. Session ownership is not a substitute for current user/operation authorization.
+
+### `agent_messages`
+
+[Source](../../app/models/agent/agent_message.py). Fields: `id`; non-null `session_id` FK CASCADE; **`role` String(20)**, not enum; nullable `content` Text, `tool_calls` JSON, **`tool_name` String(64)**, `tokens` Integer, `cost` Float USD. No `tool_outputs` column. Tool result content is stored through the message contract. Indexes: tenant and session.
+
+### `agent_memory`
+
+[Source](../../app/models/agent/agent_memory.py). Fields: `id`; `scope` **String(20)** default global; `key` String(100); nullable `value` Text; `source` String(20) default manual; `confidence` Float default 1; nullable `evidence_message_id` FK → messages SET NULL. Nullable `user_id` FK → users CASCADE. Separate partial unique indexes cover (`tenant_id`, `user_id`, `scope`, `key`) for personal rows and (`tenant_id`, `scope`, `key`) for legacy NULL-owner rows. No declared CHECK bounds confidence to 0.1–1.0. Small durable preferences/facts, not a vector store or business-case ledger.
+
+### `agent_feedback`
+
+[Source](../../app/models/agent/agent_feedback.py). Fields: `id`; non-null `session_id` FK CASCADE; nullable `message_id` FK SET NULL; **`vote` String(10)**, not enum; nullable `note` Text, `voter_channel` String(20), `voter_external_id` String(100). Indexes: tenant, session, vote. Feedback itself does not mutate prompts.
+
+### `bot_actions` (public AgentAction, legacy BotAction)
+
+[Canonical source](../../app/models/actions/agent_action.py). One mapper/table, with
+legacy root/scheduling aliases and the existing scheduling.action permission key.
+The class retains its legacy Python name for compatibility; AgentAction aliases
+that same class. Table name and existing enum storage names are not renamed.
+
+Origin source/scenario/task/analytics FKs are optional SET NULL references.
+`origin_snapshot` preserves their original IDs. `capability`, `target_ref`, `origin`,
+JSON payload and tenant-unique idempotency_key describe a general business intent;
+legacy action_type may be null. payload_hash seals the intent including target,
+references and dry_run. approved_payload_hash, approved_user_id (global User),
+confirmed_by (TenantUser), confirmed_at and approval_expires_at bind approval.
+Claimed_at/claim_expires_at/claim_token_hash and attempts cover an atomic lease;
+executed_at is separate from proposal created_at. Result/error stay JSON/Text;
+raw provider responses/errors are not accepted by the simulation finish API.
+Append-only manager `history` records real transition actor IDs, time, from/to
+and sealed hash even after the account or origin FK is deleted; legacy history
+is empty, never reconstructed as invented approval evidence.
+
+Pending → approved/rejected/cancelled; approved → claimed/cancelled;
+claimed → executed/failed or unknown after lease expiry. Decisions lock and
+recheck active account/workspace/membership/grants. Approval UI submits the reviewed
+hash. Claims require the same approving actor, valid hash/expiry, and dry_run=true;
+only one concurrent caller can claim. Completion requires the one-time claim token
+and still-current authority. Unknown is not automatically retried. **These are
+simulations only; the generic API wires no external adapter.**
+Web review/cancel lives at `/app/actions`; admin is read-only. API/tool preview does
+not approve. P9-T01's separate default-off
+[`telegram.bound_message.v1`](../business/ACTION_ACTIVATION.md) reuses the same table/unique key
+and history without changing schema. Its dedicated owner/binding-scoped web path
+seals `dry_run=false` manual intent, commits one dispatch reservation before HTTP,
+and persists a safe live receipt or UNKNOWN without automatic replay. Generic
+simulation and legacy social execution are not activated by this exception.
+
+### `business_commands` and `business_command_targets` (0134)
+
+[Canonical source](../../app/models/actions/business_command.py),
+[service](../../app/services/commands/ledger.py),
+[migration 0134](../../migrations/versions/0134_business_commands.py).
+
+`business_commands` is the reusable tenant-scoped write-approval and execution
+ledger for external business writes across P14–P19 (`crm.greeting_send.v1`,
+`comms.batch_campaign.v1`, `calendar.event_write.v1`, `onec.document_write.v1`,
+`documents.delivery_send.v1`). Inherits `TenantScopedMixin` and `TimestampMixin`
+(`@app_label("scheduling")`). Fields: `id` PK; non-null `capability` String(80),
+`capability_version` Integer default 1, `approval_policy` String(30) checked in
+(`per_item`, `per_batch`, `connection_consent`); `actor_user_id` FK → `users.id`
+RESTRICT; nullable `connection_id` Integer; non-null `idempotency_key` String(128);
+`target_refs` JSON list; `payload` JSON object; `payload_hash` String(71) checked
+against `^sha256:[0-9a-f]{64}$`; `preview_snapshot` JSON object; `state` String(20)
+checked in (`draft`, `previewed`, `approved`, `claimed`, `succeeded`, `failed`,
+`unknown`, `cancelled`, `expired`); nullable `approved_user_id` FK → `users.id`
+SET NULL, `approved_payload_hash` String(71), `approved_at`, `approval_expires_at`,
+`claimed_at`, `executed_at` timezone-aware DateTime; nullable `outcome_summary`
+JSON, `error_code` String(64), `reconcile_hint` Text. Unique constraints:
+`uq_business_commands_tenant_id` (`tenant_id`, `id`) and
+`uq_business_commands_idempotency` (`tenant_id`, `actor_user_id`, `capability`,
+`idempotency_key`). Indexes: (`tenant_id`, `state`) and (`tenant_id`, `capability`).
+
+`business_command_targets` stores per-target batch execution rows under a composite
+FK (`tenant_id`, `command_id`) → `business_commands(tenant_id, id)` ON DELETE CASCADE.
+Fields: `id` PK; `command_id` Integer; `target_ref` String(200);
+`target_idempotency_key` String(160); `state` String(20) checked in (`pending`,
+`claimed`, `succeeded`, `failed`, `unknown`, `cancelled`); nullable
+`provider_receipt` String(160), `error_code` String(64), `executed_at`
+timezone-aware DateTime. Unique constraints: `uq_business_command_target_ref`
+(`tenant_id`, `command_id`, `target_ref`) and `uq_business_command_target_idempotency`
+(`tenant_id`, `target_idempotency_key`).
+
+### `crm_entities` (0135)
+
+[Canonical source](../../app/models/crm/entity.py),
+[sync service](../../app/services/crm/sync.py),
+[migration 0135](../../migrations/versions/0135_crm_entities.py).
+
+`crm_entities` stores normalized tenant-scoped CRM records (`contact`, `company`, `lead`, `deal`) pulled read-only from Bitrix24 (`P14-T02`) and linked to canonical `contacts` (`P14-T03`). Inherits `TenantScopedMixin` and `TimestampMixin` (`@app_label("contacts")`). Fields: `id` PK; `connection_id` Integer FK → `workspace_connections.id` ON DELETE CASCADE; nullable `contact_id` Integer FK → `contacts.id` ON DELETE SET NULL; `provider` String(40) checked in (`bitrix24`); `entity_kind` String(20) checked in (`contact`, `company`, `lead`, `deal`); `external_id` String(128); Fernet-encrypted PII columns (`title_encrypted`, `personal_fields_encrypted`, `custom_fields_encrypted`) with `pii_updated_at` monotonic rotation marker (`contact_pii_marker` trigger); deal/lead pipeline metadata (`stage_code`, `status_code`, `currency_code` String(10), `opportunity_amount` Numeric(18, 2), `is_closed` Boolean, `assigned_by_external_id`, `company_external_id`); `source_modified_at`, `last_synced_at`, and `deleted_at` timezone-aware DateTime. Unique constraints: `uq_crm_entities_tenant_id` (`tenant_id`, `id`) and `uq_crm_entities_connection_external` (`tenant_id`, `connection_id`, `entity_kind`, `external_id`).
+
+### `greeting_history` (0136)
+
+[Canonical source](../../app/models/crm/greeting_history.py),
+[greetings service](../../app/services/crm/greetings.py),
+[migration 0136](../../migrations/versions/0136_greeting_history.py).
+
+`greeting_history` tracks upcoming birthday/anniversary events, AI-generated greeting drafts, and explicit operator approval linkages (`P14-T04`). Inherits `TenantScopedMixin` and `TimestampMixin` (`@app_label("contacts")`). Fields: `id` PK; `contact_id` Integer composite FK → `contacts(tenant_id, id)` ON DELETE CASCADE; `event_type` String(30) checked in (`birthday`, `anniversary`); `event_date` Date; `year` Integer checked in `1970..2100`; `channel` String(30) checked in (`email`, `phone`, `telegram`, `max`, `bitrix24`); Fernet-encrypted `subject_encrypted` and `draft_text_encrypted` with `pii_updated_at` monotonic rotation marker (`contact_pii_marker` trigger); `ai_generated` Boolean; `status` String(20) checked in (`draft`, `approved`, `sent`, `failed`, `skipped`, `unknown`); nullable `command_id` Integer composite FK → `business_commands(tenant_id, id)` ON DELETE SET NULL; `actor_user_id` FK → `users.id` ON DELETE SET NULL; `error_code` String(64); `sent_at` timezone-aware DateTime. Unique constraints: `uq_greeting_history_tenant_id` (`tenant_id`, `id`) and `uq_greeting_history_contact_event_year` (`tenant_id`, `contact_id`, `event_type`, `year`).
+
+## ER views from declared foreign keys
+
+Views are intentionally split for readability. Common tenant FKs and some fields are omitted; nullable parent FKs use o|. Arrows do not guarantee equal tenant IDs across endpoints: source FKs are not composite tenant-identity constraints. Logical references are noted separately, never invented as FKs.
+
+### Identity and membership
+
+```mermaid
+erDiagram
+    roles ||--o{ users : role_id
+    roles ||--o{ role_permission : role_id
+    permissions ||--o{ role_permission : permission_id
+    workspace_roles ||--o{ workspace_role_permission : role_id
+    permissions ||--o{ workspace_role_permission : permission_id
+    model_types ||--o{ permissions : model_type_id
+    tenants ||--o{ tenant_users : tenant_id
+    users o|--o{ tenant_users : user_id
+    workspace_roles o|--o{ tenant_users : role_id
+    tenants ||--o{ tenant_invites : tenant_id
+    workspace_roles o|--o{ tenant_invites : role_id
+    tenants ||--o{ tenant_channels : tenant_id
+    users ||--o{ user_credentials : user_id
+```
+
+### Collection, scenarios, scheduling and actions
+
+```mermaid
+erDiagram
+    tenants ||--o{ sources : tenant_id
+    platforms ||--o{ sources : platform_id
+    sources ||--o{ ai_analytics : source_id
+    ai_analytics o|--o{ ai_analytics : parent_analysis_id
+    tenants ||--o{ analyzed_content_receipts : tenant_id
+    sources ||--o{ analyzed_content_receipts : source_id
+    agent_scenarios o|--o{ analyzed_content_receipts : scenario_id
+    ai_analytics o|--o{ analyzed_content_receipts : analytics_id
+    llm_providers ||--o{ llm_models : provider_id
+    llm_models o|--o{ agent_scenarios : text_model_id
+    llm_models o|--o{ agent_scenarios : image_model_id
+    llm_models o|--o{ agent_scenarios : video_model_id
+    agent_scenarios o|--o{ agent_tasks : agent_scenario_id
+    agent_tasks ||--o{ agent_task_sources : agent_task_id
+    sources ||--o{ agent_task_sources : source_id
+    agent_tasks o|--o{ jobs : agent_task_id
+    agent_tasks o|--o{ digest_runs : agent_task_id
+    agent_scenarios o|--o{ bot_actions : agent_scenario_id
+    sources o|--o{ bot_actions : source_id
+    agent_tasks o|--o{ bot_actions : agent_task_id
+    ai_analytics o|--o{ bot_actions : analytics_id
+    tenant_users o|--o{ bot_actions : confirmed_by
+```
+
+Model arrows labeled text/image/video_model_id abbreviate the actual text/image/video_llm_model_id columns. collected_items.source_id/run_id are soft references, deliberately omitted from the FK graph. No direct Source→Scenario or Scenario→Analytics FK exists.
+
+### Conversations and provenance
+
+```mermaid
+erDiagram
+    tenants ||--o{ agent_sessions : tenant_id
+    agent_sessions ||--o{ agent_messages : session_id
+    agent_sessions ||--o{ agent_feedback : session_id
+    agent_messages o|--o{ agent_feedback : message_id
+    agent_messages o|--o{ agent_memory : evidence_message_id
+    users o|--o{ agent_memory : user_id
+```
+
+### LLM evidence and budget foreign keys
+
+```mermaid
+erDiagram
+    tenants ||--o{ llm_attempts : tenant_id_CASCADE
+    tenants ||--o{ llm_dispatch_receipts : tenant_id_RESTRICT
+    tenants ||--o{ llm_outcome_events : tenant_id_RESTRICT
+    tenants ||--o{ llm_budget_days : tenant_id_RESTRICT
+    tenants ||--o{ llm_budget_reservations : tenant_id_RESTRICT
+    llm_dispatch_receipts ||--o{ llm_outcome_events : dispatch_id_RESTRICT
+    llm_dispatch_receipts ||--o| llm_budget_reservations : dispatch_id_RESTRICT
+    llm_budget_days ||--o{ llm_budget_reservations : payer_day_RESTRICT
+```
+
+Receipt/event/reservation guards are installed by migrations, not merely by
+loading ORM metadata. Retained evidence may block payer deletion. Logical
+execution/model identifiers deliberately do not form cleanup-cascading FKs.
+
+## Migration history and deployment
+
+Selected milestones, not a complete replay audit:
+
+| Revision | Change |
+| --- | --- |
+| 0113–0116 (PR #246, integrated) | Personal notification receipts/lifecycle; additive claim states; general action/approval/idempotency fields; transition history; later folded into baseline |
+| 0117 (P2-T15, integrated) | Workspace capability entitlements and usage; later folded into baseline |
+| 0118 (P11-T12, integrated) | Durable task-admission action audit; later folded into baseline |
+| `baseline_0118` (Q-14) | Frozen schema baseline replacing the prior numbered migration history |
+| 0119 (P11-T29) | Permanent workspace-offboarding journal and guarded deletion workflow; follows `baseline_0118` |
+| 0120 (Q-16) | Shared platform configuration; follows `0119` |
+| 0121 (P12-T08) | Workspace connection and encrypted connection-secret tables; follows `0120` |
+| 0122 (P12-T11) | Persisted knowledge/document evidence and revision tables; follows `0121` |
+| 0123 (P12-T16) | Nullable source member owner and source-auth-required notification kind; follows `0122` |
+| 0124–0129 (P12) | File workspace, communication inbox, case workflow, calendar/outbox, and connector account extensions; follows `0123` |
+| 0130 (P13-T02) | Contact core (`contacts`, `contact_identities`, `contact_consents`, `contact_merge_journal`) with Fernet PII columns; follows `0129` |
+| 0131 (P13-T03) | Provider rate budgets (`provider_rate_budgets`) and sync cursor leases; follows `0130` |
+| 0132 (P13-T05) | Business module action audit allowlist expansion (`ck_action_audit_events_action`); follows `0131` |
+| 0133 (P18-T02) | Local connector gateway persistence (`local_connectors`, `local_connector_pairings`, `local_connector_requests`); follows `0132` |
+| 0134 (P13-T04) | Business write-approval command ledger (`business_commands`) and per-target batch items (`business_command_targets`); follows `0133` |
+| 0135 (P14-T02) | Normalized CRM entities (`crm_entities`) with Fernet PII columns; follows `0134` |
+| 0136 (P14-T04) | Birthday/holiday greeting drafts and history (`greeting_history`) with Fernet PII columns; follows `0135` |
+| 0031 / 0060 | Analytics cost tracking / sub-cent Numeric precision |
+| 0041 / 0042 / 0043 | Task queue / digest runs / agent tables |
+| 0044 | Tenancy foundation |
+| 0049 | Analytics content hash |
+| 0053 | Remove platform rate-limit columns |
+| 0061 | Remove source user ownership column |
+| 0063 | Task/source association |
+| 0065 / 0066 | Personal vault / remove tenant credential table |
+| 0067 | Remove source scenario FK |
+| 0068 / 0075 / 0082 | Raw staging / attempts / non-partial dedup index |
+| 0071 | Starter/pro/business tiers |
+| 0073 / 0076 | Task-owned actions / scenario prompt simplification |
+| 0077 / 0078 | Workspace chat settings / job execution timestamps |
+| 0080 / 0081 | Membership role FK / chain labels |
+| 0083 / 0084 / 0085 | Remove scenario analyze_type / fleet usage / normalized labels |
+| 0086 | Nullable custom_endpoint_path String(200) |
+| 0087 | Nullable digest delivery_state JSONB |
+| 0088 | Remove unused agent_tasks.requires_approval |
+| 0089 | Nullable collected_items.attachments JSON snapshot |
+| 0090 | Scope agent session uniqueness to tenant/channel/chat |
+| 0091 | Remove llm_providers.is_default; model-only default selection |
+| 0092 | Captured LLM attempt journal, tariff snapshots and exact USD costs |
+| 0093 | Immutable preparation receipts and mutation guards |
+| 0094 | Immutable receipt-bound outcome observations and binding guards |
+| 0095 | Payer/day balances, immutable reservations and receipt-binding guards |
+| 0096 | Separate platform/workspace role catalogs; resource keys and derived permission codenames; membership AI flag; personal memory ownership/indexes |
+
+| 0097 | Personal account identity and fixed task payer consent |
+| 0098 | Durable per-user notification preferences |
+| 0099 | Personal dispatch, bound policies, reservations and settlement ledger |
+| 0100 | Reviewed legacy billing attribution and consent |
+| 0101 | Manual job initiator identity |
+| 0102 | Reservation validator with unambiguous local names |
+| **0103** | Platform task initiator guard correction |
+| **0104** | Durable analysis context receipts; fingerprint-scoped analytics uniqueness with `legacy` default; no historical receipt backfill |
+| **0105** | Remove retired monitored-user configuration |
+| **0106** | Add VK search source type and remove retired task action lists |
+| **0107** | Add model price units, nullable cache tariffs and usage evidence; preserve legacy pricing snapshots |
+
+At the original Q-15 review revision the graph had one root, `baseline_0118`,
+and one follow-up, `0119`; later source revisions added `0120` through `0136`.
+The current checked-in chain is `baseline_0118` → `0119` → `0120` → `0121` →
+`0122` → `0123` → `0124` → `0125` → `0126` → `0127` → `0128` → `0129` →
+`0130` → `0131` → `0132` → `0133` → `0134` → `0135` → `0136`. Q-14 replaced the earlier numbered history with the frozen
+baseline; the table above retains selected historical milestones. This is
+static source structure, not `alembic current`, an `alembic check`, a replay
+rehearsal or acceptance of any arbitrary target schema. Q-14 verified the
+baseline transition for the local public and test schemas; P11-T29 validated
+`0119` on the local test schema. Those records do not certify every target or a
+production deployment.
+
+Before running this ORM against any target, verify its actual revision and
+catalog compatibility under the project's approval rules. Existing owner-local
+0096 application/validation and limited 0093–0095 storage evidence are separately
+attributed in [IMPLEMENTATION_STATUS](../archive/IMPLEMENTATION_STATUS.md); they are not a
+claim about every environment or a production deployment.
+
+0093–0095 ordinary downgrades refuse evidence deletion; 0096 is forward-only
+without an owner-reviewed preservation plan. 0104's downgrade refuses when
+analytics rows contain multiple analysis contexts. 0092's downgrade drops attempt
+history; older downgrades can restore obsolete flags/constraints or discard
+attachments/checkpoints. Never infer a safe automatic rollback from a repository
+merge or metadata-only bootstrap. No create/reset/drop/stamp/migrate operation is
+part of documentation synchronization.
+
+## Deletion rules and complete FK audit
+
+See [Model deletion behavior](MODEL_DELETION.md) for the current source-level
+inventory of 106 declared FK constraints (39 CASCADE, 17 SET NULL, 46 RESTRICT,
+4 NO ACTION), ORM cascades, restrictive billing/evidence references, the
+ModelType/Permission passive-delete mismatch, and the pending real-PostgreSQL
+acceptance scope. That report is source/metadata analysis only: it is not an
+inspection of a deployed schema and makes no cascade/model/migration change.

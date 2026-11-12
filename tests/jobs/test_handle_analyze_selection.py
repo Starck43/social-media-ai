@@ -3,7 +3,7 @@
 Owner command:
 `python -m pytest tests/jobs/test_handle_analyze_selection.py -q` (keep the root conftest and its test-schema guard).
 
-Дизайн: `docs/COLLECTION.md#task-selection-contract`. Задача владеет отбором: слои
+Дизайн: `docs/connectors/COLLECTION.md#task-selection-contract`. Задача владеет отбором: слои
 применяются по порядку (источник → автор → текстовый скоуп), а сценарий
 по-прежнему решает «как анализировать» и какие `content_types` собираются.
 

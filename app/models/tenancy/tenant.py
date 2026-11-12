@@ -51,7 +51,7 @@ class Tenant(Base, TimestampMixin):
     #: Two numbers here overlap with columns on this table (`daily_cost_limit`,
     #: `max_sources`). That is deliberate, not a duplicate source of truth: the
     #: column is the workspace's own setting, this is the plan's ceiling, and
-    #: `effective_limits()` honours whichever is tighter. `docs/TENANCY.md` is the
+    #: `effective_limits()` honours whichever is tighter. `docs/platform/TENANCY.md` is the
     #: human-readable copy of this table — keep the two in step.
     PLAN_LIMITS: ClassVar[dict[str, dict[str, Any]]] = {
         "starter": {

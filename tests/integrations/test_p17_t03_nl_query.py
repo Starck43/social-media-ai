@@ -193,6 +193,21 @@ def test_plan_payload_validation(overrides, code):
     assert excinfo.value.code == code
 
 
+def test_json_text_float_in_a_filter_is_refused():
+    # Production path: the model answer arrives as JSON text, not as a Python mapping.
+    text = json.dumps(payload(filters=[{"field": "Цена", "operator": "eq", "value": 1.5}]))
+    with pytest.raises(OneCNaturalLanguageError) as excinfo:
+        parse_plan_draft(text)
+    assert excinfo.value.code == "float_forbidden"
+
+
+def test_json_text_float_in_top_is_refused():
+    text = json.dumps(payload(top=10.5))
+    with pytest.raises(OneCNaturalLanguageError) as excinfo:
+        parse_plan_draft(text)
+    assert excinfo.value.code == "float_forbidden"
+
+
 def test_payload_must_be_json(catalog):
     with pytest.raises(OneCNaturalLanguageError) as excinfo:
         parse_plan_draft("не json")

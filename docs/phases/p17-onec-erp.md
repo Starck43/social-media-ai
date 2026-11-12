@@ -43,7 +43,7 @@ TZ criteria: connect via REST (T01); read-only queries (T02); NL translation (T0
 3. [P17-T03 accepted](../audit/p17-t03.md) — Natural-language queries, result formatting, export and history · done 2026-11-12 · accepted SHA `a9aad4f5` · `P3` · `C4` · depends: [P17-T02 accepted](../audit/p17-t02.md)
 4. [P17-T04](../tasks/p17-t04.md) — 1C write commands with preview, approval and audit · `P3` · `C5` · depends: [P17-T02 accepted](../audit/p17-t02.md), [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md)
 5. [P17-T05](../tasks/p17-t05.md) — 1C role-based access policy and audit views · `P3` · `C3` · depends: [P17-T03 accepted](../audit/p17-t03.md)
-6. [P17-T06](../tasks/p17-t06.md) — 1C query continuation from the stored plan · `P3` · `C4` · depends: [P17-T03 accepted](../audit/p17-t03.md)
+6. [P17-T06 accepted](../audit/p17-t06.md) — 1C query continuation from the stored plan · done 2026-11-12 · accepted SHA `bec2fb8e` · `P3` · `C4` · depends: [P17-T03 accepted](../audit/p17-t03.md)
 7. [P17-T07](../tasks/p17-t07.md) — 1C query hardening follow-ups (DTD guard, export marking, float path, API shape) · `P3` · `C3` · depends: [P17-T03 accepted](../audit/p17-t03.md)
 8. [P17-T08](../tasks/p17-t08.md) — 1C catalog cache and history status values · `P3` · `C3` · depends: [P17-T03 accepted](../audit/p17-t03.md)
 

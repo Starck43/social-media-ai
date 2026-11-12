@@ -427,6 +427,11 @@ def _parse_iso_optional(value: Any) -> date | datetime | None:
 
 PlanCall = Callable[[list[dict[str, str]]], Awaitable[str | Mapping[str, Any] | None]]
 
+# One shared read service: the opt-in result cache and the in-process query
+# metadata must outlive a single request, otherwise `cache_ttl_seconds` cannot do
+# what its name promises (P17-T09). The service holds no per-request state.
+_SHARED_READER = OneCReadQueryService()
+
 
 class OneCNLQueryService:
     """Translate a question into a validated read-only plan; never executes raw text."""
@@ -595,10 +600,18 @@ class OneCQueryAnswerService:
         keeps a second page reachable even when the model would describe the same
         question with a different field order.
         """
-        reader = reader if reader is not None else OneCReadQueryService()
+        reader = reader if reader is not None else _SHARED_READER
         context = await reader.load_connection_context(
             tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id
         )
+        stored = None
+        if history_id is not None:
+            # The stored plan is loaded and checked against the connection BEFORE the
+            # catalog is fetched, so a row of another actor or connection is refused
+            # without spending a provider request or a budget token.
+            stored = await history.load_plan(tenant_id=tenant_id, actor_id=actor_id, history_id=history_id)
+            if stored.connection_id != connection_id:
+                raise OneCNaturalLanguageError("history_not_found")
         if catalog is None:
             catalog = await reader.fetch_metadata_catalog(
                 tenant_id=tenant_id,
@@ -607,12 +620,8 @@ class OneCQueryAnswerService:
                 **({"resolver": resolver} if resolver is not None else {}),
             )
         if history_id is not None:
-            interpretation = await self._continue_from_history(
-                history,
-                tenant_id=tenant_id,
-                actor_id=actor_id,
-                connection_id=connection_id,
-                history_id=history_id,
+            interpretation = self._interpretation_from_stored(
+                stored,
                 catalog=catalog,
                 context=context,
                 page_token=page_token,
@@ -668,23 +677,15 @@ class OneCQueryAnswerService:
             history_id=recorded_id,
         )
 
-    async def _continue_from_history(
+    def _interpretation_from_stored(
         self,
-        history: OneCQueryHistoryRepository,
+        stored: Any,
         *,
-        tenant_id: int,
-        actor_id: int,
-        connection_id: int,
-        history_id: int,
         catalog: OneCMetadataCatalog,
         context: OneCConnectionContext,
         page_token: str | None,
     ) -> OneCQueryInterpretation:
         """Rebuild an authorized stored plan and validate it again before execution."""
-        stored = await history.load_plan(tenant_id=tenant_id, actor_id=actor_id, history_id=history_id)
-        if stored.connection_id != connection_id:
-            # A row from another connection must not be executed against this one.
-            raise OneCNaturalLanguageError("history_not_found")
         plan = plan_from_json(stored.plan_json)
         if page_token is not None:
             plan = replace(plan, page_token=page_token)
@@ -723,7 +724,7 @@ class OneCQueryAnswerService:
         """Export already-authorized rows; the plan is re-validated against live metadata first."""
         if format not in {"xlsx", "pdf"}:
             raise OneCNaturalLanguageError("invalid_export_format")
-        reader = reader if reader is not None else OneCReadQueryService()
+        reader = reader if reader is not None else _SHARED_READER
         context = await reader.load_connection_context(
             tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id
         )

@@ -50,6 +50,7 @@ criteria live once in [BUSINESS_PRODUCTION_READINESS](BUSINESS_PRODUCTION_READIN
 | Controlled activation | [P9](phases/p9-safe-activation.md) | [Activation](BUSINESS_PRODUCTION_READINESS.md#prd-09--safe-action-activation-and-honest-release-claims) |
 | Verified security/correctness findings | [P10](phases/p10-audit-hardening.md) | Task-selected gate |
 | Structure, interfaces and scale readiness | [P11](phases/p11-structure.md) | Task-selected gate |
+| Model catalogs, plan grants and dispatch safety | [P21](phases/p21-ai-operations.md) | Task-scoped economics, AI-boundary and activation evidence; not commercial activation |
 | Domain workspace and navigation expansion | [P12](phases/p12-domain-workspace-expansion.md) | Expansion sequence pilot gates |
 | Business modules (owner TZ) | [P13–P19](BUSINESS_MODULES.md) | Per-module acceptance + [Activation](BUSINESS_PRODUCTION_READINESS.md#prd-09--safe-action-activation-and-honest-release-claims) for writes |
 

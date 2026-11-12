@@ -128,7 +128,7 @@ One surface, two kinds kept separate in storage ([R-03](BUSINESS_MODULES.md#revi
   external (calendar, CRM, tracker) per D25.
 - **Agent task** — an executable plan with preview, schedule and run history:
   social collection/analysis today; later message analysis, web research
-  ([P20-T12 audit](audit/p20-t12.md)), 1C queries ([P17-T03](tasks/p17-t03.md)), document
+  ([P20-T12 audit](audit/p20-t12.md)), 1C queries ([P17-T03 accepted](audit/p17-t03.md)), document
   drafts ([P19-T02](audit/p19-t02.md)) and delegated research.
 
 «Поручить агенту» on a planner task creates a linked agent task; its result may

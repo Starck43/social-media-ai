@@ -675,6 +675,8 @@ class OneCQueryCache:
         if self._clock() >= expires_at:
             self._store.pop(key, None)
             return None
+        # Least-recently-used order: a hit moves the entry to the end of the store.
+        self._store[key] = self._store.pop(key)
         return rows, next_token
 
     def put(
@@ -731,6 +733,8 @@ class OneCMetadataCache:
         if self._clock() >= expires_at:
             self._store.pop(key, None)
             return None
+        # Least-recently-used order: a hit moves the entry to the end of the store.
+        self._store[key] = self._store.pop(key)
         return catalog
 
     def put(self, key: tuple[Any, ...], catalog: OneCMetadataCatalog, *, ttl_seconds: int) -> None:
@@ -753,6 +757,20 @@ class OneCMetadataCache:
 
 
 _METADATA_CACHE = OneCMetadataCache()
+_QUERY_CACHE = OneCQueryCache()
+
+
+def invalidate_metadata_catalog(tenant_id: int, connection_id: int) -> None:
+    """Drop the cached `$metadata` catalog of one connection.
+
+    The catalog is also keyed by the connection's `metadata_sha256` pin, so a
+    re-verified connection never serves a stale catalog. This call frees the entry
+    of a connection whose endpoint or credentials were edited, so the next question
+    reads the live schema instead of the last one within the TTL.
+    """
+    if type(tenant_id) is not int or type(connection_id) is not int or tenant_id <= 0 or connection_id <= 0:
+        return
+    _METADATA_CACHE.invalidate_connection(tenant_id, connection_id)
 
 
 async def fetch_odata_bytes(
@@ -892,7 +910,7 @@ class OneCReadQueryService:
         self._sessions = BaseManager(WorkspaceConnection)
         self._hosts = WorkspaceOutboundHostManager()
         self._limiter = RateLimiter()
-        self._cache = cache if cache is not None else OneCQueryCache()
+        self._cache = cache if cache is not None else _QUERY_CACHE
         self._metadata_cache = metadata_cache if metadata_cache is not None else _METADATA_CACHE
         self._history: deque[OneCQueryHistoryMetadata] = deque(maxlen=MAX_HISTORY_ENTRIES)
 

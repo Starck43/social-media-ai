@@ -1,4 +1,4 @@
-"""Tests for the `/app/analytics` page (docs/ANALYTICS_AGGREGATION_SYSTEM.md).
+"""Tests for the `/app/analytics` page (docs/business/ANALYTICS_AGGREGATION_SYSTEM.md).
 
 Read-only aggregation over stored `ai_analytics`: verifies the route renders for
 an authenticated member and that the real per-day activity + cost data (written

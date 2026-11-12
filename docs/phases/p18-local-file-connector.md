@@ -1,6 +1,6 @@
 # P18 — Local file connector (TZ module 5)
 
-[Product direction](../PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p18)
+[Product direction](../product/PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../product/BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p18)
 
 **Phase status: IN_PROGRESS** (implementation started; ROADMAP owns open task status).
 Owner estimate (TZ): 6–8 weeks — not a repository commitment.
@@ -9,7 +9,7 @@ Owner estimate (TZ): 6–8 weeks — not a repository commitment.
 
 ## Baseline: done and arriving
 
-- In `dev`: `LOCAL_GATEWAY` descriptor (certificate fingerprint), `local_only`/`company`/`cloud` boundaries with chat refusal for local-only content (P12-T11), local-connector constraints in [PRODUCT_PLAN](../PRODUCT_PLAN.md#extension-contracts).
+- In `dev`: `LOCAL_GATEWAY` descriptor (certificate fingerprint), `local_only`/`company`/`cloud` boundaries with chat refusal for local-only content (P12-T11), local-connector constraints in [PRODUCT_PLAN](../product/PRODUCT_PLAN.md#extension-contracts).
 - Arriving via open PRs: P12-T12 file workspace — private catalog, scans/traversal, bounded text read, line evidence, private storage, admission contract ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)); [P12-T13 contract review (accepted)](../audit/p12-t13.md); P8-T34 Yandex Disk read-only pilot. Folder policies: P12-T15 (TODO).
 
 ## Adapted requirements
@@ -38,7 +38,7 @@ TZ criteria: install (T07); index selected folders (T03); OCR (T04); full-text s
 
 ## Plan
 
-1. [P18-T01](../audit/p18-t01.md) — Local connector protocol, pairing and revocation contract · `P3` · `C3` · **ACCEPTED 2026-11-03** (`8b805aaa`, [audit](../audit/p18-t01.md)); P12-T12 increment integrated. The protocol ships in `docs/LOCAL_CONNECTOR_PROTOCOL.md`
+1. [P18-T01](../audit/p18-t01.md) — Local connector protocol, pairing and revocation contract · `P3` · `C3` · **ACCEPTED 2026-11-03** (`8b805aaa`, [audit](../audit/p18-t01.md)); P12-T12 increment integrated. The protocol ships in `docs/connectors/LOCAL_CONNECTOR_PROTOCOL.md`
 2. [P18-T02 accepted](../audit/p18-t02.md) — DONE 2026-11-04; owner-scoped default-off gateway and chat references; source `8618eeb0634fa2600be558fb611c3433f51b109b`.
 3. [P18-T03 accepted scaffold](../audit/p18-t03.md) — **DONE 2026-11-06**; local-only development scaffold; accepted source `d726a476fe95f9d0c3757082394de4de2d75e4c6`; full device/platform/security gates remain P18-T05/T06/T07 and Q-19.
 4. ~~P18-T04 — Text extraction and OCR with resource limits~~ **DONE 2026-11-08**, accepted source `e74b8e81`, merge `11767207` — [audit](../audit/p18-t04.md)

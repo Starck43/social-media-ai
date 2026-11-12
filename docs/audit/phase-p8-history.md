@@ -3,15 +3,15 @@
 # P8 — First value and support UI (gate: a first-time owner reaches value and support can see what is happening)
 
 Phase scope and accepted-task history. [Active index](../../ROADMAP.md#p8);
-detailed cards are siblings in this directory. [Product direction](../PRODUCT_PLAN.md#foundation-directions).
+detailed cards are siblings in this directory. [Product direction](../product/PRODUCT_PLAN.md#foundation-directions).
 Historical instructions/permissions below are evidence, not current policy.
 
 Goal: operators can detect and own stale sources, backlog, stalled loops,
 delivery failures or spend anomalies; home answers "what needs attention, what
 was produced, what happens next".
 Design contracts: [assistant-shell.md](assistant-shell-history.md),
-[NOTIFICATIONS.md](../NOTIFICATIONS.md),
-[TENANCY.md](../TENANCY.md#web-settings-and-ownedgranted-workspace-context).
+[NOTIFICATIONS.md](../business/NOTIFICATIONS.md),
+[TENANCY.md](../platform/TENANCY.md#web-settings-and-ownedgranted-workspace-context).
 Delivered: home cleanup (PR #185, owner-local acceptance at `01f719d` in
 IMPLEMENTATION_STATUS); shell A (#188), unified attention B (#189),
 browser-local notification preferences C (#190), bounded settings scopes D
@@ -21,7 +21,7 @@ Attention feed lives in the floating bell (B), not a home card.
 
 ## Universal social task direction
 
-Keep existing sources, scenarios, tasks/schedules and digests independently usable. Chat and forms share the [universal task contract](../AGENT_TASKS_PLAN.md#explicit-task-plans), with API/CLI/admin/tool parity. Active work lives in ROADMAP; historical acceptance below is unchanged.
+Keep existing sources, scenarios, tasks/schedules and digests independently usable. Chat and forms share the [universal task contract](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans), with API/CLI/admin/tool parity. Active work lives in ROADMAP; historical acceptance below is unchanged.
 
 ## Closed tasks
 
@@ -402,7 +402,7 @@ P8-T06 and does not alter its task record.
   (exit 0, no failures/skips), 32 offline Chromium assertions at 390/1440px
   (exit 0, all requests intercepted); actual target route/fragment behavior
   over synthetic ORM and explicit storage doubles, not real DB acceptance.
-  [Contract, commands, versions and local handoff](../ADMIN.md#related-fkm2m-record-editors).
+  [Contract, commands, versions and local handoff](../platform/ADMIN.md#related-fkm2m-record-editors).
   Follow-up on owner feedback: inline plus/pencil SVG controls (not text buttons
   below the field); canonical Tenant Float `NoConverterFound` reproduced on
   SQLAlchemy 2.1/SQLAdmin 0.32 and fixed in BaseAdmin without converting precise

@@ -1,6 +1,6 @@
 """Read-time «Сегодня» home projection, actor state, and start-page fallback (P20-T07).
 
-Invariants (`docs/WORKSPACE_UX.md#today-page`, `docs/tasks/p20-t07.md`):
+Invariants (`docs/product/WORKSPACE_UX.md#today-page`, `docs/tasks/p20-t07.md`):
 - Read-time projection over owning modules: no duplicate task/action/message tables.
 - Section order is fixed:
   1. `brief` («Утренняя сводка»)

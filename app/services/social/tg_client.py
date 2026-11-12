@@ -17,7 +17,7 @@ from app.types import SourceType
 
 logger = logging.getLogger(__name__)
 
-# Source.params["mode"] values (see docs/COLLECTION.md).
+# Source.params["mode"] values (see docs/connectors/COLLECTION.md).
 MODE_API = "api"  # L1: Bot API push via listener -> ingest; pull is a no-op
 MODE_USER = "user"  # L2: MTProto user session pull (Telethon)
 MODE_AUTO = "auto"  # Personal pull requires explicit new-store grant; no fallback.

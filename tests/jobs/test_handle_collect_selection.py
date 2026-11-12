@@ -3,7 +3,7 @@
 Owner command:
 `.venv/bin/python -m pytest tests/test_handle_collect_selection.py -q --noconftest -o addopts=`
 
-Дизайн: `docs/COLLECTION.md#task-selection-contract`. Задача собирает только свои источники
+Дизайн: `docs/connectors/COLLECTION.md#task-selection-contract`. Задача собирает только свои источники
 (m2m `agent_task_sources`), а `payload["tracked_users"]` решает, чьи записи
 получат анализ, — никто не читает ничьих личных стен.
 
@@ -126,7 +126,7 @@ class TestTrackedUsersAreNotACollectionTarget:
     def test_monitored_users_in_payload_is_not_read(self, env):
         """Старый ключ не имеет читателя: он не включает monitored-ветку.
 
-        Никакого «legacy read path» у ключа нет (docs/COLLECTION.md#task-selection-contract).
+        Никакого «legacy read path» у ключа нет (docs/connectors/COLLECTION.md#task-selection-contract).
         Обработчик идёт обычным путём сбора источника — не падает и не угадывает
         намерение.
         """

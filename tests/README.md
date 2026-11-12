@@ -17,7 +17,7 @@ resources; it does not authorize execution or infer isolation from filenames.
 | [Guarded selected discovery](tooling/test_p11_t16_discovery.py) | Five explicitly reviewed suites use Jinja, AST/isolated sources and mocked services; real app imports/network/thread starts are forbidden | Dev interpreter: `python -I tests/tooling/test_p11_t16_discovery.py`; **collection only**, never a generic test runner |
 | Domain pytest suites and remaining legacy helpers | Root [conftest](conftest.py) is DB-dependent regardless of a suite's name or mocks | Normal pytest requires the validated DB target/exclusive ownership; do not add `--noconftest` based on filenames |
 | Other root `.cjs` fixtures | Inspect each script: Playwright/browser/vendor assets or Node VM; not admitted by this index | Retained deliberately; select/validate separately before moving or running |
-| Live/DB external resources | Explicit target, schema, synthetic cleanup and authorization required | [Database procedure](../docs/COLLABORATION.md#database); not covered by metadata/browser checks |
+| Live/DB external resources | Explicit target, schema, synthetic cleanup and authorization required | [Database procedure](../docs/process/COLLABORATION.md#database); not covered by metadata/browser checks |
 
 `CHROMIUM_BIN` selects the native executable for the two browser scripts. These
 selected scripts use generated file fixtures and contain no application server

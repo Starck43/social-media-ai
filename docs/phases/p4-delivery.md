@@ -1,6 +1,6 @@
 # P4 — Tenant-safe delivery
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p4) · [full historical notes](../audit/phase-p4-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p4) · [full historical notes](../audit/phase-p4-history.md)
 
 **Goal:** Delivery is tenant-safe, retry-safe and truthful about uncertain outcomes.
 

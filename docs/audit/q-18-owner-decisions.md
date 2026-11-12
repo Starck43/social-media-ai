@@ -5,7 +5,7 @@ owner's TZ; request: https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c955
 
 All nine decisions are answered, so the ROADMAP row is removed and this note is
 the history. The short reference stays in
-[BUSINESS_MODULES → Owner decisions](../BUSINESS_MODULES.md#owner-decisions).
+[BUSINESS_MODULES → Owner decisions](../product/BUSINESS_MODULES.md#owner-decisions).
 
 Each task card names its decision by ID and date where the answer constrains the
 build; a card is not blocked on a decision any more.
@@ -48,7 +48,7 @@ build; a card is not blocked on a decision any more.
   separate `PII_INDEX_KEY`; neither reuses `CREDENTIALS_KEY`. `PII_INDEX_KEY` is
   kept stable — the blind index is not rotated in P13-T02; rotating it is a
   separate, separately approved task with its own index rebuild. Accepted default
-  of [BUSINESS_MODULES](../BUSINESS_MODULES.md) D8.
+  of [BUSINESS_MODULES](../product/BUSINESS_MODULES.md) D8.
 - D9 — **answered (owner, 2026-11-04)**: PostgreSQL plus the existing private
   storage from P12-T12; S3-compatible storage only after a measured need.
   **Clarified (owner, 2026-11-10):** S3 belongs in the project as a connector for
@@ -66,7 +66,7 @@ build; a card is not blocked on a decision any more.
   per message, `ATTACHMENT_SPOOL_TTL_SECONDS` 900, `ATTACHMENT_STORAGE_DIR` the
   system temp directory. Rationale: thousands of tenants would bloat the database
   for bytes needed for minutes. Implementation and the restart guarantee are in
-  [CONFIGURATION](../CONFIGURATION.md) and `app/services/attachments/`.
+  [CONFIGURATION](../platform/CONFIGURATION.md) and `app/services/attachments/`.
 
 ## Authorizations that outlive the register
 
@@ -78,11 +78,11 @@ These stand as authorizations for future tasks:
   global by nature (one provider account's remaining budget, one connector's
   health, one cache's expiry); the row names the reason in its docstring and a
   subscriber never sees it. Anything carrying customer data stays tenant-scoped.
-  Recorded in [BUSINESS_MODULES](../BUSINESS_MODULES.md); a task that needs the
+  Recorded in [BUSINESS_MODULES](../product/BUSINESS_MODULES.md); a task that needs the
   exception says so at planning time, not at review.
 - **`test_schema` migrations (standing rule, not a decision).** Reviewed Alembic
   migrations on the isolated schema need no repeated permission
-  ([database rules](../COLLABORATION.md#database)); separate authorization applies
+  ([database rules](../process/COLLABORATION.md#database)); separate authorization applies
   to the **public** schema only.
 - **D6 signing deferral** and **D7 consent wording**: each is deferred to a named
   later moment, not approved. Reaching that moment needs a new decision.

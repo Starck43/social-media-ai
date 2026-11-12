@@ -1,4 +1,4 @@
-"""Integration tests for the web UI auth slice documented in docs/API.md.
+"""Integration tests for the web UI auth slice documented in docs/platform/API.md.
 
 Real PostgreSQL (same policy as the rest of the suite): register/login/invite
 run through the ASGI stack so `TenantUIMiddleware`, session cookies and CSRF

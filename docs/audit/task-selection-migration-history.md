@@ -1,8 +1,8 @@
 # Task-selection migration history
 
 Historical design plan, not current migration authorization. Current contract:
-[selection](../COLLECTION.md#task-selection-contract); migration permissions:
-[database safeguards](../COLLABORATION.md#database).
+[selection](../connectors/COLLECTION.md#task-selection-contract); migration permissions:
+[database safeguards](../process/COLLABORATION.md#database).
 
 ### Removal plan of `monitored_users` (single migration window, pre-production)
 

@@ -1,6 +1,6 @@
 # Product phases
 
-[Parent: product directions](../PRODUCT_PLAN.md#foundation-directions). Each phase links active cards and accepted audits; ROADMAP alone owns task status.
+[Parent: product directions](../product/PRODUCT_PLAN.md#foundation-directions). Each phase links active cards and accepted audits; ROADMAP alone owns task status.
 
 | Phase | Plan |
 | --- | --- |
@@ -26,7 +26,7 @@
 | P21 | [AI model operations and dispatch safety](p21-ai-operations.md) |
 
 P13–P19 implement the owner's business-module TZ; the adapted specification,
-review findings and owner decisions are in [BUSINESS_MODULES](../BUSINESS_MODULES.md).
+review findings and owner decisions are in [BUSINESS_MODULES](../product/BUSINESS_MODULES.md).
 
 A phase has a goal, action plan, product backlink and task/audit links. Close it
 when all plan items are accepted; retain a dry outcome summary, completion date,

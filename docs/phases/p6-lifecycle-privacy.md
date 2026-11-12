@@ -1,6 +1,6 @@
 # P6 — Lifecycle and privacy
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p6) · [full historical notes](../audit/phase-p6-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p6) · [full historical notes](../audit/phase-p6-history.md)
 
 **Goal:** Retention, export, deletion and offboarding obey scoped privacy contracts.
 

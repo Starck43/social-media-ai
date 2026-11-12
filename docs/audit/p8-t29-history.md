@@ -6,7 +6,7 @@ results belong to their original commits and do not certify the integrated `dev`
 revision or the remaining user journeys.
 
 Registry: [ROADMAP](../../ROADMAP.md#p8); status/owner live there.
-Parent: [P8](../phases/p8-first-value-ui.md). Contract: [Universal tasks](../AGENT_TASKS_PLAN.md#explicit-task-plans).
+Parent: [P8](../phases/p8-first-value-ui.md). Contract: [Universal tasks](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans).
 
 ## Owner decisions and acceptance
 
@@ -181,7 +181,7 @@ The executed order was `public` first, then the two test schemas. Therefore this
 does **not** establish that the migration was first validated on a test schema;
 the public migration preceded those upgrades. The authorization was explicit,
 but it does not supply the missing prerequisite evidence required by current
-[Database rules](../COLLABORATION.md#database).
+[Database rules](../process/COLLABORATION.md#database).
 
 Read-only post-migration inspection found the three schemas at 0112 with
 `launch_key`, `launch_fingerprint`, `launch_job_id` and `UNIQUE (tenant_id,

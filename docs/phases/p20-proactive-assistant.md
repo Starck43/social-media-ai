@@ -1,6 +1,6 @@
 # P20 — Proactive assistant and unified workspace
 
-[Product direction](../PRODUCT_PLAN.md#proactive-assistance-and-unified-workspace) · [ROADMAP](../../ROADMAP.md#p20) · [Workspace design](../WORKSPACE_UX.md) · [owner request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250)
+[Product direction](../product/PRODUCT_PLAN.md#proactive-assistance-and-unified-workspace) · [ROADMAP](../../ROADMAP.md#p20) · [Workspace design](../product/WORKSPACE_UX.md) · [owner request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250)
 
 **Goal:** Make the product easy to use daily, alone or in a team: four clear entry points («Сегодня», chat, «Входящие», «Задачи»), attention and decisions gathered read-time from the owning modules, agent help beside every object, and bounded research. These are planned capabilities, not shipped features or authorization to activate them.
 
@@ -29,7 +29,7 @@
 | C — tasks and teams | T10 after P16-T01/T03; T11 after P16-T04 | Planner, calendar, source registry |
 | D — research | T12, then T04; T05 only on a measured gap | Owner provider/spend choices |
 
-Wave A improves what already exists and is not blocked by P15–P19. Later projections plug into «Сегодня» and chat through their own tasks; no task here builds a second ledger, notification sender, task store or calendar. The VK pilot and its Q-5 gate remain unchanged. No P20 card authorizes a production schema change, live provider use, new infrastructure spend, deployment or external delivery. T05 does not bypass P12-T14, Q-5, source permissions, provider controls or CAPTCHA. Future deployment modes and clients are recorded separately in [PLATFORM_TOPOLOGY](../PLATFORM_TOPOLOGY.md) and are not part of this phase.
+Wave A improves what already exists and is not blocked by P15–P19. Later projections plug into «Сегодня» and chat through their own tasks; no task here builds a second ledger, notification sender, task store or calendar. The VK pilot and its Q-5 gate remain unchanged. No P20 card authorizes a production schema change, live provider use, new infrastructure spend, deployment or external delivery. T05 does not bypass P12-T14, Q-5, source permissions, provider controls or CAPTCHA. Future deployment modes and clients are recorded separately in [PLATFORM_TOPOLOGY](../product/PLATFORM_TOPOLOGY.md) and are not part of this phase.
 
 ## Inspiration and limits
 

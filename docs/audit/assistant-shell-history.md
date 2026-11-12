@@ -1,7 +1,7 @@
 # Assistant shell implementation notes
 
 Historical design/evidence; not current task ownership, migration authorization
-or proof at a newer revision. Current contracts are routed by [DESIGN](../DESIGN.md).
+or proof at a newer revision. Current contracts are routed by [DESIGN](../product/DESIGN.md).
 
 Scope: original shell package A in [the active notebook](../../ROADMAP.md), followed by
 merged B/C/D boundaries below. This is guidance, not another queue or whole-gate
@@ -16,9 +16,9 @@ C #190 (`734e479`), D #191 (`ae77f55`). B replaces the original A-only unread
 projection with one permitted event/connection/task area; C adds browser-local
 optional display/hint policy, not durable state. D separates personal/workspace
 settings, owned/granted context, guest-web-chat denial and global-admin entry.
-See [notifications](../NOTIFICATIONS.md#current-web-bell-and-display-policy),
-[settings/access](../TENANCY.md#web-settings-and-ownedgranted-workspace-context)
-and [delivered evidence](../IMPLEMENTATION_STATUS.md). Subsequent owner-local
+See [notifications](../business/NOTIFICATIONS.md#current-web-bell-and-display-policy),
+[settings/access](../platform/TENANCY.md#web-settings-and-ownedgranted-workspace-context)
+and [delivered evidence](../archive/IMPLEMENTATION_STATUS.md). Subsequent owner-local
 home/A/B checks do not certify all C/D, accessibility or inherited runtime gaps.
 The A page inventory and source-pinned verification below are historical evidence;
 later patches must not relabel those tests as combined-tree acceptance.
@@ -392,4 +392,4 @@ deferred checks and no-DB/no-runtime/no-live-action restrictions remain open.
 
 ## P8-T29 design constraint
 
-The [universal task contract](../AGENT_TASKS_PLAN.md#explicit-task-plans) preserves this shell and independent sources, scenarios, tasks/schedules and digests pages. Chat is supplementary. Add needed settings using existing controls/styles; do not replace navigation or introduce a new visual design.
+The [universal task contract](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans) preserves this shell and independent sources, scenarios, tasks/schedules and digests pages. Chat is supplementary. Add needed settings using existing controls/styles; do not replace navigation or introduce a new visual design.

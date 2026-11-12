@@ -1,6 +1,6 @@
 # P3 — Identity and approvals
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md) · [full historical notes](../audit/phase-p3-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md) · [full historical notes](../audit/phase-p3-history.md)
 
 **Goal:** Identity, permissions and approvals fail closed.
 

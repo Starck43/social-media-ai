@@ -1,6 +1,6 @@
 # P21 — AI model operations and dispatch safety
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p21)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p21)
 
 ## Goal and limits
 

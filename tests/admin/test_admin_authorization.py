@@ -263,7 +263,7 @@ async def _operator_with_workspace(role: Role) -> str:
 
     A workspace page lists rows of a workspace, so the actor needs one: the
     console scope is the membership, exactly as in `/app` and `/api`
-    (`docs/ADMIN.md` — "everyone else their own").
+    (`docs/platform/ADMIN.md` — "everyone else their own").
     """
     from app.models import Tenant
     from app.models.managers.tenant_manager import TenantUserManager

@@ -1,6 +1,6 @@
 # P1 — Truthful queue execution
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md) · [full historical notes](../audit/phase-p1-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md) · [full historical notes](../audit/phase-p1-history.md)
 
 **Goal:** Execution does not start after claim loss, duplicate unresolved effects, or misstate outcomes.
 

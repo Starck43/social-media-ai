@@ -1,8 +1,8 @@
 # Test conventions
 
 Use the assigned task's test-runner skill and read only its card plus the
-relevant [test](../docs/COLLABORATION.md#tests) or
-[database](../docs/COLLABORATION.md#database) procedure.
+relevant [test](../docs/process/COLLABORATION.md#tests) or
+[database](../docs/process/COLLABORATION.md#database) procedure.
 
 - Group tests by domain under `tests/<domain>/` (for example `billing/`,
   `security/`, `jobs/`, `web/`, `collection/`). Keep root for pytest bootstrap,

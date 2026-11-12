@@ -456,7 +456,7 @@ async def test_admin_list_details_and_forms_are_real(case):
 
     Providers and models are personal (`owner_user_id`), so `admin`/`operator`
     edit the models they own — the `can_create/can_edit = False` crutch from
-    0109 is gone (`docs/ADMIN.md`). `case.model` belongs to `case.admin`.
+    0109 is gone (`docs/platform/ADMIN.md`). `case.model` belongs to `case.admin`.
     """
     async with case.client(case.admin) as client:
         listing = page_ok(await client.get(f"{BASE}/list", params={"search": case.marker}))

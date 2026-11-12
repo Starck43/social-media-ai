@@ -1,6 +1,6 @@
 # P5 — Safe AI boundaries
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p5) · [full historical notes](../audit/phase-p5-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p5) · [full historical notes](../audit/phase-p5-history.md)
 
 **Goal:** Typed output and hostile input stay within deterministic authorization and execution limits.
 

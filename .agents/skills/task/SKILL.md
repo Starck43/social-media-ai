@@ -21,7 +21,7 @@ with passed/failed/unrun checks and a recommended next step.
 Never self-accept or merge/push a solution without the owner’s explicit
 choice. Report merge / continue / defer options with the exact resume branch/PR;
 keep the work intact while awaiting a decision. Store handoff in the card/PR,
-not `/tmp` or ignored `.agents/tmp`. Follow [COLLABORATION](../../../docs/COLLABORATION.md) only as needed.
+not `/tmp` or ignored `.agents/tmp`. Follow [COLLABORATION](../../../docs/process/COLLABORATION.md) only as needed.
 
 ## Delegation order
 

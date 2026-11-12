@@ -66,7 +66,7 @@ class PromptVariables:
 	}
 
 	# Variables any prompt may use regardless of media, on top of the per-media
-	# sets — the documented registry (docs/AI_PIPELINE_AND_PROMPTS.md). Scope-derived
+	# sets — the documented registry (docs/agent/AI_PIPELINE_AND_PROMPTS.md). Scope-derived
 	# names (max_keywords, max_topics, sentiment_categories) resolve only once
 	# the scenario's scope is known, but they are *known* names: a prompt using
 	# them must not be flagged as containing unknown variables.

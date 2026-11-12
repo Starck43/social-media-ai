@@ -6,7 +6,7 @@ use general execution. Anyone may add a question or TODO to [ROADMAP](ROADMAP.md
 
 ## Read once, then lazily
 
-Read [README](README.md), [DESIGN](docs/DESIGN.md) and this file once per session.
+Read [README](README.md), [DESIGN](docs/product/DESIGN.md) and this file once per session.
 For work, open one ROADMAP row and its task card; load only relevant linked
 sections. A link is navigation, not an instruction to recursively load parent
 phases, PRODUCT_PLAN, related cards or audit history. If assigned an ID, read only
@@ -15,7 +15,7 @@ predecessors inspect their current row and just the specific delivered contract
 needed. Reuse already-loaded unchanged rules within a session; refresh source
 and changed sections after a revision change. Record documents actually read and
 checks in the card/PR. Shared
-[skills and prompt examples](docs/PROMPT_EXAMPLES.md) select execution/audit roles.
+[skills and prompt examples](docs/process/PROMPT_EXAMPLES.md) select execution/audit roles.
 
 For structural changes, keep move-only and behavior edits separate, preserve
 compatibility until consumers migrate, and define a safe rollback. Task cards
@@ -26,7 +26,7 @@ carry only task-specific additions, not copies of these common rules.
 - Simplicity over cleverness; concise reporting without restating what the commit,
   card or PR already carries.
 - **Ask the owner when a decision hits one of four triggers** (procedure and
-  question format in [owner questions](docs/COLLABORATION.md#owner-questions)):
+  question format in [owner questions](docs/process/COLLABORATION.md#owner-questions)):
   it changes money, certificates or infrastructure; it alters an already accepted
   contract; it is irreversible once merged (migrations, deletions, public API);
   or it changes what a subscriber sees. Everything else is the executor's call -
@@ -46,30 +46,30 @@ carry only task-specific additions, not copies of these common rules.
 
 - Before task edits, claim/create its unique ID, status, owner, dialogue and card
   link in ROADMAP. Publish scoped registry changes to `origin/dev` and reconcile
-  local `dev`; follow [claim synchronization](docs/COLLABORATION.md#tasks).
+  local `dev`; follow [claim synchronization](docs/process/COLLABORATION.md#tasks).
   Work on a dedicated task-ID branch/worktree; preserve other agents' work.
 - ROADMAP owns open status; `docs/tasks` owns active detail; `docs/phases` owns
   stage plans; `docs/audit` owns accepted results and detailed failures. Use
-  [lifecycle and evidence rules](docs/COLLABORATION.md#acceptance). Never invent
+  [lifecycle and evidence rules](docs/process/COLLABORATION.md#acceptance). Never invent
   checks, approvals, dialogue links or completion. READY requires required checks
   PASS. A successful audit acceptance also authorizes merging that exact accepted
   revision into `dev` and deleting its branch, unless the target or a finding
-  fails ([acceptance rules](docs/COLLABORATION.md#acceptance)). Any other merge or
+  fails ([acceptance rules](docs/process/COLLABORATION.md#acceptance)). Any other merge or
   deferral still needs the owner's choice; preserve the branch/PR until then.
   BLOCKED concerns
   the solution/acceptance, never a decision wait or housekeeping. Open row
   statuses: TODO, IN_PROGRESS, READY, BLOCKED, DEFERRED — DONE is not a row
   status; acceptance removes the row. DEFERRED is only an explicit owner choice,
   recorded with reason and resume branch/PR; postponement is never BLOCKED.
-  Transition rules: [state machine](docs/COLLABORATION.md#state-machine).
+  Transition rules: [state machine](docs/process/COLLABORATION.md#state-machine).
 - Resolve DB target/schema before access. Test-schema setup/migrations are allowed;
   serialize shared DB work and remove/verify all synthetic records afterward.
   Public test records require explicit Superuser approval. Public migrations need
   full test-schema validation and separate apply authorization. Alembic only;
-  [database safeguards](docs/COLLABORATION.md#database) apply after failed runs too.
+  [database safeguards](docs/process/COLLABORATION.md#database) apply after failed runs too.
 - Migrations are numbered at merge, not in advance: write a placeholder revision,
   point `down_revision` at the live `dev` head, and let the integrator assign the
-  number ([rules](docs/COLLABORATION.md#migration-numbering-and-parallel-tasks)).
+  number ([rules](docs/process/COLLABORATION.md#migration-numbering-and-parallel-tasks)).
   Run the cycle once on the task's own isolated schema; a renumber that changes no
   DDL needs only the head check, and a green isolated cycle is already the
   `test_schema` precondition for a public apply.
@@ -90,7 +90,7 @@ carry only task-specific additions, not copies of these common rules.
   full suites require explicit owner request. Routine docs review needs no pytest.
 - At closeout remove own temporary files; inventory worktrees and branches
   (`git branch --no-merged origin/dev`) and apply
-  [safe cleanup](docs/COLLABORATION.md#git-and-cleanup). The executor removes the
+  [safe cleanup](docs/process/COLLABORATION.md#git-and-cleanup). The executor removes the
   branch it created once that branch's commits are in `dev`; the auditor verifies
   it at acceptance. Preserve dirty/active/foreign/unclear work and unmerged
   commits; delete branches only after verified integration. Report retained paths

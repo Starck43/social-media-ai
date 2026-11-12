@@ -187,7 +187,7 @@ async def test_self_service_cannot_update_another_account() -> None:
 
 
 async def test_api_only_account_keeps_self_service_but_no_workspace_data() -> None:
-    """`docs/API.md`: API registration creates no membership; the profile route
+    """`docs/platform/API.md`: API registration creates no membership; the profile route
     is account-level, so the account can manage itself but cannot read workspace
     data until a membership exists."""
     async with await _client() as c:

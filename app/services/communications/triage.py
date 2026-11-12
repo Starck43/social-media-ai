@@ -1,6 +1,6 @@
 """Inbox triage, thread classification, and agent-suggested reply/action proposals (P20-T09).
 
-Invariants (`docs/tasks/p20-t09.md`, `docs/WORKSPACE_UX.md#correspondence`, `D3`, `D11`, `D14`, `D15`):
+Invariants (`docs/tasks/p20-t09.md`, `docs/product/WORKSPACE_UX.md#correspondence`, `D3`, `D11`, `D14`, `D15`):
 - Classify threads into four canonical buckets with a human-readable Russian reason:
   - `needs_reply` («Нужен ответ»)
   - `fyi` («К сведению»)

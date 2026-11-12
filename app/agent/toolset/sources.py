@@ -60,7 +60,7 @@ async def sources_list(only_active: bool = True, limit: int = 20) -> list[dict[s
 
 # Rows the model reads. A verbose row (display name, platform label, enum name,
 # active flag) costs tokens on every turn the chat loads this list into context;
-# `docs/AGENT.md` "Aggregate-first analytics tools" sets the same rule for the
+# `docs/agent/AGENT.md` "Aggregate-first analytics tools" sets the same rule for the
 # analytics tools. `source_get` / `source_add` can always reach the full row.
 def _compact(source: Any, platform_key: str | None = None) -> dict[str, Any]:
     """The row the model needs, never a lazy relation of a detached object.

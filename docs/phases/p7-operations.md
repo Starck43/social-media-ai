@@ -1,6 +1,6 @@
 # P7 — Reproducible operation
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p7) · [full historical notes](../audit/phase-p7-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p7) · [full historical notes](../audit/phase-p7-history.md)
 
 **Goal:** Installation, migrations, runtime ownership and recovery are reproducible from evidence.
 

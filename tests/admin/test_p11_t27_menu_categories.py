@@ -95,7 +95,7 @@ async def test_category_visibility_follows_accessible_child_views():
 
 
 def test_admin_docs_describe_resulting_s1_through_s7_contract():
-    admin_doc = (ROOT / "docs/ADMIN.md").read_text()
+    admin_doc = (ROOT / "docs/platform/ADMIN.md").read_text()
     for category_name in EXPECTED_CATEGORIES:
         assert category_name in admin_doc
     for required_term in (
@@ -107,7 +107,7 @@ def test_admin_docs_describe_resulting_s1_through_s7_contract():
         "row_criteria_scope",
         "_ScopedCategoryMenu",
     ):
-        assert required_term in admin_doc, f"Missing {required_term!r} in docs/ADMIN.md"
+        assert required_term in admin_doc, f"Missing {required_term!r} in docs/platform/ADMIN.md"
 
 
 @pytest.mark.asyncio

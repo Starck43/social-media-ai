@@ -1,6 +1,6 @@
 # P9 — Safe activation and platform access
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p9) · [full historical notes](../audit/phase-p9-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p9) · [full historical notes](../audit/phase-p9-history.md)
 
 **Goal:** External writes activate only through a capability-specific contract.
 

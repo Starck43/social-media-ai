@@ -1,0 +1,740 @@
+# Configuration Reference
+
+Application-level configuration comes from environment variables. Load it from
+a `.env` file or pass it directly to the process. Personal credentials and
+workspace recipients belong in the database as described below.
+**Never commit `.env` files.**
+
+The application reads config from `app/core/config.py` (Pydantic `Settings`).
+
+## Application credentials and recipient boundaries
+
+| Scope | Storage | Purpose |
+|---|---|---|
+| VK application | env: `VK_APP_ID`, `VK_SERVICE_KEY`; shared `Platform.params` | App identity, L1 service access, OAuth endpoints and registered callback. Legacy inputs are described below. |
+| Shared Telegram bot | env: `TELEGRAM_BOT_TOKEN` | Bot API transport; one bot may serve multiple workspaces. |
+| Legacy personal integrations | encrypted `user_credentials` | VK access/refresh tokens after migration 0124 and legacy Telegram vault sessions; user-scoped, not workspace-consented. Telegram rollout requires the grant-based path below. |
+| Personal-account reuse foundation (draft) | encrypted `personal_connector_authorizations` + `workspace_authorization_grants` | Single personal authorization, explicit independent consent in each workspace; Telegram-only bounded phone/code/2FA API/web journey, explicit source picker and default-OFF queued runtime. Recovery requires same subject and per-workspace reconsent. Temporary attempts live in `telegram_login_attempts`; minimal replay keys survive metadata retention. Code-first, not yet final-tested or rollout-approved. |
+| Workspace digest recipients | `tenant_channels`, active and `is_digest_target=True` | Owned destination IDs for this workspace only; use existing binding workflow, then Settings → Channels to toggle digests. |
+| Operator notifications | optional env: `TELEGRAM_ADMIN_CHAT_ID` | Fixed-template operator-alert destination; never a workspace notification fallback. |
+| Agent access bootstrap | `TELEGRAM_OWNER_IDS` | Telegram **user IDs**, not chat/channel IDs; distinct from the notification destination and workspace memberships. |
+
+Keep infrastructure settings (`POSTGRES_URL`, `SECRET_KEY`, `CREDENTIALS_KEY`)
+in env/your deployment secret store. Preserve and back up `CREDENTIALS_KEY`
+securely: replacing it without re-encryption makes existing vault/provider keys
+unreadable. No actual secret values belong in documentation or source control.
+
+`TELEGRAM_DIGEST_CHANNEL_ID` and `MAX_CHANNEL_ID` remain accepted by Settings
+for compatibility, but digest delivery ignores both. Do not add them to new
+installations. `TELEGRAM_ADMIN_CHAT_ID` is never consulted for digest delivery.
+An installation with only env destinations must explicitly register/enable its
+workspace recipient; no automatic binding or schema migration is performed.
+Broadcast result keys are now uniformly `transport:chat_id`, including bootstrap.
+
+**Notification isolation:** workspace notifications require an explicit active
+owned recipient. Only `send_operator_alert(event_code)` consults the admin chat,
+and its text comes from a fixed catalog. The legacy `send_critical_alert` shim
+discards all free-form title/message/error details. Collection errors retain a
+generic source-owned DB notification and emit only a generic operator event.
+Missing admin configuration does not redirect messages to a client workspace.
+See [notification boundaries and remaining limits](../business/NOTIFICATIONS.md).
+
+See [connector configuration](../connectors/CONNECTOR_CONFIGURATION.md) for provider-specific mail forms, encrypted workspace connections, IMAP checks and migration 0121.
+
+### Provider presentation catalog
+
+`app/integrations/catalog/` is the code-owned, versioned source for provider
+labels, descriptions, categories, local icon paths, form fields, setup guidance,
+availability and the narrowly implemented capabilities. Presentation changes do not
+change the saved mail contract (`CATALOG_VERSION`); version that contract only
+with an explicit compatibility plan. `Platform` is a separate
+platform-level runtime configuration; email has two provider definitions.
+`app/static/icons/providers/` contains neutral local glyphs, not official logos.
+Reusable Jinja macros in `app/web/templates/web/components/provider.html` render
+icons, headings and fields; templates must never inline untrusted SVG or secrets.
+
+See [personal account reuse](../connectors/CONNECTOR_ACCOUNT_REUSE.md) for the owner-approved
+per-workspace consent model and its explicit delivery gates. Telegram must not
+use a deployment-wide personal session. The legacy HTTP terminal login is now
+refused with a fixed 409 until supported web authorization is implemented.
+VK retains its existing personal-credential flow. Yandex Mail and
+Mail.ru Mail support workspace configuration and an explicit IMAP login check
+only: no mailbox synchronization or sending. Yandex Disk, Mail.ru Cloud,
+Bitrix24, 1C and local gateway are catalog descriptors only: their schemas and
+icons do not enable forms, network access, transport, synchronization or writes.
+`availability` is presentation metadata, not authorization or proof of health.
+The workspace manager's allowlist, role/tenant checks and encrypted secret
+storage remain authoritative. Catalog fields and `Platform.params` are not a
+place for user secrets; deployment credentials remain in the secret store.
+
+
+## Workspace subscription provider (P2-T16 foundation)
+
+`SUBSCRIPTION_PAYMENT_PROVIDER=yookassa` selects YooKassa API v3 by default.
+`SUBSCRIPTION_PAYMENT_MODE=test` is the only accepted mode in this increment;
+`live` and unknown providers are rejected by configuration validation.
+`SUBSCRIPTION_CHECKOUT_ENABLED=false` is the safe default. This increment adds
+configuration only: no checkout/webhook routes, purchase persistence or entitlement
+activation are implemented by these settings. Setting the flag does not supply
+those missing paths or authorize provider calls.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `SUBSCRIPTION_PAYMENT_PROVIDER` | `yookassa` | Selected provider, not a payment authorization |
+| `SUBSCRIPTION_PAYMENT_MODE` | `test` | Test-only contract; not merchant verification |
+| `SUBSCRIPTION_CHECKOUT_ENABLED` | `false` | Reserved opt-in gate; does not enable live payments |
+| `YOOKASSA_SHOP_ID` | empty | Test merchant's ASCII numeric shop ID |
+| `YOOKASSA_SECRET_KEY` | empty | Test merchant key, redacted/excluded from settings serialization |
+| `YOOKASSA_RETURN_URL` | empty | Server-configured HTTPS browser return, never payment proof |
+| `YOOKASSA_HTTP_TIMEOUT` | `15` | Future adapter timeout, 1–30 seconds |
+
+Do not put credentials in Notion, Git or PR comments. Use the deployment secret
+store/private `.env`. Empty credentials preserve existing deployments without
+activating payment behavior. A return URL, when supplied, must be HTTPS on port
+443/8443 (or implicit 443), without embedded credentials, fragment or whitespace.
+It is not the notification URL. Configure Basic Auth notifications in the
+YooKassa Merchant Profile only after a webhook endpoint is actually implemented
+and its HTTPS URL has been approved; no webhook signature secret is invented.
+
+YooKassa test stores use the same API host as live stores. A `test` configuration
+label is not proof that credentials belong to a test store. The future adapter
+must verify retrieved payment `test=true`, merchant, amount/currency and purchase
+binding before accepting evidence; fake callbacks and browser redirects never
+grant access. The official contract and remaining work live in
+[SUBSCRIPTIONS](SUBSCRIPTIONS.md).
+
+**Migration dependency:** P2-T15 first introduced `tenants.plan_expires_at` and
+`entitlement_usage` in revision `0117`; Q-14 later incorporated that schema into
+frozen `baseline_0118`. The checked-in chain continues with `0119` for workspace
+offboarding, `0120` for shared platform configuration, `0121` for workspace
+connections, `0122` for knowledge/document evidence, and `0123` for source
+member ownership; `0118` is not a free revision number. Do not recreate the entitlement fields or replay the removed numbered migrations. Fresh-schema
+and legacy-schema transition rules are in [DEPLOYMENT](DEPLOYMENT.md). Before
+any separately approved subscription-schema work, inspect the actual integrated
+graph and reserve a distinct revision on its current head; never infer it from an
+old planning snapshot. The #246 → #252 → #253 integration sequence is historical
+and complete.
+
+## Optional same-host runtime observation
+
+`RUNTIME_STATE_DIR` is unset by default. An API alone does not prove that
+`python -m app.runtime` is running. Set an absolute path to one trusted local
+POSIX directory **in both API and runtime environments** to enable `/runtimez`.
+Example configuration only: `RUNTIME_STATE_DIR=/var/lib/social-media-ai/runtime`.
+The operator must provision ownership/access for the service user; the runtime
+creates the directory with mode 0700 and its files with mode 0600. Do not point
+this at a customer-controlled directory, symlink, FIFO or a network filesystem.
+
+The same OS user, host/kernel lock namespace and directory must be shared.
+Containers need an explicitly reviewed local shared mount and matching UID;
+this change does not edit Compose or deploy a volume. Independent paths/hosts
+are independent observations, not global runtime uniqueness. Do not enable a
+new profile during an incident as a supposedly read-only probe.
+
+With the option enabled, runtime takes a nonblocking exclusive local owner lock
+before default-task bootstrap. A duplicate owner or inaccessible directory
+aborts before bootstrap. Keep `owner.lock` in place; never unlink/replace it to
+force a start. The lock is not a DB/distributed lease, job claim or authorization
+mechanism. Unset configuration preserves the existing startup path and reports
+`unconfigured`, never green, from `/runtimez`.
+
+A random runtime ID changes per start. Runtime publishes `starting`, then
+`running` after bootstrap, every 15 seconds on its event loop, and `stopped` at
+shutdown; ownership stays held until component cleanup finishes. Heartbeat or
+component failure cancels/drains the supervised tasks before releasing ownership.
+No scheduler/worker/listener progress is inferred; a responsive event loop can
+coexist with failing jobs, broken credentials or disconnected channels.
+
+## .env.example
+
+```bash
+# ─── Application ───────────────────────────────────────────────
+ENVIRONMENT=development        # development | production
+DEBUG=false
+HOST=0.0.0.0
+PORT=8000
+SECRET_KEY=change-me-in-production   # Pydantic: required, generate with:
+                                     # python -c "from secrets import token_urlsafe; print(token_urlsafe(64))"
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
+
+# ─── Database ──────────────────────────────────────────────────
+POSTGRES_URL=postgresql://user:pass@localhost:5432/social_media
+DB_SCHEMA=public
+
+# ─── Redis (active admin rate-limit storage; Celery remains optional) ─
+REDIS_URL=redis://localhost:6379/0
+
+# ─── JWT / Auth ───────────────────────────────────────────────
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=43200    # 30 days in dev, overridden to 60 in prod
+REFRESH_TOKEN_EXPIRE_DAYS=30
+LOGIN_TIMEOUT_MINUTES=15             # counting window and lockout duration, shared by all login surfaces
+MAX_LOGIN_ATTEMPTS=5                 # failed attempts per account before the lockout
+LOGIN_IP_MAX_ATTEMPTS=20             # failed attempts per client address, across accounts
+MAX_WORKSPACE_MEMBERS=2              # people one workspace may hold (owner + invited), all tiers
+
+# ─── Password Policy ──────────────────────────────────────────
+PASSWORD_MIN_LENGTH=8
+PASSWORD_REQUIRE_UPPERCASE=true
+PASSWORD_REQUIRE_LOWERCASE=true
+PASSWORD_REQUIRE_NUMBERS=true
+PASSWORD_REQUIRE_SPECIAL=false
+
+# ─── Rate Limiting ────────────────────────────────────────────
+CHANGE_PASSWORD_RATE_LIMIT=5/minute
+
+# ─── CSRF ─────────────────────────────────────────────────────
+SCRF_TOKEN_EXPIRY_MINUTES=15
+SCRF_TOKEN_LENGTH=32
+
+# ─── Admin Panel ──────────────────────────────────────────────
+ADMIN_ENABLED=true
+
+# ─── External Platforms (optional — app boots without them) ───
+# VK
+VK_APP_ID=
+VK_SERVICE_KEY=             # VK "Сервисный ключ доступа" (L1)
+VK_CLIENT_ACCESS_KEY=       # compatibility credential; current VK ID exchange does not send it
+# OAuth callback is configured in shared Platform.params.redirect_uri, not an env overlay.
+
+# Telegram (Bot API)
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_API_ID=          # L2 MTProto
+TELEGRAM_API_HASH=        # L2 MTProto
+# TELEGRAM_SESSION is deprecated and ignored; do not place a user session in env
+TELEGRAM_ADMIN_CHAT_ID=   # fixed-template operator alerts only
+
+# Telegram (Channels)
+TELEGRAM_OWNER_IDS=       # Telegram user IDs eligible for owner bootstrap
+# Digest recipients: workspace channel bindings in DB, not env
+
+# MAX
+MAX_BOT_TOKEN=
+MAX_API_URL=https://platform-api2.max.ru
+MAX_OWNER_ID=             # MAX user id for agent chat
+# MAX digest recipients also come from workspace channel bindings
+
+# ─── Tenancy ──────────────────────────────────────────────────
+CREDENTIALS_KEY=          # Fernet key — generate with:
+                          # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+DEFAULT_TENANT_SLUG=owner
+
+# ─── Personal data (P13-T02) ──────────────────────────────────
+# Separate from CREDENTIALS_KEY by decision D8. First encryption key is active.
+PII_ENCRYPTION_KEYS=      # comma-separated Fernet keys; see docs/platform/PII_PROTECTION.md
+PII_INDEX_KEY=            # urlsafe-base64 >= 32 bytes; kept stable, never rotated with the above
+
+# ─── Scheduler ────────────────────────────────────────────────
+SCHEDULER_ENABLED=true
+SCHEDULER_POLL_SECONDS=30
+SCHEDULER_TIMEZONE=Europe/Moscow
+
+# ─── Agent ────────────────────────────────────────────────────
+AGENT_MODEL=              # explicit LLMModel name inside the acting personal catalog; empty = auto-resolve
+AGENT_HISTORY_LIMIT=20    # messages kept in agent context per session
+AGENT_MAX_ITERATIONS=6    # max tool-call rounds per user message
+AGENT_DAILY_COST_LIMIT=5.0  # USD cap (agent + digests combined) per UTC day
+AGENT_MAX_TOKENS=1024     # reply size cap for chat
+AGENT_TEMPERATURE=0.4
+
+# ─── Background Jobs ──────────────────────────────────────────
+JOB_MAX_ATTEMPTS=3
+JOB_RETRY_BACKOFF_SECONDS=300
+
+# ─── Data retention ───────────────────────────────────────────
+DATA_RETENTION_MONTHS=1        # calendar months; minimum 1; deletion is irreversible
+
+# ─── Collection freshness ─────────────────────────────────────
+SOURCE_STALE_HOURS=24          # hours; an active source unchecked longer is reported stale
+
+# ─── LLM ──────────────────────────────────────────────────────
+LLM_REQUEST_DELAY=3000         # ms between requests (rate limit)
+LLM_DEFAULT_TEMPERATURE=0.3    # for analysis tasks
+LLM_DEFAULT_MAX_TOKENS=400     # for social media annotations
+LLM_DEFAULT_STREAM=false       # complete responses for processing
+LLM_DEFAULT_TIMEOUT=90.0       # seconds
+
+# ─── Logging ──────────────────────────────────────────────────
+LOG_LEVEL=INFO
+```
+
+---
+
+## Variable Reference
+
+### Application
+
+| Variable | Default | Description |
+|---|---|---|
+| `ENVIRONMENT` | `development` | `development` or `production` (affects token expiry, password policy) |
+| `DEBUG` | `false` | Enable debug mode |
+| `HOST` | `0.0.0.0` | Bind address |
+| `PORT` | `8000` | Bind port |
+| `SECRET_KEY` | *(required)* | Pydantic JWT signing key |
+| `PUBLIC_BASE_URL` | *(empty)* | Absolute public HTTP(S) base URL used in unsubscribe links. Greeting/campaign scheduling fails closed with `503` until configured; set the externally reachable host for each environment. |
+| `ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:8000,http://localhost:8501` | Compatibility setting; not read by the active CORS middleware |
+| `BACKEND_CORS_ORIGINS` | `["http://localhost:3000", "http://localhost:8000"]` | Active CORS allowlist; set as a JSON list in the environment |
+
+### Database
+
+| Variable | Default | Description |
+|---|---|---|
+| `POSTGRES_URL` | *(required)* | Async PostgreSQL connection string (`postgresql+asyncpg://user:pass@host:port/db`) |
+| `DB_SCHEMA` | `public` | PostgreSQL schema name |
+| `DB_POOL` | `pool` | Async engine connection reuse: `pool` reuses connections, `null` opens one per session. A pooled asyncpg connection belongs to the event loop that opened it, so a process that runs parts of its work in another loop (the test suite runs several unittest-style cases in a loop of their own) must use `null`. |
+
+### Redis
+
+The active admin SlowAPI limiter constructs Redis storage during ASGI import,
+so the Redis Python client is part of the core package. Celery remains a frozen,
+optional compatibility profile.
+
+| Variable | Default | Description |
+|---|---|---|
+| `REDIS_URL` | `redis://localhost:6379/0` | Active admin SlowAPI rate-limit storage and frozen Celery compatibility. The Redis Python dependency remains core; this does not authorize starting Redis/Celery. |
+
+### Calendar connections
+
+Google Calendar OAuth uses the deployment's `GOOGLE_CALENDAR_CLIENT_ID` and
+`GOOGLE_CALENDAR_CLIENT_SECRET`; its registered callback must match
+`PUBLIC_BASE_URL` plus `/app/settings/oauth/google_calendar/callback`, and
+`PUBLIC_BASE_URL` must be an externally reachable HTTPS URL. Choose the
+read-only OAuth scope (`calendar.events.readonly`) when event writes are not
+needed. The writable scope is `calendar.events`; per-connection write consent
+is still required. Connecting explicitly authorizes calendar reads and starts
+the connection's scheduled sync. Yandex uses an application password supplied
+for that connection and the fixed `https://caldav.yandex.ru` endpoint; it has
+no deployment-level endpoint override. `POST /api/v1/calendar/discover/yandex`
+uses those credentials to list available calendars without saving the credentials
+or creating a connection; connect only after selecting a returned calendar.
+When the selected calendar has no locally indexed events, event listing checks
+provider availability: it returns an empty list only when the provider confirms
+the calendar is empty, reports `sync_required` when events need initial indexing,
+and reports the source unavailable when it cannot verify the provider.
+
+Planner-to-calendar writes use the existing `calendar.event_write.v1` business
+capability, which is disabled by default. Set
+`CALENDAR_EVENT_WRITE_ENABLED=true` to enable it after review. Set
+`KILL_CALENDAR_EVENT_WRITE=true` to block writes; the command ledger rechecks
+this kill switch at execution, and it takes precedence over enablement. These
+flags control writes only; they do not disable reads or scheduled sync. A
+connected calendar is read after explicit connection consent; disconnect that
+connection to stop its sync. No live Google or Yandex provider call is part of
+local configuration validation.
+
+For calendar-owned planner tasks, deadline-relative reminder presets are
+unavailable because the provider controls the schedule. Custom-time reminders
+remain supported; dispatch reads the current provider schedule and timezone for
+quiet-hour and late labeling, and defers delivery when the source is unavailable.
+An event write with an uncertain outcome is never resent: use the separately
+approved `resolve_remote` read/accept command to reconcile the current provider
+event. This is read-only, remains available when event writes are disabled or
+the connection is read-only, and does not retry the original write.
+
+### JWT / Authentication
+
+| Variable | Default | Description |
+|---|---|---|
+| `ALGORITHM` | `HS256` | JWT signing algorithm |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `43200` (30 days) | Overridden to `60` (1 hour) in production |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | `30` | Refresh token lifetime |
+| `LOGIN_TIMEOUT_MINUTES` | `15` | Counting window and lockout duration for the shared login budget |
+| `MAX_LOGIN_ATTEMPTS` | `5` | Failed attempts per account before the shared lockout |
+| `LOGIN_IP_MAX_ATTEMPTS` | `20` | Failed attempts per client address, across accounts |
+| `MAX_WORKSPACE_MEMBERS` | `2` | People one workspace may hold across all tiers; the tier's `max_team_members` still applies, the tighter wins. Deployment-wide for the pilot — per-workspace settings are a later task |
+
+The console, `/app/login` and `POST /api/v1/auth/login` share one budget stored in
+the `login_attempts` table, so it survives a cleared cookie and applies to every
+process. The table is created by revision `0111`; deploying the code without that
+revision breaks login. These settings are not a substitute for a password policy
+or for provider-side rate limiting.
+
+### Password Policy
+
+| Variable | Default | Description |
+|---|---|---|
+| `PASSWORD_MIN_LENGTH` | `8` (6 in dev) | Minimum password length |
+| `PASSWORD_REQUIRE_UPPERCASE` | `true` | Require uppercase letter |
+| `PASSWORD_REQUIRE_LOWERCASE` | `true` | Require lowercase letter |
+| `PASSWORD_REQUIRE_NUMBERS` | `true` | Require digit |
+| `PASSWORD_REQUIRE_SPECIAL` | `false` | Require special character |
+
+### Rate Limiting
+
+| Variable | Default | Description |
+|---|---|---|
+| `CHANGE_PASSWORD_RATE_LIMIT` | `5/minute` | Rate limit for the operator password change/reset endpoint |
+
+### CSRF
+
+| Variable | Default | Description |
+|---|---|---|
+| `SCRF_TOKEN_EXPIRY_MINUTES` | `15` | CSRF token lifetime |
+| `SCRF_TOKEN_LENGTH` | `32` | CSRF token length in bytes |
+
+### Admin
+
+| Variable | Default | Description |
+|---|---|---|
+| `ADMIN_ENABLED` | `true` | Enable/disable sqladmin panel |
+
+### External Platforms
+
+| Variable | Default | Description |
+|---|---|---|
+| `VK_APP_ID` | `None` | VK application ID |
+| `VK_SERVICE_KEY` | `None` | VK service token (L1) — console "Сервисный ключ доступа" |
+| `VK_CLIENT_ACCESS_KEY` | `None` | Legacy client-secret resolver setting; current VK ID exchange does not send it. Retained for compatibility, not required by this implementation. |
+| `VK_REDIRECT_URI` | `http://localhost/api/v1/social/callback` | Legacy one-time migration 0120 input only; runtime callback is `Platform.params.redirect_uri`. |
+| `TELEGRAM_BOT_TOKEN` | `None` | Telegram bot token |
+| `TELEGRAM_API_ID` | `None` | Telegram API ID (L2 MTProto) |
+| `TELEGRAM_ACCOUNT_RUNTIME_ENABLED` | `false` | Default-OFF queued personal collection; separate rollout approval required |
+| `TELEGRAM_API_HASH` | `None` | Telegram API hash (L2 MTProto) |
+| `TELEGRAM_SESSION` | `None` | Deprecated and ignored for MTProto session resolution |
+| `TELEGRAM_ADMIN_CHAT_ID` | `None` | Fixed operator-alert catalog only; no workspace/digest fallback |
+| `TELEGRAM_OWNER_IDS` | `""` | Telegram user IDs eligible for owner bootstrap; existing membership and runtime authorization are separate |
+| `TELEGRAM_DIGEST_CHANNEL_ID` | `""` | Deprecated; ignored by digest delivery (use workspace bindings) |
+| `MAX_BOT_TOKEN` | `None` | MAX bot access token |
+| `MAX_API_URL` | `https://platform-api2.max.ru` | MAX API base URL |
+| `MAX_OWNER_ID` | `""` | MAX user ID allowed to chat with the agent |
+| `MAX_CHANNEL_ID` | `""` | Deprecated; ignored by digest delivery (use workspace bindings) |
+
+### Tenancy
+
+| Variable | Default | Description |
+|---|---|---|
+| `CREDENTIALS_KEY` | `None` | Fernet master key for encrypting personal (`user_credentials`) secrets. **Never commit.** |
+| `DEFAULT_TENANT_SLUG` | `owner` | Slug of the bootstrap (owner) workspace |
+
+### Personal data (P13-T02)
+
+| Variable | Default | Description |
+|---|---|---|
+| `PII_ENCRYPTION_KEYS` | `None` | Ordered Fernet keys for personal-data columns; **first = active**. Never `CREDENTIALS_KEY`. Rotation: [PII_PROTECTION](PII_PROTECTION.md). |
+| `PII_INDEX_KEY` | `None` | urlsafe-base64 HMAC-SHA256 key for blind indexes; **kept stable** (rotating it needs an approved index rebuild). |
+
+### Scheduler
+
+| Variable | Default | Description |
+|---|---|---|
+| `SCHEDULER_ENABLED` | `true` | Enable/disable the scheduler loop |
+| `SCHEDULER_POLL_SECONDS` | `30` | How often the scheduler checks for due schedules |
+| `SCHEDULER_TIMEZONE` | `Europe/Moscow` | Fallback timezone for cron expressions (a workspace's own timezone wins) |
+
+### Agent
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENT_MODEL` | `None` | Explicit LLMModel name, resolved inside the acting user's personal catalog: the row must be text-capable, active, on an active provider and owned by that user. A foreign or unknown name falls back to auto-resolution in the same catalog, never to another owner's model. Empty = auto-resolve. |
+| `AGENT_HISTORY_LIMIT` | `20` | Number of messages kept in agent context per session |
+| `AGENT_MAX_ITERATIONS` | `6` | Max tool-call rounds per user message |
+| `AGENT_DAILY_COST_LIMIT` | `5.0` | USD cap for agent + digests combined per UTC day |
+| `AGENT_MAX_TOKENS` | `1024` | Reply size cap for agent chat |
+| `AGENT_TEMPERATURE` | `0.4` | Temperature for agent chat completions |
+
+### Background Jobs
+
+| Variable | Default | Description |
+|---|---|---|
+| `JOB_MAX_ATTEMPTS` | `3` | Max retry attempts for a job |
+| `JOB_RETRY_BACKOFF_SECONDS` | `300` | Base backoff in seconds; actual = `backoff * 2^(attempts-1)` |
+
+### Data retention
+
+| Variable | Default | Description |
+|---|---|---|
+| `DATA_RETENTION_MONTHS` | `1` | Calendar months to keep analysis results (`ai_analytics`) and unanalysed raw content (`collected_items`). The daily `prune` task deletes older rows in each workspace, measured by last write, not publication date. Minimum `1`; startup fails on `0` or a non-integer. |
+
+### Collection freshness
+
+| Variable | Default | Description |
+|---|---|---|
+| `SOURCE_STALE_HOURS` | `24` | Hours after which an **active** source whose `last_checked` is older (or absent) is reported as stale on `/app/sources`: a banner counts them and each row is marked «устарел» or «не проверялся». Read-only — it never triggers a collection or changes a source. The same window is used by `SourceManager.get_sources_for_monitoring`. Minimum `1`; startup fails on a non-positive value. A source that was never checked is counted separately, so "older than N hours" is never claimed for it. |
+
+Kept regardless of age: analyses referenced by a bot action, the LLM attempt
+journal (`llm_attempts`, accounting evidence), and job rows with an operational
+budget stop or unconfirmed outcome. Finished job history keeps its own `days`
+budget (default 7). Deleted rows cannot be restored from the application; there
+is no export or offboarding flow yet. Lowering the value takes effect at the next
+`prune` run, so back up first if older history matters.
+
+### LLM
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLM_REQUEST_DELAY` | `3000` | Delay in ms between LLM requests (rate limit) |
+| `LLM_DEFAULT_TEMPERATURE` | `0.3` | Temperature for analysis tasks |
+| `LLM_DEFAULT_MAX_TOKENS` | `400` | Max tokens for social media annotations |
+| `LLM_DEFAULT_STREAM` | `false` | Use streaming for LLM responses |
+| `LLM_DEFAULT_TIMEOUT` | `90.0` | Request timeout in seconds |
+
+### Logging
+
+| Variable | Default | Description |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | Python logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) |
+| `LOG_DIR` | `~/.social-media-ai/logs` | Writable directory for rotating `app.log`; absolute path required (`~` is expanded) |
+
+File logging remains enabled. Importing the application logger creates `LOG_DIR`
+and opens `app.log` (10 MiB rotation, five backups), but never creates `./logs`
+or writes into the installed package. The service user's home directory is used
+by default on every platform. Containers/services that previously collected
+`./logs` must set `LOG_DIR` to an absolute writable mounted directory and update
+their log collection configuration. An unwritable directory fails explicitly;
+there is no silent fallback to CWD. Static files and both template roots resolve
+relative to the installed Python modules, not the process working directory.
+
+### Outbox attachment spool
+
+Rendered DOCX/PDF attachments are transient: they exist from render until
+dispatch plus a TTL, then are deleted. They are never stored in PostgreSQL —
+long-term files stay in the tenant's own cloud or local store, and an S3 source
+is a planned connector (D9, R-18), not a second byte store of ours.
+
+| Variable | Default | Description |
+|---|---|---|
+| `ATTACHMENT_STORAGE_DIR` | system temp dir + `social-media-ai-attachments` | Absolute spool directory, expanded from `~`; 0o700 directories and 0o600 files are enforced. Keep it outside the static web root |
+| `ATTACHMENT_MAX_FILE_BYTES` | `5242880` (5 MiB) | Per-attachment cap, checked before anything is written |
+| `ATTACHMENT_MAX_TOTAL_BYTES` | `10485760` (10 MiB) | Per-item attachment set cap; must not be below the file cap |
+| `ATTACHMENT_SPOOL_TTL_SECONDS` | `900` | Minimum 60. Files older than this are removed on the next sweep |
+
+The spool is local to one host: delivery runs on the process that wrote the
+file, or the directory lives on a shared volume. `app/services/attachments/`
+owns it; `tests/attachments/test_attachment_spool_unit.py` covers the bounds,
+the privacy model and the restart path (a file plus its digest survive a crash,
+so the next dispatch rechecks the hash instead of re-rendering).
+
+---
+
+## Key Generation
+
+### SECRET_KEY
+
+```bash
+python -c "from secrets import token_urlsafe; print(token_urlsafe(64))"
+```
+
+### CREDENTIALS_KEY (Fernet)
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+### PII keys (P13-T02)
+
+`PII_ENCRYPTION_KEYS` uses the same Fernet generator per key, comma-separated with
+the active key first; `PII_INDEX_KEY` is an independent 32-byte secret:
+
+```bash
+python -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+```
+
+Neither value may equal `CREDENTIALS_KEY`. Contract, rotation and what stays
+searchable: [PII_PROTECTION](PII_PROTECTION.md).
+
+---
+
+## Configuration Precedence
+
+1. Environment variables (highest priority)
+2. `.env` file
+3. Default values in `Settings` class
+
+Extra variables in `.env` are ignored (`extra="ignore"`).
+
+Programmatic constructor values retain Pydantic's precedence above environment
+variables. The import-time `load_dotenv()` compatibility behavior is unchanged;
+no nested env prefixes or renamed keys are introduced.
+
+`Settings.database`, `.security`, `.collection` and `.llm` return fresh frozen
+subsystem snapshots. Their fields are projections of already-resolved flat
+settings, not new env/default declarations. Secret-bearing view fields use
+`SecretStr` and require explicit `.get_secret_value()` at an execution boundary.
+Views intentionally exclude tenant plans, member ceilings and billing policy.
+
+For logs/diagnostics use `settings.safe_dict()`, not `model_dump()` or the raw
+flat secret attributes. Sensitive fields are hidden from Settings repr; legacy
+attribute types and `model_dump()` semantics remain compatible (and therefore
+are **not** a safe logging API). The existing payment secret remains excluded
+from dumps. Do not persist or expose unwrapped secret values.
+
+
+---
+
+## Platform credentials
+
+Two kinds of secret, resolved by `app/services/social/credentials.py`:
+
+- **VK personal L2 secrets** (`user_token`) live in the `user_credentials` table, keyed by
+  `users.id`, encrypted with Fernet under `CREDENTIALS_KEY`. Manage via CLI:
+  ```bash
+  python -m cli.main credentials oauth vk --user <id> --tenant owner
+  python -m cli.main credentials list --user <id>
+  python -m cli.main credentials test --user <id>
+  ```
+- **Telegram personal sessions** use the bounded connector-account login/recovery
+  UI/API, one encrypted personal authorization and explicit independent workspace
+  grants/source selections; no old-vault or environment session import/fallback.
+  `TELEGRAM_ACCOUNT_RUNTIME_ENABLED=false` is the default and rollout hold.
+  See [account reuse and recovery](../connectors/CONNECTOR_ACCOUNT_REUSE.md) and the
+  [personal-session isolation contract](../connectors/TELEGRAM_SESSION_SECURITY.md) — sessions
+  are still stored per user, not per workspace, so do not present that slice as
+  workspace isolation.
+- **Application / infrastructure config** (VK `app_id`, `client_secret`,
+  service token; Telegram/MAX bot tokens) is one-per-deployment and read from
+  the **environment** (`.env`), not from the DB.
+
+See also: [COLLECTION.md](../connectors/COLLECTION.md) — Credential vault.
+
+
+## Notification recipient boundaries
+
+`TELEGRAM_ADMIN_CHAT_ID` is used only by the fixed operator-alert catalog, not
+as a fallback for workspace notifications. Keep it in deployment configuration
+for an operator-only chat. A workspace messenger send needs an explicit active
+owned binding and workspace context (or an explicitly selected trusted operator
+workspace). Report/trend helpers without a recipient fail closed.
+
+The legacy `send_critical_alert` signature discards title/message/error details
+and emits a generic operator event. No new env variable or schema migration is
+needed. These rules apply to the notification service, not to the independently
+reviewed digest transport. See [notification contract and setup impact](../business/NOTIFICATIONS.md).
+
+
+## VK OAuth endpoint trust boundary
+
+`Platform.params` supplies the URLs; deployment policy `VK_OAUTH_ALLOWED_HOSTS`
+(default `id.vk.ru`) is a comma-separated list of **exact hostnames** trusted
+to receive OAuth material. Authorize and token endpoints must use HTTPS on port
+443 and match the allowlist; redirects are not followed. A reviewed custom
+proxy must be explicitly allowlisted before use, so existing custom endpoints
+may be refused after this security change until an operator configures them.
+Only allow hosts under the operator's control and review DNS/egress policy; this
+is not a DNS-pinning or compromised-host defense.
+
+The callback is still the shared catalog value, not an env overlay; it must be
+HTTPS except exact localhost/loopback HTTP in `ENVIRONMENT=development`. The
+operator must verify that the configured callback exactly matches the provider's
+registered callback; local validation cannot query or prove that registration.
+Rejected configuration produces no OAuth HTTP request. During refresh a rejected
+preflight releases its own unsent claim; network/ambiguous failures remain
+fenced and need reauthorization. Never enter tokens or secrets into hostnames.
+
+## Shared platform configuration
+
+`Platform.params` is the only runtime source for VK/Telegram API configuration.
+An example VK record contains:
+
+```json
+{"api_base_url": "https://api.vk.com/method", "api_version": "5.199", "auth_type": "oauth"}
+```
+
+VK also stores `oauth_base_url`, `oauth_token_url` and `redirect_uri` in this JSON;
+OAuth authorize/exchange/refresh consume it, with no hard-coded token endpoint
+or callback override. Telegram uses `api_base_url` and `auth_type`. Manage the shared record through
+SQLAdmin under the existing platform action grants, not `/app/settings`.
+`base_url` remains public-link metadata, distinct from the API endpoint.
+`platform_type` is globally unique. Defaults are materialized on creation, not
+reapplied when reading a persisted record. Inactive, missing or malformed config
+blocks provider requests instead of falling back to a process-wide value.
+Deployment transport timeouts, application identity and credentials keep their
+existing settings/vault ownership; `params` must not contain new credentials.
+
+### Migration 0120 and rollback
+
+Before applying to a working schema, back up the database and validate 0120 on
+`test_schema`; production/public application still needs separate authorization.
+Current schema has no Platform user/tenant ownership column. Legacy per-user-like
+variants are multiple names with the same type; migration groups them by type,
+retains the lowest ID and remaps source foreign keys without changing source IDs.
+Non-conflicting JSON objects are merged recursively, preserving custom values.
+A duplicate's explicit inactive status keeps the shared record inactive.
+
+Conflicting values (including nested values), differing public URLs, unknown
+foreign-key references or colliding `(tenant, platform, external_id)` source
+identities abort before writes. Reconcile explicitly and retry; no silent
+last-user-wins merge, secret printing or automatic source deletion occurs.
+The original records and source mapping are retained as inert reserved
+`params._migration_0120` rollback evidence, never consulted by runtime clients.
+Do not edit this reserved key. Downgrade restores exact records/references only
+when config and source identities still match the migration snapshot; otherwise
+it refuses destructive rollback and requires a reviewed export/reconciliation or
+backup restore. Empty-catalog rollback also requires a backup.
+
+`VK_OAUTH_BASE_URL` and `VK_REDIRECT_URI` are the only legacy **one-time
+migration inputs**: an existing VK row without those keys takes the registered
+callback and authorize base from them, and `oauth_token_url` follows the
+authorize base. Existing JSON wins. They do not override records or act as
+runtime fallbacks after migration; change the shared JSON to reconfigure an
+existing platform. A platform type with no catalog row is created from the
+application's bootstrap defaults, and downgrade removes the rows the migration
+created. No provider calls occur in migration.
+
+## Credential-key rotation (reviewed maintenance only)
+
+`CREDENTIALS_KEY` protects personal vault entries (including VK access and
+refresh), workspace connection secrets, personal connector authorizations and
+personal LLM-provider API keys.
+Changing the environment key alone makes existing ciphertext unreadable. After
+migration 0124 is integrated and reviewed, the rotation utility covers all of
+these stores in a single PostgreSQL transaction; it is not an automatic deploy
+step. At unified head `p12t14_accounts` it also rotates the single encrypted
+personal authorization bundle, not a copy in each workspace grant. Head
+`p12t14_tg_login` additionally rotates encrypted temporary login material. Empty
+disconnected/revoked placeholders are preserved. Only reviewed single heads
+`0124`, the reviewed `p12t14_*` generations, `p12t12_catalog` and file
+revisions `0125`-`0128` are supported;
+unknown/future/multiple heads or a store layout that does not match the head are refused rather than silently
+omitting an encrypted store.
+
+A live dry run or apply needs separate owner approval. Prepare and verify a
+restorable encrypted database backup and retain the old key securely; decide
+backup retention separately because old database pages/backups can contain
+legacy plaintext refresh tokens. Stop **all** application writers and keep them
+stopped through the configuration switch. Supply the current `CREDENTIALS_KEY`
+and the replacement `P12T14_NEW_CREDENTIALS_KEY` through protected environment
+configuration, not command-line arguments, chat, logs or version control.
+
+With the correct, explicitly authorized database and schema selected, the
+following dry run locks the relevant tables and verifies that every stored
+ciphertext can be read using the old key; it makes no changes:
+
+```bash
+python -m scripts.ops.rotate_credentials_key --target-approved --writers-stopped
+```
+
+Only after the owner approves apply and the backup and stopped-writer checks:
+
+```bash
+python -m scripts.ops.rotate_credentials_key --target-approved --writers-stopped --backup-confirmed --apply
+```
+
+The program fails closed on a missing database guard, old revision, malformed or
+wrong key, empty required secret or unreadable ciphertext. It never prints key,
+plaintext or ciphertext values. It locks with a bounded wait and updates all
+known stores together; a failed transaction rolls back. After a successful
+commit, keep writers stopped while securely installing and verifying the new key
+on every application instance before restart. If commit outcome is unknown, do
+not retry blindly or restart: have the authorized operator determine which key
+can read the vault and use the reviewed backup/forward-recovery plan. Rotating a
+key does not remove plaintext from previous database pages or backups.
+
+### Private file results during credential-key rotation
+
+At the combined 0128 head, the dry run reports private consent mounts, attempts
+and retained results. Apply refuses if private mounts exist unless the operator
+explicitly approves `--private-results-purge-approved` in addition to the backup
+and stopped-writer flags. This clears private consent and purges compact results
+using the normal invalidation fence; originals/catalog metadata remain. It is
+not result re-encryption. An error rolls back credential changes and purge in the
+same transaction. Users must grant consent again and perform a fresh read.
+Never change the environment key alone or disable the revocation triggers.
+
+## API schema publication
+
+`API_DOCS_ENABLED` is an optional boolean controlling `/docs`, `/redoc` and
+`/openapi.json`. Unset enables them only in development/test/testing; production
+and unknown `ENVIRONMENT` values default off. Explicit true/false overrides the
+default. It never changes endpoint authentication or membership requirements.
+See [business API conventions](API.md#business-modules) for the opt-in router and
+schema contract. Offline `app.openapi()` generation remains available.

@@ -13,7 +13,7 @@ finds corrections, decide whether focused checks are needed; do not run tests
 solely as routine audit. Full suites require owner request. Do not take feature
 implementation beyond authorized corrections/refactoring/docs.
 
-Before acceptance closeout, follow [verified integration](../../../docs/COLLABORATION.md#acceptance):
+Before acceptance closeout, follow [verified integration](../../../docs/process/COLLABORATION.md#acceptance):
 require PR `mergedAt`/merge commit, fetch origin, prove ancestry and inspect
 `git ls-tree origin/dev -- <delivered-file>` plus accepted content. Closed is not
 merged; rejected/queued/unverified merges retain the row, card and resume branch.
@@ -36,7 +36,7 @@ recorded in the audit note or a Questions row and the row is removed. Session
 or worktree cleanup never makes a resolved task BLOCKED.
 
 At closeout, inventory worktrees and report removed/retained candidates under
-[cleanup rules](../../../docs/COLLABORATION.md#git-and-cleanup). Preserve dirty,
+[cleanup rules](../../../docs/process/COLLABORATION.md#git-and-cleanup). Preserve dirty,
 active, unmerged, foreign or unclear workspaces. Commit and remove merged owned
 work when authorized; report actual checks briefly. An accepted code revision is
 also authorization to merge it and delete its branch, provided the accepted SHA is

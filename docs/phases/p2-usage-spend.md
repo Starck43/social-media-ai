@@ -1,6 +1,6 @@
 # P2 — Complete usage and spend
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p2) · [full historical notes](../audit/phase-p2-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p2) · [full historical notes](../audit/phase-p2-history.md)
 
 **Goal:** Paid work is admitted within attributable caps; unknown cost never becomes free.
 

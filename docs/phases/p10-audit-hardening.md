@@ -1,6 +1,6 @@
 # P10 — Source-audit hardening
 
-[Product direction](../PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md) · [full historical notes](../audit/phase-p10-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md) · [full historical notes](../audit/phase-p10-history.md)
 
 **Goal:** Verified correctness and security findings are closed with bounded evidence.
 

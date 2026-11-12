@@ -61,7 +61,7 @@ def test_public_and_domain_paths_share_one_mapped_class(name):
     cls = getattr(public, name)
     assert cls is getattr(domain, name) is getattr(leaf, name)
     assert name in public.__all__ and name in domain.__all__
-    # The layout move kept the owning package (`docs/COLLABORATION.md` model
+    # The layout move kept the owning package (`docs/process/COLLABORATION.md` model
     # layout); the classes live in `app.models.tenancy`, not the old account app.
     assert cls._app_label == "tenancy"
     assert cls.__tablename__ == table_name

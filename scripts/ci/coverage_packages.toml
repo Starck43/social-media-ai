@@ -67,4 +67,6 @@ tests = [
     "tests/integrations/test_p17_t03_export.py",
     "tests/integrations/test_p17_t06_continuation.py",
     "tests/integrations/test_p17_t07_export_marking.py",
+    "tests/integrations/test_p17_t08_catalog_cache.py",
+    "tests/integrations/test_p17_t08_history_status.py",
 ]

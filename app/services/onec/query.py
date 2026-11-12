@@ -70,6 +70,8 @@ DEFAULT_ROWS_PER_REQUEST = 100
 MAX_SKIP_OFFSET = 100_000
 TIMEOUT_SECONDS = 30
 MAX_CACHE_TTL_SECONDS = 300
+MAX_METADATA_CACHE_ENTRIES = 32
+METADATA_CACHE_TTL_SECONDS = 60
 MAX_HISTORY_ENTRIES = 200
 
 _GUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
@@ -701,6 +703,58 @@ class OneCQueryCache:
             self._store.pop(k, None)
 
 
+class OneCMetadataCache:
+    """Bounded TTL cache for parsed `$metadata` catalogs, keyed by tenant/connection/pin.
+
+    A catalog describes the 1C schema of one connection — entity sets and fields, never
+    tenant rows, credentials or query results — so it is safe to share between the actors
+    of a workspace that are authorized for that connection. The authorization check always
+    runs before a lookup, and the connection's `metadata_sha256` pin is part of the key,
+    so a re-verified connection never serves a stale catalog.
+    """
+
+    def __init__(
+        self,
+        *,
+        max_entries: int = MAX_METADATA_CACHE_ENTRIES,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        self._max_entries = max(1, max_entries)
+        self._clock = clock
+        self._store: dict[tuple[Any, ...], tuple[float, OneCMetadataCatalog]] = {}
+
+    def get(self, key: tuple[Any, ...]) -> OneCMetadataCatalog | None:
+        entry = self._store.get(key)
+        if entry is None:
+            return None
+        expires_at, catalog = entry
+        if self._clock() >= expires_at:
+            self._store.pop(key, None)
+            return None
+        return catalog
+
+    def put(self, key: tuple[Any, ...], catalog: OneCMetadataCatalog, *, ttl_seconds: int) -> None:
+        if ttl_seconds <= 0:
+            return
+        capped_ttl = min(ttl_seconds, MAX_CACHE_TTL_SECONDS)
+        now = self._clock()
+        expired_keys = [k for k, (exp, _) in self._store.items() if now >= exp]
+        for k in expired_keys:
+            self._store.pop(k, None)
+        if len(self._store) >= self._max_entries and key not in self._store:
+            oldest_key = next(iter(self._store))
+            self._store.pop(oldest_key, None)
+        self._store[key] = (now + capped_ttl, catalog)
+
+    def invalidate_connection(self, tenant_id: int, connection_id: int) -> None:
+        to_remove = [k for k in self._store if k[0] == tenant_id and k[1] == connection_id]
+        for k in to_remove:
+            self._store.pop(k, None)
+
+
+_METADATA_CACHE = OneCMetadataCache()
+
+
 async def fetch_odata_bytes(
     endpoint: OneCEndpoint,
     target_path: str,
@@ -829,11 +883,17 @@ class OneCReadQueryService:
     and IP-pinned HTTPS GET execution.
     """
 
-    def __init__(self, *, cache: OneCQueryCache | None = None):
+    def __init__(
+        self,
+        *,
+        cache: OneCQueryCache | None = None,
+        metadata_cache: OneCMetadataCache | None = None,
+    ):
         self._sessions = BaseManager(WorkspaceConnection)
         self._hosts = WorkspaceOutboundHostManager()
         self._limiter = RateLimiter()
         self._cache = cache if cache is not None else OneCQueryCache()
+        self._metadata_cache = metadata_cache if metadata_cache is not None else _METADATA_CACHE
         self._history: deque[OneCQueryHistoryMetadata] = deque(maxlen=MAX_HISTORY_ENTRIES)
 
     def list_history_metadata(
@@ -931,7 +991,13 @@ class OneCReadQueryService:
         connection_id: int,
         resolver: Resolver = default_dns_resolver,
     ) -> OneCMetadataCatalog:
-        """Fetch and parse `$metadata` for an authorized, verified 1C OData connection."""
+        """Fetch and parse `$metadata` for an authorized, verified 1C OData connection.
+
+        The parsed catalog is cached per tenant/connection/pin for a bounded TTL, so a
+        question costs one provider request instead of two. Authorization always runs
+        before the lookup and a pinned connection never serves a catalog that does not
+        match its `metadata_sha256`.
+        """
         (
             endpoint,
             credentials,
@@ -940,6 +1006,10 @@ class OneCReadQueryService:
             _allowed_fields,
             expected_sha256,
         ) = await self._load_authorized_connection(tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id)
+        cache_key = (tenant_id, connection_id, expected_sha256 or "")
+        cached = self._metadata_cache.get(cache_key)
+        if cached is not None and (expected_sha256 is None or cached.metadata_sha256 == expected_sha256):
+            return cached
         budget = budget_for(PROVIDER, account_key, connection_id=connection_id)
         try:
             xml_bytes = await fetch_odata_bytes(
@@ -964,6 +1034,7 @@ class OneCReadQueryService:
 
         if expected_sha256 is not None and catalog.metadata_sha256 != expected_sha256:
             raise OneCQueryError("metadata_hash_mismatch")
+        self._metadata_cache.put(cache_key, catalog, ttl_seconds=METADATA_CACHE_TTL_SECONDS)
         return catalog
 
     async def execute_query(

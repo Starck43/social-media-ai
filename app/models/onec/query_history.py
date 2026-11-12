@@ -25,7 +25,7 @@ class OneCQueryHistory(Base, TenantScopedMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("tenant_id", "id", name="uq_onec_query_history_tenant"),
         CheckConstraint(
-            "status IN ('planned','executed','refused','exported')",
+            "status IN ('executed','exported')",
             name="ck_onec_query_history_status",
         ),
         CheckConstraint(
@@ -53,6 +53,6 @@ class OneCQueryHistory(Base, TenantScopedMixin, TimestampMixin):
     question_encrypted: Mapped[str | None] = Column(Text, nullable=True)
     row_count: Mapped[int] = Column(Integer, nullable=False, default=0, server_default="0")
     duration_ms: Mapped[int] = Column(Integer, nullable=False, default=0, server_default="0")
-    status: Mapped[str] = Column(String(20), nullable=False, default="planned", server_default="planned")
+    status: Mapped[str] = Column(String(20), nullable=False)
     exported_format: Mapped[str | None] = Column(String(10), nullable=True)
     exported_at: Mapped[object | None] = Column(DateTime(timezone=True), nullable=True)

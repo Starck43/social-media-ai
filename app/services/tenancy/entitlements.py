@@ -60,11 +60,13 @@ def decide(
             reason = "plan_expired"
         elif not any(grants_capability(pattern, key) for pattern in grant.capabilities):
             reason = "not_granted"
-        elif key in grant.daily_quotas and key not in reserved:
+        elif key in grant.daily_quotas:
             quota = grant.daily_quotas[key]
             if type(quota) is not int or quota < 0:
                 reason = "invalid_quota"
-            elif (used_today or {}).get(key, 0) >= quota:
+            # A reservation prevents recounting this job, not validation of the
+            # catalog that authorizes it. Malformed policy always fails closed.
+            elif key not in reserved and (used_today or {}).get(key, 0) >= quota:
                 reason = "quota_exhausted"
         if reason:
             denials.append({"capability": key, "reason": reason})

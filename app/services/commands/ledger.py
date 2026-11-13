@@ -401,8 +401,17 @@ class BusinessCommandLedger:
         tenant_id, actor_id = _require_tenant_and_actor()
         now = now or datetime.now(timezone.utc)
         if session is None:
-            async with async_session_maker() as owned, owned.begin():
-                return await self.execute_command(command_id, adapter=adapter, now=now, session=owned)
+            async with async_session_maker() as owned:
+                try:
+                    result = await self.execute_command(command_id, adapter=adapter, now=now, session=owned)
+                    await owned.commit()
+                    return result
+                except (CommandTimeoutUnknown, CommandDenied):
+                    await owned.commit()
+                    raise
+                except Exception:
+                    await owned.rollback()
+                    raise
 
         cmd = (
             await session.execute(
@@ -428,6 +437,12 @@ class BusinessCommandLedger:
                 if cmd.capability == "calendar.event_write.v1"
                 else "Transport commands execute only through the persistent outbox"
             )
+        if adapter is None and cmd.capability in {
+            "onec.document.create.v1",
+            "onec.document.post.v1",
+            "onec.catalog.update.v1",
+        }:
+            raise CommandDenied("1C write commands execute only through the 1C command dispatcher")
         # Fail-closed rechecks at execution time: membership, role, capability, kill switch, connection, TTL, hash.
         await _verify_member_grant(session, tenant_id, actor_id, spec)
         if cmd.approved_user_id is None:
@@ -443,7 +458,12 @@ class BusinessCommandLedger:
         if cmd.state != "approved":
             raise CommandConflict(f"Command must be approved before execution (current: {cmd.state})")
 
-        if cmd.approval_expires_at is None or now >= cmd.approval_expires_at:
+        expires_at = (
+            cmd.approval_expires_at
+            if cmd.approval_expires_at is None or cmd.approval_expires_at.tzinfo is not None
+            else cmd.approval_expires_at.replace(tzinfo=timezone.utc)
+        )
+        if expires_at is None or now >= expires_at:
             cmd.state = "expired"
             cmd.error_code = "approval_expired"
             cmd.updated_at = now
@@ -565,19 +585,28 @@ class BusinessCommandLedger:
 
         now = datetime.now(timezone.utc)
         cmd.state = resolved_state
+        cmd.error_code = None if resolved_state == "succeeded" else "reconciled_failed"
         cmd.executed_at = now
         cmd.updated_at = now
         cmd.reconcile_hint = f"Reconciled by user {actor_id} as {resolved_state}"
         targets = await self._load_targets(session, tenant_id, cmd.id)
+        first_receipt: str | None = None
         for target in targets:
             target.state = resolved_state
             if resolved_state == "succeeded":
                 target.provider_receipt = (provider_receipts or {}).get(target.target_ref, f"reconciled:{cmd.id}")[:160]
                 target.error_code = None
+                if first_receipt is None:
+                    first_receipt = target.provider_receipt
             else:
                 target.error_code = "reconciled_failed"
             target.executed_at = now
             target.updated_at = now
+        cmd.outcome_summary = {
+            "targets_total": len(targets),
+            "succeeded": len(targets) if resolved_state == "succeeded" else 0,
+            "provider_receipt": first_receipt,
+        }
         await session.flush()
 
         if resolved_state == "succeeded":

@@ -984,7 +984,7 @@ async def test_execute_rechecks_approved_connection_contract(write_env, capabili
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("capability", [CAPABILITY_DOCUMENT_CREATE, CAPABILITY_CATALOG_UPDATE])
-@pytest.mark.parametrize("failure", ["reset", "truncated", "invalid_json"])
+@pytest.mark.parametrize("failure", ["reset", "truncated", "invalid_json", "oversized", "pre_send"])
 async def test_post_send_failure_stays_unknown_until_reconcile(write_env, monkeypatch, capability, failure) -> None:
     from urllib.parse import unquote
 
@@ -1003,16 +1003,20 @@ async def test_post_send_failure_stays_unknown_until_reconcile(write_env, monkey
         async def read(self, _size):
             if failure == "reset":
                 raise ConnectionResetError("lost response after commit")
-            data = self.data
-            self.data = b""
+            data = self.data[:_size]
+            self.data = self.data[_size:]
             return data
 
         def __init__(self):
-            self.data = (
-                b"HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\n{"
-                if failure == "truncated"
-                else b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n{"
-            )
+            if failure == "oversized":
+                body = b"x" * (commands_mod.MAX_BODY_BYTES + 1)
+                self.data = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body
+            else:
+                self.data = (
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\n{"
+                    if failure == "truncated"
+                    else b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n{"
+                )
 
     class Writer:
         def write(self, _data):
@@ -1030,6 +1034,8 @@ async def test_post_send_failure_stays_unknown_until_reconcile(write_env, monkey
             pass
 
     async def open_connection(*_args, **_kwargs):
+        if failure == "pre_send":
+            raise ConnectionResetError("connection failed before request write")
         return Reader(), Writer()
 
     monkeypatch.setattr(asyncio, "open_connection", open_connection)
@@ -1076,8 +1082,21 @@ async def test_post_send_failure_stays_unknown_until_reconcile(write_env, monkey
         expected_payload_hash=preview.payload_hash,
         session=session,
     )
-    with pytest.raises(OneCCommandError, match="write_timeout_unknown"):
+    expected_error = "connection_failed" if failure == "pre_send" else "write_timeout_unknown"
+    with pytest.raises(OneCCommandError, match=expected_error):
         await service.execute_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
+    if failure == "pre_send":
+        assert session.commands[preview.id].state == "failed"
+        assert session.commands[preview.id].error_code == "connection_failed"
+        assert not applied
+        assert mutations == 0
+        assert not any(e.action == "onec.command_execute" and e.outcome == "unknown" for e in write_env.events)
+        entries = await service.list_audit_log(tenant_id=10, actor_id=101, session=session)
+        assert any(
+            e.command_id == preview.id and e.outcome == "denied" and e.reason_code == "connection_failed"
+            for e in entries
+        )
+        return
     assert session.commands[preview.id].state == "unknown"
     assert any(e.action == "onec.command_execute" and e.outcome == "unknown" for e in write_env.events)
     reconciled = await service.reconcile_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
@@ -1135,6 +1154,132 @@ async def test_catalog_reconcile_compares_typed_values(write_env, remote_value, 
         await service.execute_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
     result = await service.reconcile_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
     assert result.state == expected_state
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owned_session", [False, True])
+@pytest.mark.parametrize(
+    "failure, expected_error",
+    [
+        ("connection_failed", "connection_failed"),
+        ("invalid_json", "invalid_response"),
+        ("missing_field", "invalid_response"),
+        ("invalid_field", "invalid_field_value"),
+        ("remote_metadata", "metadata_hash_mismatch"),
+        ("missing_metadata", "metadata_hash_mismatch"),
+        ("revoked_field", "field_not_allowed"),
+        ("revoked_entity", "entity_not_allowed"),
+    ],
+)
+async def test_failed_reconcile_retains_unknown_and_records_audit(
+    write_env, owned_session, failure, expected_error
+) -> None:
+    from urllib.parse import unquote
+
+    conn, secret = _make_write_connection()
+    session = FakeOneCCommandSession(connection=conn, secret=secret)
+    applied = False
+    healthy = False
+    mutations = 0
+    reconcile_reads = 0
+
+    async def transport(_endpoint, *, method, target_path, **_kwargs):
+        nonlocal applied, mutations, reconcile_reads
+        if method == b"PATCH":
+            applied = True
+            mutations += 1
+            raise TimeoutError("committed without confirmation")
+        if applied:
+            reconcile_reads += 1
+            if not healthy and failure == "connection_failed":
+                raise OneCCommandError("connection_failed")
+        if "$metadata" in unquote(target_path):
+            xml = SAMPLE_METADATA_XML + ("\n" if applied and not healthy and failure == "remote_metadata" else "")
+            return xml.encode()
+        if applied and not healthy and failure == "invalid_json":
+            return b"{"
+        live = {"Ref_Key": CAT_GUID, "DataVersion": "V2" if applied else "V1"}
+        if not (applied and not healthy and failure == "missing_field"):
+            live["Description"] = (
+                None if applied and not healthy and failure == "invalid_field" else ("After" if applied else "Before")
+            )
+        return json.dumps(live).encode()
+
+    service = OneCCommandService(transport=transport)
+    preview = await service.preview_command(
+        tenant_id=10,
+        actor_id=101,
+        connection_id=conn.id,
+        request=OneCWritePreviewRequest(
+            capability=CAPABILITY_CATALOG_UPDATE,
+            idempotency_key=f"reconcile-error-{failure}",
+            entity_set="Catalog_Контрагенты",
+            target_guid=CAT_GUID,
+            fields={"Description": "After"},
+        ),
+        catalog=CATALOG,
+        session=session,
+    )
+    await service.approve_command(
+        tenant_id=10,
+        actor_id=101,
+        command_id=preview.id,
+        expected_payload_hash=preview.payload_hash,
+        session=session,
+    )
+    with pytest.raises(OneCCommandError, match="write_timeout_unknown"):
+        await service.execute_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
+
+    original_config = dict(conn.config)
+    original_payload = dict(session.commands[preview.id].payload)
+    if failure == "missing_metadata":
+        session.commands[preview.id].payload = {
+            key: value for key, value in original_payload.items() if key != "metadata_sha256"
+        }
+    elif failure == "revoked_field":
+        conn.config = {**original_config, "allowed_fields": {"Catalog_Контрагенты": ["Code"]}}
+    elif failure == "revoked_entity":
+        conn.config = {**original_config, "allowed_entity_sets": ["Document_БезКомментария"]}
+
+    outcomes = []
+
+    @asynccontextmanager
+    async def owned_context():
+        try:
+            yield session
+            outcomes.append("commit")
+        except Exception:
+            outcomes.append("rollback")
+            raise
+
+    service._sessions._get_owned_session = owned_context
+    previous_unknown = [e for e in write_env.events if e.action == "onec.command_execute" and e.outcome == "unknown"]
+    with pytest.raises(OneCCommandError, match=expected_error):
+        await service.reconcile_command(
+            tenant_id=10, actor_id=101, command_id=preview.id, session=None if owned_session else session
+        )
+    assert outcomes == (["commit"] if owned_session else [])
+    assert session.commands[preview.id].state == "unknown"
+    assert session.commands[preview.id].error_code == expected_error
+    target = next(t for t in session.targets.values() if t.command_id == preview.id)
+    assert target.state == "unknown"
+    assert target.provider_receipt is None
+    unknown = [e for e in write_env.events if e.action == "onec.command_execute" and e.outcome == "unknown"]
+    assert len(unknown) == len(previous_unknown) + 1
+    assert unknown[-1].reason_code == "operation_unconfirmed"
+    assert unknown[-1].resource_id == str(preview.id)
+    assert not any(e.action == "onec.command_execute" and e.outcome == "success" for e in write_env.events)
+    assert mutations == 1
+    if failure in {"missing_metadata", "revoked_field", "revoked_entity"}:
+        assert reconcile_reads == 0
+
+    conn.config = original_config
+    session.commands[preview.id].payload = original_payload
+    healthy = True
+    reconciled = await service.reconcile_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
+    assert reconciled.state == "succeeded"
+    assert reconciled.error_code is None
+    assert mutations == 1
 
 
 @pytest.mark.asyncio

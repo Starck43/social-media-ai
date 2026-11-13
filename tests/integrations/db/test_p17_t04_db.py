@@ -231,6 +231,127 @@ async def test_p17_t04_revoked_field_permission_persisted(personal_world, monkey
         await purge_tenant_audit_events(tenant.id)
 
 
+@pytest.mark.parametrize("failure", ["invalid_response", "missing_metadata"])
+async def test_p17_t04_failed_reconcile_audit_persisted(
+    personal_world, monkeypatch: pytest.MonkeyPatch, failure
+) -> None:
+    """A failed observation commits its error, retains unknown and appends real immutable audit evidence."""
+    monkeypatch.setattr(settings, "CREDENTIALS_KEY", SYNTHETIC_CREDENTIALS_KEY)
+    monkeypatch.setattr(ledger_mod, "RUNTIME_ENABLED_CAPABILITIES", set(ONEC_WRITE_CAPABILITIES))
+    monkeypatch.setattr(ledger_mod, "RUNTIME_KILL_SWITCHES", {})
+    tenant, user = personal_world.tenants[0], personal_world.users[0]
+    scope = {"tenant_id": tenant.id, "actor_id": user.id}
+    applied = False
+    healthy = False
+    mutations = 0
+    reconcile_reads = 0
+
+    async def transport(_endpoint, *, method, target_path, **_kwargs):
+        nonlocal applied, mutations, reconcile_reads
+        if method == b"PATCH":
+            applied = True
+            mutations += 1
+            raise TimeoutError("write committed without confirmation")
+        if applied:
+            reconcile_reads += 1
+        if "$metadata" in unquote(target_path):
+            return SAMPLE_METADATA_XML.encode()
+        if applied and not healthy and failure == "invalid_response":
+            return b"{"
+        return json.dumps(
+            {
+                "Ref_Key": CAT_GUID,
+                "DataVersion": "V2" if applied else "V1",
+                "Description": "After" if applied else "Before",
+            }
+        ).encode()
+
+    try:
+        with tenant_scope(tenant.id), permission_scope(user):
+            connection_id = await _verified_write_connection(scope)
+            service = OneCCommandService(transport=transport)
+            preview = await service.preview_command(
+                **scope,
+                connection_id=connection_id,
+                request=OneCWritePreviewRequest(
+                    capability=CAPABILITY_CATALOG_UPDATE,
+                    idempotency_key=f"db-reconcile-error-{failure}",
+                    entity_set=CATALOG_SET,
+                    target_guid=CAT_GUID,
+                    fields={"Description": "After"},
+                ),
+                catalog=CATALOG,
+            )
+            await service.approve_command(**scope, command_id=preview.id, expected_payload_hash=preview.payload_hash)
+            with pytest.raises(OneCCommandError, match="write_timeout_unknown"):
+                await service.execute_command(**scope, command_id=preview.id)
+
+            async with async_session_maker() as session, session.begin():
+                cmd = await session.get(BusinessCommand, preview.id)
+                original_payload = dict(cmd.payload)
+                before_events = await _unknown_events(session, tenant.id, preview.id)
+                assert {event.action for event in before_events} == {"commands.execute", "onec.command_execute"}
+                before_ids = {event.event_id for event in before_events}
+                if failure == "missing_metadata":
+                    cmd.payload = {key: value for key, value in original_payload.items() if key != "metadata_sha256"}
+
+            expected_error = "metadata_hash_mismatch" if failure == "missing_metadata" else "invalid_response"
+            with pytest.raises(OneCCommandError, match=expected_error):
+                await service.reconcile_command(**scope, command_id=preview.id)
+            assert mutations == 1
+            if failure == "missing_metadata":
+                assert reconcile_reads == 0
+
+            async with async_session_maker() as session:
+                cmd = await session.get(BusinessCommand, preview.id)
+                assert cmd.state == "unknown"
+                assert cmd.error_code == expected_error
+                target = await _target(session, preview.id)
+                assert target.state == "unknown"
+                assert target.provider_receipt is None
+                after_events = await _unknown_events(session, tenant.id, preview.id)
+                added_events = [event for event in after_events if event.event_id not in before_ids]
+                assert len(added_events) == 1
+                assert added_events[0].action == "onec.command_execute"
+                assert added_events[0].reason_code == "operation_unconfirmed"
+                assert len(after_events) == len(before_events) + 1
+
+            entries = await service.list_audit_log(**scope)
+            assert (
+                sum(
+                    entry.command_id == preview.id
+                    and entry.action == "onec.command_execute"
+                    and entry.outcome == "unknown"
+                    for entry in entries
+                )
+                == 2
+            )
+            with pytest.raises(OneCCommandError, match="command_state_conflict"):
+                await service.execute_command(**scope, command_id=preview.id)
+            assert mutations == 1
+
+            if failure == "missing_metadata":
+                async with async_session_maker() as session, session.begin():
+                    cmd = await session.get(BusinessCommand, preview.id)
+                    cmd.payload = original_payload
+            healthy = True
+            reconciled = await service.reconcile_command(**scope, command_id=preview.id)
+            assert reconciled.state == "succeeded"
+            assert reconciled.error_code is None
+            assert mutations == 1
+            async with async_session_maker() as session:
+                cmd = await session.get(BusinessCommand, preview.id)
+                assert cmd.state == "succeeded"
+                assert cmd.error_code is None
+                target = await _target(session, preview.id)
+                assert target.state == "succeeded"
+                assert target.provider_receipt == reconciled.provider_receipt
+                retained_events = await _unknown_events(session, tenant.id, preview.id)
+                assert {event.event_id for event in retained_events} == {event.event_id for event in after_events}
+    finally:
+        await purge_tenant_audit_events(tenant.id)
+
+
 async def _run_conflict_and_timeout_scenario(scope: dict[str, int]) -> None:
     """Run both write outcomes for one tenant inside an established actor/workspace context."""
     tenant_id, actor_id = scope["tenant_id"], scope["actor_id"]

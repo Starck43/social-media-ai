@@ -1683,19 +1683,28 @@ class OneCCommandService:
         session=None,
         resolver: Resolver = default_dns_resolver,
     ) -> OneCCommandRecord:
-        """Reconcile an `unknown` 1C command against 1C OData by external reference or object state."""
+        """Reconcile an unknown write; failed observations stay unknown with durable audit evidence."""
         if type(command_id) is not int or command_id <= 0:
             raise OneCCommandError("command_not_found")
 
         if session is None:
+            record: OneCCommandRecord | None = None
+            deferred_error: OneCCommandError | None = None
             async with self._sessions._get_owned_session() as owned_session:
-                return await self.reconcile_command(
-                    tenant_id=tenant_id,
-                    actor_id=actor_id,
-                    command_id=command_id,
-                    session=owned_session,
-                    resolver=resolver,
-                )
+                try:
+                    record = await self.reconcile_command(
+                        tenant_id=tenant_id,
+                        actor_id=actor_id,
+                        command_id=command_id,
+                        session=owned_session,
+                        resolver=resolver,
+                    )
+                except OneCCommandError as exc:
+                    deferred_error = exc
+            if deferred_error is not None:
+                raise deferred_error
+            assert record is not None
+            return record
 
         cmd = (
             await session.execute(
@@ -1730,16 +1739,7 @@ class OneCCommandService:
         payload = dict(cmd.payload or {})
         cap = cmd.capability
         ent_set = str(payload["entity_set"])
-        if ent_set not in allowed_sets:
-            raise OneCCommandError("entity_not_allowed")
-        if expected_sha256 is not None and payload.get("metadata_sha256", expected_sha256) != expected_sha256:
-            raise OneCCommandError("metadata_hash_mismatch")
         permitted_fields = allowed_fields.get(ent_set)
-        read_fields = set(payload.get("changes") or {})
-        if cap == CAPABILITY_DOCUMENT_CREATE:
-            read_fields.add(str(payload.get("idempotency_field") or "Комментарий"))
-        if permitted_fields is not None and not read_fields.issubset(permitted_fields):
-            raise OneCCommandError("field_not_allowed")
         ext_ref = str(payload["external_ref"])
         target_ref_str = cmd.target_refs[0]
 
@@ -1747,80 +1747,105 @@ class OneCCommandService:
         provider_receipts: dict[str, str] | None = None
 
         with tenant_scope(tenant_id):
-            if cap == CAPABILITY_DOCUMENT_CREATE:
-                comment_field = str(payload.get("idempotency_field") or "Комментарий")
-                fields_dict = dict(payload.get("fields") or {})
-                comment_value = str(fields_dict.get(comment_field) or f"[{ext_ref}]")
-                found = await self._find_remote_object_by_external_ref(
-                    endpoint=endpoint,
-                    entity_set=ent_set,
-                    comment_field=comment_field,
-                    comment_value=comment_value,
-                    login=credentials.login,
-                    password=credentials.password,
-                    account_key=account_key,
-                    connection_id=cmd.connection_id,
-                    resolver=resolver,
-                )
-                if found is not None and found.get("Ref_Key"):
-                    resolved_state = "succeeded"
-                    provider_receipts = {target_ref_str: f"onec:document:{ent_set}:{found['Ref_Key']}"}
+            try:
+                if ent_set not in allowed_sets:
+                    raise OneCCommandError("entity_not_allowed")
+                if expected_sha256 is not None and payload.get("metadata_sha256") != expected_sha256:
+                    raise OneCCommandError("metadata_hash_mismatch")
+                read_fields = set(payload.get("changes") or {})
+                if cap == CAPABILITY_DOCUMENT_CREATE:
+                    read_fields.add(str(payload.get("idempotency_field") or "Комментарий"))
+                if permitted_fields is not None and not read_fields.issubset(permitted_fields):
+                    raise OneCCommandError("field_not_allowed")
 
-            elif cap == CAPABILITY_DOCUMENT_POST:
-                t_guid = normalize_guid(payload.get("target_guid"))
-                live_doc = await self._fetch_remote_object_by_guid(
-                    endpoint=endpoint,
-                    entity_set=ent_set,
-                    target_guid=t_guid,
-                    login=credentials.login,
-                    password=credentials.password,
-                    account_key=account_key,
-                    connection_id=cmd.connection_id,
-                    resolver=resolver,
-                )
-                if live_doc.get("Posted") is True:
-                    resolved_state = "succeeded"
-                    live_ver = str(live_doc.get("DataVersion") or "")
-                    provider_receipts = {target_ref_str: f"onec:posted:{ent_set}:{t_guid}:{live_ver}"}
+                if cap == CAPABILITY_DOCUMENT_CREATE:
+                    comment_field = str(payload.get("idempotency_field") or "Комментарий")
+                    fields_dict = dict(payload.get("fields") or {})
+                    comment_value = str(fields_dict.get(comment_field) or f"[{ext_ref}]")
+                    found = await self._find_remote_object_by_external_ref(
+                        endpoint=endpoint,
+                        entity_set=ent_set,
+                        comment_field=comment_field,
+                        comment_value=comment_value,
+                        login=credentials.login,
+                        password=credentials.password,
+                        account_key=account_key,
+                        connection_id=cmd.connection_id,
+                        resolver=resolver,
+                    )
+                    if found is not None and found.get("Ref_Key"):
+                        resolved_state = "succeeded"
+                        provider_receipts = {target_ref_str: f"onec:document:{ent_set}:{found['Ref_Key']}"}
 
-            else:  # CAPABILITY_CATALOG_UPDATE
-                t_guid = normalize_guid(payload.get("target_guid"))
-                changes_dict = dict(payload.get("changes") or {})
-                catalog = await self._resolve_catalog(
-                    catalog=None,
-                    endpoint=endpoint,
-                    login=credentials.login,
-                    password=credentials.password,
-                    account_key=account_key,
-                    connection_id=cmd.connection_id,
-                    expected_sha256=expected_sha256,
-                    resolver=resolver,
+                elif cap == CAPABILITY_DOCUMENT_POST:
+                    t_guid = normalize_guid(payload.get("target_guid"))
+                    live_doc = await self._fetch_remote_object_by_guid(
+                        endpoint=endpoint,
+                        entity_set=ent_set,
+                        target_guid=t_guid,
+                        login=credentials.login,
+                        password=credentials.password,
+                        account_key=account_key,
+                        connection_id=cmd.connection_id,
+                        resolver=resolver,
+                    )
+                    if live_doc.get("Posted") is True:
+                        resolved_state = "succeeded"
+                        live_ver = str(live_doc.get("DataVersion") or "")
+                        provider_receipts = {target_ref_str: f"onec:posted:{ent_set}:{t_guid}:{live_ver}"}
+
+                else:  # CAPABILITY_CATALOG_UPDATE
+                    t_guid = normalize_guid(payload.get("target_guid"))
+                    changes_dict = dict(payload.get("changes") or {})
+                    catalog = await self._resolve_catalog(
+                        catalog=None,
+                        endpoint=endpoint,
+                        login=credentials.login,
+                        password=credentials.password,
+                        account_key=account_key,
+                        connection_id=cmd.connection_id,
+                        expected_sha256=expected_sha256,
+                        resolver=resolver,
+                    )
+                    entity_spec = catalog.get_entity_set(ent_set)
+                    live_item = await self._fetch_remote_object_by_guid(
+                        endpoint=endpoint,
+                        entity_set=ent_set,
+                        target_guid=t_guid,
+                        login=credentials.login,
+                        password=credentials.password,
+                        account_key=account_key,
+                        connection_id=cmd.connection_id,
+                        resolver=resolver,
+                    )
+                    if not changes_dict or not set(changes_dict).issubset(live_item):
+                        raise OneCCommandError("invalid_response")
+                    expected_values, _ = validate_and_normalize_write_fields(
+                        entity_spec, changes_dict, allowed_fields=permitted_fields
+                    )
+                    live_values, _ = validate_and_normalize_write_fields(
+                        entity_spec,
+                        {key: live_item[key] for key in changes_dict},
+                        allowed_fields=permitted_fields,
+                    )
+                    if live_values == expected_values:
+                        resolved_state = "succeeded"
+                        live_ver = str(live_item.get("DataVersion") or "")
+                        provider_receipts = {target_ref_str: f"onec:catalog:{ent_set}:{t_guid}:{live_ver}"}
+            except OneCCommandError as exc:
+                # A failed read cannot establish the write's outcome. Keep the command
+                # unknown and commit its last observation error before returning it.
+                cmd.error_code = exc.code
+                await session.flush()
+                await ActionAuditEvent.objects.record_unknown(
+                    actor_kind="user",
+                    actor_id=actor_id,
+                    action="onec.command_execute",
+                    resource_kind="command",
+                    resource_id=command_id,
+                    reason_code="operation_unconfirmed",
                 )
-                entity_spec = catalog.get_entity_set(ent_set)
-                live_item = await self._fetch_remote_object_by_guid(
-                    endpoint=endpoint,
-                    entity_set=ent_set,
-                    target_guid=t_guid,
-                    login=credentials.login,
-                    password=credentials.password,
-                    account_key=account_key,
-                    connection_id=cmd.connection_id,
-                    resolver=resolver,
-                )
-                if not changes_dict or not set(changes_dict).issubset(live_item):
-                    raise OneCCommandError("invalid_response")
-                expected_values, _ = validate_and_normalize_write_fields(
-                    entity_spec, changes_dict, allowed_fields=permitted_fields
-                )
-                live_values, _ = validate_and_normalize_write_fields(
-                    entity_spec,
-                    {key: live_item[key] for key in changes_dict},
-                    allowed_fields=permitted_fields,
-                )
-                if live_values == expected_values:
-                    resolved_state = "succeeded"
-                    live_ver = str(live_item.get("DataVersion") or "")
-                    provider_receipts = {target_ref_str: f"onec:catalog:{ent_set}:{t_guid}:{live_ver}"}
+                raise
 
         prev_user = get_current_user()
         try:

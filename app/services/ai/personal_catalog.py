@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import re
 from decimal import Decimal, InvalidOperation
-from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.permissions import get_current_user
 from app.models import LLMModel, LLMProvider, Tenant, User
+from app.services.ai.provider_egress import validate_auth_header, validate_base_url, validate_endpoint_path
 
 PROVIDER_FIELDS = {"id", "uid", "name", "description", "api_format", "base_url", "auth_header", "is_active", "api_key"}
 MODEL_FIELDS = {
@@ -71,18 +71,15 @@ def validate_provider_values(values, *, creating=False):
                 raise ValueError("Invalid provider text field")
             result[key] = value.strip()
     if "base_url" in result:
-        url = urlsplit(result["base_url"])
-        if url.scheme != "https" or not url.hostname or url.username or url.password or url.fragment:
-            raise ValueError("Provider URL must be HTTPS without credentials or fragment")
-        result["base_url"] = result["base_url"].rstrip("/")
+        result["base_url"] = validate_base_url(result["base_url"])
     if result.get("api_format", "openai") not in {"openai", "anthropic", "custom"}:
         raise ValueError("Unsupported API format")
     if "is_active" in result and type(result["is_active"]) is not bool:
         raise ValueError("Provider active flag must be boolean")
     if "api_key" in result and (not isinstance(result["api_key"], str) or len(result["api_key"]) > 16384):
         raise ValueError("Invalid API key")
-    if result.get("auth_header") is not None and any(c in result["auth_header"] for c in "\r\n"):
-        raise ValueError("Invalid authorization header")
+    if "auth_header" in result:
+        result["auth_header"] = validate_auth_header(result["auth_header"])
     return result
 
 
@@ -130,9 +127,7 @@ def validate_model_values(values, *, creating=False):
     if "pricing_token_unit" in result and result["pricing_token_unit"] not in (1000, 1000000):
         raise ValueError("Invalid pricing unit")
     if "custom_endpoint_path" in result and result["custom_endpoint_path"] is not None:
-        value = result["custom_endpoint_path"]
-        if not isinstance(value, str) or len(value) > 200 or not value.startswith("/") or value.startswith("//"):
-            raise ValueError("Invalid custom endpoint path")
+        result["custom_endpoint_path"] = validate_endpoint_path(result["custom_endpoint_path"])
     return result
 
 

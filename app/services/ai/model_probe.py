@@ -145,6 +145,8 @@ async def probe_connectivity(model) -> dict[str, Any]:
     works. Unsupported metadata routes must remain failures, never chat retries.
     """
     from app.services.ai.llm_client import LLMClientFactory
+    from app.services.ai.personal_dispatch import validate_personal_dispatch
+    from app.services.ai.provider_egress import provider_destination, provider_http_client
 
     result = {"ok": False, "tier": "connectivity", "tokens_spent": 0, "method": "GET /models"}
     if not _dispatch_ready(model):
@@ -154,8 +156,11 @@ async def probe_connectivity(model) -> dict[str, Any]:
     started = monotonic()
     try:
         client = LLMClientFactory.create(model)
-        async with httpx.AsyncClient(follow_redirects=False) as http:
-            response = await http.get(f"{client.base_url}/models", headers=client._headers(), timeout=PROBE_TIMEOUT)
+        await validate_personal_dispatch(client)
+        async with provider_http_client() as http:
+            response = await http.get(
+                provider_destination(client.base_url, "/models"), headers=client._headers(), timeout=PROBE_TIMEOUT
+            )
         result["http_status"] = response.status_code
         if response.status_code != 200:
             hints = {

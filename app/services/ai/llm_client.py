@@ -8,6 +8,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 import httpx
+from app.services.ai.provider_egress import credential_headers, provider_destination, provider_http_client
 
 from app.core.config import settings
 from app.models import LLMModel
@@ -340,6 +341,8 @@ class LLMClient(ABC):
         self.provider = model.provider
         self.model = model
         self.api_key = model.provider.get_api_key()
+        self.credential_version = getattr(model.provider, "credential_version", None)
+        self.custom_endpoint_path = getattr(model, "custom_endpoint_path", None)
         self.base_url = model.provider.base_url.rstrip("/")
         self.model_name = model.model_id
         self.max_tokens = model.max_tokens
@@ -601,9 +604,9 @@ class OpenAICompatibleClient(LLMClient):
         await _revalidate_personal_dispatch_before_http(self, receipt)
 
         try:
-            async with httpx.AsyncClient() as c:
+            async with provider_http_client() as c:
                 r = await c.post(
-                    f"{self.base_url}/chat/completions",
+                    provider_destination(self.base_url, "/chat/completions"),
                     headers=self._headers(),
                     json=payload,
                     timeout=timeout,
@@ -705,9 +708,12 @@ class OpenAICompatibleClient(LLMClient):
         try:
             if isinstance(diagnostic, dict):
                 diagnostic.update(stage="transport", dispatch_state="possible")
-            async with httpx.AsyncClient() as c:
+            async with provider_http_client() as c:
                 r = await c.post(
-                    f"{self.base_url}/chat/completions", headers=self._headers(), json=payload, timeout=timeout
+                    provider_destination(self.base_url, "/chat/completions"),
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
                 )
                 if isinstance(diagnostic, dict):
                     diagnostic.update(stage="response", dispatch_state="response_received", http_status=r.status_code)
@@ -771,14 +777,7 @@ class OpenAICompatibleClient(LLMClient):
     # ── internal helpers ─────────────────────────────────────
 
     def _headers(self) -> dict[str, str]:
-        h = {"Content-Type": "application/json"}
-        header_name = self.provider.auth_header or "Authorization: Bearer {key}"
-        if "{key}" in header_name:
-            h["Authorization"] = f"Bearer {self.api_key}"
-        else:
-            k, _, v = header_name.partition(": ")
-            h[k] = v.format(key=self.api_key) if "{key}" in v else v
-        return h
+        return credential_headers(self.provider.auth_header, self.api_key)
 
     def _prepare_analyze(self, prompt: str, media_urls: Optional[list[str]], **kwargs) -> dict[str, Any]:
         messages: list[dict[str, Any]] = [
@@ -881,8 +880,13 @@ class AnthropicClient(LLMClient):
             request_meta["dispatch_id"] = reserved_dispatch_id
         await _revalidate_personal_dispatch_before_http(self, receipt)
         try:
-            async with httpx.AsyncClient() as c:
-                r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
+            async with provider_http_client() as c:
+                r = await c.post(
+                    provider_destination(self.base_url, "/messages"),
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
+                )
                 if r.status_code != 200:
                     raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
@@ -985,8 +989,13 @@ class AnthropicClient(LLMClient):
         await _verify_personal_dispatch_day(receipt)
         await _revalidate_personal_dispatch_before_http(self, receipt)
         try:
-            async with httpx.AsyncClient() as c:
-                r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
+            async with provider_http_client() as c:
+                r = await c.post(
+                    provider_destination(self.base_url, "/messages"),
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
+                )
                 if r.status_code != 200:
                     raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
                 data = r.json()
@@ -1085,8 +1094,13 @@ class CustomClient(LLMClient):
         await _revalidate_personal_dispatch_before_http(self, receipt)
 
         try:
-            async with httpx.AsyncClient() as c:
-                r = await c.post(f"{self.base_url}{endpoint}", headers=self._headers(), json=payload, timeout=timeout)
+            async with provider_http_client() as c:
+                r = await c.post(
+                    provider_destination(self.base_url, endpoint),
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
+                )
                 if r.status_code != 200:
                     raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
@@ -1176,8 +1190,13 @@ class CustomClient(LLMClient):
         await _revalidate_personal_dispatch_before_http(self, receipt)
 
         try:
-            async with httpx.AsyncClient() as c:
-                r = await c.post(f"{self.base_url}{endpoint}", headers=self._headers(), json=payload, timeout=timeout)
+            async with provider_http_client() as c:
+                r = await c.post(
+                    provider_destination(self.base_url, endpoint),
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
+                )
                 if r.status_code != 200:
                     raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
                 data = r.json()
@@ -1231,14 +1250,7 @@ class CustomClient(LLMClient):
             raise
 
     def _headers(self) -> dict[str, str]:
-        h = {"Content-Type": "application/json"}
-        header_name = self.provider.auth_header or "Authorization: Bearer {key}"
-        if "{key}" in header_name:
-            h["Authorization"] = f"Bearer {self.api_key}"
-        else:
-            k, _, v = header_name.partition(": ")
-            h[k] = v.format(key=self.api_key) if "{key}" in v else v
-        return h
+        return credential_headers(self.provider.auth_header, self.api_key)
 
 
 def _extract_custom_content(data: dict) -> Any:

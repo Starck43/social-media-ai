@@ -16,8 +16,8 @@ def _fernet() -> Fernet:
         raise RuntimeError("CREDENTIALS_KEY is not set — cannot encrypt secrets")
     try:
         return Fernet(key.encode())
-    except (ValueError, TypeError) as e:
-        raise RuntimeError("CREDENTIALS_KEY is not a valid Fernet key") from e
+    except (ValueError, TypeError, UnicodeError):
+        raise RuntimeError("CREDENTIALS_KEY is not a valid Fernet key") from None
 
 
 def encrypt_secret(plaintext: str) -> str:
@@ -29,5 +29,5 @@ def decrypt_secret(token: str) -> str:
     """Decrypt a secret. Raises ValueError on a wrong/rotated key."""
     try:
         return _fernet().decrypt(token.encode()).decode()
-    except InvalidToken as e:
-        raise ValueError("Cannot decrypt secret (wrong CREDENTIALS_KEY?)") from e
+    except (InvalidToken, ValueError, TypeError, UnicodeError, AttributeError):
+        raise ValueError("Cannot decrypt secret (wrong CREDENTIALS_KEY?)") from None

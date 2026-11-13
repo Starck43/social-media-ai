@@ -288,6 +288,14 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         # keeps the stored key, so an edit that only touches the name does not
         # need the secret retyped.
         seal_form_secret(data, "encrypted_api_key", getattr(model, "encrypted_api_key", None))
+        from app.services.ai.provider_egress import validate_auth_header, validate_base_url
+
+        if "base_url" in data:
+            data["base_url"] = validate_base_url(data["base_url"])
+        if "auth_header" in data:
+            data["auth_header"] = validate_auth_header(data["auth_header"])
+        # Version is maintained atomically by the database, not a form field.
+        data.pop("credential_version", None)
 
         with self._catalog_scope(request):
             await super().on_model_change(data, model, is_created, request)
@@ -662,6 +670,10 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             return await super().insert_model(request, data)
 
     async def on_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
+        from app.services.ai.provider_egress import validate_endpoint_path
+
+        if "custom_endpoint_path" in data:
+            data["custom_endpoint_path"] = validate_endpoint_path(data["custom_endpoint_path"])
         if "model_type" in data and isinstance(data["model_type"], list):
             data["model_type"] = ",".join(data["model_type"])
         if is_created:

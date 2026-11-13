@@ -21,6 +21,38 @@ def answer(ip, port):
 
 
 class CredentialBoundaryTests(unittest.TestCase):
+    def test_admin_fernet_prefix_is_not_proof_of_encryption(self):
+        encrypt = lambda value: "sealed:" + value
+        admin = load_isolated_source(
+            "_credential_admin",
+            ROOT / "app/admin/secrets.py",
+            {
+                "app.utils.crypto": NS(encrypt_secret=encrypt),
+            },
+        )
+        data = {"encrypted_api_key": "gAAAAAsynthetic-plaintext-prefix"}
+        admin.seal_form_secret(data, "encrypted_api_key")
+        self.assertEqual(data["encrypted_api_key"], "sealed:gAAAAAsynthetic-plaintext-prefix")
+        admin.hide_form_secret(data, "encrypted_api_key")
+        self.assertEqual(data["encrypted_api_key"], "")
+
+    def test_nested_connector_configuration_omits_secret_keys_and_ciphertext(self):
+        module = load_isolated_source("_credential_metadata", ROOT / "app/utils/secret_metadata.py")
+        value = {
+            "host": "example.org",
+            "api_key": "synthetic-key",
+            "nested": {
+                "refresh_token": "synthetic-refresh",
+                "items": [{"private_key": "synthetic-private", "label": "Safe"}],
+                "note": "Bearer synthetic-echo",
+                "cipher": "gAAAAAsynthetic",
+            },
+        }
+        projection = module.safe_secret_metadata(value)
+        self.assertNotIn("synthetic", repr(projection))
+        self.assertEqual(projection["host"], "example.org")
+        self.assertEqual(projection["nested"]["items"], [{"label": "Safe"}])
+
     def test_managed_ref_never_reads_unlisted_env_name(self):
         allowlist = {"managed-a": "LLM_SYNTHETIC_MANAGED_KEY"}
         module = load_isolated_source(
@@ -124,6 +156,56 @@ class CredentialBoundaryTests(unittest.TestCase):
 
 
 class PinnedEgressTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cross_owner_and_stale_dispatch_deny_before_decrypt(self):
+        owner_id = 2
+        decrypt = unittest.mock.Mock(return_value="synthetic")
+        provider = NS(owner_user_id=2, is_active=True, credential_version=2, get_api_key=decrypt)
+        fresh = NS(provider=provider)
+        module = load_isolated_source(
+            "_credential_dispatch",
+            ROOT / "app/services/ai/personal_dispatch.py",
+            {
+                "app.core.personal_catalog_context": NS(
+                    assert_catalog_model=lambda _: None, current_catalog_owner_id=lambda: owner_id
+                ),
+                "app.core.tenant_context": NS(current_tenant_id=lambda: None, is_bypass=lambda: False),
+                "app.models": NS(
+                    LLMModel=NS(objects=NS(select_related=lambda _: NS(get=AsyncMock(return_value=fresh)))),
+                    User=NS(objects=NS(get=AsyncMock(return_value=NS(is_active=True)))),
+                ),
+                "app.services.ai.credential_boundary": boundary,
+            },
+        )
+        client = NS(model=NS(id=1), credential_version=1)
+        with self.assertRaises(PermissionError):
+            await module.validate_personal_dispatch(client)
+        decrypt.assert_not_called()
+        provider.owner_user_id = 3
+        with self.assertRaises(PermissionError):
+            await module.validate_personal_dispatch(client)
+        decrypt.assert_not_called()
+
+    async def test_social_callback_does_not_echo_error_or_exception_secret(self):
+        class PlatformConfigurationError(RuntimeError):
+            pass
+
+        oauth = NS(
+            build_authorize_url=AsyncMock(), complete_authorization=AsyncMock(side_effect=ValueError("SYNTHETIC_TOKEN"))
+        )
+        module = load_isolated_source(
+            "_credential_social",
+            ROOT / "app/api/v1/endpoints/social.py",
+            {
+                "app.services.social.platform_config": NS(PlatformConfigurationError=PlatformConfigurationError),
+                "app.services.social.vk_oauth": oauth,
+            },
+        )
+        response = await module.vk_callback(code="synthetic", state="synthetic", error="SYNTHETIC_INPUT_TOKEN")
+        self.assertNotIn(b"SYNTHETIC_INPUT_TOKEN", response.body)
+        oauth.complete_authorization.assert_not_awaited()
+        response = await module.vk_callback(code="synthetic", state="synthetic")
+        self.assertNotIn(b"SYNTHETIC_TOKEN", response.body)
+
     def setUp(self):
         self.real_acquire = outbound.acquire_outbound_target
 

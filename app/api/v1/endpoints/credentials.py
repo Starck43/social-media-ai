@@ -96,8 +96,8 @@ async def oauth_credential(
 
     try:
         url = await build_authorize_url(tid, user_id=current_user.id)
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except RuntimeError:
+        raise HTTPException(status_code=500, detail="Credential authorization is unavailable") from None
 
     return {"authorize_url": url, "tenant_id": tid}
 

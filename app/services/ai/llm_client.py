@@ -8,12 +8,12 @@ from typing import Any, Optional
 from uuid import uuid4
 
 import httpx
-from app.services.ai.provider_egress import credential_headers, provider_destination, provider_http_client
 
 from app.core.config import settings
 from app.models import LLMModel
 from app.services.ai.cache_pricing import cache_price_usd, model_pricing_token_unit, normalize_cache_usage
 from app.services.ai.json_schema_builder import validate_with_pydantic
+from app.services.ai.provider_egress import credential_headers, provider_destination, provider_http_client
 from app.services.ai.response_cost import _num, extract_cost_info
 
 logger = logging.getLogger(__name__)

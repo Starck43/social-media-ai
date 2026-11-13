@@ -4,8 +4,8 @@ Revision ID: p21t11_credential_version
 Revises: p17t08_onec_history_status
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 from app.core.config import settings
 
@@ -57,9 +57,6 @@ def upgrade():
             IF ROW(NEW.custom_endpoint_path, NEW.model_id, NEW.is_active)
                 IS DISTINCT FROM ROW(OLD.custom_endpoint_path, OLD.model_id, OLD.is_active)
             THEN
-                -- Touch the provider through its own trigger without exposing or
-                -- replacing credentials. The dedicated increment is serialized
-                -- on the provider row; its guard accepts only this nested call.
                 UPDATE {s}.llm_providers SET credential_version = credential_version + 1
                     WHERE id = NEW.provider_id AND owner_user_id = NEW.owner_user_id;
             END IF;

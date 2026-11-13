@@ -17,10 +17,11 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
 
 import sqlalchemy as sa
-from tests.shared.credential_sources import egress
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, configure_mappers
+from sqlalchemy.orm import DeclarativeBase, Mapped, configure_mappers, mapped_column, relationship
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
+
+from tests.shared.credential_sources import egress
 
 ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("_personal_test_loader", ROOT / "tests/source_import_isolation.py")
@@ -161,6 +162,19 @@ class FakeStorage:
 
 
 class CatalogTests(unittest.IsolatedAsyncioTestCase):
+    async def test_provider_mask_does_not_decrypt_or_reveal_key_fragments(self):
+        provider = Provider(owner_user_id=2, encrypted_api_key="SYNTHETIC_CIPHERTEXT")
+        with unittest.mock.patch.object(provider, "get_api_key", side_effect=AssertionError("Must not decrypt")):
+            self.assertEqual(provider.decrypted_key_masked(), "***")
+
+    async def test_cross_owner_decrypt_is_denied_before_ciphertext_access(self):
+        provider_module.__isolated_imports__["app.core.personal_catalog_context"] = NS(
+            current_catalog_owner_id=lambda: 3
+        )
+        provider = Provider(owner_user_id=2, encrypted_api_key="SYNTHETIC_CIPHERTEXT")
+        with self.assertRaises(PermissionError):
+            provider.get_api_key()
+
     def setUp(self):
         self.actor = NS(id=2, is_active=True)
         self.store = FakeStorage()

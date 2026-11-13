@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import os
 import re
 from contextlib import asynccontextmanager
 from urllib.parse import unquote, urlsplit
@@ -150,6 +151,8 @@ class _PinnedBackend:
 
 class ProviderTransport(httpx.AsyncHTTPTransport):
     def __init__(self):
+        if "SSLKEYLOGFILE" in os.environ:
+            raise ValueError("Provider TLS logging is forbidden")
         super().__init__(verify=True, trust_env=False, retries=0)
         # HTTPX exposes transports, HTTPcore exposes network backends; this one
         # small compatibility bridge is regression-tested against the lockfile.

@@ -921,6 +921,223 @@ async def test_timeout_transitions_to_unknown_and_reconciles_by_external_ref(wri
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("capability", [CAPABILITY_DOCUMENT_CREATE, CAPABILITY_CATALOG_UPDATE])
+@pytest.mark.parametrize("revocation", ["field", "metadata", "entity"])
+async def test_execute_rechecks_approved_connection_contract(write_env, capability, revocation) -> None:
+    conn, secret = _make_write_connection()
+    session = FakeOneCCommandSession(connection=conn, secret=secret)
+    mutations = []
+
+    async def transport(_endpoint, *, method, **_kwargs):
+        if method == b"GET":
+            return json.dumps({"Ref_Key": CAT_GUID, "DataVersion": "V1", "Description": "Before"}).encode()
+        mutations.append(method)
+        return b"{}"
+
+    service = OneCCommandService(transport=transport)
+    is_create = capability == CAPABILITY_DOCUMENT_CREATE
+    entity_set = "Document_РеализацияТоваровУслуг" if is_create else "Catalog_Контрагенты"
+    fields = {"СуммаДокумента": "100.00"} if is_create else {"Description": "After"}
+    preview = await service.preview_command(
+        tenant_id=10,
+        actor_id=101,
+        connection_id=conn.id,
+        request=OneCWritePreviewRequest(
+            capability=capability,
+            idempotency_key=f"revoked-{revocation}",
+            entity_set=entity_set,
+            target_guid=None if is_create else CAT_GUID,
+            fields=fields,
+        ),
+        catalog=CATALOG,
+        session=session,
+    )
+    await service.approve_command(
+        tenant_id=10,
+        actor_id=101,
+        command_id=preview.id,
+        expected_payload_hash=preview.payload_hash,
+        session=session,
+    )
+    config = dict(conn.config)
+    if revocation == "field":
+        # In the create case the user's field remains allowed, but the injected marker is revoked.
+        config["allowed_fields"] = {entity_set: ["СуммаДокумента"] if is_create else ["Code"]}
+        expected_error = "field_not_allowed"
+    elif revocation == "metadata":
+        config["metadata_sha256"] = "0" * 64
+        expected_error = "metadata_hash_mismatch"
+    else:
+        config["allowed_entity_sets"] = ["Document_БезКомментария"]
+        expected_error = "entity_not_allowed"
+    conn.config = config
+    with pytest.raises(OneCCommandError, match=expected_error):
+        await service.execute_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
+    assert mutations == []
+    assert session.commands[preview.id].state == "failed"
+    assert session.commands[preview.id].error_code == expected_error
+    entries = await service.list_audit_log(tenant_id=10, actor_id=101, session=session)
+    assert any(
+        e.command_id == preview.id and e.outcome == "denied" and e.reason_code == expected_error for e in entries
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("capability", [CAPABILITY_DOCUMENT_CREATE, CAPABILITY_CATALOG_UPDATE])
+@pytest.mark.parametrize("failure", ["reset", "truncated", "invalid_json"])
+async def test_post_send_failure_stays_unknown_until_reconcile(write_env, monkeypatch, capability, failure) -> None:
+    from urllib.parse import unquote
+
+    conn, secret = _make_write_connection()
+    session = FakeOneCCommandSession(connection=conn, secret=secret)
+    is_create = capability == CAPABILITY_DOCUMENT_CREATE
+    applied = False
+    mutations = 0
+
+    class Limiter:
+        @asynccontextmanager
+        async def acquire(self, *_args, **_kwargs):
+            yield
+
+    class Reader:
+        async def read(self, _size):
+            if failure == "reset":
+                raise ConnectionResetError("lost response after commit")
+            data = self.data
+            self.data = b""
+            return data
+
+        def __init__(self):
+            self.data = (
+                b"HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\n{"
+                if failure == "truncated"
+                else b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n{"
+            )
+
+    class Writer:
+        def write(self, _data):
+            nonlocal applied, mutations
+            applied = True
+            mutations += 1
+
+        async def drain(self):
+            pass
+
+        def close(self):
+            pass
+
+        async def wait_closed(self):
+            pass
+
+    async def open_connection(*_args, **_kwargs):
+        return Reader(), Writer()
+
+    monkeypatch.setattr(asyncio, "open_connection", open_connection)
+    monkeypatch.setattr(
+        commands_mod, "resolve_endpoint", lambda *_a, **_kw: OutboundTarget("1c.company.ru", 443, ("198.51.100.25",))
+    )
+
+    async def transport(endpoint, *, method, target_path, **kwargs):
+        decoded = unquote(target_path)
+        if method != b"GET":
+            return await send_odata_command_request(endpoint, method=method, target_path=target_path, **kwargs)
+        if "$metadata" in decoded:
+            return SAMPLE_METADATA_XML.encode()
+        if "$filter=" in decoded:
+            return json.dumps({"value": [{"Ref_Key": DOC_GUID}] if applied else []}).encode()
+        return json.dumps(
+            {
+                "Ref_Key": CAT_GUID,
+                "DataVersion": "V2" if applied else "V1",
+                "Description": "After" if applied else "Before",
+            }
+        ).encode()
+
+    service = OneCCommandService(transport=transport)
+    service._limiter = Limiter()
+    preview = await service.preview_command(
+        tenant_id=10,
+        actor_id=101,
+        connection_id=conn.id,
+        request=OneCWritePreviewRequest(
+            capability=capability,
+            idempotency_key=f"post-send-{failure}",
+            entity_set="Document_РеализацияТоваровУслуг" if is_create else "Catalog_Контрагенты",
+            target_guid=None if is_create else CAT_GUID,
+            fields={"СуммаДокумента": "100.00"} if is_create else {"Description": "After"},
+        ),
+        catalog=CATALOG,
+        session=session,
+    )
+    await service.approve_command(
+        tenant_id=10,
+        actor_id=101,
+        command_id=preview.id,
+        expected_payload_hash=preview.payload_hash,
+        session=session,
+    )
+    with pytest.raises(OneCCommandError, match="write_timeout_unknown"):
+        await service.execute_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
+    assert session.commands[preview.id].state == "unknown"
+    assert any(e.action == "onec.command_execute" and e.outcome == "unknown" for e in write_env.events)
+    reconciled = await service.reconcile_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
+    assert reconciled.state == "succeeded"
+    assert mutations == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("remote_value, expected_state", [(100, "succeeded"), ("100.0", "succeeded"), (101, "failed")])
+async def test_catalog_reconcile_compares_typed_values(write_env, remote_value, expected_state) -> None:
+    from urllib.parse import unquote
+
+    conn, secret = _make_write_connection()
+    session = FakeOneCCommandSession(connection=conn, secret=secret)
+    applied = False
+
+    async def transport(_endpoint, *, method, target_path, **_kwargs):
+        nonlocal applied
+        if "$metadata" in unquote(target_path):
+            return SAMPLE_METADATA_XML.encode()
+        if method == b"PATCH":
+            applied = True
+            raise TimeoutError("committed without response")
+        return json.dumps(
+            {
+                "Ref_Key": CAT_GUID,
+                "DataVersion": "V2" if applied else "V1",
+                "КредитныйЛимитСумма": remote_value if applied else 0,
+            }
+        ).encode()
+
+    service = OneCCommandService(transport=transport)
+    preview = await service.preview_command(
+        tenant_id=10,
+        actor_id=101,
+        connection_id=conn.id,
+        request=OneCWritePreviewRequest(
+            capability=CAPABILITY_CATALOG_UPDATE,
+            idempotency_key="typed-reconcile",
+            entity_set="Catalog_Контрагенты",
+            target_guid=CAT_GUID,
+            fields={"КредитныйЛимитСумма": "100.00"},
+        ),
+        catalog=CATALOG,
+        session=session,
+    )
+    await service.approve_command(
+        tenant_id=10,
+        actor_id=101,
+        command_id=preview.id,
+        expected_payload_hash=preview.payload_hash,
+        session=session,
+    )
+    with pytest.raises(OneCCommandError, match="write_timeout_unknown"):
+        await service.execute_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
+    result = await service.reconcile_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
+    assert result.state == expected_state
+
+
+@pytest.mark.asyncio
 async def test_send_odata_command_request_transport_and_error_mappings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test IP-pinned HTTPS transport (`GET`, `POST`, `PATCH`, `409`, `429`, and mutation `TimeoutError`)."""
     endpoint = OneCEndpoint("1c.company.ru", 8443, "/erp", "odata_standard")

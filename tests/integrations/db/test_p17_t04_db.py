@@ -264,6 +264,43 @@ async def _run_conflict_and_timeout_scenario(scope: dict[str, int]) -> None:
     assert denied_a[0].state == "failed"
     assert denied_a[0].reason_code == "data_version_conflict"
 
+    # A later permission revocation must override an earlier approval, even if DataVersion is unchanged.
+    revoked = await service_a.preview_command(
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        connection_id=connection_id,
+        request=OneCWritePreviewRequest(
+            capability=CAPABILITY_CATALOG_UPDATE,
+            idempotency_key="db-field-revoked-1",
+            entity_set=CATALOG_SET,
+            target_guid=CAT_GUID,
+            fields={"Description": "No longer permitted"},
+        ),
+        catalog=CATALOG,
+    )
+    await service_a.approve_command(
+        tenant_id=tenant_id, actor_id=actor_id, command_id=revoked.id, expected_payload_hash=revoked.payload_hash
+    )
+    async with async_session_maker() as session, session.begin():
+        connection = await session.get(WorkspaceConnection, connection_id)
+        original_config = dict(connection.config)
+        connection.config = {**original_config, "allowed_fields": {CATALOG_SET: ["Code"]}}
+    with pytest.raises(OneCCommandError, match="field_not_allowed"):
+        await service_a.execute_command(tenant_id=tenant_id, actor_id=actor_id, command_id=revoked.id)
+    assert write_attempts == 0
+    async with async_session_maker() as session, session.begin():
+        persisted = await session.get(BusinessCommand, revoked.id)
+        assert persisted.state == "failed"
+        assert persisted.error_code == "field_not_allowed"
+        assert (await _target(session, revoked.id)).error_code == "field_not_allowed"
+        connection = await session.get(WorkspaceConnection, connection_id)
+        connection.config = original_config
+    audit_entries_revoked = await service_a.list_audit_log(tenant_id=tenant_id, actor_id=actor_id)
+    assert any(
+        entry.command_id == revoked.id and entry.outcome == "denied" and entry.reason_code == "field_not_allowed"
+        for entry in audit_entries_revoked
+    )
+
     # (b) Timeout: 1C commits the document but the response never arrives.
     created_on_1c = False
     post_attempts = 0

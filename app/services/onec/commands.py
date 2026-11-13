@@ -632,6 +632,8 @@ async def send_odata_command_request(
         raise OneCCommandError("invalid_command_target")
 
     writer = None
+    request_sent = False
+    definite_refusal = False
     is_mutation = method in (b"POST", b"PATCH")
     try:
         async with asyncio.timeout(TIMEOUT_SECONDS):
@@ -674,6 +676,8 @@ async def send_odata_command_request(
                 if json_body is not None:
                     wire.extend(protocol.send(h11.Data(data=json_body)))
                 wire.extend(protocol.send(h11.EndOfMessage()))
+                # A write may reach 1C even if write/drain or reading the response fails.
+                request_sent = True
                 writer.write(bytes(wire))
                 await writer.drain()
 
@@ -687,6 +691,7 @@ async def send_odata_command_request(
                             raise OneCCommandError("connection_failed")
                     elif isinstance(event, h11.Response):
                         status = event.status_code
+                        definite_refusal = 300 <= status < 500
                         if 300 <= status < 400:
                             raise OneCCommandError("redirect_forbidden")
                         if status == 400:
@@ -718,6 +723,8 @@ async def send_odata_command_request(
                     else:
                         raise OneCCommandError("invalid_response")
     except OneCCommandError:
+        if is_mutation and request_sent and not definite_refusal:
+            raise TimeoutError("1C write confirmation unavailable") from None
         raise
     except OneCEndpointError as exc:
         raise OneCCommandError(exc.code) from None
@@ -730,6 +737,8 @@ async def send_odata_command_request(
             raise
         raise OneCCommandError("connection_failed") from None
     except (OSError, ValueError, UnicodeError, h11.ProtocolError):
+        if is_mutation and request_sent and not definite_refusal:
+            raise TimeoutError("1C write confirmation unavailable") from None
         raise OneCCommandError("connection_failed") from None
     finally:
         if writer is not None:
@@ -1436,8 +1445,8 @@ class OneCCommandService:
             credentials,
             account_key,
             allowed_sets,
-            _allowed_fields,
-            _expected_sha256,
+            allowed_fields,
+            expected_sha256,
             _config,
         ) = await self._load_authorized_write_connection(
             session=session,
@@ -1449,9 +1458,6 @@ class OneCCommandService:
 
         payload = dict(cmd.payload or {})
         entity_set = str(payload.get("entity_set") or "")
-        if not entity_set or entity_set not in allowed_sets:
-            raise OneCCommandError("entity_not_allowed")
-
         conflict_error: OneCCommandError | None = None
 
         async def _onec_write_adapter(
@@ -1468,6 +1474,18 @@ class OneCCommandService:
             budget = budget_for(PROVIDER, account_key, connection_id=locked_cmd.connection_id)
 
             try:
+                if not entity_set or entity_set not in allowed_sets:
+                    raise OneCCommandError("entity_not_allowed")
+                if expected_sha256 is not None and cmd_payload.get("metadata_sha256") != expected_sha256:
+                    raise OneCCommandError("metadata_hash_mismatch")
+                outgoing_fields = (
+                    cmd_payload.get("fields", {})
+                    if cap == CAPABILITY_DOCUMENT_CREATE
+                    else cmd_payload.get("changes", {})
+                )
+                permitted_fields = allowed_fields.get(ent_set)
+                if permitted_fields is not None and not set(outgoing_fields).issubset(permitted_fields):
+                    raise OneCCommandError("field_not_allowed")
                 if cap == CAPABILITY_DOCUMENT_CREATE:
                     comment_field = str(cmd_payload.get("idempotency_field") or "Комментарий")
                     fields_dict = dict(cmd_payload.get("fields") or {})
@@ -1501,7 +1519,10 @@ class OneCCommandService:
                         json_body=body_bytes,
                         resolver=resolver,
                     )
-                    created = parse_odata_single_object(resp_bytes) if resp_bytes else {}
+                    try:
+                        created = parse_odata_single_object(resp_bytes) if resp_bytes else {}
+                    except OneCCommandError:
+                        raise TimeoutError("1C write confirmation unavailable") from None
                     ref_key = str(created.get("Ref_Key") or ext_ref)
                     return {target_ref_str: f"onec:document:{ent_set}:{ref_key}"}
 
@@ -1576,7 +1597,10 @@ class OneCCommandService:
                     if_match=expected_ver,
                     resolver=resolver,
                 )
-                updated = parse_odata_single_object(resp_bytes) if resp_bytes else {}
+                try:
+                    updated = parse_odata_single_object(resp_bytes) if resp_bytes else {}
+                except OneCCommandError:
+                    raise TimeoutError("1C write confirmation unavailable") from None
                 new_ver = str(updated.get("DataVersion") or expected_ver)
                 return {target_ref_str: f"onec:catalog:{ent_set}:{t_guid}:{new_ver}"}
             except OneCCommandError as exc:
@@ -1691,9 +1715,9 @@ class OneCCommandService:
             endpoint,
             credentials,
             account_key,
-            _allowed_sets,
-            _allowed_fields,
-            _expected_sha256,
+            allowed_sets,
+            allowed_fields,
+            expected_sha256,
             _config,
         ) = await self._load_authorized_write_connection(
             session=session,
@@ -1706,6 +1730,16 @@ class OneCCommandService:
         payload = dict(cmd.payload or {})
         cap = cmd.capability
         ent_set = str(payload["entity_set"])
+        if ent_set not in allowed_sets:
+            raise OneCCommandError("entity_not_allowed")
+        if expected_sha256 is not None and payload.get("metadata_sha256", expected_sha256) != expected_sha256:
+            raise OneCCommandError("metadata_hash_mismatch")
+        permitted_fields = allowed_fields.get(ent_set)
+        read_fields = set(payload.get("changes") or {})
+        if cap == CAPABILITY_DOCUMENT_CREATE:
+            read_fields.add(str(payload.get("idempotency_field") or "Комментарий"))
+        if permitted_fields is not None and not read_fields.issubset(permitted_fields):
+            raise OneCCommandError("field_not_allowed")
         ext_ref = str(payload["external_ref"])
         target_ref_str = cmd.target_refs[0]
 
@@ -1752,6 +1786,17 @@ class OneCCommandService:
             else:  # CAPABILITY_CATALOG_UPDATE
                 t_guid = normalize_guid(payload.get("target_guid"))
                 changes_dict = dict(payload.get("changes") or {})
+                catalog = await self._resolve_catalog(
+                    catalog=None,
+                    endpoint=endpoint,
+                    login=credentials.login,
+                    password=credentials.password,
+                    account_key=account_key,
+                    connection_id=cmd.connection_id,
+                    expected_sha256=expected_sha256,
+                    resolver=resolver,
+                )
+                entity_spec = catalog.get_entity_set(ent_set)
                 live_item = await self._fetch_remote_object_by_guid(
                     endpoint=endpoint,
                     entity_set=ent_set,
@@ -1762,7 +1807,17 @@ class OneCCommandService:
                     connection_id=cmd.connection_id,
                     resolver=resolver,
                 )
-                if all(str(live_item.get(k)) == str(v) for k, v in changes_dict.items()):
+                if not changes_dict or not set(changes_dict).issubset(live_item):
+                    raise OneCCommandError("invalid_response")
+                expected_values, _ = validate_and_normalize_write_fields(
+                    entity_spec, changes_dict, allowed_fields=permitted_fields
+                )
+                live_values, _ = validate_and_normalize_write_fields(
+                    entity_spec,
+                    {key: live_item[key] for key in changes_dict},
+                    allowed_fields=permitted_fields,
+                )
+                if live_values == expected_values:
                     resolved_state = "succeeded"
                     live_ver = str(live_item.get("DataVersion") or "")
                     provider_receipts = {target_ref_str: f"onec:catalog:{ent_set}:{t_guid}:{live_ver}"}

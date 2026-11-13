@@ -152,6 +152,10 @@ async def _revalidate_personal_dispatch_before_http(client: Any, receipt: dict[s
     from app.services.ai.personal_dispatch import validate_personal_dispatch
 
     try:
+        if receipt is not None:
+            from app.services.ai.credential_boundary import require_current_credential_version
+
+            require_current_credential_version(receipt.get("__credential_version"), client.credential_version)
         await validate_personal_dispatch(client)
     except asyncio.CancelledError:
         if receipt is not None:
@@ -190,7 +194,7 @@ async def _observe_personal_outcome(
 
     try:
         event = build_outcome_event(
-            receipt,
+            {key: value for key, value in receipt.items() if key != "__credential_version"},
             event_id=uuid4().hex,
             observed_at=datetime.now(timezone.utc),
             dispatch_state=dispatch_state,
@@ -722,7 +726,7 @@ class OpenAICompatibleClient(LLMClient):
                     except ValueError:
                         diagnostic["response_body"] = r.text
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
                 if isinstance(diagnostic, dict) and not isinstance(data, dict):
                     raise ValueError("Provider response must be a JSON object")
@@ -997,7 +1001,7 @@ class AnthropicClient(LLMClient):
                     timeout=timeout,
                 )
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
 
             accounting = {
@@ -1198,7 +1202,7 @@ class CustomClient(LLMClient):
                     timeout=timeout,
                 )
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
 
             accounting = {

@@ -108,6 +108,37 @@ def provider_destination(base_url: str, path: str) -> str:
     return destination
 
 
+def provider_url_metadata(url: str) -> str:
+    """Shape-only display projection; legacy credentialed URLs are never echoed."""
+    try:
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or "%" in parsed.netloc
+            or "\\" in url
+            or any(ord(c) <= 32 or ord(c) == 127 for c in url)
+            or not 1 <= (parsed.port or 443) <= 65535
+        ):
+            return ""
+        if parsed.path:
+            validate_endpoint_path(parsed.path)
+        return url
+    except (ValueError, TypeError, AttributeError):
+        return ""
+
+
+def endpoint_path_metadata(path: str | None) -> str | None:
+    try:
+        return validate_endpoint_path(path)
+    except ValueError:
+        return None
+
+
 def _target(host: str, port: int):
     try:
         target = acquire_outbound_target(host, port)

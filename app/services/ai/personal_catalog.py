@@ -14,7 +14,13 @@ from sqlalchemy.orm import selectinload
 
 from app.core.permissions import get_current_user
 from app.models import LLMModel, LLMProvider, Tenant, User
-from app.services.ai.provider_egress import validate_auth_header, validate_base_url, validate_endpoint_path
+from app.services.ai.provider_egress import (
+    endpoint_path_metadata,
+    provider_url_metadata,
+    validate_auth_header,
+    validate_base_url,
+    validate_endpoint_path,
+)
 
 PROVIDER_FIELDS = {"id", "uid", "name", "description", "api_format", "base_url", "auth_header", "is_active", "api_key"}
 MODEL_FIELDS = {
@@ -180,7 +186,7 @@ def model_metadata(model):
         "is_active": model.is_active,
         "is_default": model.is_default,
         "description": model.description,
-        "custom_endpoint_path": model.custom_endpoint_path,
+        "custom_endpoint_path": endpoint_path_metadata(model.custom_endpoint_path),
         "pricing_token_unit": model.pricing_token_unit,
         **{key: getattr(model, key) for key in MODEL_FIELDS if "cost_per_" in key},
     }
@@ -193,7 +199,7 @@ def provider_metadata(provider, models):
         "name": provider.name,
         "uid": provider.uid,
         "api_format": provider.api_format,
-        "base_url": provider.base_url,
+        "base_url": provider_url_metadata(provider.base_url),
         "auth_header": None,  # May contain a literal token; never project credential material.
         "description": provider.description,
         "is_active": provider.is_active,

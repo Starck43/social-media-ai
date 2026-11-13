@@ -47,6 +47,7 @@ def synthetic_schema():
         try:
             conn.exec_driver_sql(f'CREATE SCHEMA "{name}"')
             conn.exec_driver_sql(f'CREATE TABLE "{name}".alembic_version (version_num TEXT NOT NULL)')
+            conn.exec_driver_sql(f'CREATE TABLE "{name}".personal_llm_dispatches (dispatch_id TEXT PRIMARY KEY)')
             conn.exec_driver_sql(f"INSERT INTO \"{name}\".alembic_version VALUES ('p17t08_onec_history_status')")
             conn.exec_driver_sql(f"""CREATE TABLE "{name}".llm_providers (
                 id INTEGER PRIMARY KEY, owner_user_id INTEGER, encrypted_api_key TEXT,
@@ -118,6 +119,18 @@ def test_versions_increment_only_sensitive_changes_and_cannot_reset(synthetic_sc
     for sql in ("credential_version=1", "credential_version=credential_version+1"):
         with pytest.raises(sa.exc.DBAPIError), conn.begin_nested():
             conn.exec_driver_sql(f'UPDATE "{schema}".llm_providers SET {sql} WHERE id=1')
+
+
+def test_admitted_version_evidence_blocks_downgrade_without_fabricating_history(synthetic_schema):
+    conn, schema, migration = synthetic_schema
+    conn.exec_driver_sql(f"INSERT INTO \"{schema}\".personal_llm_dispatches VALUES ('historical')")
+    migration.upgrade()
+    assert (
+        conn.exec_driver_sql(f'SELECT credential_version FROM "{schema}".personal_llm_dispatches').scalar_one() is None
+    )
+    conn.exec_driver_sql(f"INSERT INTO \"{schema}\".personal_llm_dispatches VALUES ('accepted', 1)")
+    with pytest.raises(RuntimeError, match="freshness has been used"):
+        migration.downgrade()
 
 
 def test_model_endpoint_change_invalidates_provider_version(synthetic_schema):

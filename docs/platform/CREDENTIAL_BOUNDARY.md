@@ -45,13 +45,17 @@ bulk SQL and admin writes. Multiple changes to different rows may cause multiple
 increments in one bundle; versions are freshness identities, not edit counters.
 Deleting a model/provider denies by missing-row resolution.
 
-Admission must persist the accepted version with actor, holder, credential owner
-and consent identities in its existing evidence (P21-T12/T15), and re-resolve the
-same live row immediately before HTTP. `require_current_credential_version` denies
+Personal admission persists the accepted version in the immutable
+`personal_llm_dispatches.credential_version` alongside existing payer, initiator,
+provider/model and execution identities. Historical dispatches remain NULL rather
+than receiving fabricated evidence. The internal admission envelope carries
+`__credential_version`; it is checked before HTTP and excluded from the unchanged
+legacy receipt/outcome contract. P21-T12/T15 extend this to holder/consent identities.
+Admission re-resolves the same live row immediately before HTTP.
+`require_current_credential_version` denies
 missing/malformed/stale values without resolving a key. Current personal clients
 snapshot the version and recheck after admission; metadata connectivity probes use
-the same fresh owner/membership/configuration check. The future admission-evidence
-wiring is not activated by P21-T11.
+the same fresh owner/membership/configuration check. No platform dispatch is enabled.
 
 Managed replacement/revocation or changes to a managed ref must increment that
 catalog row's same positive BIGINT under the platform writer transaction before
@@ -59,6 +63,26 @@ releasing writers. Rotation of deployment secrets cannot be inferred from a
 mutable environment value; the operator/managed-catalog lifecycle must invalidate
 the version explicitly (P21-T13). No version/ciphertext change resets provider
 quota identity or usage. P21-T14 owns stable upstream pool identity.
+
+## Social/connector custody inventory
+
+| Domain store | Secret material and authorization/projection contract |
+| --- | --- |
+| `user_credentials` | `secret_encrypted` and `refresh_secret_encrypted`; personal owner selection, source-owner membership recheck and VK renewal locking. `CredentialResponse` omits material and admin excludes/blank-masks secret fields. See `app/services/social/{credentials,owner,vk_oauth}.py`, `app/schemas/credential.py`, `app/admin/view_modules/users.py`. |
+| `workspace_connection_secrets` | One encrypted OAuth/basic/password bundle. Execution rechecks actor/tenant and connection ownership under the manager transaction; public config recursively omits secret-bearing fields. See `app/models/managers/workspace_connection_manager.py`, `app/integrations/{oauth,onec}/`. |
+| `personal_connector_authorizations` | Encrypted identity-pinned Telegram material; execution checks source/grant/membership plus consent revision. Revocation blanks material and advances revision. See `app/services/social/{connector_authorizations,telegram_grant_access}.py`. |
+| `telegram_login_attempts` | Temporary encrypted owner/tenant/revision/state-pinned login material; authorization precedes decode; terminal states remove material. See `app/services/social/telegram_login.py`. |
+| `telegram_login_request_keys` | Owner-lifetime replay tombstone only; no encrypted/session material, so layout-checked but not a re-encryption store. See `app/models/integrations/telegram_login.py`. |
+| Private file insight tables | Credential-key-dependent consent/result envelopes follow the existing explicitly approved invalidate/purge fence, not silent result re-encryption. See the rotation procedure in `CONFIGURATION.md`. |
+
+The credential-key rotation utility covers each encrypted credential store and
+refuses unknown heads/layouts. It preserves decrypted bytes rather than rewriting
+domain identities or grants; domain decoders continue to reject an already
+malformed identity bundle. Known installation service/Bot API env fallbacks remain
+separate from personal ownership and unchanged; no new fallback is introduced.
+Owner/account metadata, supported admin surface expansion and OAuth network policy
+redesign are not invented by this task. Public OAuth failures never echo callback
+input, upstream exception text or token material.
 
 ## Egress contract
 

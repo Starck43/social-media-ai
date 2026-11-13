@@ -27,6 +27,15 @@ def upgrade():
     op.create_check_constraint(
         "ck_llm_provider_credential_version", "llm_providers", "credential_version >= 1", schema=schema
     )
+    op.add_column(
+        "personal_llm_dispatches", sa.Column("credential_version", sa.BigInteger(), nullable=True), schema=schema
+    )
+    op.create_check_constraint(
+        "ck_personal_dispatch_credential_version",
+        "personal_llm_dispatches",
+        "credential_version IS NULL OR credential_version >= 1",
+        schema=schema,
+    )
     op.execute(f"""
         CREATE FUNCTION {s}.guard_llm_credential_version() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
@@ -73,7 +82,12 @@ def downgrade():
     # A rollback with used freshness metadata would erase the stale-request fence.
     if (
         op.get_bind()
-        .execute(sa.text(f"SELECT EXISTS (SELECT 1 FROM {s}.llm_providers WHERE credential_version > 1)"))
+        .execute(
+            sa.text(
+                f"SELECT EXISTS (SELECT 1 FROM {s}.llm_providers WHERE credential_version > 1) "
+                f"OR EXISTS (SELECT 1 FROM {s}.personal_llm_dispatches WHERE credential_version IS NOT NULL)"
+            )
+        )
         .scalar()
     ):
         raise RuntimeError("Credential freshness has been used; freeze dispatch before an approved rollback")
@@ -83,3 +97,5 @@ def downgrade():
     op.execute(f"DROP FUNCTION {s}.guard_llm_credential_version()")
     op.drop_constraint("ck_llm_provider_credential_version", "llm_providers", schema=schema)
     op.drop_column("llm_providers", "credential_version", schema=schema)
+    op.drop_constraint("ck_personal_dispatch_credential_version", "personal_llm_dispatches", schema=schema)
+    op.drop_column("personal_llm_dispatches", "credential_version", schema=schema)

@@ -210,6 +210,7 @@ def safe_probe_value(value, api_key: str = "", *, depth: int = 0, budget=None):
         raw = str(raw)
         raw = raw.replace(api_key, "[redacted]") if api_key else raw
         raw = re.sub(r"(?i)Bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [redacted]", raw)
+        raw = re.sub(r"gAAAAA[A-Za-z0-9_=-]+", "[redacted]", raw)
         raw = re.sub(
             r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|session(?:id)?|cookie)\s*([=:])\s*([^\s&,;\"'<>]+)",
             r"\1\2[redacted]",
@@ -227,7 +228,7 @@ def safe_probe_value(value, api_key: str = "", *, depth: int = 0, budget=None):
                 break
             label = text(key)
             sensitive = re.search(
-                r"(?i)(api.?key|authorization|access.?token|refresh.?token|password|secret|cookie|credential|session|^token$)",
+                r"(?i)(api.?key|authorization|access.?token|refresh.?token|password|secret|cookie|credential|session|cipher|^iv$|^tag$|^token$)",
                 str(key),
             )
             result[label] = (

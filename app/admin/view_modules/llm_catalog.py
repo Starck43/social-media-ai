@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from app.services.ai.provider_egress import endpoint_path_metadata
+from app.services.ai.provider_egress import provider_url_metadata as _provider_url_metadata
+
 from ._shared import (
     ActionType,
     Any,
@@ -54,6 +57,13 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
 
     inline_columns = ["id", "name", "api_format", "is_active"]
     column_list = ["id", "name", "api_format", "base_url", "is_active"]
+    column_details_list = column_list + ["uid", "description", "models", "created_at", "updated_at"]
+    column_export_list = ["id", "name", "api_format", "is_active"]
+    column_formatters = {
+        "base_url": lambda model, _: _provider_url_metadata(model.base_url),
+        **BaseAdmin.column_formatters,
+    }
+    column_formatters_detail = column_formatters
     column_searchable_list = ["name", "base_url"]
     column_sortable_list = ["name", "api_format", "is_active"]
 
@@ -304,6 +314,15 @@ class LLMProviderAdmin(BaseAdmin, model=LLMProvider):
         """Never render stored ciphertext back into the edit form."""
         data = await super().get_form_data_for_edit(obj)
         hide_form_secret(data, "encrypted_api_key")
+        if "base_url" in data:
+            data["base_url"] = _provider_url_metadata(data["base_url"])
+        if "auth_header" in data:
+            from app.services.ai.provider_egress import validate_auth_header
+
+            try:
+                data["auth_header"] = validate_auth_header(data["auth_header"])
+            except ValueError:
+                data["auth_header"] = ""
         return data
 
     @action(name="test-connection", label="🔌 Проверить подключение", add_in_list=True, add_in_detail=True)
@@ -593,6 +612,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
 
     column_formatters = {
         "provider": lambda m, a: m.provider.name if m.provider else "—",
+        "custom_endpoint_path": lambda m, a: endpoint_path_metadata(m.custom_endpoint_path),
         "model_type": lambda m, a: m.model_type if m.model_type else "—",
         "pricing_token_unit": lambda m, a: "1K tokens" if m.pricing_token_unit == 1000 else "1M tokens",
         "input_cost_per_1k": lambda m, a: _catalog_rate(m.input_cost_per_1k, m.pricing_token_unit),
@@ -690,6 +710,12 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             data.pop("owner_user_id", None)
         with self._catalog_scope(request):
             await super().on_model_change(data, model, is_created, request)
+
+    async def get_form_data_for_edit(self, obj: Any) -> dict[str, Any]:
+        data = await super().get_form_data_for_edit(obj)
+        if "custom_endpoint_path" in data:
+            data["custom_endpoint_path"] = endpoint_path_metadata(data["custom_endpoint_path"])
+        return data
 
     async def after_model_change(self, data: dict, model: LLMModel, is_created: bool, request=None) -> None:
         with self._catalog_scope(request):

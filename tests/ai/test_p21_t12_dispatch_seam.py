@@ -9,6 +9,7 @@ live database, so this file must also pass standalone:
 
 import asyncio
 import json
+import sys
 from dataclasses import replace
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -815,8 +816,7 @@ def prepare_analyzer(monkeypatch, candidates, analyze):
     monkeypatch.setattr(analyzer_module, "compile_scenario_output", lambda scenario: NS(model=None, schema=TEXT_ONLY))
     monkeypatch.setattr(OpenAICompatibleClient, "analyze", analyze)
     manager = NS(capability_candidates=AsyncMock(return_value=candidates[1:]))
-    patcher = patch.dict("sys.modules", {"app.models.managers.llm_model_manager": NS(LLMModelManager=lambda: manager)})
-    patcher.start()
+    monkeypatch.setitem(sys.modules, "app.models.managers.llm_model_manager", NS(LLMModelManager=lambda: manager))
     return manager
 
 

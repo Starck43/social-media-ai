@@ -33,7 +33,7 @@ deliverable must exist before the dependent consumers.
 | Order / task | Prerequisite deliverable | Required handoff |
 | --- | --- | --- |
 | 1. [P21-T10](../audit/p21/p21-t10.md) Prompt/tool safety — DONE 2026-11-14; accepted `07b30944` | None | Accepted source-backed exposure matrix and fail-closed synthetic reproductions; remediation stays separately scoped. |
-| 2. [P21-T11](../tasks/p21-t11.md) Credentials | None | Custody/version/egress contract and regression evidence; no new encryption scheme. |
+| 2. [P21-T11](../audit/p21/p21-t11.md) Credentials — DONE 2026-11-14; accepted `7e11f15f` | None | Monotonic custody/version fence, DNS-pinned egress and synthetic rotation regression evidence; Fernet/D8 unchanged. |
 | External: [P2-T17](../tasks/p2-t17.md) User tariff | Accepted P2 entitlement/configuration foundations | Holder binding, policy/version/expiry and token counting/period contract; checkout excluded. |
 | 3. [P21-T12](../tasks/p21-t12.md) Dispatch contract | T10 findings, T11 custody, P2-T17 holder interface | Typed contexts and dormant adapter seam with explicit extension interfaces. |
 | 4. [P21-T13](../tasks/p21-t13.md) Catalog/grants | T12 contract and P2-T17 tariff storage | Backfilled catalog/grant constraints and owner-only management; dispatch stays off. |

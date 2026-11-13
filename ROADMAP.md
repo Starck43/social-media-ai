@@ -39,7 +39,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
-- [P11-T34](docs/tasks/p11-t34.md) Reported `0145` downgrade data loss — description does not reproduce; reproduce-or-close — **DEFERRED** (owner: postponed; resume by re-running the reported command) · unassigned · — · `P0` · `C2`
 
 - [P21-T10](docs/tasks/p21-t10.md) Prompt and tool safety coverage audit — **TODO** · unassigned · independent; feeds P21-T12 · `P0` · `C3`
 - [P21-T11](docs/tasks/p21-t11.md) Credential boundary and rotation hardening — **TODO** · unassigned · independent custody prerequisite; owner gate for crypto changes · `P0` · `C4`

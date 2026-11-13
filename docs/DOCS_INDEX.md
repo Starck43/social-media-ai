@@ -19,6 +19,7 @@ for the operation, not all parents/related/history links.
 | Structured analysis / LLM contracts | [AI pipeline](agent/AI_PIPELINE_AND_PROMPTS.md) |
 | Analytics / reports / delivery | [Analytics](business/ANALYTICS_AGGREGATION_SYSTEM.md), [DIGEST](business/DIGEST.md), [CHANNELS](connectors/CHANNELS.md), [NOTIFICATIONS](business/NOTIFICATIONS.md) |
 | Identity / ownership / permissions / cutover | [TENANCY](platform/TENANCY.md), [ACCESS_MIGRATION](platform/ACCESS_MIGRATION.md) |
+| Tariffs / module entitlements / subscriptions | [ENTITLEMENTS](platform/ENTITLEMENTS.md), [SUBSCRIPTIONS](platform/SUBSCRIPTIONS.md); planned user-level subject and shared allowances: [P2-T17](tasks/p2-t17.md) |
 | Contacts, identities, consent and contact privacy | [CONTACTS](business/CONTACTS.md) |
 | ORM / deletion | [MODELS](agent/MODELS.md), [MODEL_DELETION](agent/MODEL_DELETION.md) |
 | Local file connector / private file workspace contracts | [FILE_WORKSPACE_ROADMAP](file-workspace/FILE_WORKSPACE_ROADMAP.md) |

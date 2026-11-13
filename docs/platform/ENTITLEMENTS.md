@@ -7,6 +7,14 @@ arbitrary target database. Deployment migration guidance is in
 
 ## Scope
 
+**Planned successor:** [P2-T17](../tasks/p2-t17.md) makes one user's tariff govern
+all owned workspaces and host-sponsored invitee activity, with configurable module
+rights, owned-space limits and separate token allowances. It consumes this engine
+and migrates workspace plan/expiry reads; this document below describes the
+accepted workspace-scoped foundation, not shipped user-level subscriptions.
+`entitlement_usage` counts capability admissions, not billable tokens. No second
+module registry or implicit wildcard packaging replaces the reviewed contract.
+
 A capability is a subsystem-owned, namespaced product right. The collection
 subsystem declares `connector.vk.read`, `connector.vk.search` and
 `connector.telegram.read`. These coarse product keys deliberately do not mirror

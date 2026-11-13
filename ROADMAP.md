@@ -33,7 +33,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
-- [P21-T09](docs/tasks/p21-t09.md) Align LLM planning with user-level tariffs and invitation boundaries — **IN_PROGRESS** · opencode-p21-t09 · `ses_e2fa3690affea2bSCgS5dlSVmg` · `P0` · `C3`
 
 
 
@@ -42,11 +41,17 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
 - [P11-T34](docs/tasks/p11-t34.md) Reported `0145` downgrade data loss — description does not reproduce; reproduce-or-close — **DEFERRED** (owner: postponed; resume by re-running the reported command) · unassigned · — · `P0` · `C2`
 
+- [P21-T10](docs/tasks/p21-t10.md) Prompt and tool safety coverage audit — **TODO** · unassigned · independent; feeds P21-T12 · `P0` · `C3`
+- [P21-T11](docs/tasks/p21-t11.md) Credential boundary and rotation hardening — **TODO** · unassigned · independent custody prerequisite; owner gate for crypto changes · `P0` · `C4`
+- [P2-T17](docs/tasks/p2-t17.md) User-level tariffs, module entitlements and shared token allowances — **TODO** · unassigned · owner direction `ses_e2fa3690affea2bSCgS5dlSVmg`; tariff/holder prerequisite for P21 · `P1` · `C5`
+- [P21-T12](docs/tasks/p21-t12.md) Single LLM dispatch seam and resolution contract — **TODO** · unassigned · depends on P21-T10/P21-T11 and P2-T17 holder contract · `P1` · `C3`
+- [P21-T13](docs/tasks/p21-t13.md) Unified model catalog, plan grants and generation policy — **TODO** · unassigned · depends on P21-T12/P2-T17; dormant catalog, no activation · `P1` · `C4`
+- [P21-T14](docs/tasks/p21-t14.md) Provider rate limits and bounded backpressure — **TODO** · unassigned · depends on P21-T12/P21-T13 · `P1` · `C4`
+- [P21-T15](docs/tasks/p21-t15.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T14/P2-T17 allowance policy; no cutover · `P1` · `C4`
+- [P21-T16](docs/tasks/p21-t16.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T15; integrated mocked phase checks; feeds P2-T09 · `P1` · `C4`
+
 ### Priority P1
 
-- [P21-T02](docs/tasks/p21-t02.md) Single LLM dispatch seam and resolution contract — **TODO** · unassigned · [planning prerequisite accepted](docs/audit/p21/p21-t01.md) · `P1` · `C3`
-- [P21-T03](docs/tasks/p21-t03.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T02; owner gate for money/cutover · `P1` · `C4`
-- [P21-T04](docs/tasks/p21-t04.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T02/P21-T03; feeds P2-T09 · `P1` · `C4`
 
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
 - [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **DEFERRED** (owner: park after local mock/DB increment until runtime journey and bounded live VK evidence, 2026-10-29) · notion-ai-p8-t41 · [Closeout](https://github.com/Starck43/social-media-ai/pull/279#issuecomment-6492303448) · resume `dev` at `295268d9` · `P1` · `C4`
@@ -56,10 +61,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P21-T05](docs/tasks/p21-t05.md) Provider rate limits and bounded backpressure — **TODO** · unassigned · depends on P21-T02 · `P2` · `C4`
-- [P21-T06](docs/tasks/p21-t06.md) Credential boundary and rotation hardening — **TODO** · unassigned · owner gate for accepted security/crypto contract · `P2` · `C4`
-- [P21-T07](docs/tasks/p21-t07.md) Prompt and tool safety coverage audit — **TODO** · unassigned · independent; feeds P21-T02 · `P2` · `C3`
-- [P21-T08](docs/tasks/p21-t08.md) Unified model catalog, plan grants and generation policy — **TODO** · unassigned · depends on P21-T02; activation requires P21-T03/T04/T05/T06 · `P2` · `C4`
 
 
 

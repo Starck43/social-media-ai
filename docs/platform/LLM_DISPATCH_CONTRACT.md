@@ -6,7 +6,7 @@ contract; [P21-T13](../tasks/p21-t13.md), [P21-T14](../tasks/p21-t14.md),
 reference and never restate it. The task card is
 [P21-T12](../tasks/p21-t12.md); the phase plan is
 [P21](../phases/p21-ai-operations.md); the holder/policy authority is
-[P2-T17](../archive/tasks/p2-t17.md).
+ [P2-T17](SERVICE_PLANS.md#holder-and-policy-interface).
 
 This document describes what a provider attempt *must* look like. It does not
 authorize activation: the target dispatch stays disabled, no schema change is
@@ -44,10 +44,12 @@ come from a request payload, query string, job payload or tool argument.
 | `actor_user_id` | the authenticated actor of the turn | session/membership |
 | `tenant_id` | the verified workspace scope of the turn | tenant context |
 | `plan_holder_user_id` | the user whose plan sponsors the workspace | P2-T17 holder contract |
-| `credential_owner_user_id` | the owner of the BYOK row and its provider (personal class only) | P21-T11 / P21-T13 custody |
+| `credential_owner_user_id` | the owner of the BYOK row and its provider; NULL for platform credentials | P21-T11 / P21-T13 custody |
+| `credential_ref` | deployment-allowlisted opaque alias (platform only), never a raw key | P21-T11 / P21-T13 custody |
 | `payer` | the trusted payer binding of the attempt | server-side resolution, never the caller |
 | `delegation_consent_version` | the version of the host-sponsored delegated-use consent | P21-T12/T13, not yet persisted (gap G7) |
 | `plan_policy_version` | the version of the holder's plan policy that was checked | P2-T17 |
+| `workspace_plan` | the accepted `WorkspacePlanContext`, passed by reference, not a duplicated policy | P2-T17 |
 | `credential_version` | the monotonic freshness version of the used credential | P21-T11 |
 
 A workspace is **sponsored** by exactly one holder. An invited member executes
@@ -116,7 +118,9 @@ next row and the payer of the attempt must equal the ones of the try it
 replaces. A mismatch is a denial (`fallback_funding_class_mismatch`,
 `fallback_payer_mismatch`), not a switch. Only proven bindings can differ: an
 attempt without a proven payer keeps its binding, and a strict attempt without
-a proven payer is already denied earlier as `payer_unresolved`.
+a proven payer is already denied earlier as `payer_unresolved`. An explicit
+`next_payer` must match even when retrying the same model row; a row ID is not a
+payer identity.
 
 ## 6. Redacted error taxonomy
 
@@ -155,6 +159,7 @@ injected and owned by the listed tasks; the seam never reads their storage.
 
 | Interface | Owner | Called by the seam |
 | --- | --- | --- |
+| `AuthorityResolver` | P21-T12 contract; P21-T13/P15 wiring using P2-T17 and P21-T11 | verifies actor/workspace/holder and configured model; resolves credential and payer separately; revalidates after reservation |
 | `GrantResolver` | P21-T13 | resolves catalog access, plan grant and capability fit for the holder |
 | `RateAcquirer` | P21-T14 | acquires provider capacity for one attempt and releases it afterwards |
 | `AdmissionService` | P21-T15 | commits the durable reservation and its receipt for the attempt |
@@ -163,12 +168,49 @@ injected and owned by the listed tasks; the seam never reads their storage.
 Each interface has one production implementation and one test double. A missing
 implementation denies the attempt; it never skips the step.
 
+Strict resolution never treats integer IDs or compatibility context as proof.
+`AuthorityResolver.resolve_identity` calls the accepted holder/policy interface
+and checks execution permissions; an invitee's plan and broad workspace role
+cannot grant holder-level management. `resolve_credential` verifies allowlisted
+platform aliases or holder-owned BYOK plus consent for an invited actor.
+`resolve_payer` derives the binding server-side; execution payload identities are
+not authority. `revalidate` reads fresh membership, consent, plan and credential
+state after the durable receipt. Changed identity/version evidence denies; a
+credential version change uses `credential_version_stale`.
+
+Foundation results are explicit DTOs: `DispatchGrant` names the catalog,
+`DispatchLease` names the acquired capacity lease, and `DispatchReservation`
+contains this exact dispatch ID, credential version and committed receipt.
+`None`, false and arbitrary truthy objects are not successful admission.
+`AdmissionService.check_allowance` must explicitly return `True` before rate
+acquisition. Admission receives the allocated ID in `DispatchRequest.dispatch_id`.
+`reserve` must either return its committed receipt or own rollback/recovery for
+an interrupted commit; it must not hide a durable receipt behind a generic error.
+
+A missing settlement service blocks HTTP before capacity acquisition. A failure
+or cancellation after lease acquisition releases that lease. A fresh denial
+after a committed receipt settles `not_dispatched` and releases capacity.
+Terminal settlement releases capacity even if settlement itself fails; only
+bounded outcome labels are logged. Provider completion/unknown-liability wiring
+and crash recovery remain P21-T16's separate integration deliverable.
+
 ## 8. Durable evidence
 
 One journal record per actual try, including a failed try, a transport failure
 and every fallback try. The record keeps the attempt's own dispatch identity,
 its model row, its provider name, the token evidence and the tariff snapshot.
-A persistence replay of the same record keeps that identity.
+A persistence replay of the same record keeps that identity. Chat responses carry
+the ID as private dict-subclass metadata, not a new JSON key; the journal consumes
+it even with an explicit receipt ID. Transport exceptions carry the same ID.
+Empty replies are journaled before fallback, not silently dropped.
+
+In dormant compatibility mode the existing personal receipt remains authoritative:
+the seam's provisional ID is bound to that receipt before evidence is emitted.
+It never replaces the legacy receipt, payer or accounting key. Analysis already
+carries the receipt ID in its request envelope. Strict admission owns one receipt
+and cannot be rebound to a different personal receipt. The future integrated
+adapter must replace (not stack on) legacy admission and wire settlement at every
+terminal path before activation; fake seam acceptance does not certify that cutover.
 
 The identity and version fields of the seam map to durable evidence as
 follows, and neither existing receipt family supplies all of them today:

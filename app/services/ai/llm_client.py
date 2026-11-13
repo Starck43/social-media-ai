@@ -175,6 +175,22 @@ def _dispatch_identifier(admission: Any) -> str | None:
     return value if type(value) is str and value else None
 
 
+def _seam_chat_response(response: dict[str, Any], admission: Any, legacy_id: str | None) -> dict[str, Any]:
+    """Bind a compatibility try to its legacy receipt without adding public keys.
+
+    The existing personal reservation owns its identity until the approved
+    cutover. Strict admission owns its own receipt and must never be rebound.
+    """
+    identity = _dispatch_identifier(admission)
+    if getattr(admission, "reserved", False) and legacy_id is not None and legacy_id != identity:
+        seam = _seam_module()
+        raise seam.DispatchDenial(seam.CODE_ADMISSION_UNAVAILABLE, "step8_admission")
+    seam = _seam_module()
+    if seam is None:
+        return response
+    return seam.DispatchResponse(response, legacy_id or identity)
+
+
 async def _verify_personal_dispatch_day(receipt: dict[str, Any] | None) -> None:
     """Refuse a reservation acknowledged on a prior UTC day before HTTP.
 
@@ -761,7 +777,8 @@ class OpenAICompatibleClient(LLMClient):
             stage="chat",
             execution=execution,
             requested_output_tokens=payload.get("max_tokens"),
-            uses_tools=bool(tools),
+            uses_tools=bool(payload.get("tools")),
+            has_media=_payload_has_media(payload),
         )
         receipt, dispatch_id = await _personal_admission(
             self,
@@ -815,9 +832,7 @@ class OpenAICompatibleClient(LLMClient):
                     "usage": self._usage_block_for_response(0, 0, data),
                 }, True
             response["_personal_dispatch_id"] = dispatch_id
-            seam_identity = _dispatch_identifier(admission)
-            if seam_identity is not None:
-                response[_seam_chat_key()] = seam_identity
+            response = _seam_chat_response(response, admission, dispatch_id)
             await _observe_personal_outcome(
                 receipt,
                 dispatch_state="response_received",
@@ -837,15 +852,18 @@ class OpenAICompatibleClient(LLMClient):
             await _observe_personal_failure(receipt)
             await _record_llm_usage(self.model, success=False)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
         except Exception as error:
             from app.services.billing.errors import is_personal_billing_block
 
             if is_personal_billing_block(error):
                 setattr(error, "personal_dispatch_id", dispatch_id)
+                setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
                 raise
             await _observe_personal_failure(receipt)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
 
     # ── internal helpers ─────────────────────────────────────
@@ -1067,7 +1085,8 @@ class AnthropicClient(LLMClient):
             stage="chat",
             execution=execution,
             requested_output_tokens=payload.get("max_tokens"),
-            uses_tools=bool(tools),
+            uses_tools=bool(payload.get("tools")),
+            has_media=_payload_has_media(payload),
         )
         receipt, dispatch_id = await _personal_admission(
             self,
@@ -1106,9 +1125,7 @@ class AnthropicClient(LLMClient):
                     "usage": self._usage_block_for_response(0, 0, data),
                 }, True
             response["_personal_dispatch_id"] = dispatch_id
-            seam_identity = _dispatch_identifier(admission)
-            if seam_identity is not None:
-                response[_seam_chat_key()] = seam_identity
+            response = _seam_chat_response(response, admission, dispatch_id)
             await _observe_personal_outcome(
                 receipt,
                 dispatch_state="response_received",
@@ -1124,15 +1141,18 @@ class AnthropicClient(LLMClient):
             await _observe_personal_failure(receipt)
             await _record_llm_usage(self.model, success=False)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
         except Exception as error:
             from app.services.billing.errors import is_personal_billing_block
 
             if is_personal_billing_block(error):
                 setattr(error, "personal_dispatch_id", dispatch_id)
+                setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
                 raise
             await _observe_personal_failure(receipt)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
 
     def _parse_chat(self, data: dict) -> dict[str, Any]:
@@ -1287,7 +1307,8 @@ class CustomClient(LLMClient):
             stage="chat",
             execution=execution,
             requested_output_tokens=payload.get("max_tokens"),
-            uses_tools=bool(tools),
+            uses_tools=bool(payload.get("tools")),
+            has_media=_payload_has_media(payload),
         )
         receipt, dispatch_id = await _personal_admission(
             self,
@@ -1334,9 +1355,7 @@ class CustomClient(LLMClient):
                     "usage": self._usage_block_for_response(0, 0, data),
                 }, True
             response["_personal_dispatch_id"] = dispatch_id
-            seam_identity = _dispatch_identifier(admission)
-            if seam_identity is not None:
-                response[_seam_chat_key()] = seam_identity
+            response = _seam_chat_response(response, admission, dispatch_id)
             await _observe_personal_outcome(
                 receipt,
                 dispatch_state="response_received",
@@ -1352,15 +1371,18 @@ class CustomClient(LLMClient):
             await _observe_personal_failure(receipt)
             await _record_llm_usage(self.model, success=False)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
         except Exception as error:
             from app.services.billing.errors import is_personal_billing_block
 
             if is_personal_billing_block(error):
                 setattr(error, "personal_dispatch_id", dispatch_id)
+                setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
                 raise
             await _observe_personal_failure(receipt)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
 
     def _headers(self) -> dict[str, str]:
@@ -1425,6 +1447,11 @@ async def journal_chat_attempt(
     message/digest/job cost projections are unchanged. Pre-dispatch refusals
     (no API key, custom model without endpoint) are not paid attempts.
     """
+    # Consume metadata even if the legacy journal cannot persist this route.
+    response_identity = getattr(response, "dispatch_id", None)
+    if response_identity is not None:
+        delattr(response, "dispatch_id")
+    dispatch_id = dispatch_id or response_identity
     if not getattr(client, "api_key", None):
         return
     if isinstance(client, CustomClient) and not getattr(client.model, "custom_endpoint_path", None):
@@ -1433,8 +1460,9 @@ async def journal_chat_attempt(
     # executing scope, so a scope without the seam keeps today's behaviour.
     seam_key_loader = globals().get("_seam_chat_key")
     seam_key = seam_key_loader() if seam_key_loader is not None else None
-    if dispatch_id is None and isinstance(response, dict) and seam_key:
-        dispatch_id = response.pop(seam_key, None)
+    if isinstance(response, dict) and seam_key:
+        private_id = response.pop(seam_key, None)
+        dispatch_id = dispatch_id or private_id
     try:
         from app.services.ai.attempt_journal import STAGE_CHAT, chat_attempt_envelope, journal_scoped_attempts
 
@@ -1550,9 +1578,11 @@ async def chat_with_fallback(
                     client,
                     accounting_purpose,
                     None,
-                    dispatch_id=getattr(error, "personal_dispatch_id", None),
+                    dispatch_id=getattr(error, "personal_dispatch_id", None) or getattr(error, "dispatch_id", None),
                 )
                 raise
+            dispatch_id = response.pop("_personal_dispatch_id", None) if isinstance(response, dict) else None
+            await journal_chat_attempt(client, accounting_purpose, response, dispatch_id=dispatch_id)
             if not _chat_response_usable(response):
                 reason = _empty_reply_reason(response)
                 logger.warning(
@@ -1561,18 +1591,6 @@ async def chat_with_fallback(
                 _record_failure(failures, model, reason, limit=getattr(model, "max_tokens", None))
                 last_err = RuntimeError(f"empty_reply:{reason}")
                 continue
-            dispatch_id = response.pop("_personal_dispatch_id", None)
-            # The seam identity is private to the journal; with a personal
-            # reservation it stays on the exception attribute, never the reply.
-            seam_key_loader = globals().get("_seam_chat_key")
-            seam_key = seam_key_loader() if seam_key_loader is not None else None
-            seam_dispatch_id = response.pop(seam_key, None) if seam_key else None
-            await journal_chat_attempt(
-                client,
-                accounting_purpose,
-                response,
-                dispatch_id=dispatch_id or seam_dispatch_id,
-            )
             if failures is not None:
                 response["_model_failures"] = failures
             return response

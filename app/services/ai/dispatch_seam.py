@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Mapping, Optional, Protocol, Set
 from uuid import uuid4
 
@@ -75,8 +75,35 @@ DENIAL_CODES = frozenset(
 )
 
 #: Short fixed labels. Never build a detail from an exception, a payload or a name.
-_DETAIL_MAX = 64
-_LABEL = re.compile(r"^[a-z0-9_]{1,%d}$" % _DETAIL_MAX)
+_DENIAL_DETAILS = frozenset(
+    {
+        "request_invalid",
+        "dispatch_id_invalid",
+        "step1_actor",
+        "step1_authority",
+        "step2_tenant",
+        "step3_model",
+        "class_workspace",
+        "class_unknown",
+        "step4_holder",
+        "step4_grants",
+        "step5_credential",
+        "step5_consent",
+        "step6_payer",
+        "step7_request",
+        "step7_endpoint",
+        "step7_output_tokens",
+        "step7_capability",
+        "step7_allowance",
+        "step7_rate",
+        "step8_admission",
+        "step8_version",
+        "step8_freshness",
+        "step8_settlement",
+        "fallback_class",
+        "fallback_payer",
+    }
+)
 
 
 class DispatchDenial(RuntimeError):
@@ -89,7 +116,9 @@ class DispatchDenial(RuntimeError):
 
     def __init__(self, code: str, detail: str | None = None):
         self.code = code if code in DENIAL_CODES else CODE_PARAMS_INVALID
-        self.detail = detail if isinstance(detail, str) and _LABEL.match(detail) else None
+        # Caller-provided labels can themselves be credentials. Only repository
+        # labels are allowed, not arbitrary text that happens to match a regex.
+        self.detail = detail if type(detail) is str and detail in _DENIAL_DETAILS else None
         super().__init__(f"llm_dispatch_denied: {self.code}")
 
     def __repr__(self) -> str:  # never expose the call stack's locals
@@ -128,6 +157,31 @@ class DispatchContext:
     delegation_consent_version: Optional[int] = None
     plan_policy_version: Optional[int] = None
     credential_version: Optional[int] = None
+    credential_ref: Optional[str] = None
+    workspace_plan: Any = None  # The P2-T17 WorkspacePlanContext, held by reference.
+
+
+@dataclass(frozen=True)
+class DispatchGrant:
+    """Explicit catalog/grant resolution, not a truthy placeholder."""
+
+    catalog_id: str
+
+
+@dataclass(frozen=True)
+class DispatchLease:
+    """One provider-capacity lease; the rate service owns the opaque identity."""
+
+    lease_id: str
+
+
+@dataclass(frozen=True)
+class DispatchReservation:
+    """A committed receipt for this exact attempt (the service owns persistence)."""
+
+    dispatch_id: str
+    credential_version: int
+    receipt: Mapping[str, Any]
 
 
 @dataclass(frozen=True)
@@ -139,21 +193,41 @@ class DispatchAdmission:
     request: DispatchRequest
     reserved: bool = False
     reservation: Optional[Mapping[str, Any]] = None
+    rate_lease: Optional[DispatchLease] = None
 
 
 # ── Injection interfaces (§7) ─────────────────────────────────
 
 
+class AuthorityResolver(Protocol):
+    """Trusted server-side identity/model, custody, payer and freshness resolution.
+
+    Identity resolution uses the accepted P2-T17 service, validates execution
+    permissions and owner-configured model choice. Hints never authorize access.
+    Credential resolution verifies allowlisted platform refs or consent-bound
+    personal custody; payer resolution never trusts request.execution identities.
+    Revalidation reads current membership, policy, consent and credential state.
+    """
+
+    async def resolve_identity(self, request: DispatchRequest, hints: DispatchContext) -> DispatchContext: ...
+
+    async def resolve_credential(self, request: DispatchRequest, context: DispatchContext) -> DispatchContext: ...
+
+    async def resolve_payer(self, request: DispatchRequest, context: DispatchContext) -> DispatchContext: ...
+
+    async def revalidate(self, admission: DispatchAdmission) -> DispatchContext: ...
+
+
 class GrantResolver(Protocol):
     """P21-T13: catalog access, plan grant and capability fit for the holder."""
 
-    async def resolve(self, request: DispatchRequest, context: DispatchContext) -> Any: ...
+    async def resolve(self, request: DispatchRequest, context: DispatchContext) -> DispatchGrant: ...
 
 
 class RateAcquirer(Protocol):
     """P21-T14: acquire provider capacity for one attempt and release it after."""
 
-    async def acquire(self, request: DispatchRequest, context: DispatchContext) -> Any: ...
+    async def acquire(self, request: DispatchRequest, context: DispatchContext) -> DispatchLease: ...
 
     async def release(self, admission: DispatchAdmission) -> None: ...
 
@@ -161,7 +235,9 @@ class RateAcquirer(Protocol):
 class AdmissionService(Protocol):
     """P21-T15: commit the durable reservation and its receipt, or deny."""
 
-    async def reserve(self, request: DispatchRequest, context: DispatchContext) -> Any: ...
+    async def check_allowance(self, request: DispatchRequest, context: DispatchContext) -> bool: ...
+
+    async def reserve(self, request: DispatchRequest, context: DispatchContext) -> DispatchReservation: ...
 
 
 class SettlementService(Protocol):
@@ -180,6 +256,7 @@ class DispatchFoundation:
     rate: Optional[RateAcquirer] = None
     admission: Optional[AdmissionService] = None
     settlement: Optional[SettlementService] = None
+    authority: Optional[AuthorityResolver] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────
@@ -190,7 +267,7 @@ _HEX32 = re.compile(r"^[0-9a-f]{32}$")
 
 def is_valid_dispatch_id(value: Any) -> bool:
     """True for a canonical attempt identity: 32 lowercase hex characters."""
-    return type(value) is str and bool(_HEX32.match(value))
+    return type(value) is str and bool(_HEX32.fullmatch(value))
 
 
 def _positive_int(value: Any) -> bool:
@@ -266,6 +343,8 @@ async def admit(
         raise DispatchDenial(CODE_PARAMS_INVALID, "request_invalid")
     strict = foundation is not None
     ctx = context if isinstance(context, DispatchContext) else DispatchContext()
+    if strict and not isinstance(foundation, DispatchFoundation):
+        raise DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_admission")
 
     if not strict:
         # Compatibility mode (§9): today's path stays the authority. The seam
@@ -279,6 +358,21 @@ async def admit(
             reservation=None,
         )
 
+    # Resolve trusted identity and the holder's configured model before grants.
+    # Numeric context fields alone are never proof of authenticated authority.
+    authority = foundation.authority
+    if authority is None:
+        raise DispatchDenial(CODE_WORKSPACE_RIGHTS_MISSING, "step1_authority")
+    ctx = await _call_service(
+        authority,
+        "resolve_identity",
+        request,
+        ctx,
+        detail="step1_authority",
+        fallback_code=CODE_WORKSPACE_RIGHTS_MISSING,
+    )
+    if not isinstance(ctx, DispatchContext):
+        raise DispatchDenial(CODE_WORKSPACE_RIGHTS_MISSING, "step1_authority")
     # 1. Authenticated actor.
     if ctx.actor_user_id is None:
         raise DispatchDenial(CODE_ACTOR_UNRESOLVED, "step1_actor")
@@ -307,7 +401,7 @@ async def admit(
     grants = foundation.grants
     if grants is None:
         raise DispatchDenial(CODE_PLAN_GRANT_MISSING, "step4_grants")
-    await _call_service(
+    grant = await _call_service(
         grants,
         "resolve",
         request,
@@ -315,16 +409,53 @@ async def admit(
         detail="step4_grants",
         fallback_code=CODE_PLAN_GRANT_MISSING,
     )
+    if not isinstance(grant, DispatchGrant) or not (type(grant.catalog_id) is str and grant.catalog_id):
+        raise DispatchDenial(CODE_CATALOG_ACCESS_MISSING, "step4_grants")
+    ctx = replace(ctx, catalog_id=grant.catalog_id)
     # 5. Credential source for the funding class.
-    credential_owner = ctx.credential_owner_user_id
-    if not _positive_int(credential_owner):
+    resolved = await _call_service(
+        authority,
+        "resolve_credential",
+        request,
+        ctx,
+        detail="step5_credential",
+        fallback_code=CODE_CREDENTIAL_SOURCE_UNAVAILABLE,
+    )
+    if (
+        not isinstance(resolved, DispatchContext)
+        or replace(
+            resolved,
+            credential_owner_user_id=ctx.credential_owner_user_id,
+            credential_version=ctx.credential_version,
+            credential_ref=ctx.credential_ref,
+        )
+        != ctx
+    ):
         raise DispatchDenial(CODE_CREDENTIAL_SOURCE_UNAVAILABLE, "step5_credential")
-    if ctx.funding_class == FUNDING_CLASS_PERSONAL and credential_owner != ctx.plan_holder_user_id:
-        # Delegated BYOK needs explicit holder consent; the seam has no
-        # consent store yet (gap G7), so an unproven delegate has no source.
-        if not _positive_int(ctx.delegation_consent_version):
+    ctx = resolved
+    credential_owner = ctx.credential_owner_user_id
+    if not _positive_int(ctx.credential_version):
+        raise DispatchDenial(CODE_CREDENTIAL_SOURCE_UNAVAILABLE, "step5_credential")
+    if ctx.funding_class == FUNDING_CLASS_PLATFORM:
+        if credential_owner is not None or not (type(ctx.credential_ref) is str and ctx.credential_ref):
+            raise DispatchDenial(CODE_CREDENTIAL_SOURCE_UNAVAILABLE, "step5_credential")
+    else:
+        if not _positive_int(credential_owner) or credential_owner != ctx.plan_holder_user_id:
+            raise DispatchDenial(CODE_CREDENTIAL_SOURCE_UNAVAILABLE, "step5_credential")
+        if ctx.actor_user_id != ctx.plan_holder_user_id and not _positive_int(ctx.delegation_consent_version):
             raise DispatchDenial(CODE_CREDENTIAL_SOURCE_UNAVAILABLE, "step5_consent")
     # 6. Trusted payer binding.
+    resolved = await _call_service(
+        authority,
+        "resolve_payer",
+        request,
+        ctx,
+        detail="step6_payer",
+        fallback_code=CODE_PAYER_UNRESOLVED,
+    )
+    if not isinstance(resolved, DispatchContext) or replace(resolved, payer=ctx.payer) != ctx:
+        raise DispatchDenial(CODE_PAYER_UNRESOLVED, "step6_payer")
+    ctx = resolved
     if not (type(ctx.payer) is str and ctx.payer):
         raise DispatchDenial(CODE_PAYER_UNRESOLVED, "step6_payer")
 
@@ -336,21 +467,38 @@ async def admit(
     if request.stage in ("chat", "text_analysis") and api_format == "custom":
         if not getattr(request.model, "custom_endpoint_path", None):
             raise DispatchDenial(CODE_PARAMS_INVALID, "step7_endpoint")
-    if type(request.requested_output_tokens) is int and request.requested_output_tokens <= 0:
+    if request.requested_output_tokens is not None and not _positive_int(request.requested_output_tokens):
         raise DispatchDenial(CODE_PARAMS_INVALID, "step7_output_tokens")
     if required and not required <= _row_capabilities(request.model):
         raise DispatchDenial(CODE_CAPABILITY_UNFIT, "step7_capability")
 
     dispatch_id = _identity_for(request)
+    # The exact identity reaches rate/admission services, not just the returned DTO.
+    request = replace(request, dispatch_id=dispatch_id)
     rate = foundation.rate
     admission_service = foundation.admission
 
     # 7b. Shared allowance eligibility, then provider rate capacity.
-    if type(ctx.plan_policy_version) is not int:
+    if not _positive_int(ctx.plan_policy_version):
+        raise DispatchDenial(CODE_ALLOWANCE_UNAVAILABLE, "step7_allowance")
+    if admission_service is None:
+        raise DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_admission")
+    allowed = await _call_service(
+        admission_service,
+        "check_allowance",
+        request,
+        ctx,
+        detail="step7_allowance",
+        fallback_code=CODE_ALLOWANCE_UNAVAILABLE,
+    )
+    if allowed is not True:
         raise DispatchDenial(CODE_ALLOWANCE_UNAVAILABLE, "step7_allowance")
     if rate is None:
         raise DispatchDenial(CODE_CAPACITY_UNAVAILABLE, "step7_rate")
-    await _call_service(
+    # Sending without a terminal accounting service creates untracked liability.
+    if foundation.settlement is None:
+        raise DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_settlement")
+    lease = await _call_service(
         rate,
         "acquire",
         request,
@@ -358,42 +506,48 @@ async def admit(
         detail="step7_rate",
         fallback_code=CODE_CAPACITY_UNAVAILABLE,
     )
-    # 8. Durable atomic reservation/receipt.
-    if admission_service is None:
-        raise DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_admission")
-    reservation = await _call_service(
-        admission_service,
-        "reserve",
-        request,
-        ctx,
-        detail="step8_admission",
-        fallback_code=CODE_ADMISSION_UNAVAILABLE,
-    )
-    # 8b. Freshness: the credential version must not have changed after admission.
-    reserved_version = _reserved_credential_version(reservation)
-    if reserved_version is not None and reserved_version != ctx.credential_version:
-        raise DispatchDenial(CODE_CREDENTIAL_VERSION_STALE, "step8_version")
-    return DispatchAdmission(
-        dispatch_id=dispatch_id,
-        context=ctx,
-        request=request,
-        reserved=True,
-        reservation={
-            "value": reservation,
-            "credential_version": ctx.credential_version,
-            "payer": ctx.payer,
-            "funding_class": ctx.funding_class,
-        },
-    )
-
-
-def _reserved_credential_version(reservation: Any) -> Any:
-    """The credential version a reservation was committed under, when it reports one."""
-    if isinstance(reservation, DispatchAdmission):
-        return reservation.context.credential_version
-    if isinstance(reservation, Mapping):
-        return reservation.get("credential_version")
-    return getattr(reservation, "credential_version", None)
+    if not isinstance(lease, DispatchLease) or not (type(lease.lease_id) is str and lease.lease_id):
+        raise DispatchDenial(CODE_CAPACITY_UNAVAILABLE, "step7_rate")
+    admitted = DispatchAdmission(dispatch_id=dispatch_id, context=ctx, request=request, rate_lease=lease)
+    try:
+        # 8. The service must commit before returning its typed receipt.
+        reservation = await _call_service(
+            admission_service,
+            "reserve",
+            request,
+            ctx,
+            detail="step8_admission",
+            fallback_code=CODE_ADMISSION_UNAVAILABLE,
+        )
+        if not isinstance(reservation, DispatchReservation) or reservation.dispatch_id != dispatch_id:
+            raise DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_admission")
+        if not isinstance(reservation.receipt, Mapping) or not reservation.receipt:
+            raise DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_admission")
+        admitted = replace(admitted, reserved=True, reservation=reservation.receipt)
+        if (
+            not _positive_int(reservation.credential_version)
+            or reservation.credential_version != ctx.credential_version
+        ):
+            raise DispatchDenial(CODE_CREDENTIAL_VERSION_STALE, "step8_version")
+        fresh = await _call_service(
+            authority,
+            "revalidate",
+            admitted,
+            detail="step8_freshness",
+            fallback_code=CODE_WORKSPACE_RIGHTS_MISSING,
+        )
+        if not isinstance(fresh, DispatchContext):
+            raise DispatchDenial(CODE_WORKSPACE_RIGHTS_MISSING, "step8_freshness")
+        if fresh.credential_version != ctx.credential_version:
+            raise DispatchDenial(CODE_CREDENTIAL_VERSION_STALE, "step8_version")
+        if fresh != ctx:
+            raise DispatchDenial(CODE_WORKSPACE_RIGHTS_MISSING, "step8_freshness")
+        return admitted
+    except BaseException:
+        # A committed receipt that never sent HTTP must be released, including
+        # cancellation and a fresh membership/consent/plan/key denial.
+        await settle(admitted, outcome="not_dispatched", foundation=foundation)
+        raise
 
 
 async def settle(
@@ -411,14 +565,29 @@ async def settle(
     preserved.
     """
     service = foundation.settlement if isinstance(foundation, DispatchFoundation) else None
-    if service is None or not isinstance(admission, DispatchAdmission) or not admission.reserved:
+    if not isinstance(admission, DispatchAdmission):
         return
+    safe_outcome = (
+        outcome
+        if type(outcome) is str
+        and outcome in {"succeeded", "failed_output", "failed_transport", "unknown", "not_dispatched"}
+        else "unknown"
+    )
     try:
-        await service.settle(admission, outcome=outcome, evidence=evidence)
+        if service is not None and admission.reserved:
+            await service.settle(admission, outcome=safe_outcome, evidence=evidence)
     except asyncio.CancelledError:
         raise
     except Exception:
-        logger.warning("llm_dispatch_settlement_failed outcome=%s", outcome)
+        logger.warning("llm_dispatch_settlement_failed outcome=%s", safe_outcome)
+    finally:
+        if admission.rate_lease is not None and foundation is not None and foundation.rate is not None:
+            try:
+                await foundation.rate.release(admission)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning("llm_dispatch_rate_release_failed")
 
 
 # ── Funding class and fallback compatibility (§3, §5) ─────────
@@ -459,13 +628,6 @@ def require_same_funding_class(
     earlier as `payer_unresolved` (step 6). `next_payer` is the binding the
     next try would use; without it the next try keeps the attempt's payer.
     """
-    if (
-        previous_model is not None
-        and following_model is not None
-        and _row_identifiers(previous_model) == _row_identifiers(following_model)
-    ):
-        # The same row retried is the same class and the same payer by definition.
-        return
     previous = resolve_funding_class(previous_model, catalog_owner_id=catalog_owner_id)
     following = resolve_funding_class(following_model, catalog_owner_id=catalog_owner_id)
     if previous != following:
@@ -486,6 +648,18 @@ def require_same_funding_class(
 
 #: Private key that carries the seam identity of a chat try to the journal.
 CHAT_DISPATCH_ID_KEY = "_dispatch_id"
+
+
+class DispatchResponse(dict):
+    """Legacy response keys unchanged; attempt identity is private metadata.
+
+    JSON serializers see only the original dict. The journal consumes the
+    attribute, including when an explicit personal receipt identity is passed.
+    """
+
+    def __init__(self, response: Mapping[str, Any], dispatch_id: Optional[str]):
+        super().__init__(response)
+        self.dispatch_id = dispatch_id
 
 
 def seam_enabled() -> bool:
@@ -513,7 +687,9 @@ def _compat_route_capabilities(
 ) -> frozenset:
     """Capabilities the route needs: text always, image when media must be read."""
     if requires_capabilities is not None:
-        return frozenset(str(cap) for cap in requires_capabilities)
+        if not isinstance(requires_capabilities, (set, frozenset, list, tuple)):
+            raise DispatchDenial(CODE_PARAMS_INVALID, "step7_request")
+        return frozenset(requires_capabilities)
     capabilities = {"text"}
     if has_media:
         capabilities.add("image")
@@ -565,7 +741,7 @@ def _compat_request(
         ),
         uses_tools=bool(uses_tools),
         has_media=bool(has_media),
-        requested_output_tokens=requested_output_tokens if type(requested_output_tokens) is int else None,
+        requested_output_tokens=requested_output_tokens,
         execution=dict(execution) if isinstance(execution, Mapping) else None,
         dispatch_id=dispatch_id,
     )
@@ -588,7 +764,7 @@ def _compat_context(client: Any, request: DispatchRequest) -> DispatchContext:
     # scope is the payer binding the legacy path already used.
     payer = f"tenant:{tenant_id}" if tenant_id is not None else None
     return DispatchContext(
-        actor_user_id=actor if actor is not None else credential_owner,
+        actor_user_id=actor,
         tenant_id=tenant_id,
         plan_holder_user_id=actor,
         catalog_id=None,
@@ -600,12 +776,16 @@ def _compat_context(client: Any, request: DispatchRequest) -> DispatchContext:
 
 def _compat_missing_foundation(foundation: Optional[DispatchFoundation]) -> Optional[DispatchDenial]:
     """First absent pre-HTTP foundation in the deterministic grants->rate->admission order."""
+    if not isinstance(foundation, DispatchFoundation) or foundation.authority is None:
+        return DispatchDenial(CODE_WORKSPACE_RIGHTS_MISSING, "step1_authority")
     if foundation.grants is None:
         return DispatchDenial(CODE_PLAN_GRANT_MISSING, "step4_grants")
     if foundation.rate is None:
         return DispatchDenial(CODE_CAPACITY_UNAVAILABLE, "step7_rate")
     if foundation.admission is None:
         return DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_admission")
+    if foundation.settlement is None:
+        return DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_settlement")
     return None
 
 
@@ -647,9 +827,7 @@ async def dispatch_attempt(
 
     foundation = _compat_foundation()
     context = _compat_context(client, request)
-    # Settlement is not a pre-HTTP blocker: the terminal evidence runs after
-    # the request and settle() already tolerates an absent service. Only the
-    # services that decide whether the request may be sent deny here.
+    # Strict mode must have all foundations before any reservation or HTTP.
     missing = _compat_missing_foundation(foundation)
     if missing is not None:
         logger.warning("llm_dispatch_denied code=%s detail=%s", missing.code, missing.detail)

@@ -350,6 +350,11 @@ async def probe_real_capped(model, prompt: str = "", *, purpose: str = "admin_pr
             personal_billing_purpose=purpose,
         )
     except Exception as exc:
+        # Only exceptions from an actual provider try carry this identity.
+        # Admission denials have none and must not fabricate a paid attempt.
+        attempt_id = getattr(exc, "dispatch_id", None)
+        if attempt_id is not None:
+            await journal_chat_attempt(client, purpose, None, dispatch_id=attempt_id)
         stage = observation.get("stage")
         if stage == "admission":
             # Match only fixed repository-owned messages. Never display arbitrary

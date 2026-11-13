@@ -8,6 +8,8 @@ live database, so this file must also pass standalone:
 """
 
 import asyncio
+import json
+from dataclasses import replace
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -136,7 +138,7 @@ class Grants:
             raise self.denial
         if self.error is not None:
             raise self.error
-        return NS(granted=True)
+        return seam.DispatchGrant(catalog_id="holder-catalog")
 
 
 class Rate:
@@ -152,7 +154,7 @@ class Rate:
             raise self.denial
         if self.error is not None:
             raise self.error
-        return NS(slot="capacity")
+        return seam.DispatchLease(lease_id="capacity")
 
     async def release(self, admission):
         self.released.append(admission)
@@ -163,9 +165,34 @@ class Reservation:
         self.calls = 0
         self.credential_version = credential_version
 
+    async def check_allowance(self, request, context):
+        return True
+
     async def reserve(self, request, context):
         self.calls += 1
-        return NS(credential_version=self.credential_version)
+        return seam.DispatchReservation(
+            dispatch_id=request.dispatch_id,
+            credential_version=(
+                self.credential_version if self.credential_version is not None else context.credential_version
+            ),
+            receipt={"receipt_id": request.dispatch_id},
+        )
+
+
+class Authority:
+    """Explicit trusted double; production authority is not wired by this task."""
+
+    async def resolve_identity(self, request, hints):
+        return hints
+
+    async def resolve_credential(self, request, context):
+        return context
+
+    async def resolve_payer(self, request, context):
+        return context
+
+    async def revalidate(self, admission):
+        return admission.context
 
 
 class Settlement:
@@ -179,12 +206,13 @@ class Settlement:
             raise self.error
 
 
-def full_foundation(grants=None, rate=None, admission=None, settlement=None):
+def full_foundation(grants=None, rate=None, admission=None, settlement=None, authority=None):
     return seam.DispatchFoundation(
         grants=grants if grants is not None else Grants(),
         rate=rate if rate is not None else Rate(),
         admission=admission if admission is not None else Reservation(),
         settlement=settlement if settlement is not None else Settlement(),
+        authority=authority if authority is not None else Authority(),
     )
 
 
@@ -426,14 +454,14 @@ async def test_adapter_compatibility_mode_admits_without_reservation(scope):
 
 
 @pytest.mark.asyncio
-async def test_adapter_without_catalog_owner_falls_back_to_row_owner(monkeypatch):
+async def test_adapter_without_catalog_owner_never_invents_actor_from_row_owner(monkeypatch):
     def denied():
         raise PermissionError("no actor")
 
     monkeypatch.setattr("app.core.personal_catalog_context.current_catalog_owner_id", denied)
     admission = await seam.dispatch_attempt(ClientLike(make_model(owner=11)), purpose="chat", stage="chat")
     assert admission.reserved is False
-    assert admission.context.actor_user_id == 11
+    assert admission.context.actor_user_id is None
 
 
 @pytest.mark.asyncio
@@ -460,13 +488,15 @@ async def test_compatibility_mode_never_denies_a_platform_attempt(monkeypatch):
 async def test_adapter_strict_mode_denies_for_each_missing_foundation(scope, monkeypatch):
     model = make_model()
     expected = [
-        (seam.DispatchFoundation(), seam.CODE_PLAN_GRANT_MISSING),
-        (seam.DispatchFoundation(grants=Grants()), seam.CODE_CAPACITY_UNAVAILABLE),
-        (seam.DispatchFoundation(grants=Grants(), rate=Rate()), seam.CODE_ADMISSION_UNAVAILABLE),
+        (seam.DispatchFoundation(), seam.CODE_WORKSPACE_RIGHTS_MISSING),
+        (seam.DispatchFoundation(authority=Authority()), seam.CODE_PLAN_GRANT_MISSING),
+        (seam.DispatchFoundation(authority=Authority(), grants=Grants()), seam.CODE_CAPACITY_UNAVAILABLE),
+        (seam.DispatchFoundation(authority=Authority(), grants=Grants(), rate=Rate()), seam.CODE_ADMISSION_UNAVAILABLE),
         (
-            seam.DispatchFoundation(grants=Grants(), rate=Rate(), settlement=Settlement()),
+            seam.DispatchFoundation(authority=Authority(), grants=Grants(), rate=Rate(), settlement=Settlement()),
             seam.CODE_ADMISSION_UNAVAILABLE,
         ),
+        (replace(full_foundation(), settlement=None), seam.CODE_ADMISSION_UNAVAILABLE),
     ]
 
     def wired_context(client, request):
@@ -507,7 +537,8 @@ async def test_each_provider_method_enters_the_seam_exactly_once(
     chat = await client.chat([{"role": "user", "content": PRIVATE_PROMPT}])
     assert len(calls) == 1 and len(http.requests) == 1
     assert calls[0]["kwargs"]["stage"] == "chat"
-    assert seam.CHAT_DISPATCH_ID_KEY in chat
+    assert seam.CHAT_DISPATCH_ID_KEY not in chat
+    assert seam.is_valid_dispatch_id(chat.dispatch_id)
 
     await client.analyze(PRIVATE_PROMPT)
     assert len(calls) == 2 and len(http.requests) == 2
@@ -698,7 +729,7 @@ async def test_client_chat_carries_the_seam_identity_into_the_journal(monkeypatc
     client = client_for(make_model(), monkeypatch)
 
     first = await client.chat([{"role": "user", "content": "x"}])
-    assert seam.CHAT_DISPATCH_ID_KEY in first
+    assert seam.CHAT_DISPATCH_ID_KEY not in first and seam.is_valid_dispatch_id(first.dispatch_id)
     await llm_client.journal_chat_attempt(client, "chat", first)
     second = await client.chat([{"role": "user", "content": "x"}])
     await llm_client.journal_chat_attempt(client, "chat", second)
@@ -916,9 +947,11 @@ async def test_compatibility_mode_keeps_public_keys_and_pops_the_seam_identity(m
     client = client_for(make_model(), monkeypatch)
     response = await client.chat([{"role": "user", "content": "x"}])
     assert {"content", "usage", "raw"} <= set(response)
-    assert seam.CHAT_DISPATCH_ID_KEY in response and "_personal_dispatch_id" in response
+    assert seam.CHAT_DISPATCH_ID_KEY not in response and "_personal_dispatch_id" in response
+    assert "dispatch_id" not in json.loads(json.dumps(response))
     await llm_client.journal_chat_attempt(client, "chat", response)
     assert seam.CHAT_DISPATCH_ID_KEY not in response
+    assert not hasattr(response, "dispatch_id")
     assert seam.is_valid_dispatch_id(captured[0]["dispatch_id"])
 
 
@@ -928,3 +961,228 @@ def test_seam_module_is_storage_free_at_import():
     head = inspect.getsource(seam).split("# ── Funding classes", 1)[0]
     assert "import app." not in head and "from app." not in head
     assert "app.models" not in head and "app.services.tenancy" not in head and "app.services.billing" not in head
+
+
+@pytest.mark.asyncio
+async def test_strict_resolution_order_identity_reaches_receipt_and_holder_is_shared_across_spaces():
+    calls = []
+    plan = NS(plan_holder_user_id=OWNER, plan_policy_version=3)
+
+    class OrderedAuthority(Authority):
+        async def resolve_identity(self, request, hints):
+            calls.append("identity_model")
+            # A submitted actor/holder/payer never widens the host policy.
+            return strict_context(
+                actor_user_id=8, tenant_id=hints.tenant_id, delegation_consent_version=2, workspace_plan=plan
+            )
+
+        async def resolve_credential(self, request, context):
+            calls.append("credential")
+            return context
+
+        async def resolve_payer(self, request, context):
+            calls.append("payer")
+            return replace(context, payer=f"holder:{context.plan_holder_user_id}")
+
+        async def revalidate(self, admission):
+            calls.append("freshness")
+            return admission.context
+
+    class OrderedGrants(Grants):
+        async def resolve(self, request, context):
+            calls.append("grants")
+            assert context.plan_holder_user_id == OWNER and context.actor_user_id == 8
+            return await super().resolve(request, context)
+
+    class OrderedRate(Rate):
+        async def acquire(self, request, context):
+            calls.append("rate")
+            assert seam.is_valid_dispatch_id(request.dispatch_id)
+            return await super().acquire(request, context)
+
+    class OrderedReservation(Reservation):
+        async def check_allowance(self, request, context):
+            calls.append("allowance")
+            return True
+
+        async def reserve(self, request, context):
+            calls.append("reserve")
+            return await super().reserve(request, context)
+
+    foundation = full_foundation(
+        authority=OrderedAuthority(), grants=OrderedGrants(), rate=OrderedRate(), admission=OrderedReservation()
+    )
+    admitted = []
+    for tenant in (3, 4):
+        calls.clear()
+        result = await seam.admit(
+            request_for(execution={"actor_user_id": 999, "payer": "attacker"}),
+            foundation=foundation,
+            context=strict_context(tenant_id=tenant),
+        )
+        assert calls == ["identity_model", "grants", "credential", "payer", "allowance", "rate", "reserve", "freshness"]
+        assert result.context.workspace_plan is plan
+        assert result.dispatch_id == result.request.dispatch_id == result.reservation["receipt_id"]
+        admitted.append(result)
+        await seam.settle(result, outcome="succeeded", foundation=foundation)
+    assert admitted[0].context.payer == admitted[1].context.payer == f"holder:{OWNER}"
+    assert admitted[0].dispatch_id != admitted[1].dispatch_id
+
+
+@pytest.mark.asyncio
+async def test_platform_credential_is_allowlisted_reference_not_personal_owner():
+    context = strict_context(
+        funding_class=seam.FUNDING_CLASS_PLATFORM, credential_owner_user_id=None, credential_ref="deployment-model-key"
+    )
+    result = await seam.admit(request_for(model=make_model(owner=None)), context=context, foundation=full_foundation())
+    assert result.context.credential_owner_user_id is None
+    with pytest.raises(seam.DispatchDenial):
+        await seam.admit(request_for(), context=replace(context, credential_ref=None), foundation=full_foundation())
+
+
+@pytest.mark.asyncio
+async def test_invited_admin_needs_holder_consent_not_actor_owned_credential():
+    for changes in (
+        {"delegation_consent_version": None},
+        {"credential_owner_user_id": 8, "delegation_consent_version": 2},
+    ):
+        with pytest.raises(seam.DispatchDenial):
+            await seam.admit(
+                request_for(), context=strict_context(actor_user_id=8, **changes), foundation=full_foundation()
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("actor_user_id", None),
+        ("delegation_consent_version", None),
+        ("plan_policy_version", 4),
+        ("credential_version", 4),
+    ],
+)
+async def test_queued_revocation_releases_receipt_and_rate_before_http(field, value):
+    class Revoked(Authority):
+        async def revalidate(self, admission):
+            return replace(admission.context, **{field: value})
+
+    rate, settlement = Rate(), Settlement()
+    foundation = full_foundation(authority=Revoked(), rate=rate, settlement=settlement)
+    with pytest.raises(seam.DispatchDenial):
+        await seam.admit(
+            request_for(), context=strict_context(actor_user_id=8, delegation_consent_version=2), foundation=foundation
+        )
+    assert settlement.calls == ["not_dispatched"]
+    assert len(rate.released) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [None, False, NS(granted=False)])
+async def test_unproven_grant_never_reaches_rate_or_reservation(bad):
+    grants, rate, reservation = Grants(), Rate(), Reservation()
+    grants.resolve = AsyncMock(return_value=bad)
+    with pytest.raises(seam.DispatchDenial):
+        await seam.admit(
+            request_for(),
+            context=strict_context(),
+            foundation=full_foundation(grants=grants, rate=rate, admission=reservation),
+        )
+    assert rate.calls == reservation.calls == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [None, False, NS(slot="capacity")])
+async def test_unproven_capacity_never_reaches_reservation(bad):
+    rate, reservation = Rate(), Reservation()
+    rate.acquire = AsyncMock(return_value=bad)
+    with pytest.raises(seam.DispatchDenial):
+        await seam.admit(
+            request_for(), context=strict_context(), foundation=full_foundation(rate=rate, admission=reservation)
+        )
+    assert reservation.calls == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [None, False, NS(credential_version=3)])
+async def test_unproven_receipt_releases_capacity(bad):
+    rate, reservation = Rate(), Reservation()
+    reservation.reserve = AsyncMock(return_value=bad)
+    with pytest.raises(seam.DispatchDenial):
+        await seam.admit(
+            request_for(), context=strict_context(), foundation=full_foundation(rate=rate, admission=reservation)
+        )
+    assert len(rate.released) == 1
+
+
+@pytest.mark.asyncio
+async def test_reservation_cancellation_releases_rate():
+    rate, reservation = Rate(), Reservation()
+    reservation.reserve = AsyncMock(side_effect=asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        await seam.admit(
+            request_for(), context=strict_context(), foundation=full_foundation(rate=rate, admission=reservation)
+        )
+    assert len(rate.released) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [True, 0, -1, "32", 1.5])
+async def test_invalid_token_limit_is_denied_before_capacity(bad):
+    rate = Rate()
+    with pytest.raises(seam.DispatchDenial) as denied:
+        await seam.admit(
+            request_for(requested_output_tokens=bad), context=strict_context(), foundation=full_foundation(rate=rate)
+        )
+    assert denied.value.code == seam.CODE_PARAMS_INVALID and rate.calls == 0
+
+
+def test_denial_labels_and_identity_reject_secret_shaped_values():
+    assert seam.DispatchDenial(seam.CODE_PARAMS_INVALID, "sk_secret_token").detail is None
+    assert seam.DispatchDenial(seam.CODE_PARAMS_INVALID, ["secret"]).detail is None
+    assert not seam.is_valid_dispatch_id("a" * 32 + "\n")
+    with pytest.raises(seam.DispatchDenial):
+        seam.require_same_funding_class(
+            make_model(), make_model(), catalog_owner_id=OWNER, payer="holder:7", next_payer="holder:8"
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_format", ["openai", "anthropic", "custom"])
+async def test_actual_failed_chat_keeps_seam_identity_in_journal(monkeypatch, scope, quiet_client, api_format):
+    client = client_for(make_model(api_format=api_format), monkeypatch)
+    captured, admissions = capture_journal(monkeypatch), []
+    real = seam.dispatch_attempt
+
+    async def record(client, **kwargs):
+        result = await real(client, **kwargs)
+        admissions.append(result)
+        return result
+
+    monkeypatch.setattr(seam, "dispatch_attempt", record)
+    http = HttpSpy()
+    fake = http.factory()
+    fake.post = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
+    monkeypatch.setattr(llm_client.httpx, "AsyncClient", lambda **kwargs: fake)
+    with pytest.raises(httpx.TimeoutException) as failed:
+        await client.chat([{"role": "user", "content": "x"}])
+    assert failed.value.dispatch_id == admissions[0].dispatch_id
+    await llm_client.journal_chat_attempt(client, "chat", None, dispatch_id=failed.value.dispatch_id)
+    assert [row["dispatch_id"] for row in captured] == [admissions[0].dispatch_id]
+
+
+@pytest.mark.asyncio
+async def test_empty_chat_attempt_is_journaled_before_fallback(monkeypatch, scope):
+    models = [make_model(identity=1), make_model(identity=2)]
+
+    def create(model):
+        async def chat(messages, **kwargs):
+            return seam.DispatchResponse(
+                {"content": "" if model.id == 1 else "ok", "tool_calls": []}, str(model.id) * 32
+            )
+
+        return named(model, chat)
+
+    result, rows = await run_chat(monkeypatch, models, create=create)
+    assert result["content"] == "ok"
+    assert [row["dispatch_id"] for row in rows] == ["1" * 32, "2" * 32]

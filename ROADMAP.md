@@ -33,6 +33,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
+- [P21-T09](docs/tasks/p21-t09.md) Align LLM planning with user-level tariffs and invitation boundaries — **IN_PROGRESS** · opencode-p21-t09 · `ses_e2fa3690affea2bSCgS5dlSVmg` · `P0` · `C3`
+
 
 
 

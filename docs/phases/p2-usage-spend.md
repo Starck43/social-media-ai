@@ -19,6 +19,10 @@
 3. [P2-T09](../tasks/p2-t09.md) — verify real LLM/provider usage admission and
    settlement after its production activation/cutover prerequisites. This lane
    is independent of subscription checkout in T16.
+4. [P2-T17](../tasks/p2-t17.md) — user-level configurable tariff, module grants,
+   owned-workspace count and shared token allowance contract. Consumes T15/T16;
+   P21 owns model grants and token admission/settlement wiring. No checkout or
+   production activation is implied; this does not reopen deferred T08.
 
 **Deferred:** [P2-T08](../tasks/p2-t08.md) — corporate/shared billing accounts;
 keep the owner's prior deferral. Service-plan entitlements and checkout in T15/T16

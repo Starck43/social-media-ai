@@ -2,7 +2,7 @@
 
 Configuration foundation only. YooKassa is selected; checkout, provider requests,
 payment persistence and subscription activation were not included in the accepted
-increment. The owner closed P2-T16 at this scope on 2026-10-27; broader lifecycle
+increment. The owner closed P2-T16 at this scope on 2026-10-27; broader payment lifecycle
 work is not an active task and must be registered before implementation. See the
 [P2-T16 acceptance record](../audit/p2/p2-t16.md).
 
@@ -26,6 +26,22 @@ integrated head; those fields/services are consumed, not copied from a branch.
 P2-T16 was accepted separately as a configuration-only increment.
 
 ## Remaining lifecycle decisions before checkout implementation
+
+### User-level tariff prerequisite (planned, not shipped)
+
+The 2026-11-13 owner direction is recorded in [P2-T17](../tasks/p2-t17.md): one
+user tariff across owned workspaces, configurable module grants and finite or
+explicitly unlimited token/owned-space limits. It registers entitlement/holder
+work, not checkout or production payment activation. [P21-T13](../tasks/p21-t13.md)
+assigns platform models to that tariff; P21-T15/T16 reserve/settle shared token usage.
+
+Future purchases bind the authenticated account owner, not an invited workspace
+actor. Host tariff/model management cannot be delegated through workspace roles.
+This supersedes the earlier workspace-purchase subject in planning, not the
+accepted provider-configuration evidence. Never silently transfer existing LLM payers
+or infer recurring-payment consent from this new entitlement subject.
+
+### Still-unassigned checkout scope
 
 1. Confirm whether the first checkout is one-off period purchase, automatic
    renewal or both; define cancellation and downgrade effective dates explicitly.
@@ -98,8 +114,8 @@ DDL or silently grant plan access without expiry.
 
 ## Required security and lifecycle contract
 
-- Only an authorized actor in the owning workspace may initiate or inspect a
-  purchase. Payment identity must not be confused with an LLM payer account.
+- Future purchases are account-owner scoped under P2-T17, not authorized by a
+  workspace role. Payment identity must not be confused with an LLM payer account.
 - Persist an immutable expected offer/amount/currency/environment and opaque
   purchase identity before a provider interaction. Do not trust a client-supplied
   plan, amount, browser return URL, workspace ID or payment success flag.

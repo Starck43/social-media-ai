@@ -33,20 +33,23 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
-- [P21-T09](docs/tasks/p21-t09.md) Align LLM planning with user-level tariffs and invitation boundaries — **IN_PROGRESS** · opencode-p21-t09 · `ses_e2fa3690affea2bSCgS5dlSVmg` · `P0` · `C3`
 
 
 
 
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
-- [P11-T34](docs/tasks/p11-t34.md) Reported `0145` downgrade data loss — description does not reproduce; reproduce-or-close — **DEFERRED** (owner: postponed; resume by re-running the reported command) · unassigned · — · `P0` · `C2`
+
+- [P21-T11](docs/tasks/p21-t11.md) Credential boundary and rotation hardening — **IN_PROGRESS** · opencode-p21-t11 · dialogue `ses_e291ed24bffegdVrZt03XvBd82` · independent custody prerequisite; owner gate for crypto changes · `P0` · `C4`
+- [P2-T17](docs/tasks/p2-t17.md) User-level tariffs, module entitlements and shared token allowances — **IN_PROGRESS** · opencode-p2-t17 · owner direction `ses_e2fa3690affea2bSCgS5dlSVmg`; stage 1 holder/policy contract `ed366fda`; increment A only, no `app/services/ai/**`; local DB runner `opencode-local` · dialogue `ses_e293cbaf5ffePna9nztLGAQZWF` · `P1` · `C5`
+- [P21-T12](docs/tasks/p21-t12.md) Single LLM dispatch seam and resolution contract — **IN_PROGRESS** · opencode-p21-t12 · dialogue `qoder-ide-p21-t12-20261114` · depends on P21-T10/P21-T11 and P2-T17 holder contract · `P1` · `C3`
+- [P21-T13](docs/tasks/p21-t13.md) Unified model catalog, plan grants and generation policy — **TODO** · unassigned · depends on P21-T12/P2-T17; dormant catalog, no activation · `P1` · `C4`
+- [P21-T14](docs/tasks/p21-t14.md) Provider rate limits and bounded backpressure — **TODO** · unassigned · depends on P21-T12/P21-T13 · `P1` · `C4`
+- [P21-T15](docs/tasks/p21-t15.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T14/P2-T17 allowance policy; no cutover · `P1` · `C4`
+- [P21-T16](docs/tasks/p21-t16.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T15; integrated mocked phase checks; feeds P2-T09 · `P1` · `C4`
 
 ### Priority P1
 
-- [P21-T02](docs/tasks/p21-t02.md) Single LLM dispatch seam and resolution contract — **TODO** · unassigned · [planning prerequisite accepted](docs/audit/p21/p21-t01.md) · `P1` · `C3`
-- [P21-T03](docs/tasks/p21-t03.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T02; owner gate for money/cutover · `P1` · `C4`
-- [P21-T04](docs/tasks/p21-t04.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T02/P21-T03; feeds P2-T09 · `P1` · `C4`
 
 - [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **BLOCKED** · codex-p8-t29 · — · `P1` · `C4`
 - [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **DEFERRED** (owner: park after local mock/DB increment until runtime journey and bounded live VK evidence, 2026-10-29) · notion-ai-p8-t41 · [Closeout](https://github.com/Starck43/social-media-ai/pull/279#issuecomment-6492303448) · resume `dev` at `295268d9` · `P1` · `C4`
@@ -56,10 +59,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P21-T05](docs/tasks/p21-t05.md) Provider rate limits and bounded backpressure — **TODO** · unassigned · depends on P21-T02 · `P2` · `C4`
-- [P21-T06](docs/tasks/p21-t06.md) Credential boundary and rotation hardening — **TODO** · unassigned · owner gate for accepted security/crypto contract · `P2` · `C4`
-- [P21-T07](docs/tasks/p21-t07.md) Prompt and tool safety coverage audit — **TODO** · unassigned · independent; feeds P21-T02 · `P2` · `C3`
-- [P21-T08](docs/tasks/p21-t08.md) Unified model catalog, plan grants and generation policy — **TODO** · unassigned · depends on P21-T02; activation requires P21-T03/T04/T05/T06 · `P2` · `C4`
 
 
 
@@ -80,7 +79,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULE
 
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
-- [P17-T04](docs/tasks/p17-t04.md) 1C write commands with preview, approval and audit — **IN_PROGRESS** · ai-studio-argon · [audit findings](https://github.com/Starck43/social-media-ai/pull/482#issuecomment-6833520725) · [PR #482](https://github.com/Starck43/social-media-ai/pull/482) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
+- [P17-T04](docs/tasks/p17-t04.md) 1C write commands with preview, approval and audit — **IN_PROGRESS** · opencode-p17-t04-finish · [owner-directed corrections](https://github.com/Starck43/social-media-ai/pull/482#issuecomment-6866428036) · [diagnostic](docs/audit/p17/p17-t04-eede8df7.md) · [PR #482](https://github.com/Starck43/social-media-ai/pull/482) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C5`
 - [P17-T05](docs/tasks/p17-t05.md) 1C role-based access policy and audit views — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`

@@ -42,17 +42,17 @@ def render(data):
     return {
         "api-routes.md": "# OpenAPI route index\n\n"
         + prefix
-        + "[Policy and examples](../API.md).\n\n"
+        + "[Policy and examples](../platform/API.md).\n\n"
         + table(["Method", "Path", "Operation ID"], api)
         + "\n",
         "cli-commands.md": "# Typer command index\n\n"
         + prefix
-        + "[Policy and examples](../CLI.md).\n\n"
+        + "[Policy and examples](../platform/CLI.md).\n\n"
         + table(["Command", "Help"], ((item["path"], item["help"]) for item in commands))
         + "\n",
         "cli-options.md": "# Typer parameter index\n\n"
         + prefix
-        + "[Policy and examples](../CLI.md).\n\n"
+        + "[Policy and examples](../platform/CLI.md).\n\n"
         + table(
             ["Command", "Parameter", "Kind", "Type", "Required", "Default"],
             (

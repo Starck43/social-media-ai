@@ -48,6 +48,12 @@ T15 defines and delivers the state contract T16 consumes. No circular dependency
 is hidden behind a requirement to turn on HTTP before its safety foundations
 exist.
 
+T12 publishes the normative dispatch contract — resolution order, funding
+classes, route matrix, redacted error taxonomy and the extension interfaces for
+grants, rate acquisition, atomic admission and settlement:
+[LLM_DISPATCH_CONTRACT](../platform/LLM_DISPATCH_CONTRACT.md). T13–T16 extend
+that contract by reference; they do not restate it.
+
 ## Data shape
 
 | Relation | Rationale |

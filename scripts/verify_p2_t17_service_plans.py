@@ -1048,6 +1048,7 @@ def _restrict() -> dict:
 
 def _retention() -> dict:
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
 
     from app.core.database import async_session_maker
     from app.core.permissions import permission_scope
@@ -1065,7 +1066,7 @@ def _retention() -> dict:
 
         before = await mirror()
         async with async_session_maker() as session:
-            actor = await session.get(User, operator)
+            actor = await session.scalar(select(User).options(selectinload(User.role)).where(User.id == operator))
         token = set_tenant(workspace, bypass=True)
         try:
             with permission_scope(actor):

@@ -40,7 +40,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
 
-- [P21-T12](docs/tasks/p21-t12.md) Single LLM dispatch seam and resolution contract — **IN_PROGRESS** · opencode-p21-t12 · dialogue `qoder-ide-p21-t12-20261114` · depends on P21-T10/P21-T11 and P2-T17 holder contract · `P1` · `C3`
+- [P21-T12](docs/tasks/p21-t12.md) Single LLM dispatch seam and resolution contract — **READY** · opencode-p21-t12 · [PR #486](https://github.com/Starck43/social-media-ai/pull/486) · [handoff](https://github.com/Starck43/social-media-ai/pull/486#issuecomment-6867394954) · [questions](https://github.com/Starck43/social-media-ai/pull/486#issuecomment-6867396950) · [evidence](https://github.com/Starck43/social-media-ai/pull/486#issuecomment-6867399081) · dialogue `qoder-ide-p21-t12-20261114` · depends on P21-T10/P21-T11 and P2-T17 holder contract · `P1` · `C3`
 - [P21-T13](docs/tasks/p21-t13.md) Unified model catalog, plan grants and generation policy — **TODO** · unassigned · depends on P21-T12/P2-T17; dormant catalog, no activation · `P1` · `C4`
 - [P21-T14](docs/tasks/p21-t14.md) Provider rate limits and bounded backpressure — **TODO** · unassigned · depends on P21-T12/P21-T13 · `P1` · `C4`
 - [P21-T15](docs/tasks/p21-t15.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T14/P2-T17 allowance policy; no cutover · `P1` · `C4`

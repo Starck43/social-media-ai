@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Index, Integer, String, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, Column, DateTime, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped
 
 from app.core.config import settings
@@ -16,6 +16,12 @@ class EntitlementUsage(Base, TenantScopedMixin):
     __table_args__ = (
         UniqueConstraint("tenant_id", "job_id", "capability", name="uq_entitlement_usage_job_capability"),
         Index("ix_entitlement_usage_daily", "tenant_id", "capability", "admitted_at"),
+        CheckConstraint(
+            "(plan_holder_user_id IS NULL AND plan_policy_version IS NULL) OR "
+            "(plan_holder_user_id IS NOT NULL AND plan_holder_user_id > 0 "
+            "AND plan_policy_version IS NOT NULL AND plan_policy_version > 0)",
+            name="ck_entitlement_usage_holder_policy",
+        ),
         {"schema": settings.DB_SCHEMA},
     )
 
@@ -28,4 +34,6 @@ class EntitlementUsage(Base, TenantScopedMixin):
     initiated_by_user_id: Mapped[int | None] = Column(Integer, nullable=True)
     plan: Mapped[str] = Column(String(20), nullable=False)
     catalog_version: Mapped[int] = Column(Integer, nullable=False)
+    plan_holder_user_id: Mapped[int | None] = Column(Integer, nullable=True)
+    plan_policy_version: Mapped[int | None] = Column(Integer, nullable=True)
     admitted_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

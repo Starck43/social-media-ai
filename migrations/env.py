@@ -105,6 +105,9 @@ def on_version_apply(
         "0148",
         # Reply evidence adds no generic resource or permission grants.
         "0149",
+        # Account tariffs are private policy/history, not generic CRUD resources.
+        "p2t17_service_plan_storage",
+        "p2t17_service_plan_finalize",
     }:
         return
     from scripts.migrations.register_model_types import register_model_types

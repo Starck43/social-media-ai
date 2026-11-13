@@ -19,7 +19,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import Mapped, relationship
 
 from ...core.config import settings
 from ...core.decorators import app_label
@@ -34,11 +34,9 @@ if TYPE_CHECKING:
 class Tenant(Base, TimestampMixin):
     """A client workspace (or your own "owner" workspace).
 
-    The billing tier is `plan`. It is not decoration: `PLAN_LIMITS` is the
-    single place that says what a tier may do, and `app/services/tenancy/limits.py`
-    is what enforces it at every write path. Changing a tier therefore changes
-    behaviour immediately — there is no second copy of the numbers to keep in
-    sync.
+    `plan` is a legacy tier/display mirror. With the additive account cutover
+    enabled, sponsorship and its versioned user policy govern effective rights;
+    disabled mode retains the existing `PLAN_LIMITS` contract.
 
     `daily_cost_limit` and `max_sources` remain columns because they are
     *per-workspace overrides* a superuser may tune below the tier's ceiling
@@ -141,6 +139,13 @@ class Tenant(Base, TimestampMixin):
         ForeignKey(f"{settings.DB_SCHEMA}.users.id", name="fk_tenants_plan_holder_user", ondelete="RESTRICT"),
         nullable=True,
     )
+    service_plan = relationship(
+        "UserServicePlan",
+        primaryjoin="foreign(Tenant.plan_holder_user_id) == UserServicePlan.user_id",
+        viewonly=True,
+        uselist=False,
+        lazy="selectin" if settings.USER_SERVICE_PLANS_ENABLED else "raise",
+    )
     timezone: Mapped[str] = Column(String(50), nullable=False, default="Europe/Moscow", server_default="Europe/Moscow")
     is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default="true")
     daily_cost_limit: Mapped[float] = Column(Float, nullable=False, default=5.0, server_default="5.0")
@@ -207,7 +212,30 @@ class Tenant(Base, TimestampMixin):
 
     def plan_limits(self) -> dict[str, Any]:
         """The tier's ceilings (never the per-workspace override)."""
+        if settings.USER_SERVICE_PLANS_ENABLED:
+            return dict(self._holder_policy().resource_limits)
         return self.PLAN_LIMITS[self.normalize_plan(self.plan)]
+
+    def _holder_policy(self):
+        """Already eagerly loaded data only: no async lazy load or legacy fallback."""
+        from datetime import timezone
+
+        from app.services.tenancy.service_plan_policy import ServicePlanPolicyError, policy_snapshot
+
+        plan = self.__dict__.get("service_plan")
+        if not self.is_active:
+            raise ServicePlanPolicyError("workspace_inactive")
+        if self.plan_holder_user_id is None or plan is None or plan.user_id != self.plan_holder_user_id:
+            raise ServicePlanPolicyError("holder_plan_missing")
+        if not plan.is_active or plan.holder_user is None or not plan.holder_user.is_active:
+            raise ServicePlanPolicyError("holder_plan_inactive")
+        expires = plan.plan_expires_at
+        if expires is not None and (expires.utcoffset() is None or expires <= datetime.now(timezone.utc)):
+            raise ServicePlanPolicyError("plan_expired")
+        policy = policy_snapshot(plan.policy)
+        if policy.plan_code != plan.plan_code or policy.policy_version != plan.policy_version:
+            raise ServicePlanPolicyError("policy_mismatch")
+        return policy
 
     def effective_limits(self) -> dict[str, Any]:
         """Ceilings after applying this workspace's own overrides.

@@ -4,8 +4,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
+from app.core.config import settings
+
 from .capabilities import CAPABILITIES
-from .plan_catalog import CATALOG_VERSION, PLAN_CATALOG, grants_capability
+from .plan_catalog import CATALOG_VERSION, PLAN_CATALOG, PlanGrant, grants_capability
 
 
 @dataclass(frozen=True)
@@ -36,14 +38,31 @@ def decide(
     used_today: Mapping[str, int] | None = None,
     reserved: Iterable[str] = (),
     now: datetime | None = None,
+    policy: Any = None,
 ) -> EntitlementDecision:
     """No I/O or consumption. All timestamps and daily counters use UTC."""
     now = now or datetime.now(timezone.utc)
     if now.utcoffset() is None:
         raise ValueError("Entitlement decisions require an aware timestamp")
     plan = getattr(workspace, "plan", "")
-    grant = PLAN_CATALOG.get(plan)
+    policy_error = None
     expires = getattr(workspace, "plan_expires_at", None)
+    if settings.USER_SERVICE_PLANS_ENABLED and policy is None:
+        from .service_plan_policy import ServicePlanPolicyError
+
+        try:
+            if workspace is None or not hasattr(workspace, "_holder_policy"):
+                raise ServicePlanPolicyError("missing_plan_holder")
+            policy = workspace._holder_policy()
+            expires = workspace.service_plan.plan_expires_at
+        except ServicePlanPolicyError as error:
+            policy_error = error.reason
+            plan = ""
+    if policy is not None:
+        plan = policy.plan_code
+        grant = PlanGrant(policy.module_grants, policy.daily_quotas)
+    else:
+        grant = PLAN_CATALOG.get(plan)
     expired = expires is not None and (expires.utcoffset() is None or expires <= now)
     keys = tuple(sorted(set(required)))
     reserved = set(reserved)
@@ -54,6 +73,8 @@ def decide(
             reason = "unknown_capability"
         elif workspace is None or not workspace.is_active:
             reason = "workspace_inactive"
+        elif policy_error:
+            reason = policy_error
         elif grant is None:
             reason = "unknown_plan"
         elif expired:
@@ -77,8 +98,19 @@ def catalog_summary(workspace: Any) -> dict[str, Any]:
     """Static grants plus expiry; quota availability requires a live decision."""
     grant = PLAN_CATALOG.get(workspace.plan)
     expires = getattr(workspace, "plan_expires_at", None)
+    plan = workspace.plan
+    if settings.USER_SERVICE_PLANS_ENABLED:
+        from .service_plan_policy import ServicePlanPolicyError
+
+        try:
+            policy = workspace._holder_policy()
+            plan = policy.plan_code
+            grant = PlanGrant(policy.module_grants, policy.daily_quotas)
+            expires = workspace.service_plan.plan_expires_at
+        except ServicePlanPolicyError:
+            plan, grant, expires = "", None, None
     return {
-        "plan": workspace.plan,
+        "plan": plan,
         "catalog_version": CATALOG_VERSION,
         "grants": list(grant.capabilities) if grant else [],
         "daily_quotas": dict(grant.daily_quotas) if grant else {},

@@ -17,7 +17,7 @@ from sqlalchemy import (
     String,
     func,
 )
-from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import Mapped, relationship
 
 from app.core.config import settings
 
@@ -83,6 +83,8 @@ class UserServicePlan(Base, TimestampMixin):
     policy_version: Mapped[int] = Column(Integer, nullable=False)
     is_active: Mapped[bool] = Column(Boolean, nullable=False, server_default="true")
     plan_expires_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
+    policy: Mapped[ServicePlanPolicy] = relationship(ServicePlanPolicy, lazy="selectin")
+    holder_user = relationship("User", lazy="selectin")
 
 
 class ServicePlanBackfillResolution(Base):
@@ -103,12 +105,8 @@ class ServicePlanBackfillResolution(Base):
         {"schema": settings.DB_SCHEMA},
     )
 
-    tenant_id: Mapped[int] = Column(
-        Integer, ForeignKey(f"{settings.DB_SCHEMA}.tenants.id", ondelete="RESTRICT"), primary_key=True
-    )
-    holder_user_id: Mapped[int] = Column(
-        Integer, ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="RESTRICT"), nullable=False
-    )
+    tenant_id: Mapped[int] = Column(Integer, primary_key=True)
+    holder_user_id: Mapped[int] = Column(Integer, nullable=False)
     owner_user_ids: Mapped[list[int]] = Column(JSON, nullable=False)
     legacy_plan: Mapped[str] = Column(String(20), nullable=False)
     legacy_plan_expires_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)

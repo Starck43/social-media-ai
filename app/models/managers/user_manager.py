@@ -198,7 +198,33 @@ class UserManager(BaseManager):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Нельзя удалить аккаунт собственника платформы",
             )
-        return await self.delete_by_id(user_id)
+        from sqlalchemy import select
+
+        from app.core.database import async_session_maker
+        from app.models import Tenant, UserServicePlan
+
+        async with async_session_maker() as session, session.begin():
+            # Same user lock as creation/assignment; recheck before the delete.
+            from sqlalchemy.orm import selectinload
+
+            locked = await session.scalar(
+                select(User)
+                .where(User.id == user_id)
+                .options(selectinload(User.role))
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if locked is None:
+                return False
+            if self._is_platform_owner(locked):
+                raise HTTPException(403, "Нельзя удалить аккаунт собственника платформы")
+            sponsored = await session.scalar(select(Tenant.id).where(Tenant.plan_holder_user_id == user_id).limit(1))
+            plan = await session.scalar(select(UserServicePlan.user_id).where(UserServicePlan.user_id == user_id))
+            if sponsored is not None or plan is not None:
+                raise HTTPException(
+                    409, "Account owns workspaces or tariff history; resolve its lifecycle before deletion"
+                )
+            return await self.delete_by_id(user_id, session=session)
 
     async def change_password(
         self,
@@ -237,7 +263,9 @@ class UserManager(BaseManager):
 
         by_another = current_user is not None and current_user.id != user_id
         if self._is_platform_owner(user) and (current_user is None or current_user.id != user_id):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нельзя изменить пароль собственника платформы")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Нельзя изменить пароль собственника платформы"
+            )
         if by_another and is_admin_reset is not False:
             from app.models import User
 

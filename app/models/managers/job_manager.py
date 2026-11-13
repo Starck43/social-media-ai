@@ -319,6 +319,17 @@ class JobManager(JobLifecycleMixin, BaseManager["Job"]):
             # A transaction-wide snapshot could miss the winner's inserted Job
             # after waiting for the gate. Refuse rather than claim deduplication.
             raise TenantContextError("Source admission requires READ COMMITTED isolation")
+        from app.core.config import settings
+
+        if settings.USER_SERVICE_PLANS_ENABLED:
+            from app.models import User
+
+            holder_id = await session.scalar(select(Tenant.plan_holder_user_id).where(Tenant.id == tenant_id))
+            if (
+                holder_id is None
+                or await session.scalar(select(User.id).where(User.id == holder_id).with_for_update()) is None
+            ):
+                raise TenantContextError("Source admission requires a verified plan holder")
         locked = (
             await session.execute(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update(key_share=True))
         ).scalar_one_or_none()

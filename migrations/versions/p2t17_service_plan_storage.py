@@ -81,12 +81,8 @@ def upgrade():
     op.create_index("ix_tenants_plan_holder_user_id", "tenants", ["plan_holder_user_id"], schema=schema)
     op.create_table(
         "service_plan_backfill_resolutions",
-        sa.Column(
-            "tenant_id", sa.Integer, sa.ForeignKey(f"{schema}.tenants.id", ondelete="RESTRICT"), primary_key=True
-        ),
-        sa.Column(
-            "holder_user_id", sa.Integer, sa.ForeignKey(f"{schema}.users.id", ondelete="RESTRICT"), nullable=False
-        ),
+        sa.Column("tenant_id", sa.Integer, primary_key=True),
+        sa.Column("holder_user_id", sa.Integer, nullable=False),
         sa.Column("owner_user_ids", sa.JSON, nullable=False),
         sa.Column("legacy_plan", sa.String(20), nullable=False),
         sa.Column("legacy_plan_expires_at", sa.DateTime(timezone=True), nullable=True),
@@ -110,6 +106,16 @@ def upgrade():
         schema=schema,
     )
     quoted = op.get_context().dialect.identifier_preparer.quote_schema(schema)
+    op.add_column("entitlement_usage", sa.Column("plan_holder_user_id", sa.Integer, nullable=True), schema=schema)
+    op.add_column("entitlement_usage", sa.Column("plan_policy_version", sa.Integer, nullable=True), schema=schema)
+    op.create_check_constraint(
+        "ck_entitlement_usage_holder_policy",
+        "entitlement_usage",
+        "(plan_holder_user_id IS NULL AND plan_policy_version IS NULL) OR "
+        "(plan_holder_user_id IS NOT NULL AND plan_holder_user_id > 0 "
+        "AND plan_policy_version IS NOT NULL AND plan_policy_version > 0)",
+        schema=schema,
+    )
     op.execute(sa.text(f"""
         CREATE FUNCTION {quoted}.service_plan_policy_immutable() RETURNS trigger
         LANGUAGE plpgsql AS $$ BEGIN
@@ -126,6 +132,13 @@ def upgrade():
         ON {quoted}.service_plan_policies FOR EACH STATEMENT
         EXECUTE FUNCTION {quoted}.service_plan_policy_immutable()
     """))
+    for event, level in (("UPDATE OR DELETE", "ROW"), ("TRUNCATE", "STATEMENT")):
+        trigger = "service_plan_backfill_immutable" if level == "ROW" else "service_plan_backfill_no_truncate"
+        op.execute(sa.text(f"""
+            CREATE TRIGGER {trigger} BEFORE {event}
+            ON {quoted}.service_plan_backfill_resolutions FOR EACH {level}
+            EXECUTE FUNCTION {quoted}.service_plan_policy_immutable()
+        """))
 
 
 def downgrade():
@@ -136,16 +149,25 @@ def downgrade():
     quoted = connection.dialect.identifier_preparer.quote_schema(schema)
     tables = ("service_plan_backfill_resolutions", "user_service_plans", "service_plan_policies")
     connection.execute(
-        sa.text(f"LOCK TABLE {', '.join(f'{quoted}.{name}' for name in (*tables, 'tenants'))} IN ACCESS EXCLUSIVE MODE")
+        sa.text(
+            f"LOCK TABLE {', '.join(f'{quoted}.{name}' for name in (*tables, 'tenants', 'entitlement_usage'))} IN ACCESS EXCLUSIVE MODE"
+        )
     )
     for table in tables:
         if connection.scalar(sa.text(f"SELECT EXISTS (SELECT 1 FROM {quoted}.{table})")):
             raise RuntimeError("Service-plan downgrade refused: retained target data must be preserved")
     if connection.scalar(
+        sa.text(f"SELECT EXISTS (SELECT 1 FROM {quoted}.entitlement_usage WHERE plan_holder_user_id IS NOT NULL)")
+    ):
+        raise RuntimeError("Service-plan downgrade refused: admission policy evidence must be preserved")
+    if connection.scalar(
         sa.text(f"SELECT EXISTS (SELECT 1 FROM {quoted}.tenants WHERE plan_holder_user_id IS NOT NULL)")
     ):
         raise RuntimeError("Service-plan downgrade refused: sponsorship must be preserved")
     op.drop_table("service_plan_backfill_resolutions", schema=schema)
+    op.drop_constraint("ck_entitlement_usage_holder_policy", "entitlement_usage", schema=schema, type_="check")
+    op.drop_column("entitlement_usage", "plan_policy_version", schema=schema)
+    op.drop_column("entitlement_usage", "plan_holder_user_id", schema=schema)
     op.drop_index("ix_tenants_plan_holder_user_id", table_name="tenants", schema=schema)
     op.drop_constraint("fk_tenants_plan_holder_user", "tenants", schema=schema, type_="foreignkey")
     op.drop_column("tenants", "plan_holder_user_id", schema=schema)

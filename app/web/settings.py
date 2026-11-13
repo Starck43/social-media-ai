@@ -951,15 +951,13 @@ async def plan_update(
     plan: str = Form(...),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
+    policy_version: int | None = Form(default=None),
 ):
-    """Move a workspace to another billing tier.
+    """Platform-curated account assignment, never a workspace-role purchase.
 
-    Superuser-only, and deliberately so: this is a billing act, not a workspace
-    preference, so a workspace owner cannot grant themselves limits they did not
-    buy. A downgrade that leaves the workspace over its new ceilings is allowed
-    and reported — refusing would trap a customer who has to downgrade precisely
-    because they are over budget — but it is spelled out so the operator knows
-    what to delete before the next create attempt fails.
+    Enabled mode resolves sponsorship from the session's workspace, requires an
+    explicit policy revision and updates every sponsored workspace's mirror.
+    Posted tenant/holder identities grant no authority. No payment is initiated.
     """
     back = f"{BACK}?tab=workspace"
 
@@ -968,7 +966,7 @@ async def plan_update(
         return RedirectResponse(back, status_code=302)
 
     user = getattr(request.state, "web_user", None)
-    if user is None or not False:
+    if user is None or not user.is_superuser:
         add_flash(request, "error", "Менять тариф может только оператор платформы")
         return RedirectResponse(back, status_code=302)
 
@@ -989,6 +987,41 @@ async def plan_update(
         add_flash(request, "error", f"Неизвестный тариф: {plan}")
         return RedirectResponse(back, status_code=302)
 
+    from app.core.config import settings
+    from app.core.database import async_session_maker
+    from app.models import User
+
+    if settings.USER_SERVICE_PLANS_ENABLED:
+        from app.services.tenancy.service_plan_management import assign_user_plan
+        from app.services.tenancy.service_plan_policy import ServicePlanPolicyError
+
+        if type(policy_version) is not int or policy_version <= 0:
+            add_flash(request, "error", "Укажите утверждённую версию политики тарифа")
+            return RedirectResponse(back, status_code=302)
+        try:
+            async with async_session_maker() as session, session.begin():
+                # The service locks/rechecks the operator and holder together.
+                if tenant.plan_holder_user_id is None:
+                    raise ServicePlanPolicyError("missing_plan_holder")
+                await assign_user_plan(
+                    session,
+                    actor_user_id=user.id,
+                    user_id=tenant.plan_holder_user_id,
+                    plan_code=requested,
+                    policy_version=policy_version,
+                    # Preserve fresh state under the lock, not a request-time cache.
+                    preserve_state=True,
+                )
+        except (PermissionError, ServicePlanPolicyError, ValueError):
+            add_flash(request, "error", "Назначение тарифа запрещено или политика не настроена")
+            return RedirectResponse(back, status_code=302)
+        add_flash(request, "success", "Тариф аккаунта обновлён во всех его пространствах")
+        return RedirectResponse(back, status_code=302)
+
+    fresh = await User.objects.prefetch_related("role").get(id=user.id, is_active=True)
+    if fresh is None or not fresh.is_superuser:
+        add_flash(request, "error", "Менять тариф может только оператор платформы")
+        return RedirectResponse(back, status_code=302)
     if requested == tenant.plan:
         add_flash(request, "info", f"Тариф уже «{tenant.plan_label}»")
         return RedirectResponse(back, status_code=302)

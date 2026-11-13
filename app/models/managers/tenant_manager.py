@@ -15,7 +15,7 @@ import secrets
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -108,11 +108,101 @@ class TenantManager(BaseManager["Tenant"]):
     async def get_by_slug(self, slug: str) -> Optional["Tenant"]:
         return await self.get(slug=slug.strip().lower())
 
+    async def create_owned_workspace(self, *, user_id: int, name: str, slug: str, session=None) -> "Tenant":
+        """Lock, count sponsorship, insert workspace and owner membership atomically."""
+        from app.core.config import settings
+        from app.core.database import async_session_maker
+        from app.models import Tenant, TenantUser, User, UserServicePlan, WorkspaceRole
+        from app.services.tenancy.service_plan_policy import ServicePlanPolicyError, policy_snapshot
+
+        if session is None:
+            async with async_session_maker() as db, db.begin():
+                return await self.create_owned_workspace(user_id=user_id, name=name, slug=slug, session=db)
+        if type(user_id) is not int or user_id <= 0:
+            raise PlanLimitError("Authenticated workspace holder required")
+        account = await session.scalar(
+            select(User).where(User.id == user_id).with_for_update().execution_options(populate_existing=True)
+        )
+        if account is None or not account.is_active:
+            raise PlanLimitError("Active workspace holder required")
+        owner_role_id = await session.scalar(select(WorkspaceRole.id).where(WorkspaceRole.codename == "owner"))
+        if owner_role_id is None:
+            raise RuntimeError("Workspace roles are not configured")
+        plan_code = Tenant.DEFAULT_PLAN
+        expires = None
+        if settings.USER_SERVICE_PLANS_ENABLED:
+            plan = await session.scalar(
+                select(UserServicePlan)
+                .where(UserServicePlan.user_id == user_id)
+                .execution_options(populate_existing=True)
+            )
+            if plan is None or not plan.is_active:
+                raise PlanLimitError("Тариф аккаунта не настроен или отключён")
+            expires = plan.plan_expires_at
+            if expires is not None and (expires.utcoffset() is None or expires <= datetime.now(timezone.utc)):
+                raise PlanLimitError("Тариф аккаунта истёк")
+            try:
+                policy = policy_snapshot(plan.policy)
+            except ServicePlanPolicyError as error:
+                raise PlanLimitError("Политика тарифа недоступна") from error
+            if not policy.owned_workspace_limit_configured:
+                raise PlanLimitError("Лимит собственных пространств не настроен")
+            count = await session.scalar(select(func.count(Tenant.id)).where(Tenant.plan_holder_user_id == user_id))
+            if policy.max_owned_workspaces is not None and count >= policy.max_owned_workspaces:
+                raise PlanLimitError("Достигнут лимит собственных пространств тарифа")
+            plan_code = policy.plan_code
+        # Both writes stay in the same caller-owned transaction, including slug
+        # uniqueness failures. No invited membership contributes to this count.
+        workspace = await super().create(
+            session=session,
+            name=name,
+            slug=slug,
+            plan=plan_code,
+            plan_expires_at=expires,
+            plan_holder_user_id=user_id,
+        )
+        session.add(
+            TenantUser(
+                tenant_id=workspace.id,
+                channel=WEB_CHANNEL,
+                external_user_id=str(user_id),
+                user_id=user_id,
+                role_id=owner_role_id,
+                is_active=True,
+            )
+        )
+        await session.flush()
+        return workspace
+
+    async def create(self, session=None, **kwargs):
+        from app.core.config import settings
+
+        if settings.USER_SERVICE_PLANS_ENABLED:
+            raise PlanLimitError("Use atomic account-owned workspace creation")
+        if session is not None:
+            kwargs["session"] = session
+        return await super().create(**kwargs)
+
+    async def update_by_id(self, instance_id: int, session=None, **kwargs):
+        from app.core.config import settings
+
+        if "plan_holder_user_id" in kwargs:
+            raise ValueError("Ownership transfer requires a separate verified lifecycle")
+        if settings.USER_SERVICE_PLANS_ENABLED and {"plan", "plan_expires_at"} & kwargs.keys():
+            raise ValueError("Use account-scoped tariff management")
+        if session is not None:
+            kwargs["session"] = session
+        return await super().update_by_id(instance_id, **kwargs)
+
     async def get_or_create_owner(self, slug: str = "owner") -> "Tenant":
         """Bootstrap workspace: the tenant that owns pre-existing (legacy) rows."""
         existing = await self.get_by_slug(slug)
         if existing is not None:
             return existing
+        from app.core.config import settings
+
+        if settings.USER_SERVICE_PLANS_ENABLED:
+            raise PlanLimitError("Bootstrap sponsorship requires an explicit operator mapping")
         # `plan` is a tier, and this workspace used to be created as the
         # non-tier "owner". It is `business` rather than the default `pro`
         # because it is the operator's own workspace and is expected to hold
@@ -317,6 +407,20 @@ class TenantUserManager(BaseManager["TenantUser"]):
         if actor is None or current_tenant_id() != tenant_id or is_bypass():
             return False
         async with self._get_owned_session() as session:
+            from app.core.config import settings
+
+            fresh_user = None
+            if settings.USER_SERVICE_PLANS_ENABLED:
+                # Admission/assignment hold User before Tenant. Membership writes
+                # must use that order too when the actor may be the holder.
+                fresh_user = await session.scalar(
+                    select(User)
+                    .where(User.id == actor.id, User.is_active.is_(True))
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+                if fresh_user is None:
+                    return False
             workspace = (
                 await session.execute(
                     select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)).with_for_update()
@@ -324,11 +428,12 @@ class TenantUserManager(BaseManager["TenantUser"]):
             ).scalar_one_or_none()
             if workspace is None:
                 return False
-            fresh_user = (
-                await session.execute(
-                    select(User).where(User.id == actor.id, User.is_active.is_(True)).with_for_update()
-                )
-            ).scalar_one_or_none()
+            if not settings.USER_SERVICE_PLANS_ENABLED:
+                fresh_user = (
+                    await session.execute(
+                        select(User).where(User.id == actor.id, User.is_active.is_(True)).with_for_update()
+                    )
+                ).scalar_one_or_none()
             if fresh_user is None:
                 return False
             members = list(

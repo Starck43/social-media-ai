@@ -291,6 +291,8 @@ class Settings(BaseSettings):
     SUBSCRIPTION_PAYMENT_PROVIDER: Literal["yookassa"] = "yookassa"
     SUBSCRIPTION_PAYMENT_MODE: Literal["test"] = "test"
     SUBSCRIPTION_CHECKOUT_ENABLED: bool = False
+    # Additive tariff storage can ship before the separately approved cutover.
+    USER_SERVICE_PLANS_ENABLED: bool = False
     YOOKASSA_SHOP_ID: str = ""
     YOOKASSA_SECRET_KEY: SecretStr = Field(default=SecretStr(""), repr=False, exclude=True)
     YOOKASSA_RETURN_URL: str = ""

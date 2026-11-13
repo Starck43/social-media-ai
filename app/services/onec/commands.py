@@ -52,12 +52,7 @@ from app.core.outbound import Resolver, default_dns_resolver
 from app.core.permissions import get_current_user, set_current_user
 from app.core.tenant_context import current_tenant_id, tenant_scope
 from app.integrations.onec.connections import METHOD as READ_ONLY_METHOD
-from app.integrations.onec.connections import (
-    PROVIDER,
-    SCHEMA_VERSION,
-    OneCConnectionError,
-    _stored_endpoint,
-)
+from app.integrations.onec.connections import PROVIDER, SCHEMA_VERSION, OneCConnectionError, _stored_endpoint
 from app.integrations.onec.credentials import OneCCredentialError, open_basic_credentials
 from app.integrations.onec.endpoint import OneCEndpoint, OneCEndpointError, resolve_endpoint
 from app.integrations.onec.transport import MAX_BODY_BYTES, REQUEST_TOKEN_COST
@@ -1632,6 +1627,15 @@ class OneCCommandService:
                         t.error_code = conflict_error.code
                     await session.flush()
                     return None, conflict_error, False
+
+                if str(serialized.get("state") or "") != "succeeded":
+                    # The ledger caught an adapter failure that was not a `OneCCommandError`
+                    # (for example the rate-budget store being unavailable) and persisted
+                    # `state="failed"` with `error_code="adapter_execution_failed"`. Never report
+                    # that as a success. The unknown audit event is written after the commit
+                    # (`record_unknown_audit`), so the persisted state and its audit agree.
+                    await session.flush()
+                    return None, OneCCommandError("adapter_execution_failed"), True
 
                 await ActionAuditEvent.objects.record_success(
                     session=session,

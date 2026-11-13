@@ -1416,199 +1416,121 @@ async def test_validation_error_branches_and_owned_session_paths(write_env) -> N
 
 
 @pytest.mark.asyncio
-async def test_real_owned_session_commits_failed_and_unknown_states_without_rollback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """F1 regression check on a real SQLAlchemy AsyncSession with BaseManager._get_owned_session rollback semantics.
+async def test_adapter_failure_that_is_not_onec_error_is_never_audited_as_success(write_env) -> None:
+    """M1 regression check: a non-`OneCCommandError` adapter failure must not look like a success.
 
-    Unlike FakeOneCCommandSession, BaseManager._get_owned_session rolls back the database transaction if an
-    exception escapes the `async with self._sessions._get_owned_session()` block. This test verifies that:
-    (a) on DataVersion conflict, `state='failed'` and `error_code='data_version_conflict'` are committed to DB
-        and returned in `list_audit_log` before `OneCCommandError('data_version_conflict')` is raised;
-    (b) on transport timeout, `state='unknown'` and `action_audit_events` (`outcome='unknown'`) are committed to DB
-        before `OneCCommandError('write_timeout_unknown')` is raised, and `reconcile_command` subsequently transitions
-        the persisted command to `succeeded`.
+    The ledger catches every other exception itself and persists `state="failed"` with
+    `error_code="adapter_execution_failed"` (this is what happens when the rate-budget store is
+    unavailable: `ConnectionDenied` at the transport). The service previously wrote a success audit
+    event and returned the record, so the API answered 200 for a failed write.
     """
-    from sqlalchemy import select
-    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    conn, secret = _make_write_connection()
+    session = FakeOneCCommandSession(connection=conn, secret=secret)
 
-    from app.core.config import settings
+    async def budget_outage_transport(endpoint, *, method: bytes, target_path: str, **_kw):
+        if b"$metadata" in unquote(target_path).encode("utf-8"):
+            return SAMPLE_METADATA_XML.encode("utf-8")
+        raise ConnectionDenied()
+
+    service = OneCCommandService(ledger=BusinessCommandLedger(), transport=budget_outage_transport)
+    catalog = parse_odata_metadata_xml(SAMPLE_METADATA_XML)
+    preview = await service.preview_command(
+        tenant_id=10,
+        actor_id=101,
+        connection_id=conn.id,
+        request=OneCWritePreviewRequest(
+            capability=CAPABILITY_DOCUMENT_CREATE,
+            idempotency_key="adapter-outage-1",
+            entity_set="Document_РеализацияТоваровУслуг",
+            fields={"СуммаДокумента": Decimal("100.00")},
+        ),
+        catalog=catalog,
+        session=session,
+    )
+    await service.approve_command(
+        tenant_id=10,
+        actor_id=101,
+        command_id=preview.id,
+        expected_payload_hash=preview.payload_hash,
+        session=session,
+    )
+
+    with pytest.raises(OneCCommandError) as exc_exec:
+        await service.execute_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
+    assert exc_exec.value.code == "adapter_execution_failed"
+
+    # The failure is persisted, but never audited as a success.
+    assert session.commands[preview.id].state == "failed"
+    assert session.commands[preview.id].error_code == "adapter_execution_failed"
+    success_events = [
+        e
+        for e in write_env.events
+        if e.action == "onec.command_execute" and e.outcome == "success" and e.resource_id == preview.id
+    ]
+    assert success_events == []
+    unknown_events = [e for e in write_env.events if e.action == "onec.command_execute" and e.outcome == "unknown"]
+    assert len(unknown_events) == 1
+    assert unknown_events[0].reason_code == "operation_unconfirmed"
+
+
+@pytest.mark.asyncio
+async def test_owned_session_commits_failed_state_without_rollback(write_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """F1 regression check: the refusal is committed before the error reaches the caller.
+
+    `BaseManager._get_owned_session` commits on a normal exit and rolls the transaction back
+    when an exception escapes the block. The service must finish the terminal state inside the
+    block and raise only afterwards; this test drives the real owned-session wrapper over the
+    in-memory command session and records which branch was taken. The PostgreSQL counterpart
+    lives in `tests/integrations/db/test_p17_t04_db.py`.
+    """
+    from contextlib import asynccontextmanager
+
     from app.models.managers.base_manager import BaseManager
 
-    if not getattr(settings, "CREDENTIALS_KEY", None):
-        monkeypatch.setattr(settings, "CREDENTIALS_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
-    monkeypatch.setattr(ledger_mod, "RUNTIME_ENABLED_CAPABILITIES", set(ONEC_WRITE_CAPABILITIES))
-    monkeypatch.setattr(ledger_mod, "RUNTIME_KILL_SWITCHES", {})
-
-    async def _noop_authorize(_session, _tenant_id, _actor_id, **_kwargs):
-        return None
-
-    async def _noop_member_grant(_session, _tenant_id, _user_id, _spec):
-        return None
-
-    async def _noop_verify_conn(_session, _tenant_id, _conn_id):
-        return None
-
-    async def _noop_require_approved(_self, **_kwargs):
-        return None
-
-    monkeypatch.setattr(commands_mod, "_authorize", _noop_authorize)
-    monkeypatch.setattr(commands_mod.WorkspaceOutboundHostManager, "require_approved", _noop_require_approved)
-    monkeypatch.setattr(commands_mod, "budget_for", lambda *_a, **_kw: SimpleNamespace(key="onec:test"))
-    monkeypatch.setattr(ledger_mod, "_verify_member_grant", _noop_member_grant)
-    monkeypatch.setattr(ledger_mod, "_verify_connection", _noop_verify_conn)
-
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        execution_options={"schema_translate_map": {"public": None}},
-    )
-    async with engine.begin() as conn_db:
-        for ddl in [
-            "CREATE TABLE tenants (id INTEGER PRIMARY KEY)",
-            "CREATE TABLE users (id INTEGER PRIMARY KEY)",
-            """CREATE TABLE workspace_connections (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                owner_user_id INTEGER NOT NULL,
-                platform VARCHAR(30) NOT NULL,
-                provider_id VARCHAR(50) NOT NULL,
-                auth_method VARCHAR(30) NOT NULL,
-                schema_version INTEGER NOT NULL,
-                label VARCHAR(100) NOT NULL,
-                account_key VARCHAR(320) NOT NULL,
-                config JSON NOT NULL,
-                is_active BOOLEAN DEFAULT 1 NOT NULL,
-                state VARCHAR(20) DEFAULT 'unverified' NOT NULL,
-                checked_at DATETIME,
-                check_code VARCHAR(40),
-                tenant_id INTEGER NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
-            )""",
-            """CREATE TABLE workspace_connection_secrets (
-                connection_id INTEGER PRIMARY KEY,
-                secret_encrypted TEXT NOT NULL,
-                rotated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
-            )""",
-            """CREATE TABLE business_commands (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                capability VARCHAR(80) NOT NULL,
-                capability_version INTEGER DEFAULT 1 NOT NULL,
-                approval_policy VARCHAR(30) DEFAULT 'per_item' NOT NULL,
-                actor_user_id INTEGER NOT NULL,
-                connection_id INTEGER,
-                idempotency_key VARCHAR(128) NOT NULL,
-                target_refs JSON DEFAULT '[]' NOT NULL,
-                payload JSON DEFAULT '{}' NOT NULL,
-                payload_hash VARCHAR(71) NOT NULL,
-                preview_snapshot JSON DEFAULT '{}' NOT NULL,
-                state VARCHAR(20) DEFAULT 'draft' NOT NULL,
-                approved_user_id INTEGER,
-                approved_payload_hash VARCHAR(71),
-                approved_at DATETIME,
-                approval_expires_at DATETIME,
-                claimed_at DATETIME,
-                executed_at DATETIME,
-                outcome_summary JSON,
-                error_code VARCHAR(64),
-                reconcile_hint TEXT,
-                tenant_id INTEGER NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
-            )""",
-            """CREATE TABLE business_command_targets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                command_id INTEGER NOT NULL,
-                target_ref VARCHAR(200) NOT NULL,
-                target_idempotency_key VARCHAR(160) NOT NULL,
-                state VARCHAR(20) DEFAULT 'pending' NOT NULL,
-                provider_receipt VARCHAR(160),
-                error_code VARCHAR(64),
-                executed_at DATETIME,
-                tenant_id INTEGER NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
-            )""",
-            """CREATE TABLE action_audit_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                tenant_id INTEGER NOT NULL,
-                event_id VARCHAR(64) NOT NULL,
-                occurred_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL,
-                actor_kind VARCHAR(16) NOT NULL,
-                actor_id VARCHAR(64),
-                action VARCHAR(80) NOT NULL,
-                resource_kind VARCHAR(32) NOT NULL,
-                resource_id VARCHAR(64),
-                outcome VARCHAR(16) NOT NULL,
-                reason_code VARCHAR(64),
-                request_id VARCHAR(64),
-                job_id VARCHAR(64),
-                receipt_ref VARCHAR(128)
-            )""",
-        ]:
-            await conn_db.exec_driver_sql(ddl)
-
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    conn, secret = _make_write_connection()
+    session = FakeOneCCommandSession(connection=conn, secret=secret)
+    outcomes: list[str] = []
 
     @asynccontextmanager
-    async def _real_owned_session(_self):
-        async with session_factory() as owned:
-            try:
-                yield owned
-                await owned.commit()
-            except Exception:
-                await owned.rollback()
-                raise
+    async def _owned_session(_self, _session=None):
+        try:
+            yield session
+            outcomes.append("commit")
+        except Exception:
+            outcomes.append("rollback")
+            raise
 
-    monkeypatch.setattr(BaseManager, "_get_owned_session", _real_owned_session)
-    monkeypatch.setattr(
-        ActionAuditEvent.objects,
-        "_get_owned_session",
-        _real_owned_session.__get__(ActionAuditEvent.objects, type(ActionAuditEvent.objects)),
-    )
+    monkeypatch.setattr(BaseManager, "_get_owned_session", _owned_session)
 
-    conn_obj, secret_obj = _make_write_connection(conn_id=7, tenant_id=10, actor_id=101)
-    async with session_factory() as seed_session:
-        seed_session.add(conn_obj)
-        seed_session.add(secret_obj)
-        await seed_session.commit()
+    remote_version = "VER_INITIAL_1="
+    mutation_sent = False
 
-    # --- Case (a): DataVersion conflict persists state="failed", error_code="data_version_conflict" ---
-    remote_version = "DV_INIT_1="
-    patch_calls = 0
-
-    async def conflict_transport(_endpoint, *, method: bytes, target_path: str, **_kw):
-        nonlocal patch_calls
-        from urllib.parse import unquote
-
-        decoded = unquote(target_path)
-        if "$metadata" in decoded:
-            return SAMPLE_METADATA_XML.encode("utf-8")
+    async def conflict_transport(endpoint, *, method: bytes, target_path: str, **_kw):
+        nonlocal mutation_sent
         if method == b"GET":
             return json.dumps(
                 {
                     "Ref_Key": CAT_GUID,
                     "DataVersion": remote_version,
                     "DeletionMark": False,
-                    "Description": "ООО До Изменения",
+                    "Description": "ООО Старое Имя",
                 }
             ).encode("utf-8")
-        patch_calls += 1
+        mutation_sent = True
         return b"{}"
 
     service = OneCCommandService(ledger=BusinessCommandLedger(), transport=conflict_transport)
 
-    preview_a = await service.preview_command(
+    preview = await service.preview_command(
         tenant_id=10,
         actor_id=101,
-        connection_id=7,
+        connection_id=conn.id,
         request=OneCWritePreviewRequest(
             capability=CAPABILITY_CATALOG_UPDATE,
-            idempotency_key="real-db-conflict-1",
+            idempotency_key="owned-session-conflict-1",
             entity_set="Catalog_Контрагенты",
             target_guid=CAT_GUID,
-            fields={"Description": "ООО После Изменения"},
+            fields={"Description": "ООО Новое Имя"},
         ),
         catalog=CATALOG,
         session=None,
@@ -1616,164 +1538,153 @@ async def test_real_owned_session_commits_failed_and_unknown_states_without_roll
     await service.approve_command(
         tenant_id=10,
         actor_id=101,
-        command_id=preview_a.id,
-        expected_payload_hash=preview_a.payload_hash,
+        command_id=preview.id,
+        expected_payload_hash=preview.payload_hash,
         session=None,
     )
 
-    remote_version = "DV_CONCURRENT_2="
-    with pytest.raises(OneCCommandError) as exc_dv:
+    remote_version = "VER_CHANGED_BY_OTHER_USER_2="
+    with pytest.raises(OneCCommandError) as exc_conflict:
         await service.execute_command(
             tenant_id=10,
             actor_id=101,
-            command_id=preview_a.id,
+            command_id=preview.id,
             session=None,
         )
-    assert exc_dv.value.code == "data_version_conflict"
-    assert patch_calls == 0
+    assert exc_conflict.value.code == "data_version_conflict"
+    assert mutation_sent is False
 
-    # Verify in a fresh DB session that rollback did NOT revert state="failed"
-    async with session_factory() as check_session:
-        persisted_a = await check_session.get(BusinessCommand, preview_a.id)
-        assert persisted_a is not None
-        assert persisted_a.state == "failed"
-        assert persisted_a.error_code == "data_version_conflict"
-        target_a = (
-            await check_session.execute(
-                select(BusinessCommandTarget).where(BusinessCommandTarget.command_id == preview_a.id)
-            )
-        ).scalar_one()
-        assert target_a.state == "failed"
-        assert target_a.error_code == "data_version_conflict"
+    # The transaction was committed, never rolled back, and the terminal state survived it.
+    assert "rollback" not in outcomes
+    assert outcomes.count("commit") >= 1
+    assert session.commands[preview.id].state == "failed"
+    assert session.commands[preview.id].error_code == "data_version_conflict"
+    failed_target = [t for t in session.targets.values() if t.command_id == preview.id]
+    assert failed_target and failed_target[0].state == "failed"
+    assert failed_target[0].error_code == "data_version_conflict"
 
-    # Second execute attempt must be rejected with command_state_conflict (not re-executed)
-    with pytest.raises(OneCCommandError) as exc_retry_a:
-        await service.execute_command(
-            tenant_id=10,
-            actor_id=101,
-            command_id=preview_a.id,
-            session=None,
-        )
-    assert exc_retry_a.value.code == "command_state_conflict"
-
-    # Audit log includes the denied/failed onec.command_execute entry with reason_code="data_version_conflict"
-    audit_after_a = await service.list_audit_log(tenant_id=10, actor_id=101, session=None)
-    failed_exec_entries = [
+    # A refused write is never audited as a success.
+    success_events = [
         e
-        for e in audit_after_a
-        if e.command_id == preview_a.id and e.action == "onec.command_execute" and e.outcome == "denied"
+        for e in write_env.events
+        if e.action == "onec.command_execute" and e.outcome == "success" and e.resource_id == preview.id
     ]
-    assert len(failed_exec_entries) == 1
-    assert failed_exec_entries[0].reason_code == "data_version_conflict"
-    assert failed_exec_entries[0].state == "failed"
+    assert success_events == []
 
-    # --- Case (b): Transport timeout persists state="unknown" + unknown audit events -> reconcile succeeds ---
-    created_remotely = False
-    post_calls = 0
+    # The refusal is visible in the audit log as a denied execution.
+    entries = await service.list_audit_log(tenant_id=10, actor_id=101, session=session)
+    denied = [
+        e
+        for e in entries
+        if e.command_id == preview.id and e.action == "onec.command_execute" and e.outcome == "denied"
+    ]
+    assert len(denied) == 1
+    assert denied[0].state == "failed"
+    assert denied[0].reason_code == "data_version_conflict"
 
-    async def timeout_transport(_endpoint, *, method: bytes, target_path: str, **_kw):
-        nonlocal created_remotely, post_calls
-        from urllib.parse import unquote
+    # A repeated execution is refused instead of writing to 1C again.
+    with pytest.raises(OneCCommandError) as exc_retry:
+        await service.execute_command(
+            tenant_id=10,
+            actor_id=101,
+            command_id=preview.id,
+            session=None,
+        )
+    assert exc_retry.value.code == "command_state_conflict"
+    assert mutation_sent is False
 
-        decoded = unquote(target_path)
-        if "$metadata" in decoded:
-            return SAMPLE_METADATA_XML.encode("utf-8")
-        if method == b"GET" and "$filter=" in decoded:
-            if created_remotely:
-                return json.dumps({"value": [{"Ref_Key": DOC_GUID, "DataVersion": "DV_CREATED_1="}]}).encode("utf-8")
+
+@pytest.mark.asyncio
+async def test_owned_session_commits_unknown_state_without_rollback(write_env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """F1 regression check: a transport timeout is committed as `unknown` and can be reconciled."""
+    from contextlib import asynccontextmanager
+
+    from app.models.managers.base_manager import BaseManager
+
+    conn, secret = _make_write_connection()
+    session = FakeOneCCommandSession(connection=conn, secret=secret)
+    outcomes: list[str] = []
+
+    @asynccontextmanager
+    async def _owned_session(_self, _session=None):
+        try:
+            yield session
+            outcomes.append("commit")
+        except Exception:
+            outcomes.append("rollback")
+            raise
+
+    monkeypatch.setattr(BaseManager, "_get_owned_session", _owned_session)
+
+    created_on_server = False
+    post_attempts = 0
+
+    async def timeout_transport(endpoint, *, method: bytes, target_path: str, **_kw):
+        nonlocal created_on_server, post_attempts
+        if method == b"GET" and "$filter=" in target_path:
+            if created_on_server:
+                return json.dumps({"value": [{"Ref_Key": DOC_GUID, "DataVersion": "AFTER_TIMEOUT_V1="}]}).encode(
+                    "utf-8"
+                )
             return json.dumps({"value": []}).encode("utf-8")
         if method == b"POST":
-            post_calls += 1
-            created_remotely = True
-            raise TimeoutError("1C OData gateway timed out")
-        raise AssertionError(f"Unexpected call: {method} {decoded}")
+            post_attempts += 1
+            created_on_server = True
+            raise TimeoutError("1C OData gateway timed out after commit")
+        raise AssertionError(f"Unexpected call: {method} {target_path}")
 
-    service_b = OneCCommandService(ledger=BusinessCommandLedger(), transport=timeout_transport)
+    service = OneCCommandService(ledger=BusinessCommandLedger(), transport=timeout_transport)
 
-    preview_b = await service_b.preview_command(
+    preview = await service.preview_command(
         tenant_id=10,
         actor_id=101,
-        connection_id=7,
+        connection_id=conn.id,
         request=OneCWritePreviewRequest(
             capability=CAPABILITY_DOCUMENT_CREATE,
-            idempotency_key="real-db-timeout-1",
+            idempotency_key="owned-session-timeout-1",
             entity_set="Document_РеализацияТоваровУслуг",
-            fields={"СуммаДокумента": Decimal("32100.00")},
+            fields={"СуммаДокумента": Decimal("19900.00")},
         ),
         catalog=CATALOG,
         session=None,
     )
-    await service_b.approve_command(
+    await service.approve_command(
         tenant_id=10,
         actor_id=101,
-        command_id=preview_b.id,
-        expected_payload_hash=preview_b.payload_hash,
+        command_id=preview.id,
+        expected_payload_hash=preview.payload_hash,
         session=None,
     )
 
-    with pytest.raises(OneCCommandError) as exc_to:
-        await service_b.execute_command(
+    with pytest.raises(OneCCommandError) as exc_timeout:
+        await service.execute_command(
             tenant_id=10,
             actor_id=101,
-            command_id=preview_b.id,
+            command_id=preview.id,
             session=None,
         )
-    assert exc_to.value.code == "write_timeout_unknown"
-    assert post_calls == 1
+    assert exc_timeout.value.code == "write_timeout_unknown"
+    assert post_attempts == 1
 
-    async with session_factory() as check_session:
-        persisted_b = await check_session.get(BusinessCommand, preview_b.id)
-        assert persisted_b is not None
-        assert persisted_b.state == "unknown"
-        assert persisted_b.error_code == "adapter_timeout_unknown"
-        target_b = (
-            await check_session.execute(
-                select(BusinessCommandTarget).where(BusinessCommandTarget.command_id == preview_b.id)
-            )
-        ).scalar_one()
-        assert target_b.state == "unknown"
-        audit_rows_b = (
-            (
-                await check_session.execute(
-                    select(ActionAuditEvent).where(
-                        ActionAuditEvent.tenant_id == 10,
-                        ActionAuditEvent.resource_id == str(preview_b.id),
-                        ActionAuditEvent.outcome == "unknown",
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        assert {r.action for r in audit_rows_b} == {"commands.execute", "onec.command_execute"}
+    assert "rollback" not in outcomes
+    assert outcomes.count("commit") >= 1
+    assert session.commands[preview.id].state == "unknown"
+    assert session.commands[preview.id].error_code == "adapter_timeout_unknown"
+    unknown_target = [t for t in session.targets.values() if t.command_id == preview.id]
+    assert unknown_target and unknown_target[0].state == "unknown"
 
-    # Reconcile transitions persisted unknown command to succeeded and clears error_code
-    reconciled_b = await service_b.reconcile_command(
+    unknown_events = [e for e in write_env.events if e.action == "onec.command_execute" and e.outcome == "unknown"]
+    assert len(unknown_events) == 1
+    assert unknown_events[0].reason_code == "operation_unconfirmed"
+
+    # Reconciliation settles the command without a second write.
+    reconciled = await service.reconcile_command(
         tenant_id=10,
         actor_id=101,
-        command_id=preview_b.id,
+        command_id=preview.id,
         session=None,
     )
-    assert reconciled_b.state == "succeeded"
-    assert reconciled_b.error_code is None
-    assert reconciled_b.provider_receipt == f"onec:document:Document_РеализацияТоваровУслуг:{DOC_GUID}"
-    assert post_calls == 1
-
-    async with session_factory() as check_session:
-        persisted_b_after = await check_session.get(BusinessCommand, preview_b.id)
-        assert persisted_b_after is not None
-        assert persisted_b_after.state == "succeeded"
-        assert persisted_b_after.error_code is None
-        assert (
-            persisted_b_after.outcome_summary["provider_receipt"]
-            == f"onec:document:Document_РеализацияТоваровУслуг:{DOC_GUID}"
-        )
-        target_b_after = (
-            await check_session.execute(
-                select(BusinessCommandTarget).where(BusinessCommandTarget.command_id == preview_b.id)
-            )
-        ).scalar_one()
-        assert target_b_after.state == "succeeded"
-        assert target_b_after.provider_receipt == f"onec:document:Document_РеализацияТоваровУслуг:{DOC_GUID}"
-
-    await engine.dispose()
+    assert reconciled.state == "succeeded"
+    assert reconciled.error_code is None
+    assert reconciled.provider_receipt == f"onec:document:Document_РеализацияТоваровУслуг:{DOC_GUID}"
+    assert post_attempts == 1

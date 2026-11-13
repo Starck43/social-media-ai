@@ -214,7 +214,7 @@ def _limit_value(key: str, value: Any) -> Any:
     if isinstance(example, list):
         if isinstance(value, (str, bytes, Mapping)) or not isinstance(value, (list, tuple)):
             raise _fail("invalid_resource_limit")
-        if any(not isinstance(item, str) or not item for item in value):
+        if not value or any(not isinstance(item, str) or not item for item in value):
             raise _fail("invalid_resource_limit")
         return tuple(value)
     if isinstance(example, str):

@@ -56,12 +56,17 @@ MAINTENANCE_LOCK = (
 # ── shared rows and payloads ────────────────────────────────────────────────
 
 
+class _AccountRow(SimpleNamespace):
+    # Use the real computed authority property: demoting a role must not leave
+    # a cached fixture boolean granting platform-owner rights.
+    is_superuser = User.is_superuser
+
+
 def _users(*rows):
     return [
-        SimpleNamespace(
+        _AccountRow(
             id=user_id,
             is_active=active,
-            is_superuser=active and role == "superuser",
             role=SimpleNamespace(codename=role),
             username=f"user{user_id}",
         )
@@ -650,10 +655,10 @@ class _BackfillSession:
         raise AssertionError(f"unsupported execute(): {sql}")
 
     async def scalars(self, statement):
-        if _for_update(statement):
-            self.locks.append(User.__tablename__)
         entity = statement.column_descriptions[0]["entity"]
         if entity is User:
+            if _for_update(statement):
+                self.locks.append(User.__tablename__)
             if {column.key for column in statement.selected_columns} == {"id"}:
                 return _Scalars(sorted(self.users))
             ids = statement.compile(dialect=DIALECT).params["id_1"]

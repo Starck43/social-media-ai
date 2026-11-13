@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.deps import require_model_perm
 from app.models import LLMModel
 from app.schemas.llm_model import LLMModelCreate, LLMModelList, LLMModelResponse, LLMModelUpdate
+from app.services.ai.provider_egress import endpoint_path_metadata
 from app.types import ActionType
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ def _model_response(m: LLMModel) -> LLMModelResponse:
         description=m.description,
         provider_id=m.provider_id,
         model_type=m.model_type,
-        custom_endpoint_path=m.custom_endpoint_path,
+        custom_endpoint_path=endpoint_path_metadata(m.custom_endpoint_path),
         pricing_token_unit=unit,
         input_cost_per_1k=input_raw * Decimal(1000) / Decimal(unit),
         output_cost_per_1k=output_raw * Decimal(1000) / Decimal(unit),

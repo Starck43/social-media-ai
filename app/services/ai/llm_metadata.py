@@ -2,10 +2,12 @@
 LLM metadata helpers — reads provider/model info from DB at runtime.
 No hardcoded presets; everything comes from llm_providers / llm_models tables.
 """
+
 from decimal import Decimal
 from typing import Any, Optional
 
 from app.models import LLMModel, LLMProvider
+from app.services.ai.provider_egress import provider_url_metadata
 
 
 async def get_model_info(model_id_or_name: str) -> Optional[dict[str, Any]]:
@@ -45,7 +47,7 @@ def _model_dict(m: LLMModel) -> dict:
         "provider_id": m.provider_id,
         "provider_name": m.provider.name,
         "provider_format": m.provider.api_format,
-        "base_url": m.provider.base_url,
+        "base_url": provider_url_metadata(m.provider.base_url),
         "input_cost_per_1k": input_per_1k,
         "output_cost_per_1k": output_per_1k,
         "input_cost_per_1m": input_per_1m,

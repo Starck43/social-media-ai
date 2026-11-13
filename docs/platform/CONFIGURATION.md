@@ -675,17 +675,18 @@ created. No provider calls occur in migration.
 `CREDENTIALS_KEY` protects personal vault entries (including VK access and
 refresh), workspace connection secrets, personal connector authorizations and
 personal LLM-provider API keys.
-Changing the environment key alone makes existing ciphertext unreadable. After
-migration 0124 is integrated and reviewed, the rotation utility covers all of
-these stores in a single PostgreSQL transaction; it is not an automatic deploy
-step. At unified head `p12t14_accounts` it also rotates the single encrypted
-personal authorization bundle, not a copy in each workspace grant. Head
-`p12t14_tg_login` additionally rotates encrypted temporary login material. Empty
-disconnected/revoked placeholders are preserved. Only reviewed single heads
-`0124`, the reviewed `p12t14_*` generations, `p12t12_catalog` and file
-revisions `0125`-`0128` are supported;
+Changing the environment key alone makes existing ciphertext unreadable.
+The rotation utility covers all supported stores in a single PostgreSQL
+transaction; it is not an automatic deploy step. Personal authorization bundles
+are rotated once, not copied into each workspace grant; temporary encrypted login
+material is included. Empty disconnected/revoked placeholders are preserved.
+The supported reviewed migration generations and exact store/layout fences are
+defined in `scripts/ops/rotate_credentials_key.py`;
 unknown/future/multiple heads or a store layout that does not match the head are refused rather than silently
 omitting an encrypted store.
+
+LLM owner/ref custody, accepted credential-version evidence and destination
+validation are defined in [CREDENTIAL_BOUNDARY](CREDENTIAL_BOUNDARY.md).
 
 A live dry run or apply needs separate owner approval. Prepare and verify a
 restorable encrypted database backup and retain the old key securely; decide

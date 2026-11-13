@@ -131,11 +131,9 @@ def decode_secret_bundle(ciphertext: str) -> dict[str, Any]:
 
 def sanitize_connection_view(row: WorkspaceConnection) -> dict[str, Any]:
     """Return a value-safe connection representation guaranteed to contain zero token material."""
-    safe_config = {
-        k: v
-        for k, v in (row.config or {}).items()
-        if "token" not in k.lower() and "secret" not in k.lower() and "password" not in k.lower()
-    }
+    from app.utils.secret_metadata import safe_secret_metadata
+
+    safe_config = safe_secret_metadata(row.config or {})
     return {
         "id": row.id,
         "tenant_id": row.tenant_id,

@@ -36,6 +36,24 @@ from dataclasses import dataclass
 # Every ``{s}`` is the target schema, quoted once at render time. It appears
 # only in table references: NEW/OLD rows and keywords are never qualified.
 GUARD_FUNCTIONS: dict[str, str] = {
+    # P21-T11 - monotonic personal credential/configuration freshness.
+    "guard_llm_credential_version": (
+        " BEGIN IF TG_OP = 'INSERT' THEN IF NEW.credential_version <> 1 THEN "
+        "RAISE EXCEPTION 'Credential version must start at one'; END IF; RETURN NEW; END IF; "
+        "IF NEW.credential_version IS DISTINCT FROM OLD.credential_version THEN "
+        "IF pg_trigger_depth() = 2 AND NEW.credential_version = OLD.credential_version + 1 THEN "
+        "RETURN NEW; END IF; RAISE EXCEPTION 'Credential version is database managed'; END IF; "
+        "IF ROW(NEW.encrypted_api_key, NEW.base_url, NEW.auth_header, NEW.api_format, NEW.is_active, NEW.owner_user_id) "
+        "IS DISTINCT FROM "
+        "ROW(OLD.encrypted_api_key, OLD.base_url, OLD.auth_header, OLD.api_format, OLD.is_active, OLD.owner_user_id) "
+        "THEN NEW.credential_version := OLD.credential_version + 1; END IF; RETURN NEW; END; "
+    ),
+    "invalidate_llm_endpoint_version": (
+        " BEGIN IF ROW(NEW.custom_endpoint_path, NEW.model_id, NEW.is_active) "
+        "IS DISTINCT FROM ROW(OLD.custom_endpoint_path, OLD.model_id, OLD.is_active) THEN "
+        "UPDATE {s}.llm_providers SET credential_version = credential_version + 1 "
+        "WHERE id = NEW.provider_id AND owner_user_id = NEW.owner_user_id; END IF; RETURN NEW; END; "
+    ),
     # 0122 - reproduce the existing immutable document contract on fresh schemas.
     # 0142 extends it: the change description joins the immutable set, and an
     # authorship change is refused except the FK-driven erasure of a deleted user.
@@ -547,6 +565,10 @@ def _immutable_guards() -> list[GuardTrigger]:
 
 
 GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
+    GuardTrigger("llm_providers", "guard_llm_credential_version", "guard_llm_credential_version", ("INSERT", "UPDATE")),
+    GuardTrigger(
+        "llm_models", "invalidate_llm_endpoint_version", "invalidate_llm_endpoint_version", ("UPDATE",), timing="AFTER"
+    ),
     # 0142 - document history maintenance on a metadata-built schema.
     GuardTrigger(
         "document_revisions", "document_revision_current", "set_document_current_revision", ("INSERT",), timing="AFTER"

@@ -380,6 +380,90 @@ class TenantAdmin(BaseAdmin, model=Tenant):
     can_delete = False
     action_permissions = {"offboard": ActionType.DELETE}
 
+    async def scaffold_form(self, rules=None):
+        from app.core.config import settings
+
+        form = await super().scaffold_form(rules)
+        if not settings.USER_SERVICE_PLANS_ENABLED:
+            return form
+        from wtforms import IntegerField
+
+        # A concrete immutable revision is selected by the operator, never the
+        # highest/first matching row. Keep unrelated workspace edits available.
+        return type(
+            "AccountPlanTenantForm",
+            (form,),
+            {
+                "policy_version": IntegerField(
+                    "Версия политики тарифа",
+                    validators=[validators.Optional(), validators.NumberRange(min=1)],
+                    description="Для смены тарифа аккаунта: утверждённая версия политики. Срок и состояние сохраняются.",
+                ),
+            },
+        )
+
+    async def insert_model(self, request: Request, data: dict) -> Any:
+        from app.core.config import settings
+
+        if settings.USER_SERVICE_PLANS_ENABLED:
+            raise HTTPException(409, "Use atomic account-owned workspace creation")
+        return await super().insert_model(request, data)
+
+    async def update_model(self, request: Request, pk: str, data: dict) -> Any:
+        from app.admin.csrf import verify_request_token
+        from app.core.config import settings
+        from app.core.permissions import permission_scope
+
+        if set(data) - set(self.form_columns) - {"policy_version"}:
+            raise HTTPException(422, "Workspace sponsorship and tariff state are not editable fields")
+        actor = await self._admin_ref.authorization_backend.resolve_user(request)
+        fresh = await User.objects.prefetch_related("role").get(id=actor.id, is_active=True) if actor else None
+        form = await request.form()
+        if fresh is None or not verify_request_token(request, form.get("csrf_token")):
+            raise HTTPException(403, "Authentication and valid CSRF are required")
+        if not fresh.has_perm_for("tenant", ActionType.UPDATE):
+            raise HTTPException(403, "Workspace update permission is required")
+        version = data.get("policy_version")
+        if not settings.USER_SERVICE_PLANS_ENABLED:
+            if version is not None:
+                raise HTTPException(409, "Account tariff cutover is disabled")
+            if "plan" in data and not fresh.is_superuser:
+                raise HTTPException(403, "Tariff assignment requires the platform owner")
+            return await super().update_model(request, pk, data)
+
+        values = {key: value for key, value in data.items() if key not in {"plan", "policy_version"}}
+        with permission_scope(fresh):
+            return await self._update_account_plan(pk, data, values, fresh, version)
+
+    async def _update_account_plan(self, pk, data, values, fresh, version):
+        from app.core.database import async_session_maker
+        from app.models.managers.tenant_manager import tenants
+        from app.services.tenancy.service_plan_management import assign_user_plan
+        from app.services.tenancy.service_plan_policy import ServicePlanPolicyError
+
+        async with async_session_maker() as session, session.begin():
+            tenant = await tenants.get(id=int(pk), session=session)
+            if tenant is None:
+                raise HTTPException(404, "Workspace not found")
+            requested = data.get("plan", tenant.plan)
+            if requested != tenant.plan or version is not None:
+                if not fresh.is_superuser:
+                    raise HTTPException(403, "Tariff assignment requires the platform owner")
+                if type(version) is not int or version <= 0 or tenant.plan_holder_user_id is None:
+                    raise HTTPException(422, "Verified sponsorship and explicit policy revision are required")
+                try:
+                    await assign_user_plan(
+                        session,
+                        actor_user_id=fresh.id,
+                        user_id=tenant.plan_holder_user_id,
+                        plan_code=requested,
+                        policy_version=version,
+                        preserve_state=True,
+                    )
+                except (PermissionError, ServicePlanPolicyError) as error:
+                    raise HTTPException(409, "Tariff assignment refused") from error
+            return await tenants.update_by_id(tenant.id, session=session, **values)
+
     async def delete_model(self, request: Request, pk: Any) -> Any:
         """A legacy CRUD call cannot bypass the reviewed offboarding service."""
         raise HTTPException(409, "Use the confirmed workspace offboarding action")

@@ -24,17 +24,17 @@ client workspace. A chat is bound to exactly one tenant, and every data row
 
 ## Plans and quotas
 
-**Current source contract below.** The planned successor is
-[P2-T17](../tasks/p2-t17.md), per the 2026-11-13 owner decision: one account tariff
-for all owned spaces; invited users operate under the host owner's tariff/models
-and their own permissions, never gain host billing/model management through RBAC.
-It introduces verified plan-holder binding and shared owner allowances; tenant
-plan/expiry fields remain legacy until mapped consumers migrate. [P21](../phases/p21-ai-operations.md)
-owns model grants and dispatch controls. No migration or new behavior is claimed here.
+**Legacy/default-OFF contract below.** Accepted dormant
+[P2-T17 increment A](../audit/p2/p2-t17.md) adds verified account sponsorship and
+holder policy; [SERVICE_PLANS](SERVICE_PLANS.md) owns its live interface and cutover
+gates. Invitees keep their own permissions, never gain host billing/model management
+through RBAC. Shared token definitions are not an active allowance ledger.
+[P21](../phases/p21-ai-operations.md) owns model grants and dispatch controls;
+public apply and production enablement remain separately authorized.
 
 `tenants.plan` is the workspace's billing tier. It is a `CHECK`-constrained
 column with three values — `starter`, `pro`, `business` — and it is the one
-place that decides what a workspace may do:
+place that decides legacy workspace limits while cutover is disabled:
 
 | | `starter` | `pro` (default) | `business` |
 | --- | --- | --- | --- |

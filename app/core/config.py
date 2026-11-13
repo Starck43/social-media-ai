@@ -291,6 +291,8 @@ class Settings(BaseSettings):
     SUBSCRIPTION_PAYMENT_PROVIDER: Literal["yookassa"] = "yookassa"
     SUBSCRIPTION_PAYMENT_MODE: Literal["test"] = "test"
     SUBSCRIPTION_CHECKOUT_ENABLED: bool = False
+    # Additive tariff storage can ship before the separately approved cutover.
+    USER_SERVICE_PLANS_ENABLED: bool = False
     YOOKASSA_SHOP_ID: str = ""
     YOOKASSA_SECRET_KEY: SecretStr = Field(default=SecretStr(""), repr=False, exclude=True)
     YOOKASSA_RETURN_URL: str = ""
@@ -377,6 +379,8 @@ class Settings(BaseSettings):
     LLM_DEFAULT_MAX_TOKENS: int = 400  # Optimal for social media annotations
     LLM_DEFAULT_STREAM: bool = False  # Complete responses for processing
     LLM_DEFAULT_TIMEOUT: float = 60.0  # Request timeout in seconds
+    # Opaque alias -> deployment environment name. Personal catalogs never use it.
+    LLM_MANAGED_CREDENTIAL_REFS: dict[str, str] = Field(default_factory=dict, repr=False)
     # The dispatch seam stays dormant until P21-T13...P21-T16 provide the foundations.
     LLM_DISPATCH_SEAM_ENABLED: bool = False
 

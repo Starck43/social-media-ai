@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.api.deps import require_model_perm
 from app.models import LLMProvider
 from app.schemas.llm_provider import LLMProviderCreate, LLMProviderList, LLMProviderResponse, LLMProviderUpdate
+from app.services.ai.provider_egress import provider_url_metadata
 from app.types import ActionType
 
 logger = logging.getLogger(__name__)
@@ -23,7 +24,7 @@ def _provider_response(p: LLMProvider) -> LLMProviderResponse:
         name=p.name,
         description=p.description,
         api_format=p.api_format,
-        base_url=p.base_url,
+        base_url=provider_url_metadata(p.base_url),
         auth_header=None,
         is_active=p.is_active,
         created_at=p.created_at.isoformat() if p.created_at else "",

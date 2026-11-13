@@ -6,7 +6,8 @@ from typing import Iterable
 from sqlalchemy import func, select
 
 from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
-from app.services.tenancy.entitlements import EntitlementDenied, catalog_summary, decide
+from app.services.tenancy.entitlements import EntitlementDecision, EntitlementDenied, catalog_summary, decide
+from app.services.tenancy.plan_catalog import CATALOG_VERSION
 
 from .base_manager import BaseManager
 
@@ -40,6 +41,34 @@ class EntitlementManager(BaseManager):
             )
         ).scalar_one_or_none()
         now = datetime.now(timezone.utc)
+        policy_context = None
+        from app.core.config import settings
+
+        if settings.USER_SERVICE_PLANS_ENABLED:
+            from app.core.permissions import get_current_user
+            from app.services.tenancy.service_plan_policy import (
+                ServicePlanPolicyError,
+                load_workspace_policy,
+                resolve_holder_context,
+            )
+
+            actor = get_current_user()
+            try:
+                if actor is None:
+                    policy_context = await load_workspace_policy(session, tenant_id, now=now)
+                else:
+                    policy_context = await resolve_holder_context(session, tenant_id, actor.id, now=now)
+            except ServicePlanPolicyError as error:
+                decision = EntitlementDecision(
+                    False,
+                    "",
+                    CATALOG_VERSION,
+                    tuple(sorted(keys)),
+                    tuple({"capability": key, "reason": error.reason} for key in sorted(keys)),
+                )
+                if consume:
+                    raise EntitlementDenied(decision) from error
+                return decision
         day = now.replace(hour=0, minute=0, second=0, microsecond=0)
         used = dict(
             (
@@ -73,7 +102,24 @@ class EntitlementManager(BaseManager):
                     )
                 ).scalars()
             )
-        decision = decide(workspace, keys, used_today=used, reserved=reserved, now=now)
+        if policy_context is not None:
+            from types import SimpleNamespace
+
+            decision_workspace = SimpleNamespace(
+                plan=policy_context.plan_code,
+                plan_expires_at=policy_context.plan_expires_at,
+                is_active=workspace.is_active,
+            )
+        else:
+            decision_workspace = workspace
+        decision = decide(
+            decision_workspace,
+            keys,
+            used_today=used,
+            reserved=reserved,
+            now=now,
+            policy=policy_context.policy if policy_context else None,
+        )
         if consume:
             if not decision.allowed:
                 raise EntitlementDenied(decision)
@@ -87,6 +133,8 @@ class EntitlementManager(BaseManager):
                         initiated_by_user_id=job.initiated_by_user_id,
                         plan=decision.plan,
                         catalog_version=decision.catalog_version,
+                        plan_holder_user_id=policy_context.plan_holder_user_id if policy_context else None,
+                        plan_policy_version=policy_context.plan_policy_version if policy_context else None,
                         admitted_at=now,
                     )
                 )

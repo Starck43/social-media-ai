@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, relationship
 
 from ...core.config import settings
@@ -17,6 +17,7 @@ class LLMProvider(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("owner_user_id", "uid", name="uq_llm_provider_owner_uid"),
         UniqueConstraint("id", "owner_user_id", name="uq_llm_provider_id_owner"),
+        CheckConstraint("credential_version >= 1", name="ck_llm_provider_credential_version"),
         {"schema": settings.DB_SCHEMA},
     )
 
@@ -32,6 +33,7 @@ class LLMProvider(Base, TimestampMixin):
     base_url: Mapped[str] = Column(String(500), nullable=False)
     auth_header: Mapped[str | None] = Column(String(200), nullable=True)
     encrypted_api_key: Mapped[str | None] = Column(Text, nullable=True)
+    credential_version: Mapped[int] = Column(BigInteger, nullable=False, default=1, server_default="1")
 
     is_active: Mapped[bool] = Column(Boolean, default=True)
 
@@ -55,6 +57,7 @@ class LLMProvider(Base, TimestampMixin):
 
     def get_api_key(self) -> str:
         from app.core.personal_catalog_context import current_catalog_owner_id
+
         if self.owner_user_id != current_catalog_owner_id():
             raise PermissionError("Provider credentials belong to another user")
         if self.encrypted_api_key:
@@ -64,7 +67,5 @@ class LLMProvider(Base, TimestampMixin):
         return ""
 
     def decrypted_key_masked(self) -> str:
-        key = self.get_api_key()
-        if not key:
-            return ""
-        return key[:4] + "…" + key[-4:] if len(key) > 10 else "***"
+        # Display never needs to decrypt, nor expose fragments of the key.
+        return "***" if self.encrypted_api_key else ""

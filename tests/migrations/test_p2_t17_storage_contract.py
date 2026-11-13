@@ -8,6 +8,7 @@ its refusals are observable without a database.
 """
 
 import importlib.util
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +17,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from app.core.config import settings
 from app.models import (
     EntitlementUsage,
     ServicePlanBackfillResolution,
@@ -29,6 +31,16 @@ __source_only__ = True
 ROOT = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 11, 14, tzinfo=timezone.utc)
 TENANCY_MODELS = (ServicePlanPolicy, UserServicePlan, ServicePlanBackfillResolution)
+#: The migration must not touch retained rows: no data-writing DML at all.
+#: Event words such as `BEFORE UPDATE OR DELETE` are DDL, not mutations, so the
+#: patterns require a data target and exclude trigger event lists.
+DATA_MUTATIONS = (
+    re.compile(r"\bINSERT\s+INTO\b"),
+    re.compile(r"(?<![\w.])UPDATE\s+(?:ONLY\s+)?(?!OR\b)[\w.\"]+"),
+    re.compile(r"\bDELETE\s+FROM\b"),
+)
+ORIGINAL_SCHEMA = Tenant.__table__.schema
+ORIGINAL_QUOTED_SCHEMA = postgresql.dialect().identifier_preparer.quote_schema(ORIGINAL_SCHEMA)
 
 
 def _load(name):
@@ -135,6 +147,10 @@ def _script(operations):
     return " ".join(operations.sql)
 
 
+def _mutations(sql):
+    return [pattern.pattern for pattern in DATA_MUTATIONS if pattern.search(sql)]
+
+
 def _single(sql):
     """Normalised single statement text, for substring checks on DDL."""
     return " ".join(sql.split())
@@ -158,7 +174,8 @@ def test_migration_and_orm_match_columns_checks_and_restrictive_keys(monkeypatch
         assert tuple(created.primary_key.columns.keys()) == tuple(mapped.primary_key.columns.keys())
         assert _checks(created) == _checks(mapped)
         assert _fks(created) == _fks(mapped)
-    assert "INSERT INTO" not in _script(operations).upper()
+    # No data-writing DML: the revision is additive storage only.
+    assert _mutations(_script(operations).upper()) == []
     assert "UPDATE OR DELETE" in _script(operations)
     assert "BEFORE TRUNCATE" in _script(operations)
     assert all(model.objects is None for model in TENANCY_MODELS)
@@ -186,7 +203,7 @@ def test_no_policy_seeds_and_no_commercial_terms(monkeypatch):
     migration, operations = _migration(), Operations()
     monkeypatch.setattr(migration, "op", operations)
     migration.upgrade()
-    assert "INSERT INTO" not in _script(operations).upper()
+    assert _mutations(_script(operations).upper()) == []
     policies = operations.tables["service_plan_policies"]
     assert {"plan_code", "policy_version"} == set(policies.primary_key.columns.keys())
     assert "ck_service_plan_policy_version" in _checks(policies)
@@ -279,10 +296,21 @@ def test_storage_migration_never_writes_rows_or_runs_unquoted_sql(monkeypatch):
     migration, operations = _migration(), Operations()
     monkeypatch.setattr(migration, "op", operations)
     migration.upgrade()
-    script = _script(operations).upper()
-    for mutation in ("INSERT INTO", "UPDATE ", "DELETE FROM", "ALTER TABLE"):
-        assert mutation not in script
-    assert all("$$" in sql for sql in operations.sql if "CREATE" in sql)
+    # Additive DDL only: no statement may carry data-writing DML. `BEFORE UPDATE
+    # OR DELETE` / `BEFORE TRUNCATE` are trigger *events* (DDL) and are required
+    # by the immutability triggers, so event words are not mutations.
+    script = " ".join(operations.sql).upper()
+    assert _mutations(script) == []
+    assert "DROP" not in script
+    # Each executed statement is one quoted, schema-qualified DDL/function body.
+    for sql in operations.sql:
+        assert ORIGINAL_QUOTED_SCHEMA in sql, sql
+    functions = [sql for sql in operations.sql if "CREATE FUNCTION" in sql]
+    triggers = [sql for sql in operations.sql if "CREATE TRIGGER" in sql]
+    assert len(functions) == 1 and "$$" in functions[0]
+    assert len(triggers) == 4
+    # A plain trigger is a single DDL statement: it needs no dollar-quoted body.
+    assert all("CREATE TRIGGER" in sql and "EXECUTE FUNCTION" in sql for sql in triggers)
 
 
 # ── downgrade: empty-only, refuses evidence ─────────────────────────────────
@@ -388,6 +416,11 @@ class FinalizationConnection:
         return self.unresolved
 
 
+def _alteration(table, column, nullable):
+    """The revision's exact call changes only nullability in its own schema."""
+    return (table, column, {"existing_type": sa.Integer, "nullable": nullable, "schema": settings.DB_SCHEMA})
+
+
 def _finalize(connection, offline=False):
     module = _finalization()
     module.op = FinalizationOps(connection)
@@ -426,9 +459,7 @@ def test_finalization_verifies_holder_plan_and_matching_backfill_evidence():
     assert "service_plan_backfill_resolutions r ON r.tenant_id = t.id" in normalised
     assert "t.plan_holder_user_id IS NULL OR p.user_id IS NULL" in normalised
     assert "r.tenant_id IS NULL OR r.holder_user_id <> t.plan_holder_user_id" in normalised
-    assert connection.alterations == [
-        ("tenants", "plan_holder_user_id", {"existing_type": sa.Integer, "nullable": False})
-    ]
+    assert connection.alterations == [_alteration("tenants", "plan_holder_user_id", False)]
 
 
 def test_finalization_does_not_ddl_when_locking_the_tenants_table_fails():
@@ -441,9 +472,7 @@ def test_finalization_does_not_ddl_when_locking_the_tenants_table_fails():
 def test_finalization_downgrade_is_nullable_again():
     connection = FinalizationConnection()
     _finalize(connection).downgrade()
-    assert connection.alterations == [
-        ("tenants", "plan_holder_user_id", {"existing_type": sa.Integer, "nullable": True})
-    ]
+    assert connection.alterations == [_alteration("tenants", "plan_holder_user_id", True)]
 
 
 def test_finalization_never_assigns_holders_or_plans_itself():
@@ -466,7 +495,9 @@ def test_orm_holder_column_still_nullable_until_finalization_maps_it_required():
     """
     assert Tenant.__table__.c.plan_holder_user_id.nullable
     assert Tenant.__table__.c.plan_holder_user_id.foreign_keys
-    assert next(iter(Tenant.__table__.c.plan_holder_user_id.foreign_keys)).target_fullname == "public.users.id"
+    assert next(iter(Tenant.__table__.c.plan_holder_user_id.foreign_keys)).target_fullname == (
+        f"{User.__table__.schema}.users.id"
+    )
     assert User.__tablename__ == "users"
     assert UserServicePlan.__table__.c.plan_expires_at.type.timezone
     assert UserServicePlan.__table__.c.plan_expires_at.nullable

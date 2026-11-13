@@ -45,7 +45,12 @@ REFERENCE = "ses_test_p2_t17_operator_decision"
 OWNER, HOLDER, HELD, OUTSIDER = 1, 2, 3, 4
 TENANT_A, TENANT_B, TENANT_C = 100, 101, 102
 DIALECT = postgresql.dialect()
-MAINTENANCE_LOCK = "LOCK TABLE public.users, public.tenants, public.tenant_users IN ACCESS EXCLUSIVE MODE"
+#: The maintenance lock derives every table from the model's own schema, so the
+#: test never assumes `public`; the bound dialect quotes the identifier.
+QUOTED_SCHEMA = DIALECT.identifier_preparer.quote_schema(Tenant.__table__.schema)
+MAINTENANCE_LOCK = (
+    f"LOCK TABLE {QUOTED_SCHEMA}.users, {QUOTED_SCHEMA}.tenants, {QUOTED_SCHEMA}.tenant_users IN ACCESS EXCLUSIVE MODE"
+)
 
 
 # ── shared rows and payloads ────────────────────────────────────────────────
@@ -89,7 +94,13 @@ def _resources(**overrides):
 
 
 def _policy_values(**overrides):
-    """Every stored column except the server timestamp, exactly as an operator supplies it."""
+    """Every stored column except the server timestamp, exactly as an operator supplies it.
+
+    `_DROP` removes a required key (an incomplete definition); `_EXTRA_<name>`
+    adds a key no column backs (a defect the service must refuse, never guess
+    at). Extra keys are deliberately not routed through the ORM constructor:
+    the declarative constructor would reject them before the service sees them.
+    """
     values = dict(
         plan_code="pro",
         policy_version=2,
@@ -103,15 +114,22 @@ def _policy_values(**overrides):
         token_period=None,
         token_limit=None,
     )
-    values.update(overrides)
-    for key in [key for key, value in overrides.items() if value is _DROP]:
-        values.pop(key)
+    for key, value in overrides.items():
+        if value is _DROP:
+            values.pop(key)
+        elif key.startswith(_EXTRA):
+            values[key.removeprefix(_EXTRA)] = value
+        else:
+            values[key] = value
     # The builder must stay exactly the operator-supplied column set.
-    assert set(values) <= set(ServicePlanPolicy.__table__.c.keys()) - {"created_at"}
+    columns = set(ServicePlanPolicy.__table__.c.keys()) - {"created_at"}
+    if not overrides:
+        assert set(values) == columns, "a complete definition supplies every stored column"
     return values
 
 
 def _policy_row(**overrides):
+    """A stored row; only for complete, column-backed definitions."""
     return ServicePlanPolicy(**_policy_values(**overrides))
 
 
@@ -120,6 +138,8 @@ class _Drop:
 
 
 _DROP = _Drop()
+#: Prefix that turns an override into an operator-supplied key with no column.
+_EXTRA = "extra__"
 
 
 def _compiled(statement):
@@ -293,11 +313,17 @@ async def test_create_policy_requires_the_complete_definition(drop):
     assert session.pending == []
 
 
-@pytest.mark.parametrize("extra", [{"plan_price_usd": 19}, {"created_at": NOW}, {"is_default": True}])
+@pytest.mark.parametrize(
+    "extra", [{_EXTRA + "plan_price_usd": 19}, {_EXTRA + "created_at": NOW}, {_EXTRA + "is_default": True}]
+)
 async def test_create_policy_refuses_keys_outside_the_stored_policy(extra):
     session = _packaging()
+    values = _policy_values(**extra)
+    assert set(values) - (set(ServicePlanPolicy.__table__.c.keys()) - {"created_at"}) == {
+        key.removeprefix(_EXTRA) for key in extra
+    }
     with pytest.raises(ServicePlanPolicyError, match="incomplete_policy_definition"):
-        await create_policy(session, actor_user_id=OWNER, values=_policy_values(**extra))
+        await create_policy(session, actor_user_id=OWNER, values=values)
     assert session.pending == []
 
 
@@ -780,7 +806,8 @@ async def test_backfill_updates_sponsorship_by_workspace_identity_only():
     statements = [
         statement
         for statement in session.executed
-        if not isinstance(statement, type(text(""))) and statement.entity_description["entity"] is Tenant
+        # A `Select` has no `entity_description`; only ORM DML does.
+        if getattr(statement, "is_update", False) and statement.entity_description["entity"] is Tenant
     ]
     assert len(statements) == 3
     for statement in statements:
@@ -788,6 +815,9 @@ async def test_backfill_updates_sponsorship_by_workspace_identity_only():
         assert sql.startswith(f"UPDATE {Tenant.__table__.fullname} SET plan_holder_user_id=")
         assert "lower" not in sql
         assert " plan=" not in sql and "SET plan=" not in sql
+        # Per-workspace identity: the primary key is the whole predicate.
+        where = sql.split("WHERE", 1)[1]
+        assert where.strip() == f"{Tenant.__table__.fullname}.id = :id_1", where
 
 
 # ── apply_backfill: missing / conflicting / retained rows ───────────────────
@@ -853,7 +883,7 @@ async def test_reapplying_the_identical_mapping_yields_no_new_rows():
     assert dict(session.plans) == stored[1]
     # The maintenance lock is taken again; only per-workspace sponsorship is rewritten.
     assert session.maintenance_locks() == [MAINTENANCE_LOCK]
-    rewrites = [row for row in session.executed if not isinstance(row, type(text("")))]
+    rewrites = [row for row in session.executed if getattr(row, "is_update", False)]
     assert len(rewrites) == 3
     assert all(row.entity_description["entity"] is Tenant for row in rewrites)
     assert session.executed[0].__class__ is type(text(""))

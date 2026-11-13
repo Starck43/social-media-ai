@@ -81,7 +81,12 @@ async def assign_user_plan(
 ):
     """Platform-curated account assignment, not a self-service purchase."""
     await _locked_operator(session, actor_user_id, (user_id,))
-    if plan_code not in Tenant.PLANS or type(policy_version) is not int or policy_version <= 0:
+    if (
+        not isinstance(plan_code, str)
+        or plan_code not in Tenant.PLANS
+        or type(policy_version) is not int
+        or not 0 < policy_version <= 2**31 - 1
+    ):
         raise ServicePlanPolicyError("invalid_plan_identity")
     if (
         type(preserve_state) is not bool

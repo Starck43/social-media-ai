@@ -246,7 +246,8 @@ async def test_admin_cannot_create_or_forge_sponsorship(monkeypatch):
     assert error.value.status_code == 422
 
 
-async def test_admin_broad_role_cannot_assign_account_tariff(monkeypatch):
+@pytest.mark.parametrize("requested", ["pro", "business"])
+async def test_admin_broad_role_cannot_assign_account_tariff(monkeypatch, requested):
     from fastapi import HTTPException
 
     from app.admin import csrf
@@ -268,6 +269,41 @@ async def test_admin_broad_role_cannot_assign_account_tariff(monkeypatch):
     req = request(role="admin")
     req.form = AsyncMock(return_value={"csrf_token": "csrf"})
     with pytest.raises(HTTPException) as error:
-        await view.update_model(req, "17", {"plan": "business", "policy_version": 7})
+        await view.update_model(req, "17", {"plan": requested, "policy_version": 7})
     assert error.value.status_code == 403
     update.assert_not_awaited()
+
+
+@pytest.mark.parametrize("consume", [False, True])
+@pytest.mark.parametrize("reason", ["plan_expired", "holder_inactive", "missing_policy"])
+async def test_holder_policy_denial_is_terminal_and_never_records_usage(monkeypatch, consume, reason):
+    from app.core import permissions
+    from app.models.managers.entitlement_manager import EntitlementManager
+    from app.models.managers.job_manager import JobManager
+    from app.services.tenancy import service_plan_policy
+    from app.services.tenancy.entitlements import EntitlementDenied
+
+    monkeypatch.setattr(settings, "USER_SERVICE_PLANS_ENABLED", True)
+    monkeypatch.setattr(EntitlementManager, "_tenant_id", staticmethod(lambda: 17))
+    monkeypatch.setattr(JobManager, "lock_source_admission", AsyncMock())
+    monkeypatch.setattr(permissions, "get_current_user", lambda: None)
+    monkeypatch.setattr(
+        service_plan_policy, "load_workspace_policy", AsyncMock(side_effect=ServicePlanPolicyError(reason))
+    )
+    session = NS(
+        execute=AsyncMock(return_value=NS(scalar_one_or_none=lambda: NS(id=17, is_active=True))),
+        add=AsyncMock(),
+        flush=AsyncMock(),
+    )
+    key = next(iter(CAPABILITIES))
+    if consume:
+        with pytest.raises(EntitlementDenied) as error:
+            await EntitlementManager().evaluate(session, [key], job_id=99, consume=True)
+        decision = error.value.decision
+    else:
+        decision = await EntitlementManager().evaluate(session, [key])
+    assert not decision.allowed
+    assert decision.denials == ({"capability": key, "reason": reason},)
+    assert session.execute.await_count == 1
+    session.add.assert_not_called()
+    session.flush.assert_not_awaited()

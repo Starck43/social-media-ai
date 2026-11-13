@@ -16,7 +16,17 @@ from datetime import datetime, timedelta, timezone
 from types import MappingProxyType, SimpleNamespace
 
 import pytest
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, MetaData, column, create_engine, insert, select, text
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKeyConstraint,
+    Integer,
+    MetaData,
+    column,
+    create_engine,
+    insert,
+    select,
+    text,
+)
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine import Row
 from sqlalchemy.sql import visitors
@@ -134,22 +144,34 @@ def _workspace_values(tenant_id, holder, active):
 
 
 def _translated():
-    """The five tables alone, schema-qualified and without out-of-scope FKs.
+    """The five tables alone, on the default schema and without their FKs.
 
     The resolver imports these `Table` objects; SQLite only needs the columns.
-    Foreign keys point at tables this source-only test does not load (`roles`,
-    `workspaces`), so they are dropped in the copy instead of being resolved.
+    A copied FK points at tables this source-only test does not load (`roles`,
+    `workspace_roles`, `llm_models`), so the copy must drop the whole FK
+    bookkeeping: the `ForeignKeyConstraint` *and* the `ForeignKey` markers that
+    SQLAlchemy registers on every table, constraint collection and column.
+    Removing only the constraint raises `NoReferencedTableError` on
+    `create_all`. The imported models keep their original metadata untouched.
+
+    PostgreSQL JSON checks are outside this resolver fixture. The production
+    unique resolved-membership index also stays outside: duplicate-row cases
+    deliberately exercise defensive EXISTS semantics, not schema equivalence.
     """
     metadata = MetaData()
-
-    def keep_schema(table, schema, constraint, referred_schema):
-        return schema
-
     for model in TABLES:
-        table = model.__table__.to_metadata(metadata, referred_schema_fn=keep_schema)
+        table = model.__table__.to_metadata(metadata, schema=None)
+        for constraint in [item for item in table.constraints if isinstance(item, ForeignKeyConstraint)]:
+            table.constraints.discard(constraint)
+            for element in constraint.elements:
+                element.parent.foreign_keys.discard(element)
+        table.foreign_keys.clear()
         for constraint in list(table.constraints):
-            if isinstance(constraint, (ForeignKeyConstraint, CheckConstraint)):
+            if isinstance(constraint, CheckConstraint):
                 table.constraints.discard(constraint)
+        for index in list(table.indexes):
+            if index.name == "uq_tenant_users_web_membership":
+                table.indexes.discard(index)
     return metadata
 
 
@@ -197,8 +219,13 @@ class _Session:
             ServicePlanPolicy: [] if policy is None else [policy],
         }
         self.calls = []
-        self.engine = create_engine("sqlite://").execution_options(schema_translate_map={Tenant.__table__.schema: None})
-        _translated().create_all(self.engine)
+        # Every table lives in the configured schema; SQLite has no schemas, so
+        # each distinct schema of the loaded copies is translated away.
+        tables = _translated()
+        self.engine = create_engine("sqlite://").execution_options(
+            schema_translate_map={model.__table__.schema: None for model in TABLES}
+        )
+        tables.create_all(self.engine)
         self.connection = self.engine.connect()
         for model, rows in self.records.items():
             for row in rows:
@@ -408,6 +435,8 @@ def test_nullable_collection_and_flag_limits_keep_null():
         {"daily_cost_limit": float("inf")},
         {"daily_cost_limit": float("nan")},
         {"daily_cost_limit": -1.5},
+        {"daily_cost_limit": -1},
+        {"daily_cost_limit": 2**63},
         {"daily_cost_limit": True},
         {"allow_learning": 1},
         {"analytics_depth": "sentiment"},
@@ -430,6 +459,8 @@ def test_malformed_resource_limits_are_refused(overrides):
 def test_monetary_limit_accepts_finite_nonexact_numbers(monetary):
     snapshot = policy_snapshot(_policy_row(resource_limits=_resources(daily_cost_limit=monetary)))
     assert snapshot.resource_limits["daily_cost_limit"] == monetary
+    # The stored kind is the caller's: an int stay an int, a float stays a float.
+    assert type(snapshot.resource_limits["daily_cost_limit"]) is type(monetary)
 
 
 def test_zero_count_ceilings_are_values_not_absences():
@@ -967,3 +998,31 @@ def test_projected_lookups_select_explicit_columns_only():
 def test_integer_columns_used_as_identity_are_plain_integers():
     assert isinstance(Tenant.__table__.c.plan_holder_user_id.type, Integer)
     assert isinstance(UserServicePlan.__table__.c.user_id.type, Integer)
+
+
+def test_translated_copy_keeps_the_models_original_metadata():
+    """The SQLite copy is detached: dropping its FKs must not touch the models."""
+    translated = _translated()
+    assert set(translated.tables) == {model.__tablename__ for model in TABLES}
+    assert {table.schema for table in translated.tables.values()} == {None}
+    for table in translated.tables.values():
+        assert not table.foreign_keys
+        assert not {item for item in table.constraints if isinstance(item, ForeignKeyConstraint)}
+        assert not any(column.foreign_keys for column in table.c)
+    original = UserServicePlan.__table__
+    assert original.schema == Tenant.__table__.schema
+    assert {fk.target_fullname for fk in original.foreign_keys} == {
+        f"{original.schema}.users.id",
+        f"{original.schema}.service_plan_policies.plan_code",
+        f"{original.schema}.service_plan_policies.policy_version",
+    }
+
+
+def test_duplicate_membership_fixture_does_not_change_the_production_index():
+    """The deliberately relaxed fixture must not mutate the real unique index."""
+    original = {index.name: index for index in TenantUser.__table__.indexes}
+    translated = {index.name: index for index in _translated().tables[TenantUser.__tablename__].indexes}
+    assert set(translated) == set(original) - {"uq_tenant_users_web_membership"}
+    web = original["uq_tenant_users_web_membership"]
+    assert web.unique
+    assert str(web.dialect_options["postgresql"]["where"]) == "user_id IS NOT NULL"

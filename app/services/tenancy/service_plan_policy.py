@@ -229,7 +229,9 @@ def _limit_value(key: str, value: Any) -> Any:
     if isinstance(example, float):
         # Monetary limits may be int or float, but always finite and nonnegative.
         if type(value) is int:
-            return value if _bounded_int(value) else _fail("invalid_resource_limit")
+            if not _bounded_int(value):
+                raise _fail("invalid_resource_limit")
+            return value
         if type(value) is not float or not math.isfinite(value) or value < 0:
             raise _fail("invalid_resource_limit")
         return value

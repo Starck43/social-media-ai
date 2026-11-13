@@ -7,11 +7,11 @@ arbitrary target database. Deployment migration guidance is in
 
 ## Scope
 
-**Planned successor:** [P2-T17](../tasks/p2-t17.md) makes one user's tariff govern
-all owned workspaces and host-sponsored invitee activity, with configurable module
-rights, owned-space limits and separate token allowances. It consumes this engine
-and migrates workspace plan/expiry reads; this document below describes the
-accepted workspace-scoped foundation, not shipped user-level subscriptions.
+**Accepted dormant successor:** [P2-T17 increment A](../audit/p2/p2-t17.md)
+supplies holder-driven module/quota policy and ownership limits through this same
+engine. [SERVICE_PLANS](SERVICE_PLANS.md) owns the live user/sponsorship interface;
+cutover remains default-OFF. Below is the accepted workspace-scoped foundation,
+not live user-level subscription or token-pool activation.
 `entitlement_usage` counts capability admissions, not billable tokens. No second
 module registry or implicit wildcard packaging replaces the reviewed contract.
 

@@ -27,13 +27,14 @@ P2-T16 was accepted separately as a configuration-only increment.
 
 ## Remaining lifecycle decisions before checkout implementation
 
-### User-level tariff prerequisite (planned, not shipped)
+### User-level tariff prerequisite (dormant increment accepted)
 
-The 2026-11-13 owner direction is recorded in [P2-T17](../tasks/p2-t17.md): one
-user tariff across owned workspaces, configurable module grants and finite or
-explicitly unlimited token/owned-space limits. It registers entitlement/holder
-work, not checkout or production payment activation. [P21-T13](../tasks/p21-t13.md)
-assigns platform models to that tariff; P21-T15/T16 reserve/settle shared token usage.
+The owner direction is preserved by [P2-T17 acceptance](../audit/p2/p2-t17.md)
+and [SERVICE_PLANS](SERVICE_PLANS.md): one user tariff across owned workspaces,
+configurable module grants and finite or explicitly unlimited token/owned-space
+definitions. Increment A ships dormant storage/holder policy, not checkout,
+live token balances or production payment activation. [P21-T13](../tasks/p21-t13.md)
+assigns platform models; P21-T15/T16 own shared token reservation/settlement.
 
 Future purchases bind the authenticated account owner, not an invited workspace
 actor. Host tariff/model management cannot be delegated through workspace roles.

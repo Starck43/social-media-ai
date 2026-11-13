@@ -19,10 +19,30 @@
 3. [P2-T09](../tasks/p2-t09.md) — verify real LLM/provider usage admission and
    settlement after its production activation/cutover prerequisites. This lane
    is independent of subscription checkout in T16.
-4. [P2-T17](../tasks/p2-t17.md) — user-level configurable tariff, module grants,
-   owned-workspace count and shared token allowance contract. Consumes T15/T16;
-   P21 owns model grants and token admission/settlement wiring. No checkout or
-   production activation is implied; this does not reopen deferred T08.
+4. [P2-T17](../audit/p2/p2-t17.md) — **DONE 2026-11-14, increment A** · accepted
+   `b76a35e6`, verified merge `fd030ad5` ([PR #485](https://github.com/Starck43/social-media-ai/pull/485)).
+   Dormant user tariff/sponsorship, module policy and atomic ownership limits;
+   [live contract](../platform/SERVICE_PLANS.md). Cutover remains OFF, no AI-path
+   increment B, live token pool, checkout or public apply; P21 owns model grants
+   and token admission/settlement. Deferred T08 and phase closure remain unchanged.
+
+## Remaining allowance activation gates
+
+Increment A acceptance does not answer or authorize these owner choices:
+
+- Token unit/counting: input/output/cached/reasoning/tool/multimodal usage, including
+  failed or partially charged attempts; no conversion from USD/capability counts.
+- Period boundary/reset/rollover and expiry/proration: UTC calendar vs paid rolling
+  period; plan change must not silently reset an active shared pool.
+- Finite package sizes, zero/unlimited packaging and overage: fail closed until
+  explicitly configured; no guessed commercial quantities or paid-on-top behavior.
+- BYOK applicability and host-sponsored invitee consent: token allowance, USD payer
+  consent and credential custody remain distinct.
+
+P21-T13/T15/T16 consume the accepted holder/definition interface, but activation
+must resolve these gates and complete separately reviewed dispatch/ledger controls.
+AI-path consumer increment B, rollout/signup provisioning and public apply need
+their own scoped assignment/authorization; they are not a reopened P2-T17 card.
 
 **Deferred:** [P2-T08](../tasks/p2-t08.md) — corporate/shared billing accounts;
 keep the owner's prior deferral. Service-plan entitlements and checkout in T15/T16

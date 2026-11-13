@@ -1,7 +1,7 @@
 # Product capability entitlements
 
 P2-T15 foundation, catalog version 1. The focused behavioral acceptance is
-recorded in the [P2-T15 audit](../audit/p2-t15.md); it is not evidence for an
+recorded in the [P2-T15 audit](../audit/p2/p2-t15.md); it is not evidence for an
 arbitrary target database. Deployment migration guidance is in
 [DEPLOYMENT](DEPLOYMENT.md).
 
@@ -96,7 +96,7 @@ product packaging, new screen or non-social integration is implemented.
 ## Deferred validation
 
 This heading preserves the original resume anchor. Validation resumed on
-2026-11-11 and was [accepted on 2026-11-12](../audit/p2-t15.md), covering pure
+2026-11-11 and was [accepted on 2026-11-12](../audit/p2/p2-t15.md), covering pure
 decisions/wildcards/expiry edges, cross-tenant and actor attribution, task and
 execution gates, queued downgrade/expiry, source/search derivation, concurrent
 quota races/idempotency, durable log retention, structured denials,

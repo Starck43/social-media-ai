@@ -28,7 +28,7 @@ Every schema change needs named consumers, constraints, migration and rollback.
 
 ## Numbered plan
 
-1. [P21-T01](../audit/p21-t01.md) — **DONE 2026-11-12**: planning package accepted and integrated; no implementation activation.
+1. [P21-T01](../audit/p21/p21-t01.md) — **DONE 2026-11-12**: planning package accepted and integrated; no implementation activation.
 2. [P21-T02](../tasks/p21-t02.md) — one dispatch, access, payer and fallback contract.
 3. [P21-T03](../tasks/p21-t03.md) — atomic admission and allowance reservations.
 4. [P21-T04](../tasks/p21-t04.md) — settlement, orphan detection and reconciliation.

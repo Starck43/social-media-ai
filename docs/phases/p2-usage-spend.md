@@ -1,17 +1,17 @@
 # P2 — Complete usage and spend
 
-[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p2) · [full historical notes](../audit/phase-p2-history.md)
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p2) · [full historical notes](../audit/history/phase-p2-history.md)
 
 **Goal:** Paid work is admitted within attributable caps; unknown cost never becomes free.
 
 **Plan — active task cards:**
 
-1. [P2-T15](../audit/p2-t15.md) — **DONE 2026-11-12** · accepted head
+1. [P2-T15](../audit/p2/p2-t15.md) — **DONE 2026-11-12** · accepted head
    `c4f3f566`, merge `737345d5`; capability decisions, execution gates,
    workspace isolation, quota concurrency/idempotency, durable usage and
    inspection surfaces validated. Existing tenant tier quotas and personal LLM
    payer consent remain separate contracts.
-2. [P2-T16](../audit/p2-t16.md) — YooKassa subscription-payment configuration
+2. [P2-T16](../audit/p2/p2-t16.md) — YooKassa subscription-payment configuration
    foundation; accepted 2026-10-27 (PR #254 head `5de6ff36`, merged
    `e21e373d`). The broader checkout/webhook/activation scope was closed with
    that owner decision and is not tracked. Live purchase activation still needs
@@ -26,17 +26,17 @@ do not implement shared/corporate payer accounts.
 
 **Accepted history:**
 
-- [P2-T11](../audit/phase-p2-history.md#p2-t11) — align chat, digest and analyzer cost projections with resolved structured provider USD totals, including explicit zero and… · `adf1d6f`
-- [P2-T10](../audit/phase-p2-history.md#p2-t10) — audit cache-aware token pricing, reported costs, daily caps and payer/workspace attribution
-- [P2-T12](../audit/phase-p2-history.md#p2-t12) — preserve provider-specific cache usage and version complete dispatch-time cache tariffs
-- [P2-T13](../audit/phase-p2-history.md#p2-t13) — bind journal tariffs to exact provider/model identity
-- [P2-T14](../audit/phase-p2-history.md#p2-t14) — use complete spend evidence in caps and payer/workspace reports
-- [P2-T01](../audit/phase-p2-history.md#p2-t01) — model personal billing account identity and fixed task payer binding; changing payer requires new payer consent · 2026-10-17 · `c18ee2f`
-- [P2-T07](../audit/phase-p2-history.md#p2-t07) — focused PG/ASGI acceptance and cutover
-- [P2-T02](../audit/phase-p2-history.md#p2-t02) — admin connection-test payer: paid probes charged to the launching user's personal account · 2026-10-17 · `c18ee2f`
-- [P2-T03](../audit/phase-p2-history.md#p2-t03) — explicit compatible transition and mapping for legacy finance records and tasks · 2026-10-17 · `c18ee2f`
-- [P2-T04](../audit/phase-p2-history.md#p2-t04) — atomic idempotent settlement/reconciliation · 2026-10-17 · `689c6fb`
-- [P2-T05](../audit/phase-p2-history.md#p2-t05) — provision UTC daily baselines · 2026-10-17 · `c18ee2f`
-- [P2-T06](../audit/phase-p2-history.md#p2-t06) — wire admission through all provider clients and callers · 2026-10-17 · `7e5b4f1`
+- [P2-T11](../audit/history/phase-p2-history.md#p2-t11) — align chat, digest and analyzer cost projections with resolved structured provider USD totals, including explicit zero and… · `adf1d6f`
+- [P2-T10](../audit/history/phase-p2-history.md#p2-t10) — audit cache-aware token pricing, reported costs, daily caps and payer/workspace attribution
+- [P2-T12](../audit/history/phase-p2-history.md#p2-t12) — preserve provider-specific cache usage and version complete dispatch-time cache tariffs
+- [P2-T13](../audit/history/phase-p2-history.md#p2-t13) — bind journal tariffs to exact provider/model identity
+- [P2-T14](../audit/history/phase-p2-history.md#p2-t14) — use complete spend evidence in caps and payer/workspace reports
+- [P2-T01](../audit/history/phase-p2-history.md#p2-t01) — model personal billing account identity and fixed task payer binding; changing payer requires new payer consent · 2026-10-17 · `c18ee2f`
+- [P2-T07](../audit/history/phase-p2-history.md#p2-t07) — focused PG/ASGI acceptance and cutover
+- [P2-T02](../audit/history/phase-p2-history.md#p2-t02) — admin connection-test payer: paid probes charged to the launching user's personal account · 2026-10-17 · `c18ee2f`
+- [P2-T03](../audit/history/phase-p2-history.md#p2-t03) — explicit compatible transition and mapping for legacy finance records and tasks · 2026-10-17 · `c18ee2f`
+- [P2-T04](../audit/history/phase-p2-history.md#p2-t04) — atomic idempotent settlement/reconciliation · 2026-10-17 · `689c6fb`
+- [P2-T05](../audit/history/phase-p2-history.md#p2-t05) — provision UTC daily baselines · 2026-10-17 · `c18ee2f`
+- [P2-T06](../audit/history/phase-p2-history.md#p2-t06) — wire admission through all provider clients and callers · 2026-10-17 · `7e5b4f1`
 
 **Phase status:** Active phase; close only after every plan item is accepted.

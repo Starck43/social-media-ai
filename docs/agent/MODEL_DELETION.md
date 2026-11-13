@@ -175,7 +175,7 @@ appear once. Tables without FKs are included. Exact declarations remain in
 ## Validation and remaining PostgreSQL acceptance
 
 Historical source pins, checks and the detailed destructive-path acceptance
-plan are in the [model deletion audit record](../audit/model-deletion-history.md).
+plan are in the [model deletion audit record](../audit/history/model-deletion-history.md).
 This inventory alone does not establish deployed FK behavior; read-only catalog
 comparison and controlled test-schema acceptance are required before a policy
 change.

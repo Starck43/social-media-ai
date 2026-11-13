@@ -20,13 +20,13 @@ P8-T38–P8-T41, additional VK categories are P8-T33, and non-social connectors
 P8-T34 are deferred beyond the social milestone.
 
 The general capability-entitlement foundation and its focused validation are
-[accepted in P2-T15](../audit/p2-t15.md); see
+[accepted in P2-T15](../audit/p2/p2-t15.md); see
 [ENTITLEMENTS](../platform/ENTITLEMENTS.md). Catalog v1 grants all known
 capabilities on the existing plans, not paid-plan packaging.
 Registered-user service-plan purchase and commercial connector packaging are
 not shipped or authorized by that foundation. The P2-T16 configuration
 foundation (YooKassa provider selection and env field contract) was accepted
-2026-10-27 ([audit](../audit/p2-t16.md)); the broader checkout and lifecycle scope
+2026-10-27 ([audit](../audit/p2/p2-t16.md)); the broader checkout and lifecycle scope
 closed with that decision and is not tracked as an open task. Existing personal
 LLM payer consent, balances and spend caps do not constitute self-service
 subscription purchase or connector entitlements.

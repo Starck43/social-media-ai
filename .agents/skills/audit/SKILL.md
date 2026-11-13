@@ -24,8 +24,10 @@ an explicit owner waiver of a named check is an exception under Evidence; record
 it as unrun/waived, never PASS.
 
 Only after verified integration, update the parent phase with completion date,
-accepted SHA and a brief result linked to `docs/audit/<id>.md`; remove the task card and ROADMAP row
-for a closed task. An orphan leaves only its audit summary. Return concrete
+accepted SHA and a brief result linked to `docs/audit/<phase>/<id>.md`; move the
+task card to `docs/archive/tasks/` and remove its ROADMAP row for a closed task
+(see the audit folder index for where a report lives). An orphan leaves only its
+audit summary. Return concrete
 findings, required checks and a recommended fix when not accepted: correctable
 findings return the row to IN_PROGRESS, and remote findings ride PR comments,
 never the PR body. A cannot-proceed task becomes BLOCKED with reason,

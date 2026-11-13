@@ -51,7 +51,7 @@ independently accessible for setup, review and direct editing. Web forms, API,
 CLI, admin and agent tools use shared validation/services and the same persisted
 definitions. Existing components and navigation remain; no redesign. The
 accepted chat-first journey and standalone management evidence are in
-[P8-T39](../audit/p8-t39.md).
+[P8-T39](../audit/p8/p8-t39.md).
 
 - **Sources:** platform, external identity, connection/mode, collection settings,
   health and related tasks. Label temporary task-owned discovery sources.
@@ -129,9 +129,9 @@ P8-T40 evidence — that work is unchanged.
 | Gap | Consequence today | Owner |
 | --- | --- | --- |
 | No plan version carried into the run's effective snapshot | A run cannot be reproduced once the account or plan changes; "exact version" exists only for file objects | contract change, not yet carded |
-| Every task is `collect` or `analyze`; a domain module persists its own execution | P14–P19 each inventing run/progress/payer semantics | [P13-T04 accepted](../audit/p13-t04-p14-t04-business-crm.md) command ledger + per-phase cards |
-| Whether business modules reuse the task-plan contract is undecided (source scope, scenario and window currently mean social lanes only) | Recorded as a gap, not a defect: chat composing a CRM query or a document task needs either a contract extension or an explicit decision to keep a separate path | undecided — [Q-18](../audit/q-18-owner-decisions.md), then phase cards |
-| `digest` exists as a stage, not as a first-class output type of any module | Reports and CRM/Documents have no shared document/delivery contract | [P19-T01 accepted](../audit/p19-t01.md), [P15-T05](../archive/tasks/p15-t05.md) |
+| Every task is `collect` or `analyze`; a domain module persists its own execution | P14–P19 each inventing run/progress/payer semantics | [P13-T04 accepted](../audit/p13/p13-t04-p14-t04-business-crm.md) command ledger + per-phase cards |
+| Whether business modules reuse the task-plan contract is undecided (source scope, scenario and window currently mean social lanes only) | Recorded as a gap, not a defect: chat composing a CRM query or a document task needs either a contract extension or an explicit decision to keep a separate path | undecided — [Q-18](../audit/q/q-18-owner-decisions.md), then phase cards |
+| `digest` exists as a stage, not as a first-class output type of any module | Reports and CRM/Documents have no shared document/delivery contract | [P19-T01 accepted](../audit/p19/p19-t01.md), [P15-T05](../archive/tasks/p15-t05.md) |
 
 ### Product capabilities
 

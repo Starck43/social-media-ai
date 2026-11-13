@@ -242,7 +242,7 @@ owner lock; otherwise 503). It does not query the DB or assert scheduler/worker/
 listener progress. No-store responses contain only redacted infrastructure
 observation fields. See [runtime observation configuration](CONFIGURATION.md#optional-same-host-runtime-observation)
 and [probe interpretation](DEPLOYMENT.md#2-interpret-the-http-probes-correctly).
-See [isolated verification and acceptance handoff](../audit/legacy-api-db-probes.md)
+See [isolated verification and acceptance handoff](../audit/shared/legacy-api-db-probes.md)
 for exact source revisions, commands and the remaining real-environment checks.
 
 ---
@@ -259,7 +259,7 @@ identity dependency, operator routes keep their existing model-action or
 platform-admin guards, and manager authorization remains unchanged.
 
 The runtime schema fix is already present in `eb6cad6`; the bounded
-[HTTP/OpenAPI verification](../audit/http-user-response-privacy.md) adds
+[HTTP/OpenAPI verification](../audit/shared/http-user-response-privacy.md) adds
 isolated router tests with explicit identity/storage doubles. Owner integration
 acceptance at PR source `987796aa` additionally exercised the full application
 OpenAPI and real ASGI/JWT/middleware/ORM list, me and profile routes: 2 passed,
@@ -720,7 +720,7 @@ query and renders neither its count nor activity/link; task/source access does
 not imply these rights. With no permitted component or no selected workspace,
 Home makes no pipeline data query. Session requests resolve membership/grants
 afresh, so revocation applies on the next request, regardless of platform role.
-[P10-T08](../audit/p10-t08.md) supplies the permission gates. The stored-material
+[P10-T08](../audit/p10/p10-t08.md) supplies the permission gates. The stored-material
 count is the literal CollectedItem row count in the active workspace, including
 already analyzed materials, not a claim of analysis eligibility or backlog.
 Job activity is an explicit preview of at most three newest pending/running
@@ -729,7 +729,7 @@ running and pending counts describe only that preview; older running jobs can
 be outside it. Pending does not imply immediate execution (run_at may be in the
 future). Activity labels distinguish collect, analyze, digest, prune, learn and
 reflect; unknown types use a neutral label, never an implied LLM call. Home adds
-no total-count query or eligibility calculation for [P10-T09](../audit/p10-t09.md).
+no total-count query or eligibility calculation for [P10-T09](../audit/p10/p10-t09.md).
 
 
 Attention is implemented in the unified bell, not a second home block (see
@@ -738,7 +738,7 @@ analysis/digest feed and truly upcoming schedules remain deferred in [the phase 
 The current task preview is recent-by-creation, not a nearest-run claim. This
 source change is not evidence of deployment or completed runtime validation.
 The permission-gated chat entry and permitted social-task journey are accepted in
-[P8-T39](../audit/p8-t39.md); the overview description here records the current
+[P8-T39](../audit/p8/p8-t39.md); the overview description here records the current
 route behavior.
 
 ### Get Dashboard Stats
@@ -1022,7 +1022,7 @@ until the actor confirms; confirmation is bound to the actor/session and expires
 Extracted text is untrusted input. Attachments are staged privately and cleaned up
 after the turn, cancellation or stop; no public file URL is exposed. Supported
 formats and exact byte/page/token limits are recorded in the
-[P8-T44 acceptance](../audit/p8-t44.md).
+[P8-T44 acceptance](../audit/p8/p8-t44.md).
 
 ## Web-chat evidence context (P12-T11)
 
@@ -1037,7 +1037,7 @@ Only `cloud` evidence is currently passed to `handle_web_message`. A
 `company` or `local_only` selection may be displayed, but sending it returns
 403 before the shared runtime because no end-to-end company/local model route is
 implemented. A non-AJAX `GET /app/chat` without a context clears the selection.
-See [P12-T11 acceptance](../audit/p12-t11.md).
+See [P12-T11 acceptance](../audit/p12/p12-t11.md).
 
 ---
 
@@ -1070,7 +1070,7 @@ image, video and audio resolution use the same gate, and the analyzer's failover
 queue never offers another owner's model;
 a chosen foreign/ineligible FK is rejected rather than resolved by name.
 
-See [evidence and outstanding real acceptance](../audit/personal-llm-ownership.md).
+See [evidence and outstanding real acceptance](../audit/shared/personal-llm-ownership.md).
 
 ### Create Provider
 
@@ -1282,7 +1282,7 @@ workspace, and an invalid or stale value does not fall through to
 no usable personal owner, collection uses only the deployment credential; there
 is no workspace-owner token fallback. See the
 [source ownership contract](TENANCY.md#tables) and
-[P12-T16 audit](../audit/p12-t16.md).
+[P12-T16 audit](../audit/p12/p12-t16.md).
 
 ### Update Source
 
@@ -1785,7 +1785,7 @@ in [P8-T29](../tasks/p8-t29.md); this documents code surfaces, not completion of
 product journey. The target is the chat as the primary workspace for
 clarification, preview, execution, progress, results and follow-up, while the
 dedicated management pages remain directly usable. The permitted collect/analyze interaction
-contract is accepted in [P8-T39](../audit/p8-t39.md). Keep recurring-task creation
+contract is accepted in [P8-T39](../audit/p8/p8-t39.md). Keep recurring-task creation
 and digest sending confirmation-gated.
 
 API and web/CLI/admin/agent tools preserve identical source-scope, scenario and

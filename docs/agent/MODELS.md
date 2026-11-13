@@ -18,8 +18,8 @@ integration itself did not upgrade a deployment schema; Q-14 later reconciled th
 local public/test schemas to the frozen baseline, which does not prove any other
 target's state. PostgreSQL/ASGI and browser evidence remains pinned to the original
 execution SHAs; none is attributed as a rerun on final dev. See
-[implementation evidence](../audit/personal-llm-ownership.md) and the [Q-14 baseline
-audit](../audit/q-14.md).
+[implementation evidence](../audit/shared/personal-llm-ownership.md) and the [Q-14 baseline
+audit](../audit/q/q-14.md).
 
 The public facade is [app.models](../../app/models/__init__.py); canonical definitions
 live in domain packages. [bootstrap](../../app/models/bootstrap.py) binds managers
@@ -245,7 +245,7 @@ Unique **(`tenant_id`, `platform_id`, `external_id`)**. There is no column named
 `owner_task_id` was added by 0108 for task-scoped query lanes. A lane is hidden
 from the global source list and excluded from the task's empty-set/"all active"
 fallback; only an explicit link activates it. See
-[collection plan](../audit/collection-plan-history.md).
+[collection plan](../audit/history/collection-plan-history.md).
 
 ### `collected_items`
 
@@ -258,7 +258,7 @@ stored. Analysis reads `selected` rows and legacy `NULL` rows (staged before
 stage C, which still pass through the old analysis-time selection once);
 `needs_review` waits for an operator. Rejected identities/counts live in
 `collection_seen`/`collection_lane_runs`. See
-[collection plan](../audit/collection-plan-history.md).
+[collection plan](../audit/history/collection-plan-history.md).
 
 ### `collection_seen`
 
@@ -473,7 +473,7 @@ replay returns false: **not permission to dispatch again**. There is no terminal
 settlement/release, automatic baseline provisioning or all-client HTTP wiring in
 this merged slice. Baseline/bound production and activation remain open. See
 [delivered scope](../archive/IMPLEMENTATION_STATUS.md) and
-[budget validation attribution](../audit/llm-budget-pg-runner.md).
+[budget validation attribution](../audit/shared/llm-budget-pg-runner.md).
 
 ## Tenant-scoped scheduling and delivery
 

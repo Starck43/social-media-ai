@@ -118,9 +118,9 @@ of this proposal.
 
 ## Documents and source contracts
 
-- [P11-T18 acceptance and limitations](../audit/p11-t18.md)
-- [P11-T04 accepted task orchestration](../audit/p11-t04.md)
-- [P11-T06 accepted typed launch/error contract](../audit/p11-t06.md)
+- [P11-T18 acceptance and limitations](../audit/p11/p11-t18.md)
+- [P11-T04 accepted task orchestration](../audit/p11/p11-t04.md)
+- [P11-T06 accepted typed launch/error contract](../audit/p11/p11-t06.md)
 - [Product extension contracts](../product/PRODUCT_PLAN.md#extension-contracts)
 - [Agent task-plan model](../agent/AGENT_TASKS_PLAN.md#model)
 - [Queue and claim lifecycle](../agent/AGENT_TASKS_QUEUE.md#how-a-run-happens)

@@ -38,7 +38,7 @@ the contract owner of the accepted file-workspace seams. Exact-version provider
 capability and native original-open are gated on the owner-deferred P8-T34;
 local-only execution is delivered by P18 reusing these contracts; folder grants
 and approved mutations belong to P12-T12 per
-[D21](../../audit/q-20-notification-surface.md), which P12-T15 may extend but never
+[D21](../../audit/q/q-20-notification-surface.md), which P12-T15 may extend but never
 duplicate. P12-T13 is the accepted independent capability-contract review. The
 original #307 requirements are preserved in the reconciled plan rather than
 overwritten by a short card.

@@ -270,7 +270,7 @@ backup is needed.
 
 ### GitHub deployment workflow (prepared, gated off)
 
-All workflows run only on pushes to `master` ([Q-13](../audit/q-13-workflows.md));
+All workflows run only on pushes to `master` ([Q-13](../audit/q/q-13-workflows.md));
 `dev` pushes and pull requests execute no Actions jobs. A master push publishes a
 commit-tagged image to GHCR and the deploy step pins the build's content digest.
 Production deploy additionally requires
@@ -951,8 +951,8 @@ or provider calls. Keep deployment-enable variables false until the host is read
 | Host | Provision VPS; install Docker Engine, Compose v2 supporting `up --wait`, host Nginx and Python 3; verify RAM/disk, firewall (SSH/80/443), non-overlapping subnets and one runtime owner. |
 | Secrets | Separate mode-600 staging/production env files; distinct keys/passwords; private offsite encryption-key custody; read-only GHCR pull login on VPS. Never rotate the production Fernet key during upgrade. |
 | Ingress | Select DNS names, obtain certificates, replace host-vhost placeholders; run real `nginx -t`, verify HTTPS, secure cookies, `/app`, `/admin`, and rate-limit storage through the real proxy chain. Restrict staging to approved operator ingress (VPN/IP allowlist/auth). |
-| GitHub | Create the `production` Environment with required reviewers and deployment branch restriction `master`; set SSH secrets and the fixed deployment directory variable. The `staging` Environment is unused while Actions run only on `master` ([Q-13](../audit/q-13-workflows.md)). |
-| Schema | The [Q-14](../audit/q-14.md) initial baseline is complete and integrated. Before selecting the first production revision, validate that exact revision on the approved test schema and obtain separate apply approval. Set repository variable `PRODUCTION_MIGRATIONS_APPROVED_SHA` to that full commit only. A later commit requires fresh approval. |
+| GitHub | Create the `production` Environment with required reviewers and deployment branch restriction `master`; set SSH secrets and the fixed deployment directory variable. The `staging` Environment is unused while Actions run only on `master` ([Q-13](../audit/q/q-13-workflows.md)). |
+| Schema | The [Q-14](../audit/q/q-14.md) initial baseline is complete and integrated. Before selecting the first production revision, validate that exact revision on the approved test schema and obtain separate apply approval. Set repository variable `PRODUCTION_MIGRATIONS_APPROVED_SHA` to that full commit only. A later commit requires fresh approval. |
 | Recovery | Schedule protected logical backups with offsite copies and separately secured encryption keys; select RPO/RTO, retention and monitoring. Run an isolated verified restore before setting `PRODUCTION_BACKUP_READY=true`. Local pre-migration snapshots alone do not satisfy this gate. |
 | Operations | Execute [P7-T02](../tasks/p7-t02.md) on staging: install, backup, restore, verify revision/schema, HTTP and controlled operation; record exact image digest and cleanup. |
 | Delivery | Execute [P4-T01](../tasks/p4-t01.md) operator recovery without duplicate sends; use approved test recipients and preserve receipts. |

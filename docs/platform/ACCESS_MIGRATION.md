@@ -130,7 +130,7 @@ Regression: [`test_p10_t03_profile_privilege_split.py`](../../tests/security/tes
 ## Local development execution evidence (2026-10-15)
 
 Historical local-schema operations and checks are retained in the
-[access migration audit record](../audit/access-migration-history.md). They do not
+[access migration audit record](../audit/history/access-migration-history.md). They do not
 establish current or production database state.
 
 ## Acceptance before cutover

@@ -52,7 +52,8 @@ Top-level `docs/` holds only this router; current contracts are grouped by subje
   checks and PR handoff. ROADMAP alone owns open status/owner/dialogue. A card
   leaves this folder once its row closes (see below).
 - `docs/audit/`: accepted task summaries, blocked diagnostics and lazy historical
-  evidence. Accepted orphan tasks leave only an audit here.
+  evidence, grouped by phase (`pN/`), questions (`q/`), `history/` and `shared/`;
+  see its [index](audit/README.md). Accepted orphan tasks leave only an audit here.
 - `docs/archive/`: history that current work no longer needs — superseded routers,
   closed one-off reviews/validations and completed task cards
   (`archive/tasks/<id>.md`) whose audit already carries the result. Nothing here

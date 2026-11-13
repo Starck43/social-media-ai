@@ -103,7 +103,7 @@ cannot proceed, otherwise continue IN_PROGRESS. A waived check requires an expli
 owner waiver and remains labelled unrun. Remote PR body is the solution/evidence
 entry point; the card links it instead of duplicating it. Preserve original
 revision attribution; old greens never certify new code. Long failures belong
-in `docs/audit/<id>.md`. `/tmp` and ignored `.agents/tmp/` are local scratch only:
+in `docs/audit/<phase>/<id>.md`. `/tmp` and ignored `.agents/tmp/` are local scratch only:
 never link them as evidence or a handoff. Copy the useful summary, tested SHA,
 commands/results and resume commit into the task card or PR body, then delete
 scratch files at closeout. A path on one machine is not visible to another
@@ -139,7 +139,7 @@ any open row/card:
    revision (deletions must be absent). A listing alone proves presence, not
    content equivalence. Resolve any discrepancy before closeout.
 3. Only after those checks, publish one scoped registry update: write
-   `docs/audit/<id>.md` with verdict, completion date, accepted source SHA, PR,
+   `docs/audit/<phase>/<id>.md` with verdict, completion date, accepted source SHA, PR,
    verified merge commit, integration commands/results, corrections, affected
    files, checks/limitations and dialogue. Consolidate useful card evidence.
    Record branch/worktree disposition under [cleanup](#git-and-cleanup); delete
@@ -176,7 +176,7 @@ was performed on that exact revision with its required checks recorded; the PR
 targets `dev` and has no conflicts or outstanding change requests. Then the
 auditor merges with the normal merge strategy, verifies integration as above,
 then deletes the merged branch and the task's owned worktrees and records the
-merge evidence in `docs/audit/<id>.md`.
+merge evidence in `docs/audit/<phase>/<id>.md`.
 Acceptance never authorizes a force-push, a production or schema mutation, or
 publishing unrelated local commits.
 
@@ -235,7 +235,7 @@ of the four applies, decide.
 - **Batch related questions** in one message, one option list each, so the owner
   answers once. Do not split a decision across several messages.
 - **Read the register before asking.** An answered decision is an authorization,
-  not a pending question: check [Q-18](../audit/q-18-owner-decisions.md) and
+  not a pending question: check [Q-18](../audit/q/q-18-owner-decisions.md) and
   the adapted contracts in [BUSINESS_MODULES](../product/BUSINESS_MODULES.md) first.
   Re-asking what the owner already granted is the failure mode this section exists
   to prevent - it costs a round trip and reads as not having read the task.
@@ -268,7 +268,7 @@ only in chat is not a decision the next agent can rely on.
 ### Owner decisions in a register
 
 When several open questions block as a group, keep them in one register card
-(Q-18 was one, now closed and kept as [history](../audit/q-18-owner-decisions.md))
+(Q-18 was one, now closed and kept as [history](../audit/q/q-18-owner-decisions.md))
 rather than scattered across task cards: one table row per decision
 with ID, question, recommended default and the task that needs it. Each task card
 names its decision by ID. When the last row is answered, the register moves to
@@ -462,7 +462,7 @@ separate facts.
 
 The acceptance step above adds one obligation: before removing the ROADMAP row,
 the auditor checks the accepting task's branches and worktrees, deletes those
-already integrated, and records in `docs/audit/<id>.md` either the completed
+already integrated, and records in `docs/audit/<phase>/<id>.md` either the completed
 removal or the retained artifacts and their owner. A closed task with a live,
 integrated branch is an acceptance follow-up, not a new task.
 

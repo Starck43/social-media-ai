@@ -69,7 +69,7 @@ workspaces. Console action grants do not widen row ownership or permit another
 user's key use. Settings → Models remains the atomic provider/model/default flow;
 SQLAdmin uses the same managers. See [TENANCY](TENANCY.md#personal-llm-catalog-0109-source-contract-code-integrated-rollout-pending),
 [MODELS](../agent/MODELS.md#personal-catalog-integrated-deployment-rollout-separate) and the
-[ownership audit](../audit/personal-llm-ownership.md) for the canonical ownership,
+[ownership audit](../audit/shared/personal-llm-ownership.md) for the canonical ownership,
 rollout and source-pinned evidence.
 
 ### Who sees which rows, and who writes the owner
@@ -466,7 +466,7 @@ task-scoped query source is labelled as a task lane through
 `sources.owner_task_id` (details show the owner task), and the collected-item
 list exposes `content_type`, `selection_status` and `media_type` while the
 collector-written lane/selection fields stay out of the edit form. See
-[collection plan](../audit/collection-plan-history.md).
+[collection plan](../audit/history/collection-plan-history.md).
 
 **Deleting a source.** The web sources page and the source page carry a
 delete action (`source`/`delete` permission, workspace-scoped, with the
@@ -705,7 +705,7 @@ from the web UI selector or full data-endpoint acceptance from a page GET.
 ### Known view/ORM configuration drift
 
 The dated source observation is retained in
-[admin implementation history](../audit/admin-history.md#known-vieworm-configuration-drift); verify against current source before relying on it.
+[admin implementation history](../audit/history/admin-history.md#known-vieworm-configuration-drift); verify against current source before relying on it.
 
 ## Templates and module map
 
@@ -824,12 +824,12 @@ that record to edit it). This is a related-record window, not nested inline CRUD
 ### Related-editor validation and local handoff
 
 Historical source pins, sandbox commands, test outcomes and owner handoff are in
-[admin implementation history](../audit/admin-history.md#related-editor-validation-and-local-handoff).
+[admin implementation history](../audit/history/admin-history.md#related-editor-validation-and-local-handoff).
 
 ### Related-editor follow-up: inline icons and Float forms
 
 Follow-up failure diagnosis, source pins, validation counts and owner-reported
-closeout are in [admin implementation history](../audit/admin-history.md#related-editor-follow-up-inline-icons-and-float-forms).
+closeout are in [admin implementation history](../audit/history/admin-history.md#related-editor-follow-up-inline-icons-and-float-forms).
 
 ### Bulk-delete confirmation readability
 

@@ -1,6 +1,6 @@
 # Local connector protocol — draft v1
 
-[Task audit](../audit/p18-t01.md) · [Phase](../phases/p18-local-file-connector.md) ·
+[Task audit](../audit/p18/p18-t01.md) · [Phase](../phases/p18-local-file-connector.md) ·
 [Product boundaries](../product/PRODUCT_PLAN.md#extension-contracts) · [Business review](../product/BUSINESS_MODULES.md#review-findings-corrections-to-the-tz)
 
 ## Status and non-goals
@@ -8,7 +8,7 @@
 This is a proposed security contract, not implemented behavior, a wire-standard
 or permission to enable a connector. P12-T12's delivered increment is integrated:
 [PR #327](https://github.com/Starck43/social-media-ai/pull/327) merged as
-`48caea61`, accepted source `6433ae6a` per [its audit](../audit/p12-t12-increment.md),
+`48caea61`, accepted source `6433ae6a` per [its audit](../audit/p12/p12-t12-increment.md),
 with the plans of PR #307/#308/#311 in `dev`. This draft is reconciled against
 that accepted catalog/admission revision; the broader P12-T12 roadmap is still
 IN_PROGRESS, so anything outside the delivered increment stays unproven here.

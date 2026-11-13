@@ -1,7 +1,7 @@
 # P12 file-workspace admission contract
 
 Parent: [P12-T12](../tasks/p12-t12.md); capability owner: [P8-T34](../tasks/p8-t34.md);
-policy review: [P12-T13](../audit/p12-t13.md); implementation: [PR #327](https://github.com/Starck43/social-media-ai/pull/327).
+policy review: [P12-T13](../audit/p12/p12-t13.md); implementation: [PR #327](https://github.com/Starck43/social-media-ai/pull/327).
 
 ## Decision and boundaries
 

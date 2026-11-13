@@ -58,7 +58,7 @@
 
 | Wave | Task ID | Priority / Complexity | Recommended Agent Role | Depends On | Parallelizable With | Strictly Isolated `Owned paths` |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Wave 0** | [P12-T01](../audit/p12-t01.md) | `P2` · `C2` | **AI Studio Coordinator** (**DONE**) | — | — | `app/web/nav.py`, `app/web/templates/web/_shell_nav.html` |
+| **Wave 0** | [P12-T01](../audit/p12/p12-t01.md) | `P2` · `C2` | **AI Studio Coordinator** (**DONE**) | — | — | `app/web/nav.py`, `app/web/templates/web/_shell_nav.html` |
 | **Wave 1A** | P12-T02 *(accepted)* | `P2` · `C3` | **AI Studio Coordinator** *(or Remote Agent)* | `P12-T01`, `Q-16` | `P12-T05` | `app/types/enums/platform_types.py`, `app/services/social/platform_config.py`, `app/services/social/connections.py`, `app/web/settings.py`, `app/web/templates/web/settings.html`, `tests/unit_web/test_p12_t02_settings_connectors.py` |
 | **Wave 1B / 2C** | P12-T05 *(accepted)* | `P3` · **`C3`** | **Local Agent (`<= C3`)** *(can start immediately!)* | `P12-T01` | `P12-T02`, `P12-T03`, `P12-T04` | `app/services/cases/`, `app/web/cases.py`, `app/web/templates/web/cases.html`, `tests/unit_web/test_p12_t05_cases_comparison.py` |
 | **Wave 2A** | P12-T03 *(accepted)* | `P3` · `C4` | **AI Studio Coordinator** | `P12-T01`, `P12-T02` | `P12-T04`, `P12-T05` | `app/services/knowledge/`, `app/web/knowledge.py`, `app/web/documents.py`, `app/web/templates/web/knowledge.html`, `app/web/templates/web/documents.html`, `tests/unit_web/test_p12_t03_knowledge_documents.py` |
@@ -82,11 +82,11 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 
 - P12-T08: provider catalog, workspace connection configuration and
   safe credential UX. **DONE 2026-11-02**, merge `f36a1a53` (PR #304), migration 0121
-  applied to `public`. Review: [audit/p12-t08.md](../audit/p12-t08.md).
+  applied to `public`. Review: [audit/p12-t08.md](../audit/p12/p12-t08.md).
 - P12-T10: unified provider presentation catalog. **DONE 2026-11-02**,
   merge `3a4af09e` (PR #305). Code-owned descriptors, local SVG glyphs, shared
   components; no transport, migration or production change.
-- [P12-T11](../audit/p12-t11.md): **DONE 2026-11-02**. Persisted tenant-isolated
+- [P12-T11](../audit/p12/p12-t11.md): **DONE 2026-11-02**. Persisted tenant-isolated
   knowledge/document evidence, workspace ACL and working drawer/chat handoff;
   accepted source `f5cabb09e536515000532e6767f108ec79775a17`, merge `5651d37c`
   ([PR #306](https://github.com/Starck43/social-media-ai/pull/306)). Migration 0122
@@ -94,22 +94,22 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
   Only cloud-bound context reaches the shared web-chat runtime; company/local-only
   sends are refused until a corresponding end-to-end route exists.
 
-- [P12-T16](../audit/p12-t16.md): **ACCEPTED 2026-11-02**. Migration 0123 adds
+- [P12-T16](../audit/p12/p12-t16.md): **ACCEPTED 2026-11-02**. Migration 0123 adds
   nullable personal source ownership and `SOURCE_AUTH_REQUIRED`. Source ownership
   is actor-derived, revalidated against active workspace membership, and never
   falls back to the workspace owner's personal credential.
 
 ## Credential and connector security follow-up
 
-- [P12-T14](../audit/p12-t14.md): **DONE 2026-11-03**. Protected credentials,
+- [P12-T14](../audit/p12/p12-t14.md): **DONE 2026-11-03**. Protected credentials,
   explicit personal account/grant/source authorization and reviewed runtime fences;
   accepted source `9885a1f94148c5a0db8532a6c31f5b47ff4797b8`. Live checks are owner-run.
 
 ## File-workspace continuation
 
-- [P12-T12 increment audit](../audit/p12-t12-increment.md): **accepted 2026-11-03** at source `6433ae6a7615f63f2b204636b8538196986d18a9`, merged as `48caea61d10c5d586d0d97880dc413b215432665`. The broader task remains IN_PROGRESS; see [active card](../tasks/p12-t12.md) for remaining roadmap.
+- [P12-T12 increment audit](../audit/p12/p12-t12-increment.md): **accepted 2026-11-03** at source `6433ae6a7615f63f2b204636b8538196986d18a9`, merged as `48caea61d10c5d586d0d97880dc413b215432665`. The broader task remains IN_PROGRESS; see [active card](../tasks/p12-t12.md) for remaining roadmap.
 
-- [P12-T13 audit](../audit/p12-t13.md): **DONE 2026-11-03**, accepted contract-review scope at PR #327 source `6433ae6a7615f63f2b204636b8538196986d18a9`; provider activation and implementation remain in P12-T12/P8-T34.
+- [P12-T13 audit](../audit/p12/p12-t13.md): **DONE 2026-11-03**, accepted contract-review scope at PR #327 source `6433ae6a7615f63f2b204636b8538196986d18a9`; provider activation and implementation remain in P12-T12/P8-T34.
 - [P8-T34](../tasks/p8-t34.md): owner-selected Yandex Disk pilot, transferred from
   P8; one folder, read-only. P12-T12's accepted increment supplies part of its
   catalog/admission foundation; live provider behavior remains unverified.
@@ -119,9 +119,9 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 - [P12-T15](../tasks/p12-t15.md): user-managed per-folder restrictions and
   separately gated, explicitly approved file mutations after the read-only pilot.
 
-- [P12-T17](../audit/p12-t17.md): improve navigation, spacing and clarity across the existing evidence workspaces. **DONE 2026-11-02**, accepted PR head `ed49ad8c` (PR #316, recovers #310). Template-level evidence only; DB/ASGI and authenticated-browser checks remain a follow-up handoff.
+- [P12-T17](../audit/p12/p12-t17.md): improve navigation, spacing and clarity across the existing evidence workspaces. **DONE 2026-11-02**, accepted PR head `ed49ad8c` (PR #316, recovers #310). Template-level evidence only; DB/ASGI and authenticated-browser checks remain a follow-up handoff.
 
-- [P12-T18 audit](../audit/p12-t18.md): compact Russian admin coverage for newly migrated tables, preserving access and privacy boundaries. **DONE 2026-11-04**, accepted source `5eafc9dc8f78470c3bb6f7287251a24b3e7b1a64` (PR #364), merged as `5f9d2f47bc1ea7bb6047c2bcbcdbdc78c23aecea`.
+- [P12-T18 audit](../audit/p12/p12-t18.md): compact Russian admin coverage for newly migrated tables, preserving access and privacy boundaries. **DONE 2026-11-04**, accepted source `5eafc9dc8f78470c3bb6f7287251a24b3e7b1a64` (PR #364), merged as `5f9d2f47bc1ea7bb6047c2bcbcdbdc78c23aecea`.
 
 ## Business-module continuation (P13–P19)
 

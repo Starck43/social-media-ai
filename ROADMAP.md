@@ -44,7 +44,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P1
 
-- [P21-T02](docs/tasks/p21-t02.md) Single LLM dispatch seam and resolution contract — **TODO** · unassigned · [planning prerequisite accepted](docs/audit/p21-t01.md) · `P1` · `C3`
+- [P21-T02](docs/tasks/p21-t02.md) Single LLM dispatch seam and resolution contract — **TODO** · unassigned · [planning prerequisite accepted](docs/audit/p21/p21-t01.md) · `P1` · `C3`
 - [P21-T03](docs/tasks/p21-t03.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T02; owner gate for money/cutover · `P1` · `C4`
 - [P21-T04](docs/tasks/p21-t04.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T02/P21-T03; feeds P2-T09 · `P1` · `C4`
 
@@ -67,11 +67,11 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`
 - [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
 
-- [P12-T12](docs/tasks/p12-t12.md) File workspace: contract ownership and gated remainder after the accepted increment (byte authority/original-open with deferred P8-T34, local-only execution with P18, mutations per D21) — **TODO** (gate: owner activation / P8-T34 resume / consumer contract request; not claimable before it; re-scoped 2026-11-11, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · unassigned · [re-scope record](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) · [increment audit](docs/audit/p12-t12-increment.md) · `P2` · `C5`
-- [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8-t34.md) · `P2` · `C4`
+- [P12-T12](docs/tasks/p12-t12.md) File workspace: contract ownership and gated remainder after the accepted increment (byte authority/original-open with deferred P8-T34, local-only execution with P18, mutations per D21) — **TODO** (gate: owner activation / P8-T34 resume / consumer contract request; not claimable before it; re-scoped 2026-11-11, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · unassigned · [re-scope record](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) · [increment audit](docs/audit/p12/p12-t12-increment.md) · `P2` · `C5`
+- [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **TODO** · unassigned · D21 ownership settled by the [P12-T12 re-scope](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) 2026-11-11: extends P12-T12 grant management, never a second one; the mutation stage needs its own scoped authorization · [dialogue](https://app.notion.com/chat?t=40c071f39db6802e935c00a98e78df77) · `P2` · `C4`
 
-Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q-18-owner-decisions.md)):
+Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):
 
 - [P14-T08](docs/tasks/p14-t08.md) Bitrix24 on-premise authorization form on top of the P14-T09 seam — **DEFERRED** (owner, 2026-11-04: no on-premise customer; resumes with P14-T09) · `P2` · `C3`
 
@@ -176,8 +176,8 @@ Model catalogs, plan grants and dispatch-safety review; implementation is not ac
 ## Questions
 
 Q-2/Q-5 are ordered in the execution queue; Q-12 remains owner-deferred. Q-18 is closed
-(owner decisions D1–D9, [record](docs/audit/q-18-owner-decisions.md)).
+(owner decisions D1–D9, [record](docs/audit/q/q-18-owner-decisions.md)).
 - [Q-19](docs/tasks/q-19.md) Local connector protocol: second-party security review and real-device evidence — **TODO** · open
   The P18-T01 protocol is accepted as a design; no line of it has been exercised by a running system. Tracked so acceptance is
   never read as verification.
-The P6-T05 audit's two test follow-ups were accepted under [P6-T06](docs/audit/p6-t06.md); the original audit remains historical evidence.
+The P6-T05 audit's two test follow-ups were accepted under [P6-T06](docs/audit/p6/p6-t06.md); the original audit remains historical evidence.

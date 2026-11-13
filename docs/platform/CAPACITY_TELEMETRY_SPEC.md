@@ -154,10 +154,10 @@ and remain limited to that environment.
 
 ## Documents and source contracts
 
-- [P11-T19 acceptance and limitations](../audit/p11-t19.md)
-- [P11-T03 accepted queue and runtime ownership](../audit/p11-t03.md)
-- [P11-T12 accepted action-audit contract](../audit/p11-t12.md)
-- [P11-T08 accepted task-launch admission limits](../audit/p11-t08.md)
+- [P11-T19 acceptance and limitations](../audit/p11/p11-t19.md)
+- [P11-T03 accepted queue and runtime ownership](../audit/p11/p11-t03.md)
+- [P11-T12 accepted action-audit contract](../audit/p11/p11-t12.md)
+- [P11-T08 accepted task-launch admission limits](../audit/p11/p11-t08.md)
 - [Queue and claim lifecycle](../agent/AGENT_TASKS_QUEUE.md#how-a-run-happens)
 - [Operational visibility and support](../product/BUSINESS_PRODUCTION_READINESS.md#prd-08--operational-visibility-and-support)
 - [Expansion sequence and scale gates](../product/PRODUCT_PLAN.md#expansion-sequence)

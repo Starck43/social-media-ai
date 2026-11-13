@@ -4,7 +4,7 @@ Configuration foundation only. YooKassa is selected; checkout, provider requests
 payment persistence and subscription activation were not included in the accepted
 increment. The owner closed P2-T16 at this scope on 2026-10-27; broader lifecycle
 work is not an active task and must be registered before implementation. See the
-[P2-T16 acceptance record](../audit/p2-t16.md).
+[P2-T16 acceptance record](../audit/p2/p2-t16.md).
 
 ## Source snapshot and dependency
 
@@ -14,7 +14,7 @@ Planning snapshot inspected before P2-T16 integration: dev
 provider-configuration increment and showed operator-managed tenant tiers but no
 selected subscription provider or verified checkout/webhook implementation. On
 the integrated source, the selected provider and safe defaults are recorded in
-the [P2-T16 acceptance](../audit/p2-t16.md); checkout/webhook implementation is not
+the [P2-T16 acceptance](../audit/p2/p2-t16.md); checkout/webhook implementation is not
 claimed here. Use existing registration, workspace-membership and plan-comparison
 surfaces if a separately registered implementation is approved.
 
@@ -126,7 +126,7 @@ DDL or silently grant plan access without expiry.
 No tests, database access, migration application, runtime startup, external
 provider calls, deployment or subagents were performed while drafting this
 planning document. The separate P2-T16 configuration checks and acceptance are
-recorded in the [P2-T16 audit](../audit/p2-t16.md); they do not prove checkout
+recorded in the [P2-T16 audit](../audit/p2/p2-t16.md); they do not prove checkout
 functionality or readiness. P2-T15's deferred behavioral tests remain unrun; this
 document or unrelated green checks do not replace them.
 

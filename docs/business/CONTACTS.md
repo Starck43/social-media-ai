@@ -1,6 +1,6 @@
 # Contact core
 
-Accepted implementation: [P13-T07 audit](../audit/p13-t07.md). This is a tenant-scoped address book, not an
+Accepted implementation: [P13-T07 audit](../audit/p13/p13-t07.md). This is a tenant-scoped address book, not an
 importer, identity reconciliation engine or permission to send a message.
 
 ## Data and writes

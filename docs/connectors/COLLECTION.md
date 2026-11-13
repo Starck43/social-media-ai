@@ -217,7 +217,7 @@ selection and comment/candidate/profile lanes; stage E delivered the task
 editor, scenario-media boundary, admin surfaces and one shared writer for web,
 CLI, API and chat. The runtime resolves each source through the parsed task
 intent. The source-level primitives below still apply inside that context. The
-full contract is in [collection plan](../audit/collection-plan-history.md).
+full contract is in [collection plan](../audit/history/collection-plan-history.md).
 
 ### Walls and dates
 
@@ -585,7 +585,7 @@ rejected identities so a filter change can re-evaluate them. A comment-enabled
 batch is filtered at thread level, so a post whose own text lacks the phrase is
 still selected when its comments match. New selected rows are not re-filtered
 during analysis; legacy NULL-status rows keep the old analysis-time pass once.
-See [collection plan](../audit/collection-plan-history.md).
+See [collection plan](../audit/history/collection-plan-history.md).
 
 ### Task collection context (P5-T14 stage D1)
 
@@ -711,7 +711,7 @@ source only "which wall/channel we may read".
 > block; scenario `content_types` is supported media only. Task-scoped query
 > lanes are hidden from the global source list and excluded from the
 > empty-set/"all active" fallback. See
-> [collection plan](../audit/collection-plan-history.md).
+> [collection plan](../audit/history/collection-plan-history.md).
 
 ### Why the old model is replaced
 
@@ -831,7 +831,7 @@ geographic filter.
 
 ### Migration history
 
-The [original removal/validation plan](../audit/task-selection-migration-history.md)
+The [original removal/validation plan](../audit/history/task-selection-migration-history.md)
 is retained as historical rationale. Current migrations follow the database policy.
 
 Known unreadable VK refresh data is an operator issue, not proof that a personal

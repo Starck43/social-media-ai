@@ -63,12 +63,12 @@ is not invented from a workspace's shared chat address.
 
 Current schema/application/acceptance evidence is in PR #246; definitions and
 migration validation do not mean these revisions were applied to the owner's DB.
-Historical transport evidence remains in [notification history](../audit/notifications-history.md).
+Historical transport evidence remains in [notification history](../audit/history/notifications-history.md).
 
 ## Historical transport scope and status
 
 The source-pinned history for this bounded delivery change is retained in the
-[notification audit record](../audit/notifications-history.md).
+[notification audit record](../audit/history/notifications-history.md).
 
 ## Three distinct paths
 
@@ -195,7 +195,7 @@ for fixed operator templates only. No automatic binding/data migration occurs.
 ## Verification
 
 Historical test scopes, counts and integration results are in the
-[notification audit record](../audit/notifications-history.md#verification).
+[notification audit record](../audit/history/notifications-history.md#verification).
 They are not current checkout or release evidence.
 
 ## Deliberate remaining work

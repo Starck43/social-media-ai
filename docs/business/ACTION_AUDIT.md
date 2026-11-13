@@ -3,8 +3,8 @@
 **State:** implementation integrated and accepted through P11-T12 / PR #272
 (code `6ab81b14`, merge `bc41326a`). The implementation provides tenant-scoped
 persistence, task-admission hooks, read-only API views/export and plan-aligned
-retention; see the [implementation audit](../audit/p11-t12-impl.md) and
-[contract acceptance](../audit/p11-t12.md). The former standalone migration `0118`
+retention; see the [implementation audit](../audit/p11/p11-t12-impl.md) and
+[contract acceptance](../audit/p11/p11-t12.md). The former standalone migration `0118`
 was incorporated into the Q-14 frozen `baseline_0118`; `0119` follows it for
 workspace offboarding. This does not certify or authorize a production rollout;
 verify each target using the [deployment procedure](../platform/DEPLOYMENT.md).

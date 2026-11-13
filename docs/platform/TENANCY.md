@@ -403,4 +403,4 @@ does not grant another user's key use.
 Pre-0109 dev used a global LLM fleet; current source integration is recorded in
 dev `b34353645fe37de53c97c4d022c05af0044dc8ba`. This does not prove that a
 running database has been migrated. Migration definition, source-pinned
-acceptance evidence and rollout boundary: [personal ownership evidence](../audit/personal-llm-ownership.md).
+acceptance evidence and rollout boundary: [personal ownership evidence](../audit/shared/personal-llm-ownership.md).

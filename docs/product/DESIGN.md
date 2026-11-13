@@ -11,7 +11,7 @@ The AI chat is the primary user workspace across request, clarification,
 preview, execution, status, results and follow-up. Dedicated source, scenario,
 task, schedule and digest pages remain directly accessible for setup and
 management. The permitted social-task journey is accepted in
-[P8-T39](../audit/p8-t39.md). Target entry points, navigation and surface parity
+[P8-T39](../audit/p8/p8-t39.md). Target entry points, navigation and surface parity
 (web, chat/bot, API, CLI, admin) are in [WORKSPACE_UX](WORKSPACE_UX.md); future
 self-hosted/hybrid deployment guardrails are in [PLATFORM_TOPOLOGY](PLATFORM_TOPOLOGY.md).
 

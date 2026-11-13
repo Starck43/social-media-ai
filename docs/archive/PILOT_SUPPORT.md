@@ -6,7 +6,7 @@ This nomination and every service target below require the owner's explicit
 approval of an exact document commit. Assignment to write the draft is not a
 signature, pilot launch, operational SLA or permission to perform external actions.
 
-Task record: [P8-T13 audit](../audit/p8-t13.md). Parent: [P8](../phases/p8-first-value-ui.md).
+Task record: [P8-T13 audit](../audit/p8/p8-t13.md). Parent: [P8](../phases/p8-first-value-ui.md).
 This is a manual operating contract over existing signals, not new telemetry,
 a support integration, a delivery feature or production-readiness acceptance.
 
@@ -210,7 +210,7 @@ this manual metric uses receipt observation times, not a new timestamp endpoint.
 
 Sources: [bell aggregate](../../app/services/notifications/delivery_signal.py),
 [delivery outcomes](../../app/services/digest/delivery_outcomes.py),
-[P8-T11 audit](../audit/p8-t11.md). This contract consumes existing delivery
+[P8-T11 audit](../audit/p8/p8-t11.md). This contract consumes existing delivery
 semantics; it does not create sends, retries, acknowledgements or recovery rules.
 
 ### M4 — owner-rated usefulness tied to existing outcomes

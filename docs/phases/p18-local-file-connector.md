@@ -10,7 +10,7 @@ Owner estimate (TZ): 6–8 weeks — not a repository commitment.
 ## Baseline: done and arriving
 
 - In `dev`: `LOCAL_GATEWAY` descriptor (certificate fingerprint), `local_only`/`company`/`cloud` boundaries with chat refusal for local-only content (P12-T11), local-connector constraints in [PRODUCT_PLAN](../product/PRODUCT_PLAN.md#extension-contracts).
-- Arriving via open PRs: P12-T12 file workspace — private catalog, scans/traversal, bounded text read, line evidence, private storage, admission contract ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)); [P12-T13 contract review (accepted)](../audit/p12-t13.md); P8-T34 Yandex Disk read-only pilot. Folder policies: P12-T15 (TODO).
+- Arriving via open PRs: P12-T12 file workspace — private catalog, scans/traversal, bounded text read, line evidence, private storage, admission contract ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)); [P12-T13 contract review (accepted)](../audit/p12/p12-t13.md); P8-T34 Yandex Disk read-only pilot. Folder policies: P12-T15 (TODO).
 
 ## Adapted requirements
 
@@ -38,17 +38,17 @@ TZ criteria: install (T07); index selected folders (T03); OCR (T04); full-text s
 
 ## Plan
 
-1. [P18-T01](../audit/p18-t01.md) — Local connector protocol, pairing and revocation contract · `P3` · `C3` · **ACCEPTED 2026-11-03** (`8b805aaa`, [audit](../audit/p18-t01.md)); P12-T12 increment integrated. The protocol ships in `docs/connectors/LOCAL_CONNECTOR_PROTOCOL.md`
-2. [P18-T02 accepted](../audit/p18-t02.md) — DONE 2026-11-04; owner-scoped default-off gateway and chat references; source `8618eeb0634fa2600be558fb611c3433f51b109b`.
-3. [P18-T03 accepted scaffold](../audit/p18-t03.md) — **DONE 2026-11-06**; local-only development scaffold; accepted source `d726a476fe95f9d0c3757082394de4de2d75e4c6`; full device/platform/security gates remain P18-T05/T06/T07 and Q-19.
-4. ~~P18-T04 — Text extraction and OCR with resource limits~~ **DONE 2026-11-08**, accepted source `e74b8e81`, merge `11767207` — [audit](../audit/p18-t04.md)
-5. [P18-T05](../tasks/p18-t05.md) — Local search API: ranking, filters, snippets and ACL awareness · `P3` · `C4` · depends: [P18-T04 audit](../audit/p18-t04.md), P12-T15 (folder policy, optional)
-6. [P18-T06](../tasks/p18-t06.md) — Explicit file fetch, version tracking and index deletion · `P3` · `C3` · depends: [P18-T05](../tasks/p18-t05.md), [P18-T02 accepted](../audit/p18-t02.md)
-7. [P18-T07](../tasks/p18-t07.md) — Packaging, signing and auto-update for Windows, macOS and Linux · `P3` · `C4` · depends: [P18-T03](../audit/p18-t03.md)
+1. [P18-T01](../audit/p18/p18-t01.md) — Local connector protocol, pairing and revocation contract · `P3` · `C3` · **ACCEPTED 2026-11-03** (`8b805aaa`, [audit](../audit/p18/p18-t01.md)); P12-T12 increment integrated. The protocol ships in `docs/connectors/LOCAL_CONNECTOR_PROTOCOL.md`
+2. [P18-T02 accepted](../audit/p18/p18-t02.md) — DONE 2026-11-04; owner-scoped default-off gateway and chat references; source `8618eeb0634fa2600be558fb611c3433f51b109b`.
+3. [P18-T03 accepted scaffold](../audit/p18/p18-t03.md) — **DONE 2026-11-06**; local-only development scaffold; accepted source `d726a476fe95f9d0c3757082394de4de2d75e4c6`; full device/platform/security gates remain P18-T05/T06/T07 and Q-19.
+4. ~~P18-T04 — Text extraction and OCR with resource limits~~ **DONE 2026-11-08**, accepted source `e74b8e81`, merge `11767207` — [audit](../audit/p18/p18-t04.md)
+5. [P18-T05](../tasks/p18-t05.md) — Local search API: ranking, filters, snippets and ACL awareness · `P3` · `C4` · depends: [P18-T04 audit](../audit/p18/p18-t04.md), P12-T15 (folder policy, optional)
+6. [P18-T06](../tasks/p18-t06.md) — Explicit file fetch, version tracking and index deletion · `P3` · `C3` · depends: [P18-T05](../tasks/p18-t05.md), [P18-T02 accepted](../audit/p18/p18-t02.md)
+7. [P18-T07](../tasks/p18-t07.md) — Packaging, signing and auto-update for Windows, macOS and Linux · `P3` · `C4` · depends: [P18-T03](../audit/p18/p18-t03.md)
 
 ## Dependencies and gates
 
-[P18-T01](../audit/p18-t01.md) protocol is accepted; an independent security review ([Q-19](../tasks/q-19.md)) remains required before real-user activation. P12-T12's delivered increment is integrated (merge `48caea61`). Platforms: Windows, macOS, Linux.
+[P18-T01](../audit/p18/p18-t01.md) protocol is accepted; an independent security review ([Q-19](../tasks/q-19.md)) remains required before real-user activation. P12-T12's delivered increment is integrated (merge `48caea61`). Platforms: Windows, macOS, Linux.
 
 ## Owner-scoped intermediate delivery (2026-11-06)
 

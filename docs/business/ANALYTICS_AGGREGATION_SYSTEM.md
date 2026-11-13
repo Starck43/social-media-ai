@@ -49,7 +49,7 @@ comments). Analysis reads the stored decision for new rows and does not
 re-filter; legacy NULL-status rows keep the old analysis-time pass once.
 Collection types come from the task's `collection` block; scenario
 `content_types` is supported media only. See
-[collection plan](../audit/collection-plan-history.md).
+[collection plan](../audit/history/collection-plan-history.md).
 
 ## Subject scope (concept, not implemented)
 
@@ -253,7 +253,7 @@ legacy metrics, missing timestamps and unknown coverage are not reclassified as
 complete or failed. Digest and sqladmin presentation are unchanged.
 
 Historical validation boundaries and evidence for this slice are in the
-[analytics audit record](../audit/analytics-history.md). They are not current
+[analytics audit record](../audit/history/analytics-history.md). They are not current
 checkout or release evidence.
 
 ## Validation focus

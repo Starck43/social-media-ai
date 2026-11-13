@@ -13,7 +13,7 @@ in the parent phase archive or PR, not here. Active work: [ROADMAP](../../ROADMA
 
 P3-T93–T96 source accepted at `b34353645fe37de53c97c4d022c05af0044dc8ba`
 (#229/#230); source integration is not deployment/migration acceptance.
-[Exact execution attribution and limitations](../audit/personal-llm-ownership.md).
+[Exact execution attribution and limitations](../audit/shared/personal-llm-ownership.md).
 
 ## Delivered foundations
 

@@ -1,6 +1,6 @@
 # Platform topology and access clients (future direction)
 
-Direction recorded by P20-T01 ([../audit/p20-t01.md](../audit/p20-t01.md)) at the owner's request
+Direction recorded by P20-T01 ([../audit/p20-t01.md](../audit/p20/p20-t01.md)) at the owner's request
 (2026-11-05). **Not scheduled and not shipped.** The supported target remains the
 single-VPS monolith in [DEPLOYMENT](../platform/DEPLOYMENT.md#supported-single-vps-topology-prepared-not-provisioned).
 Complete the monolith first; the guardrails below keep a later split possible
@@ -59,7 +59,7 @@ end-to-end routing is a future task.
   the natural core candidates.
 - Clients and pages call permission-checked services, never the database or each
   other's internals; outbound calls go through the egress seam
-  ([P14-T09](../audit/p14-t09.md)) so placement stays configuration.
+  ([P14-T09](../audit/p14/p14-t09.md)) so placement stays configuration.
 - External objects are referenced through the shared source registry (D25) and
   survive a node move; no module-specific external-id schemes.
 - Keys and secrets are per installation; nothing assumes two installations share

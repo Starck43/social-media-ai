@@ -234,7 +234,7 @@ Workspace разрешается `TenantUIMiddleware` из `tenant_users` web me
 `company`/`local_only` можно просмотреть, но отправка блокируется до runtime
 (403): сквозного локального/корпоративного маршрута пока нет. Обычный полный
 GET `/app/chat` без контекста сбрасывает закреплённый выбор. См. [P12-T11
-acceptance](../audit/p12-t11.md).
+acceptance](../audit/p12/p12-t11.md).
 
 ### Photo and document attachments (P8-T44)
 
@@ -245,7 +245,7 @@ turn or cancellation. Image turns require the selected model's image capability
 and tier eligibility. Large/high-token attachments require explicit confirmation
 before model spend. Extracted file content remains untrusted input and is handled
 with prompt-injection safeguards. See the [web-chat routes](../platform/API.md#web-chat-attachments-p8-t44)
-and [P8-T44 acceptance](../audit/p8-t44.md) for route and file-validation details.
+and [P8-T44 acceptance](../audit/p8/p8-t44.md) for route and file-validation details.
 
 ### Telegram/MAX users
 
@@ -372,7 +372,7 @@ Target contract: [universal tasks](AGENT_TASKS_PLAN.md#explicit-task-plans). Cha
 the primary workspace for the task lifecycle; dedicated pages remain directly
 accessible for source, scenario, task, schedule and digest management. Current
 chat task tools edit the same configuration as those pages; the permitted
-collect/analyze journey is accepted in [P8-T39](../audit/p8-t39.md). Bounded plan
+collect/analyze journey is accepted in [P8-T39](../audit/p8/p8-t39.md). Bounded plan
 previews and one-off research keep recurring-task and digest-send confirmation
 gates intact. Chat can collect without analysis via
 `task_execute_once(job_type="collect")`, reopen a saved plan via `task_get`, and

@@ -29,7 +29,7 @@ The DDL requested in #448, reviewed and limited to:
    the `outbox_reply_evidence` column block after `inbound_message_id`) and the auditor confirms it, so
    the migration file matches one reviewed statement rather than a reconstruction of it.
 2. **No shared-relation changes beyond item 1.** No `business_commands.payload` overloading, no new
-   rights, no queue, no attachment columns; attachments stay in [P15-T14](../../audit/p15-t14.md).
+   rights, no queue, no attachment columns; attachments stay in [P15-T14](../../audit/p15/p15-t14.md).
 3. **One head.** `0149` leaves exactly one Alembic head.
 4. **Cycle evidence** on an isolated schema: `0148 → 0149`, empty downgrade `0149 → 0148`, and a
    refused downgrade with evidence present.

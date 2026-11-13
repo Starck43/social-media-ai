@@ -70,6 +70,38 @@ def rotate_in_transaction(
         "0126": (True, True, True),
         "0127": (True, True, True),
         "0128": (True, True, True),
+        **dict.fromkeys(
+            (
+                "0129",
+                "0130",
+                "0131",
+                "0132",
+                "0133",
+                "0134",
+                "0135",
+                "0136",
+                "0138",
+                "0139",
+                "0140",
+                "0141",
+                "0142",
+                "0143",
+                "0144",
+                "0145",
+                "0146",
+                "0147",
+                "0148",
+                "0149",
+                "0150",
+                "0151",
+                "0152",
+                "p17t01_workspace_hosts",
+                "p17t03_onec_history",
+                "p17t08_onec_history_status",
+                "0153",
+            ),
+            (True, True, True),
+        ),
     }
     if len(revisions) != 1 or revisions[0] not in generations:
         raise RotationError("Apply the reviewed encrypted-refresh migration first and use a supported single head")
@@ -86,9 +118,25 @@ def rotate_in_transaction(
         "file_private_insights",
     )
     private_layout = tuple(inspector.has_table(name, schema=schema) for name in private_tables)
-    has_private_results = revisions[0] == "0128"
+    has_private_results = revisions[0] == "0128" or revisions[0] not in {
+        "0124",
+        "p12t14_accounts",
+        "p12t14_tg_login",
+        "p12t14_tg_runtime",
+        "p12t14_tg_recovery",
+        "p12t14_tg_retention",
+        "p12t12_catalog",
+        "0125",
+        "0126",
+        "0127",
+    }
     if private_layout != (has_private_results,) * len(private_tables):
         raise RotationError("Private result store layout does not match the reviewed migration head")
+    has_version = "credential_version" in {
+        column["name"] for column in inspector.get_columns("llm_providers", schema=schema)
+    }
+    if has_version != (revisions[0] == "0153"):
+        raise RotationError("Credential version layout does not match the reviewed migration head")
     names = ["llm_providers", "user_credentials", "workspace_connection_secrets"]
     if has_authorizations:
         names.append("personal_connector_authorizations")

@@ -4,7 +4,19 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, ClassVar
 
-from sqlalchemy import CheckConstraint, Column, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, func
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    func,
+)
 from sqlalchemy.orm import Mapped
 
 from ...core.config import settings
@@ -56,6 +68,9 @@ class PersonalLLMDispatch(Base):
             name="ck_personal_llm_dispatch_snapshot",
         ),
         CheckConstraint("utc_day = (prepared_at AT TIME ZONE 'UTC')::date", name="ck_personal_llm_dispatch_utc_day"),
+        CheckConstraint(
+            "credential_version IS NULL OR credential_version >= 1", name="ck_personal_dispatch_credential_version"
+        ),
         Index("ix_personal_llm_dispatches_account_created", "account_id", "created_at"),
         Index("ix_personal_llm_dispatches_workspace", "tenant_id"),
         {"schema": settings.DB_SCHEMA},
@@ -85,6 +100,8 @@ class PersonalLLMDispatch(Base):
     utc_day: Mapped[date] = Column(Date, nullable=False)
     llm_model_row_id: Mapped[int] = Column(Integer, nullable=False)
     llm_provider_row_id: Mapped[int] = Column(Integer, nullable=False)
+    # Historical evidence remains NULL, never backfilled to a fabricated version.
+    credential_version: Mapped[int | None] = Column(BigInteger, nullable=True)
     model_id: Mapped[str] = Column(String(200), nullable=False)
     provider_name: Mapped[str] = Column(String(200), nullable=False)
     input_cost_per_1k: Mapped[Decimal | None] = Column(Numeric(18, 8), nullable=True)

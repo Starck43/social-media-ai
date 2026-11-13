@@ -25,6 +25,8 @@ from app.models.managers.workspace_outbound_host_manager import WorkspaceOutboun
 
 PROVIDER = "onec"
 METHOD = "odata_credentials"
+WRITE_METHOD = "odata_write_credentials"
+ALLOWED_METHODS = frozenset({METHOD, WRITE_METHOD})
 SCHEMA_VERSION = 1
 
 
@@ -92,7 +94,9 @@ class OneCConnectionService:
         self._sessions = BaseManager(WorkspaceConnection)
         self._hosts = WorkspaceOutboundHostManager()
 
-    async def create(self, *, tenant_id, actor_id, label, base_url, interface, login, password):
+    async def create(self, *, tenant_id, actor_id, label, base_url, interface, login, password, auth_method=METHOD):
+        if auth_method not in ALLOWED_METHODS:
+            raise OneCConnectionError("invalid_auth_method")
         name = _label(label)
         endpoint = _endpoint(base_url, interface)
         try:
@@ -106,7 +110,7 @@ class OneCConnectionService:
                     owner_user_id=actor_id,
                     platform=PROVIDER,
                     provider_id=PROVIDER,
-                    auth_method=METHOD,
+                    auth_method=auth_method,
                     schema_version=SCHEMA_VERSION,
                     label=name,
                     account_key=_account_key(endpoint, login),
@@ -133,7 +137,11 @@ class OneCConnectionService:
             async with self._sessions._get_owned_session() as session:
                 await _authorize(session, tenant_id, actor_id, write=True)
                 row = await _connection(session, tenant_id, actor_id, connection_id)
-                if row.provider_id != PROVIDER or row.auth_method != METHOD or row.schema_version != SCHEMA_VERSION:
+                if (
+                    row.provider_id != PROVIDER
+                    or row.auth_method not in ALLOWED_METHODS
+                    or row.schema_version != SCHEMA_VERSION
+                ):
                     raise ConnectionDenied()
                 endpoint = _stored_endpoint(row.config)
                 await self._hosts.require_approved(

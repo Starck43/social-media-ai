@@ -139,6 +139,11 @@ and execution permissions remain in the handwritten references and code.
 | PUT | /api/v1/files/connectors/{device_id}/roots | consent_api_v1_files_connectors__device_id__roots_put |
 | POST | /api/v1/files/search | search_api_v1_files_search_post |
 | GET | /api/v1/health | health_check_api_v1_health_get |
+| GET | /api/v1/integrations/1c/audit-log | list_onec_audit_log_api_v1_integrations_1c_audit_log_get |
+| POST | /api/v1/integrations/1c/command/approve | approve_onec_command_api_v1_integrations_1c_command_approve_post |
+| POST | /api/v1/integrations/1c/command/execute | execute_onec_command_api_v1_integrations_1c_command_execute_post |
+| POST | /api/v1/integrations/1c/command/preview | preview_onec_command_api_v1_integrations_1c_command_preview_post |
+| POST | /api/v1/integrations/1c/command/reconcile | reconcile_onec_command_api_v1_integrations_1c_command_reconcile_post |
 | POST | /api/v1/integrations/1c/connect | connect_api_v1_integrations_1c_connect_post |
 | GET | /api/v1/integrations/1c/connections | connections_api_v1_integrations_1c_connections_get |
 | DELETE | /api/v1/integrations/1c/connections/{connection_id} | disconnect_api_v1_integrations_1c_connections__connection_id__delete |

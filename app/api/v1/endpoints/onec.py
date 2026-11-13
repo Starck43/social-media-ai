@@ -17,6 +17,13 @@ from app.models import User
 from app.models.managers.trusted_outbound_host_manager import TrustedHostError
 from app.models.managers.workspace_connection_manager import ConnectionDenied
 from app.models.managers.workspace_outbound_host_manager import WorkspaceHostError, WorkspaceOutboundHostManager
+from app.services.onec.commands import (
+    OneCCommandAuditEntry,
+    OneCCommandError,
+    OneCCommandRecord,
+    OneCCommandService,
+    OneCWritePreviewRequest,
+)
 from app.services.onec.export import OneCExportError
 from app.services.onec.history import OneCHistoryEntry, OneCHistoryError, OneCQueryHistoryRepository
 from app.services.onec.nl_query import OneCNaturalLanguageError, OneCQueryAnswerService
@@ -49,6 +56,7 @@ router = APIRouter(
         400: {"model": ErrorOutput, "description": "Fixed input or connector error code"},
         401: {"model": ErrorOutput, "description": "Bearer authentication required"},
         404: {"model": ErrorOutput, "description": "Connection or approval unavailable"},
+        409: {"model": ErrorOutput, "description": "Command state or DataVersion conflict"},
         422: {"model": ErrorOutput, "description": "Invalid request; raw input is never echoed"},
         500: {"model": ErrorOutput, "description": "Response unavailable"},
     },
@@ -337,3 +345,186 @@ async def export_query(body: ExportInput, request: Request, user: User = Depends
             "X-Row-Count": str(file.row_count),
         },
     )
+
+
+class CommandPreviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    connection_id: int = Field(gt=0)
+    capability: Literal[
+        "onec.document.create.v1",
+        "onec.document.post.v1",
+        "onec.catalog.update.v1",
+    ]
+    idempotency_key: str = Field(min_length=1, max_length=120)
+    entity_set: str = Field(min_length=1, max_length=128)
+    target_guid: str | None = Field(default=None, min_length=36, max_length=36)
+    fields: dict[str, object] = Field(default_factory=dict)
+    posting_mode_operational: bool = False
+    default_currency: str = Field(default="RUB", min_length=3, max_length=3)
+
+
+class CommandApproveInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    command_id: int = Field(gt=0)
+    expected_payload_hash: str = Field(min_length=71, max_length=71)
+    ttl_seconds: int = Field(default=900, ge=60, le=3600)
+
+
+class CommandExecuteInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    command_id: int = Field(gt=0)
+
+
+class CommandReconcileInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    command_id: int = Field(gt=0)
+
+
+class CommandRecordOutput(BaseModel):
+    id: int
+    tenant_id: int
+    actor_id: int
+    connection_id: int
+    capability: str
+    approval_policy: str
+    idempotency_key: str
+    external_ref: str
+    entity_set: str
+    target_ref: str
+    target_guid: str | None
+    expected_data_version: str | None
+    payload_hash: str
+    approved_payload_hash: str | None
+    state: str
+    preview_snapshot: dict[str, object]
+    provider_receipt: str | None
+    error_code: str | None
+    reconcile_hint: str | None
+    approved_by: int | None
+    approved_at: datetime | None
+    approval_expires_at: datetime | None
+    executed_at: datetime | None
+    created_at: datetime
+
+
+class CommandAuditOutput(BaseModel):
+    event_id: str
+    command_id: int | None
+    tenant_id: int
+    actor_id: int | None
+    action: str
+    outcome: str
+    capability: str | None
+    entity_set: str | None
+    target_ref: str | None
+    state: str | None
+    payload_hash: str | None
+    provider_receipt: str | None
+    reason_code: str | None
+    created_at: datetime
+
+
+_CONFLICT_COMMAND_CODES = frozenset(
+    {
+        "data_version_conflict",
+        "command_state_conflict",
+        "approval_hash_mismatch",
+        "write_timeout_unknown",
+    }
+)
+
+
+async def _call_command(fn, **kwargs):
+    try:
+        return await fn(**kwargs)
+    except ConnectionDenied:
+        raise HTTPException(404, "connection_unavailable") from None
+    except OneCCommandError as exc:
+        if exc.code == "command_not_found":
+            raise HTTPException(404, exc.code) from None
+        if exc.code in _CONFLICT_COMMAND_CODES:
+            raise HTTPException(409, exc.code) from None
+        raise HTTPException(400, exc.code) from None
+    except OneCConnectionError as exc:
+        raise HTTPException(400, exc.code) from None
+
+
+@router.post("/command/preview", response_model=CommandRecordOutput)
+async def preview_onec_command(
+    body: CommandPreviewInput,
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+):
+    record: OneCCommandRecord = await _call_command(
+        OneCCommandService().preview_command,
+        **_scope(request, user),
+        connection_id=body.connection_id,
+        request=OneCWritePreviewRequest(
+            capability=body.capability,
+            idempotency_key=body.idempotency_key,
+            entity_set=body.entity_set,
+            target_guid=body.target_guid,
+            fields=body.fields,
+            posting_mode_operational=body.posting_mode_operational,
+            default_currency=body.default_currency,
+        ),
+    )
+    return CommandRecordOutput(**record.to_dict())
+
+
+@router.post("/command/approve", response_model=CommandRecordOutput)
+async def approve_onec_command(
+    body: CommandApproveInput,
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+):
+    record: OneCCommandRecord = await _call_command(
+        OneCCommandService().approve_command,
+        **_scope(request, user),
+        command_id=body.command_id,
+        expected_payload_hash=body.expected_payload_hash,
+        ttl_seconds=body.ttl_seconds,
+    )
+    return CommandRecordOutput(**record.to_dict())
+
+
+@router.post("/command/execute", response_model=CommandRecordOutput)
+async def execute_onec_command(
+    body: CommandExecuteInput,
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+):
+    record: OneCCommandRecord = await _call_command(
+        OneCCommandService().execute_command,
+        **_scope(request, user),
+        command_id=body.command_id,
+    )
+    return CommandRecordOutput(**record.to_dict())
+
+
+@router.post("/command/reconcile", response_model=CommandRecordOutput)
+async def reconcile_onec_command(
+    body: CommandReconcileInput,
+    request: Request,
+    user: User = Depends(get_authenticated_user),
+):
+    record: OneCCommandRecord = await _call_command(
+        OneCCommandService().reconcile_command,
+        **_scope(request, user),
+        command_id=body.command_id,
+    )
+    return CommandRecordOutput(**record.to_dict())
+
+
+@router.get("/audit-log", response_model=list[CommandAuditOutput])
+async def list_onec_audit_log(
+    request: Request,
+    limit: int = 50,
+    user: User = Depends(get_authenticated_user),
+):
+    entries: tuple[OneCCommandAuditEntry, ...] = await _call_command(
+        OneCCommandService().list_audit_log,
+        **_scope(request, user),
+        limit=limit,
+    )
+    return [CommandAuditOutput(**entry.to_dict()) for entry in entries]

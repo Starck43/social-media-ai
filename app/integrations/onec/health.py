@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from app.integrations.onec.connections import (
+    ALLOWED_METHODS,
     METHOD,
     PROVIDER,
     SCHEMA_VERSION,
@@ -54,7 +55,7 @@ class OneCHealthService:
                 row is None
                 or not row.is_active
                 or row.provider_id != PROVIDER
-                or row.auth_method != METHOD
+                or row.auth_method not in ALLOWED_METHODS
                 or row.schema_version != SCHEMA_VERSION
             ):
                 raise ConnectionDenied()
@@ -72,6 +73,7 @@ class OneCHealthService:
             secret = await session.get(WorkspaceConnectionSecret, connection_id)
             ciphertext = secret.secret_encrypted if secret is not None else ""
             account_key = row.account_key
+            auth_method = row.auth_method
             try:
                 credentials = open_basic_credentials(ciphertext)
                 budget = budget_for(PROVIDER, account_key, connection_id=connection_id)
@@ -97,7 +99,7 @@ class OneCHealthService:
             if (
                 not row.is_active
                 or row.provider_id != PROVIDER
-                or row.auth_method != METHOD
+                or row.auth_method != auth_method
                 or row.schema_version != SCHEMA_VERSION
                 or row.account_key != account_key
                 or row.config != config

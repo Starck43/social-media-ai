@@ -207,6 +207,11 @@ ONEC = Provider(
             "Учётные данные OData",
             (Field("login", "Логин"), Field("password", "Пароль", kind="secret")),
         ),
+        Method(
+            "odata_write_credentials",
+            "Учётные данные OData (запись с подтверждением)",
+            (Field("login", "Логин"), Field("password", "Пароль", kind="secret")),
+        ),
     ),
 )
 LOCAL_GATEWAY = Provider(

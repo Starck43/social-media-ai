@@ -19,6 +19,14 @@ def test_onec_routes_are_registered_with_bearer_auth():
         "/integrations/1c/connections/{connection_id}/health-check": {"post"},
         "/integrations/1c/hosts": {"get", "post"},
         "/integrations/1c/hosts/{host_id}": {"delete"},
+        "/integrations/1c/query": {"post"},
+        "/integrations/1c/query/export": {"post"},
+        "/integrations/1c/query/history": {"get"},
+        "/integrations/1c/command/preview": {"post"},
+        "/integrations/1c/command/approve": {"post"},
+        "/integrations/1c/command/execute": {"post"},
+        "/integrations/1c/command/reconcile": {"post"},
+        "/integrations/1c/audit-log": {"get"},
     }
     included = [r for r in router.routes if getattr(r, "original_router", None) is onec.router]
     assert len(included) == 1

@@ -118,7 +118,8 @@ def _one(sql: str, params=()):
 
 
 def _scalar(sql: str, params=()):
-    return _one(sql, params)[0]
+    row = _one(sql, params)
+    return None if row is None else row[0]
 
 
 def _tables() -> set[str]:
@@ -301,6 +302,12 @@ def _storage_contract() -> dict:
 
 def _seed_legacy() -> dict:
     """Users, workspaces and memberships; no storage column is referenced."""
+    from scripts.setup.roles import seed_roles_async
+
+    # Fresh Alembic schemas contain structure, not the canonical setup catalogs.
+    # Use the supported role seeder rather than assuming shared-schema data or
+    # inventing role identities for this isolated fixture.
+    asyncio.run(seed_roles_async())
     roles = {
         name: _scalar(f"select id from {SCHEMA}.roles where codename = %s", (name,)) for name in ("user", "superuser")
     }
@@ -359,6 +366,7 @@ def _seed_legacy() -> dict:
     ):
         _insert(member_sql, (pods[slug], str(people[member]), people[member], roles[role]))
     STATE.update(users=people, pods=pods, legacy=legacy)
+    STATE["legacy_references"] = _legacy_references()
     return {"users": len(people), "workspaces": len(pods), "memberships": 9}
 
 
@@ -367,6 +375,18 @@ def _identity() -> dict:
     return {
         row[0]: row[1:]
         for row in _rows(f"select id, name, slug, plan, plan_expires_at, is_active from {SCHEMA}.tenants order by id")
+    }
+
+
+def _legacy_references() -> dict:
+    return {
+        "users": _rows(f"select id, username, role_id, is_active from {SCHEMA}.users order by id"),
+        "roles": _rows(f"select id, codename, description from {SCHEMA}.roles order by id"),
+        "workspace_roles": _rows(f"select id, codename, description from {SCHEMA}.workspace_roles order by id"),
+        "memberships": _rows(
+            f"select id, tenant_id, user_id, role_id, channel, external_user_id, is_active "
+            f"from {SCHEMA}.tenant_users order by id"
+        ),
     }
 
 
@@ -512,6 +532,7 @@ def _retained(identity: dict) -> dict:
     _assert(holders == expected, f"resolved holders {holders} != {expected}")
     _assert(len(rows) == len(WORKSPACES), f"{len(rows)} backfill evidence rows")
     _assert(_identity() == identity, "retained workspace identity changed")
+    _assert(_legacy_references() == STATE["legacy_references"], "retained users, roles or memberships changed")
     for row in rows:
         _assert(row[1] == expected[row[0]], f"evidence holder mismatch: {row[:2]}")
         _assert((row[3], row[4]) == STATE["legacy"][row[0]], f"legacy plan/expiry rewritten: {row[:5]}")

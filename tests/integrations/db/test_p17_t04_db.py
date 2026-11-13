@@ -173,6 +173,64 @@ async def test_p17_t04_data_version_conflict_and_timeout_reconcile_persisted(
         await purge_tenant_audit_events(tenant.id)
 
 
+async def test_p17_t04_revoked_field_permission_persisted(personal_world, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run the new permission regression without replaying the already-green conflict/timeout scenario."""
+    monkeypatch.setattr(settings, "CREDENTIALS_KEY", SYNTHETIC_CREDENTIALS_KEY)
+    monkeypatch.setattr(ledger_mod, "RUNTIME_ENABLED_CAPABILITIES", set(ONEC_WRITE_CAPABILITIES))
+    monkeypatch.setattr(ledger_mod, "RUNTIME_KILL_SWITCHES", {})
+    tenant, user = personal_world.tenants[0], personal_world.users[0]
+    scope = {"tenant_id": tenant.id, "actor_id": user.id}
+    write_attempts = 0
+
+    async def transport(_endpoint, *, method, **_kwargs):
+        nonlocal write_attempts
+        if method == b"GET":
+            return json.dumps({"Ref_Key": CAT_GUID, "DataVersion": "V1", "Description": "Before"}).encode()
+        write_attempts += 1
+        return b"{}"
+
+    try:
+        with tenant_scope(tenant.id), permission_scope(user):
+            connection_id = await _verified_write_connection(scope)
+            service = OneCCommandService(transport=transport)
+            revoked = await service.preview_command(
+                **scope,
+                connection_id=connection_id,
+                request=OneCWritePreviewRequest(
+                    capability=CAPABILITY_CATALOG_UPDATE,
+                    idempotency_key="db-field-revoked-1",
+                    entity_set=CATALOG_SET,
+                    target_guid=CAT_GUID,
+                    fields={"Description": "No longer permitted"},
+                ),
+                catalog=CATALOG,
+            )
+            await service.approve_command(**scope, command_id=revoked.id, expected_payload_hash=revoked.payload_hash)
+            async with async_session_maker() as session, session.begin():
+                connection = await session.get(WorkspaceConnection, connection_id)
+                original_config = dict(connection.config)
+                connection.config = {**original_config, "allowed_fields": {CATALOG_SET: ["Code"]}}
+            with pytest.raises(OneCCommandError, match="field_not_allowed"):
+                await service.execute_command(**scope, command_id=revoked.id)
+            assert write_attempts == 0
+            async with async_session_maker() as session, session.begin():
+                persisted = await session.get(BusinessCommand, revoked.id)
+                assert persisted.state == "failed"
+                assert persisted.error_code == "field_not_allowed"
+                assert (await _target(session, revoked.id)).error_code == "field_not_allowed"
+                connection = await session.get(WorkspaceConnection, connection_id)
+                connection.config = original_config
+            audit_entries = await service.list_audit_log(**scope)
+            assert any(
+                entry.command_id == revoked.id
+                and entry.outcome == "denied"
+                and entry.reason_code == "field_not_allowed"
+                for entry in audit_entries
+            )
+    finally:
+        await purge_tenant_audit_events(tenant.id)
+
+
 async def _run_conflict_and_timeout_scenario(scope: dict[str, int]) -> None:
     """Run both write outcomes for one tenant inside an established actor/workspace context."""
     tenant_id, actor_id = scope["tenant_id"], scope["actor_id"]
@@ -263,43 +321,6 @@ async def _run_conflict_and_timeout_scenario(scope: dict[str, int]) -> None:
     assert len(denied_a) == 1
     assert denied_a[0].state == "failed"
     assert denied_a[0].reason_code == "data_version_conflict"
-
-    # A later permission revocation must override an earlier approval, even if DataVersion is unchanged.
-    revoked = await service_a.preview_command(
-        tenant_id=tenant_id,
-        actor_id=actor_id,
-        connection_id=connection_id,
-        request=OneCWritePreviewRequest(
-            capability=CAPABILITY_CATALOG_UPDATE,
-            idempotency_key="db-field-revoked-1",
-            entity_set=CATALOG_SET,
-            target_guid=CAT_GUID,
-            fields={"Description": "No longer permitted"},
-        ),
-        catalog=CATALOG,
-    )
-    await service_a.approve_command(
-        tenant_id=tenant_id, actor_id=actor_id, command_id=revoked.id, expected_payload_hash=revoked.payload_hash
-    )
-    async with async_session_maker() as session, session.begin():
-        connection = await session.get(WorkspaceConnection, connection_id)
-        original_config = dict(connection.config)
-        connection.config = {**original_config, "allowed_fields": {CATALOG_SET: ["Code"]}}
-    with pytest.raises(OneCCommandError, match="field_not_allowed"):
-        await service_a.execute_command(tenant_id=tenant_id, actor_id=actor_id, command_id=revoked.id)
-    assert write_attempts == 0
-    async with async_session_maker() as session, session.begin():
-        persisted = await session.get(BusinessCommand, revoked.id)
-        assert persisted.state == "failed"
-        assert persisted.error_code == "field_not_allowed"
-        assert (await _target(session, revoked.id)).error_code == "field_not_allowed"
-        connection = await session.get(WorkspaceConnection, connection_id)
-        connection.config = original_config
-    audit_entries_revoked = await service_a.list_audit_log(tenant_id=tenant_id, actor_id=actor_id)
-    assert any(
-        entry.command_id == revoked.id and entry.outcome == "denied" and entry.reason_code == "field_not_allowed"
-        for entry in audit_entries_revoked
-    )
 
     # (b) Timeout: 1C commits the document but the response never arrives.
     created_on_1c = False

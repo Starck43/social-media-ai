@@ -262,7 +262,11 @@ def _storage_contract() -> dict:
     immutable = {
         "update": _expect(f"update {policies} set module_grants = '[]' where policy_version = 8", "immutable"),
         "delete": _expect(f"delete from {policies} where policy_version = 8", "immutable"),
-        "truncate": _expect(f"truncate {policies}", "immutable"),
+        # Include the two referencing tables so FK preflight does not mask the
+        # statement-level immutability trigger. The probe always rolls back.
+        "truncate": _expect(
+            f"truncate {policies}, {SCHEMA}.user_service_plans, {SCHEMA}.service_plan_backfill_resolutions", "immutable"
+        ),
     }
     _assert(_scalar(f"select count(*) from {policies} where policy_version = 8") == 1, "a trigger let the row go")
     with closing(STATE["conn"].cursor()) as cur:

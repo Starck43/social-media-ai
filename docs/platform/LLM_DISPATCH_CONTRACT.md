@@ -6,7 +6,7 @@ contract; [P21-T13](../tasks/p21-t13.md), [P21-T14](../tasks/p21-t14.md),
 reference and never restate it. The task card is
 [P21-T12](../tasks/p21-t12.md); the phase plan is
 [P21](../phases/p21-ai-operations.md); the holder/policy authority is
-[P2-T17](../tasks/p2-t17.md).
+[P2-T17](../archive/tasks/p2-t17.md).
 
 This document describes what a provider attempt *must* look like. It does not
 authorize activation: the target dispatch stays disabled, no schema change is

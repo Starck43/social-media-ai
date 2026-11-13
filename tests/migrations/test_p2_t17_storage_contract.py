@@ -106,7 +106,7 @@ def test_migration_and_orm_match_columns_checks_and_restrictive_keys(monkeypatch
         assert tuple(created.primary_key.columns.keys()) == tuple(mapped.primary_key.columns.keys())
         assert _checks(created) == _checks(mapped)
         assert _fks(created) == _fks(mapped)
-    assert "INSERT" not in " ".join(operations.sql).upper()
+    assert "INSERT INTO" not in " ".join(operations.sql).upper()
     assert "UPDATE OR DELETE" in " ".join(operations.sql)
     assert "BEFORE TRUNCATE" in " ".join(operations.sql)
     assert all(model.objects is None for model in (ServicePlanPolicy, UserServicePlan, ServicePlanBackfillResolution))

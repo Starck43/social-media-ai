@@ -377,6 +377,8 @@ class Settings(BaseSettings):
     LLM_DEFAULT_MAX_TOKENS: int = 400  # Optimal for social media annotations
     LLM_DEFAULT_STREAM: bool = False  # Complete responses for processing
     LLM_DEFAULT_TIMEOUT: float = 60.0  # Request timeout in seconds
+    # The dispatch seam stays dormant until P21-T13...P21-T16 provide the foundations.
+    LLM_DISPATCH_SEAM_ENABLED: bool = False
 
 
 settings = Settings()

@@ -111,6 +111,11 @@ authenticity/replay contract.
 - A fallback try keeps compatible capabilities and parameters: a route that
   needs image capability does not fall back to a text-only row.
 
+The compatibility rule is checked before the next try: the funding class of the
+next row and the payer of the attempt must equal the ones of the try it
+replaces. A mismatch is a denial (`fallback_funding_class_mismatch`,
+`fallback_payer_mismatch`), not a switch.
+
 ## 6. Redacted error taxonomy
 
 A denial carries a stable code and a generic message. No provider body, prompt,
@@ -132,6 +137,8 @@ message, its log line or its evidence.
 | `allowance_unavailable` | the shared allowance policy is missing or denies |
 | `capacity_unavailable` | the provider rate capacity could not be acquired |
 | `admission_unavailable` | the durable reservation/receipt could not be committed |
+| `fallback_funding_class_mismatch` | the next try would switch the credential funding class |
+| `fallback_payer_mismatch` | the next try would switch the trusted payer |
 | `funding_class_unsupported` | the funding class is not selectable (workspace class) |
 | `workspace_funding_inactive` | the workspace funding class is reserved and not activated |
 

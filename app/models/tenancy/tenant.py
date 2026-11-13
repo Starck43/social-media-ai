@@ -6,7 +6,18 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import (
-    JSON, Boolean, CheckConstraint, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint,
+    JSON,
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped
 
@@ -39,6 +50,7 @@ class Tenant(Base, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("slug", name="uq_tenant_slug"),
         Index("ix_tenants_slug", "slug"),
+        Index("ix_tenants_plan_holder_user_id", "plan_holder_user_id"),
         CheckConstraint(
             "plan IN ('starter', 'pro', 'business')",
             name="ck_tenants_plan",
@@ -123,6 +135,12 @@ class Tenant(Base, TimestampMixin):
         server_default=DEFAULT_PLAN,
     )
     plan_expires_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
+    # Dormant until explicit backfill and consumer migration; roles never select it.
+    plan_holder_user_id: Mapped[int | None] = Column(
+        Integer,
+        ForeignKey(f"{settings.DB_SCHEMA}.users.id", name="fk_tenants_plan_holder_user", ondelete="RESTRICT"),
+        nullable=True,
+    )
     timezone: Mapped[str] = Column(String(50), nullable=False, default="Europe/Moscow", server_default="Europe/Moscow")
     is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default="true")
     daily_cost_limit: Mapped[float] = Column(Float, nullable=False, default=5.0, server_default="5.0")

@@ -30,8 +30,8 @@ def seal_form_secret(data: dict[str, Any], field: str, stored: Any = None) -> No
     """Replace a plaintext form value with ciphertext, in place.
 
     * a blank field keeps the stored secret on an edit and writes NULL on create;
-    * an already sealed value is left untouched, so a stale form cannot double
-      encrypt;
+    * only the exact stored ciphertext is left untouched; a Fernet-looking
+      plaintext prefix is never proof of encryption;
     * anything else is encrypted here, before SQLAdmin writes the row.
     """
     if field not in data:
@@ -47,7 +47,7 @@ def seal_form_secret(data: dict[str, Any], field: str, stored: Any = None) -> No
         # A non-string is never a secret; drop it instead of storing garbage.
         data.pop(field, None)
         return
-    if is_sealed(raw):
+    if raw == stored and is_sealed(raw):
         return
     from app.utils.crypto import encrypt_secret
 

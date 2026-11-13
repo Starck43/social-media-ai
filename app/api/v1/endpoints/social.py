@@ -6,8 +6,6 @@ comes from the signed `state` (workspace + PKCE verifier), verified inside
 `app.services.social.vk_oauth` before any token is exchanged.
 """
 
-from html import escape
-
 from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import HTMLResponse, JSONResponse
 
@@ -47,10 +45,10 @@ async def vk_oauth_start(request: Request):
         raise HTTPException(status_code=403, detail="No active workspace")
     try:
         url = await build_authorize_url(tenant_id, user_id=user_id)
-    except PlatformConfigurationError as e:
-        raise HTTPException(status_code=503, detail=f"Platform configuration unavailable: {e}") from None
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except PlatformConfigurationError:
+        raise HTTPException(status_code=503, detail="Platform configuration unavailable") from None
+    except RuntimeError:
+        raise HTTPException(status_code=500, detail="Credential authorization is unavailable") from None
     return JSONResponse({"authorize_url": url, "tenant_id": tenant_id})
 
 
@@ -63,12 +61,11 @@ async def vk_callback(
 ):
     """Handle the VK ID redirect for the L2 (user) token."""
     if error or not code or not state:
-        msg = error or "Отсутствует code/state"
-        return HTMLResponse(_ERROR_HTML.replace("{error}", escape(msg)), status_code=400)
+        return HTMLResponse(_ERROR_HTML.replace("{error}", "Авторизация отклонена или ответ неполон."), status_code=400)
     try:
         await complete_authorization(code, state, device_id=device_id)
-    except ValueError as e:
-        return HTMLResponse(_ERROR_HTML.replace("{error}", escape(str(e))), status_code=400)
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ValueError:
+        return HTMLResponse(_ERROR_HTML.replace("{error}", "Не удалось подтвердить авторизацию."), status_code=400)
+    except RuntimeError:
+        raise HTTPException(status_code=500, detail="Credential authorization is unavailable") from None
     return HTMLResponse(_SUCCESS_HTML)

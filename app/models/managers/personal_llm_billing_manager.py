@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_CEILING, localcontext
+from decimal import ROUND_CEILING, Decimal, localcontext
 from typing import Any, Mapping
 from uuid import uuid4
 
@@ -19,6 +19,7 @@ from app.services.ai.budget_admission import (
     BudgetAdmissionUnavailable,
     exact_usd,
 )
+from app.services.ai.credential_boundary import credential_version, require_current_credential_version
 from app.services.ai.dispatch_receipts import RECEIPT_FIELDS, build_dispatch_receipt
 from app.services.ai.outcome_events import EVENT_FIELDS, validate_outcome_event
 
@@ -112,10 +113,7 @@ class PersonalLLMBillingManager(BaseManager):
             context.prec = 64
             # The provider enforces its reviewed context window; without a
             # model tokenizer, price every context token at the higher rate.
-            ceiling = (
-                Decimal(policy.max_input_tokens + policy.max_output_tokens)
-                * max(rates_per_token)
-            )
+            ceiling = Decimal(policy.max_input_tokens + policy.max_output_tokens) * max(rates_per_token)
             ceiling = ceiling.quantize(Decimal("0.000000001"), rounding=ROUND_CEILING)
         return "bounded", exact_usd(ceiling), policy.version
 
@@ -130,9 +128,7 @@ class PersonalLLMBillingManager(BaseManager):
             and fresh_model.input_cost_per_1k == getattr(model, "input_cost_per_1k", None)
             and fresh_model.output_cost_per_1k == getattr(model, "output_cost_per_1k", None)
             and getattr(fresh_model, "pricing_token_unit", None) == getattr(model, "pricing_token_unit", None)
-            and all(
-                getattr(fresh_model, field, None) == getattr(model, field, None) for field in CACHE_RATE_FIELDS
-            )
+            and all(getattr(fresh_model, field, None) == getattr(model, field, None) for field in CACHE_RATE_FIELDS)
             and fresh_model.provider.id == getattr(selected_provider, "id", None)
             and fresh_model.provider.name == getattr(selected_provider, "name", None)
             and fresh_model.provider.api_format == getattr(selected_provider, "api_format", None)
@@ -158,8 +154,8 @@ class PersonalLLMBillingManager(BaseManager):
             PersonalLLMReservation,
             PersonalLLMReservationState,
         )
-        from ..identity.user import User
         from ..identity.role import PlatformRole
+        from ..identity.user import User
         from ..llm.llm_model import LLMModel
         from ..managers.llm_dispatch_receipt_manager import LLMDispatchReceiptManager
         from ..scheduling.agent_task import AgentTask
@@ -203,18 +199,22 @@ class PersonalLLMBillingManager(BaseManager):
                     raise PersonalBillingUnavailable("Task payer consent is missing")
                 payer_hint = consent_hint.payer_user_id
             user_ids = sorted({value for value in (payer_hint, initiated_by_id or actor_id) if value is not None})
-            active_user_ids = set(
-                (
-                    await session.execute(
-                        select(User.id)
-                        .where(User.id.in_(user_ids), User.is_active.is_(True))
-                        .order_by(User.id)
-                        .with_for_update()
+            active_user_ids = (
+                set(
+                    (
+                        await session.execute(
+                            select(User.id)
+                            .where(User.id.in_(user_ids), User.is_active.is_(True))
+                            .order_by(User.id)
+                            .with_for_update()
+                        )
                     )
+                    .scalars()
+                    .all()
                 )
-                .scalars()
-                .all()
-            ) if user_ids else set()
+                if user_ids
+                else set()
+            )
             fresh_model = (
                 await session.execute(
                     select(LLMModel)
@@ -228,7 +228,11 @@ class PersonalLLMBillingManager(BaseManager):
             now = datetime.now(timezone.utc)
             selected_provider = getattr(model, "provider", None)
             if not self._selected_model_matches_snapshot(fresh_model, model, selected_provider):
-                raise PersonalBillingUnavailable("Selected model or provider changed; reload configuration before retry")
+                raise PersonalBillingUnavailable(
+                    "Selected model or provider changed; reload configuration before retry"
+                )
+            accepted_version = credential_version(fresh_model.provider.credential_version)
+            require_current_credential_version(getattr(selected_provider, "credential_version", None), accepted_version)
             receipt = build_dispatch_receipt(
                 fresh_model,
                 tenant_id=tenant_id,
@@ -302,9 +306,8 @@ class PersonalLLMBillingManager(BaseManager):
                                 )
                             )
                         ).scalar_one_or_none()
-                    if (
-                        effective_initiator_id not in active_user_ids
-                        or (initiator_membership is None and trusted_operator is None)
+                    if effective_initiator_id not in active_user_ids or (
+                        initiator_membership is None and trusted_operator is None
                     ):
                         raise PersonalBillingUnavailable("Interactive task initiator is no longer an active member")
                 initiated_by_user_id = effective_initiator_id
@@ -335,7 +338,11 @@ class PersonalLLMBillingManager(BaseManager):
                             .where(User.id == actor_id, User.is_active.is_(True), PlatformRole.codename == "admin")
                         )
                     ).scalar_one_or_none()
-                if initiating_user is None or (admin_probe and platform_admin is None) or (not admin_probe and membership is None):
+                if (
+                    initiating_user is None
+                    or (admin_probe and platform_admin is None)
+                    or (not admin_probe and membership is None)
+                ):
                     raise PersonalBillingUnavailable("Active workspace member is required")
                 payer_id = actor_id
                 initiated_by_user_id = actor_id
@@ -443,11 +450,13 @@ class PersonalLLMBillingManager(BaseManager):
                         func.count(PersonalLLMReservationState.id).filter(
                             PersonalLLMReservation.ceiling_state == "undefined"
                         ),
-                    ).where(
+                    )
+                    .where(
                         PersonalLLMReservationState.account_id == account.id,
                         PersonalLLMReservationState.utc_day < day,
                         PersonalLLMReservationState.status == "reserved",
-                    ).join(
+                    )
+                    .join(
                         PersonalLLMReservation,
                         PersonalLLMReservation.dispatch_id == PersonalLLMReservationState.dispatch_id,
                     )
@@ -467,10 +476,7 @@ class PersonalLLMBillingManager(BaseManager):
             if cap_snapshot is not None:
                 if budget_day.unbounded_count or budget_day.undefined_count:
                     raise BudgetAdmissionDenied("Current-day unresolved unknown liability blocks capped admission")
-                if (
-                    budget_day.settled_usd + budget_day.reserved_usd + previous_reserved + (ceiling or 0)
-                    > cap_snapshot
-                ):
+                if budget_day.settled_usd + budget_day.reserved_usd + previous_reserved + (ceiling or 0) > cap_snapshot:
                     raise BudgetAdmissionDenied("Personal daily limit would be exceeded")
 
             receipt_record = dict(receipt)
@@ -481,6 +487,7 @@ class PersonalLLMBillingManager(BaseManager):
                 account_id=account.id,
                 payer_user_id=payer_id,
                 initiated_by_user_id=initiated_by_user_id,
+                credential_version=accepted_version,
             )
             session.add(dispatch)
             await session.flush()
@@ -524,6 +531,7 @@ class PersonalLLMBillingManager(BaseManager):
                 budget_day.unbounded_count += 1
             await session.flush()
             admission = dict(receipt)
+            admission["__credential_version"] = accepted_version
             if policy is not None and ceiling_state == "bounded":
                 admission["__personal_max_output_tokens"] = policy.max_output_tokens
             return admission
@@ -643,7 +651,9 @@ class PersonalLLMBillingManager(BaseManager):
                     state.latest_observed_at = event.observed_at
                     state.latest_event_id = event_id
                     breach = reservation.ceiling_usd is not None and reconciled > reservation.ceiling_usd
-                    overrun = reservation.cap_usd is not None and day.settled_usd + day.reserved_usd > reservation.cap_usd
+                    overrun = (
+                        reservation.cap_usd is not None and day.settled_usd + day.reserved_usd > reservation.cap_usd
+                    )
                     if breach or overrun:
                         day.frozen = True
                         session.add(
@@ -653,7 +663,8 @@ class PersonalLLMBillingManager(BaseManager):
                                 account_id=personal.account_id,
                                 utc_day=reservation.utc_day,
                                 incident_kind=(
-                                    "bound_and_cap_overrun" if breach and overrun
+                                    "bound_and_cap_overrun"
+                                    if breach and overrun
                                     else "bound_breach" if breach else "cap_overrun"
                                 ),
                                 reserved_usd=reservation.ceiling_usd or Decimal(0),

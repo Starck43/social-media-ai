@@ -78,11 +78,21 @@ from .llm import (
     LLMOutcomeEvent,
     LLMProvider,
 )
-from .onec import OneCQueryHistory
 from .notifications import DigestRun, Notification, NotificationDelivery, NotificationPreference, NotificationReceipt
+from .onec import OneCQueryHistory
 from .planner import PlannerEventRun, PlannerEventSettings, PlannerReminder, PlannerTask
 from .scheduling import AgentTask, Job
-from .tenancy import EntitlementUsage, Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
+from .tenancy import (
+    EntitlementUsage,
+    ServicePlanBackfillResolution,
+    ServicePlanPolicy,
+    Tenant,
+    TenantChannel,
+    TenantInvite,
+    TenantUser,
+    UserServicePlan,
+    WorkspaceRole,
+)
 
 __all__ = [
     "LocalConnector",
@@ -135,6 +145,9 @@ __all__ = [
     # Multi-tenant
     "Tenant",
     "EntitlementUsage",
+    "ServicePlanPolicy",
+    "UserServicePlan",
+    "ServicePlanBackfillResolution",
     "TenantUser",
     "TenantInvite",
     "TenantChannel",

@@ -13,8 +13,10 @@ status and priority of the tasks below.
 The owner decision of 2026-11-13 (OpenCode `ses_e2fa3690affea2bSCgS5dlSVmg`) sets
 one user tariff across owned workspaces, configurable module grants, token limits
 (including explicit unlimited) and an owned-workspace count limit.
-[P2-T17](../tasks/p2-t17.md) owns that tariff/holder contract and the remaining
-period/counting/BYOK-applicability/overage decisions.
+[P2-T17 increment A](../audit/p2/p2-t17.md) supplies the accepted dormant
+[holder/policy interface](../platform/SERVICE_PLANS.md). Remaining
+period/counting/BYOK-applicability/overage choices stay in the
+[P2 activation gates](p2-usage-spend.md#remaining-allowance-activation-gates).
 
 Invited members use the host owner's configured models and functionality subject
 to member/object permissions, never their own tariff as an override. Any
@@ -34,7 +36,7 @@ deliverable must exist before the dependent consumers.
 | --- | --- | --- |
 | 1. [P21-T10](../audit/p21/p21-t10.md) Prompt/tool safety — DONE 2026-11-14; accepted `07b30944` | None | Accepted source-backed exposure matrix and fail-closed synthetic reproductions; remediation stays separately scoped. |
 | 2. [P21-T11](../audit/p21/p21-t11.md) Credentials — DONE 2026-11-14; accepted `7e11f15f` | None | Monotonic custody/version fence, DNS-pinned egress and synthetic rotation regression evidence; Fernet/D8 unchanged. |
-| External: [P2-T17](../tasks/p2-t17.md) User tariff | Accepted P2 entitlement/configuration foundations | Holder binding, policy/version/expiry and token counting/period contract; checkout excluded. |
+| External: [P2-T17](../audit/p2/p2-t17.md) User tariff | Accepted dormant increment A; [live interface](../platform/SERVICE_PLANS.md) | Holder binding, policy/version/expiry and token definitions; counting/period activation choices remain gated in P2, checkout excluded. |
 | 3. [P21-T12](../tasks/p21-t12.md) Dispatch contract | T10 findings, T11 custody, P2-T17 holder interface | Typed contexts and dormant adapter seam with explicit extension interfaces. |
 | 4. [P21-T13](../tasks/p21-t13.md) Catalog/grants | T12 contract and P2-T17 tariff storage | Backfilled catalog/grant constraints and owner-only management; dispatch stays off. |
 | 5. [P21-T14](../tasks/p21-t14.md) Shared rate control | T12 seam, T13 provider/catalog identity | Stable quota pools, leases, cancellation policy and admission lock order. |

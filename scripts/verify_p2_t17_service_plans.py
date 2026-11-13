@@ -148,9 +148,12 @@ def _storage_rows() -> tuple[int, int, int]:
 def _refused(sql: str, params=()) -> str:
     """Run one statement in a SAVEPOINT, roll it back and return the error line."""
     with closing(STATE["conn"].cursor()) as cur:
-        from psycopg2.extensions import STATUS_READY
+        from psycopg2.extensions import TRANSACTION_STATUS_IDLE
 
-        owns_transaction = STATE["conn"].status == STATUS_READY
+        # On an autocommit connection `.status` remains STATUS_READY even after
+        # an explicit BEGIN. Only libpq's transaction status identifies whether
+        # this probe owns the transaction or must preserve the outer fixture.
+        owns_transaction = STATE["conn"].get_transaction_status() == TRANSACTION_STATUS_IDLE
         if owns_transaction:
             cur.execute("begin")
         cur.execute("savepoint p2t17_probe")

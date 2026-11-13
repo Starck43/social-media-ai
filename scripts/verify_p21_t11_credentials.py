@@ -60,7 +60,7 @@ def main():
                 before = {name: snapshot(name) for name in ("public", "test_schema", schema)}
                 args.inventory.write_text(json.dumps(before, sort_keys=True), encoding="utf-8")
                 print(
-                    f"Baseline dev graph predecessor: {ScriptDirectory.from_config(config).get_revision('p21t11_credential_version').down_revision}"
+                    f"Baseline dev graph predecessor: {ScriptDirectory.from_config(config).get_revision('0153').down_revision}"
                 )
                 print(f"Observed shared test revision: {before['test_schema'].get('alembic_version_max')}")
                 with conn.begin():

@@ -33,7 +33,8 @@ async def validate_personal_dispatch(client):
             raise PermissionError("Model capabilities are unavailable in this workspace")
     require_current_credential_version(client.credential_version, fresh.provider.credential_version)
     if (
-        fresh.model_id != client.model_name
+        fresh.provider.id != client.provider.id
+        or fresh.model_id != client.model_name
         or fresh.provider.base_url.rstrip("/") != client.base_url
         or fresh.provider.api_format != client.provider.api_format
         or fresh.provider.auth_header != client.provider.auth_header

@@ -14,7 +14,9 @@ def safe_secret_metadata(value, *, depth=0):
         return {
             key: safe_secret_metadata(item, depth=depth + 1)
             for key, item in value.items()
-            if isinstance(key, str) and not any(part in key.lower() for part in _SENSITIVE)
+            if isinstance(key, str)
+            and key.lower() not in {"iv", "tag"}
+            and not any(part in key.lower() for part in _SENSITIVE)
         }
     if isinstance(value, (list, tuple)):
         return [safe_secret_metadata(item, depth=depth + 1) for item in value[:1000]]

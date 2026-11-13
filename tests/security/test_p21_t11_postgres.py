@@ -57,7 +57,7 @@ def synthetic_schema():
                 id INTEGER PRIMARY KEY, provider_id INTEGER, owner_user_id INTEGER,
                 custom_endpoint_path TEXT, model_id TEXT, is_active BOOLEAN)""")
             spec = importlib.util.spec_from_file_location(
-                "_p21t11_migration", ROOT / "migrations/versions/p21t11_credential_version.py"
+                "_p21t11_migration", ROOT / "migrations/versions/0153_p21t11_credential_version.py"
             )
             migration = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(migration)
@@ -187,7 +187,7 @@ def test_current_generation_rotation_all_stores_wrong_old_keys_and_no_logs(synth
     conn, schema, migration = synthetic_schema
     migration.upgrade()
     _provider(conn, schema)
-    conn.exec_driver_sql(f"UPDATE \"{schema}\".alembic_version SET version_num='p21t11_credential_version'")
+    conn.exec_driver_sql(f"UPDATE \"{schema}\".alembic_version SET version_num='0153'")
     old_key, new_key = Fernet.generate_key().decode(), Fernet.generate_key().decode()
     old, new = Fernet(old_key.encode()), Fernet(new_key.encode())
     _rotation_stores(conn, schema, old)
@@ -232,7 +232,7 @@ def test_private_rotation_purge_needs_existing_explicit_approval(synthetic_schem
     conn, schema, migration = synthetic_schema
     migration.upgrade()
     _provider(conn, schema)
-    conn.exec_driver_sql(f"UPDATE \"{schema}\".alembic_version SET version_num='p21t11_credential_version'")
+    conn.exec_driver_sql(f"UPDATE \"{schema}\".alembic_version SET version_num='0153'")
     old_key, new_key = Fernet.generate_key().decode(), Fernet.generate_key().decode()
     _rotation_stores(conn, schema, Fernet(old_key.encode()))
     conn.exec_driver_sql(f'INSERT INTO "{schema}".file_insight_mounts VALUES (1)')

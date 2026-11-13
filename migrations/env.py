@@ -106,7 +106,7 @@ def on_version_apply(
         # Reply evidence adds no generic resource or permission grants.
         "0149",
         # Credential freshness adds no resource, permission or catalog row.
-        "p21t11_credential_version",
+        "0153",
     }:
         return
     from scripts.migrations.register_model_types import register_model_types

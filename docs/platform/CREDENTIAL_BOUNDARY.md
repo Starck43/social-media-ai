@@ -51,7 +51,8 @@ provider/model and execution identities. Historical dispatches remain NULL rathe
 than receiving fabricated evidence. The internal admission envelope carries
 `__credential_version`; it is checked before HTTP and excluded from the unchanged
 legacy receipt/outcome contract. P21-T12/T15 extend this to holder/consent identities.
-Admission re-resolves the same live row immediately before HTTP.
+Admission re-resolves the same live row immediately before HTTP; a provider-row
+identity change also denies, even if both rows happen to have the same version/key.
 `require_current_credential_version` denies
 missing/malformed/stale values without resolving a key. Current personal clients
 snapshot the version and recheck after admission; metadata connectivity probes use
@@ -97,7 +98,7 @@ Every TCP attempt resolves the original host through `app.core.outbound`, checks
 the original hostname for Host, TLS SNI and certificate verification. There is no
 second name lookup, environment proxy, redirect follow, retry to another host or
 reused pool across attempts. DNS failure and mixed public/denied answers deny.
-Special/mapped/tunnel IPv6, link-local, multicast, reserved and cloud metadata
+Loopback, special/mapped/tunnel IPv6, link-local, multicast, reserved and cloud metadata
 targets always deny.
 
 Approved local HTTPS deployments use the existing installation trusted-host
@@ -114,8 +115,9 @@ CRLF deny. BYOK material stays solely in the encrypted key field.
 
 ## Rollback
 
-The additive migration has a placeholder revision; assign its numeric ID at
-integration. Empty/unconsumed freshness metadata can downgrade. Downgrade refuses
+The additive migration receives its numeric revision at integration; derive the
+landed revision from Alembic rather than retaining the task placeholder.
+Empty/unconsumed freshness metadata can downgrade. Downgrade refuses
 once a provider version has advanced: freeze dispatch and obtain an approved
 rollback that preserves queued evidence instead of erasing the stale-request fence.
 Credential rotation follows [the maintenance procedure](CONFIGURATION.md#credential-key-rotation-reviewed-maintenance-only);

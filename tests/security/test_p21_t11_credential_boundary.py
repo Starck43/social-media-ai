@@ -44,10 +44,12 @@ class CredentialBoundaryTests(unittest.TestCase):
             "nested": {
                 "refresh_token": "synthetic-refresh",  # pragma: allowlist secret (synthetic)
                 "items": [
-                    {"private_key": "synthetic-private", "label": "Safe"}
+                    {"private_key": "synthetic-private", "label": "Safe"}  # pragma: allowlist secret (synthetic)
                 ],  # pragma: allowlist secret (synthetic)
                 "note": "Bearer synthetic-echo",
                 "cipher": "gAAAAAsynthetic",
+                "iv": "synthetic-iv",
+                "tag": "synthetic-tag",
             },
         }
         projection = module.safe_secret_metadata(value)
@@ -66,7 +68,7 @@ class CredentialBoundaryTests(unittest.TestCase):
             module.os.environ,
             {
                 "LLM_SYNTHETIC_MANAGED_KEY": "synthetic-key",
-                "OTHER_SECRET": "not-readable",
+                "OTHER_SECRET": "not-readable",  # pragma: allowlist secret (synthetic)
             },  # pragma: allowlist secret (synthetic)
         ):
             self.assertEqual(module.resolve_managed_credential("managed-a"), "synthetic-key")
@@ -190,6 +192,13 @@ class PinnedEgressTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PermissionError):
             await module.validate_personal_dispatch(client)
         decrypt.assert_not_called()
+        provider.owner_user_id = 2
+        provider.credential_version = 1
+        provider.id = 2
+        client.provider = NS(id=1)
+        with self.assertRaises(PermissionError):
+            await module.validate_personal_dispatch(client)
+        decrypt.assert_not_called()
 
     async def test_social_callback_does_not_echo_error_or_exception_secret(self):
         class PlatformConfigurationError(RuntimeError):
@@ -267,6 +276,16 @@ class PinnedEgressTests(unittest.IsolatedAsyncioTestCase):
         with self.policy(["10.1.2.4"], registry), self.assertRaises(ValueError):
             await egress._PinnedBackend(raw).connect_tcp("local.example", 8443, timeout=1)
         self.assertEqual(raw.connect_tcp.await_count, 1)
+
+    async def test_installation_private_mode_cannot_allow_loopback_or_metadata(self):
+        for ip in ("127.0.0.1", "::1", "169.254.169.254", "100.100.100.200"):
+            registry = outbound.registry_from_entries(
+                [outbound.TrustedHost("local.example", "private", frozenset({ip}))]
+            )
+            raw = NS(connect_tcp=AsyncMock())
+            with self.subTest(ip=ip), self.policy([ip], registry), self.assertRaises(ValueError):
+                await egress._PinnedBackend(raw).connect_tcp("local.example", 443, timeout=1)
+            raw.connect_tcp.assert_not_awaited()
 
     async def test_transport_retains_host_sni_disables_proxy_and_redirect(self):
         transport = egress.ProviderTransport()

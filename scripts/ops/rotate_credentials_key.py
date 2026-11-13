@@ -98,7 +98,7 @@ def rotate_in_transaction(
                 "p17t01_workspace_hosts",
                 "p17t03_onec_history",
                 "p17t08_onec_history_status",
-                "p21t11_credential_version",
+                "0153",
             ),
             (True, True, True),
         ),
@@ -135,7 +135,7 @@ def rotate_in_transaction(
     has_version = "credential_version" in {
         column["name"] for column in inspector.get_columns("llm_providers", schema=schema)
     }
-    if has_version != (revisions[0] == "p21t11_credential_version"):
+    if has_version != (revisions[0] == "0153"):
         raise RotationError("Credential version layout does not match the reviewed migration head")
     names = ["llm_providers", "user_credentials", "workspace_connection_secrets"]
     if has_authorizations:

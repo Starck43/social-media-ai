@@ -146,6 +146,7 @@ def _target(host: str, port: int):
             address = ipaddress.ip_address(raw)
             if (
                 address.is_unspecified
+                or address.is_loopback
                 or address.is_multicast
                 or address.is_link_local
                 or address.is_reserved

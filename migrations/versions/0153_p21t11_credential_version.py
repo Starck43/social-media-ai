@@ -1,6 +1,6 @@
 """Add monotonic personal-provider credential/configuration freshness.
 
-Revision ID: p21t11_credential_version
+Revision ID: 0153
 Revises: p17t08_onec_history_status
 """
 
@@ -9,7 +9,7 @@ from alembic import op
 
 from app.core.config import settings
 
-revision = "p21t11_credential_version"
+revision = "0153"
 down_revision = "p17t08_onec_history_status"
 branch_labels = None
 depends_on = None

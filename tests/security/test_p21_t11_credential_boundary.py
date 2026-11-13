@@ -30,7 +30,7 @@ class CredentialBoundaryTests(unittest.TestCase):
                 "app.utils.crypto": NS(encrypt_secret=encrypt),
             },
         )
-        data = {"encrypted_api_key": "gAAAAAsynthetic-plaintext-prefix"}
+        data = {"encrypted_api_key": "gAAAAAsynthetic-plaintext-prefix"}  # pragma: allowlist secret (synthetic)
         admin.seal_form_secret(data, "encrypted_api_key")
         self.assertEqual(data["encrypted_api_key"], "sealed:gAAAAAsynthetic-plaintext-prefix")
         admin.hide_form_secret(data, "encrypted_api_key")
@@ -40,10 +40,12 @@ class CredentialBoundaryTests(unittest.TestCase):
         module = load_isolated_source("_credential_metadata", ROOT / "app/utils/secret_metadata.py")
         value = {
             "host": "example.org",
-            "api_key": "synthetic-key",
+            "api_key": "synthetic-key",  # pragma: allowlist secret (synthetic)
             "nested": {
-                "refresh_token": "synthetic-refresh",
-                "items": [{"private_key": "synthetic-private", "label": "Safe"}],
+                "refresh_token": "synthetic-refresh",  # pragma: allowlist secret (synthetic)
+                "items": [
+                    {"private_key": "synthetic-private", "label": "Safe"}
+                ],  # pragma: allowlist secret (synthetic)
                 "note": "Bearer synthetic-echo",
                 "cipher": "gAAAAAsynthetic",
             },
@@ -61,7 +63,11 @@ class CredentialBoundaryTests(unittest.TestCase):
             {"app.core.config": NS(settings=NS(LLM_MANAGED_CREDENTIAL_REFS=allowlist))},
         )
         with patch.dict(
-            module.os.environ, {"LLM_SYNTHETIC_MANAGED_KEY": "synthetic-key", "OTHER_SECRET": "not-readable"}
+            module.os.environ,
+            {
+                "LLM_SYNTHETIC_MANAGED_KEY": "synthetic-key",
+                "OTHER_SECRET": "not-readable",
+            },  # pragma: allowlist secret (synthetic)
         ):
             self.assertEqual(module.resolve_managed_credential("managed-a"), "synthetic-key")
             for ref in ("OTHER_SECRET", "env:OTHER_SECRET", "missing", "managed-a\r\n", None):
@@ -115,7 +121,7 @@ class CredentialBoundaryTests(unittest.TestCase):
                 egress.provider_destination("https://example.org/v1", path)
         for url in (
             "http://example.org",
-            "https://user:password@example.org",
+            "https://user:password@example.org",  # pragma: allowlist secret (synthetic)
             "https://example.org/?key=synthetic",
             "https://example.org/#secret",
             "https://example.org\\@evil.org",
@@ -144,7 +150,7 @@ class CredentialBoundaryTests(unittest.TestCase):
             auth_header="SYNTH_HEADER_SECRET",
             description=None,
             is_active=True,
-            encrypted_api_key="SYNTH_CIPHERTEXT",
+            encrypted_api_key="SYNTH_CIPHERTEXT",  # pragma: allowlist secret (synthetic)
             managed_credential_ref="SYNTH_REF",
         )
         projection = catalog.provider_metadata(provider, [])

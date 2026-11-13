@@ -103,7 +103,7 @@ def test_versions_increment_only_sensitive_changes_and_cannot_reset(synthetic_sc
         assert _version(conn, schema) == 1
     for index, sql in enumerate(
         (
-            "encrypted_api_key='SYNTHETIC_CIPHERTEXT'",
+            "encrypted_api_key='SYNTHETIC_CIPHERTEXT'",  # pragma: allowlist secret (synthetic)
             "encrypted_api_key=NULL",
             "base_url='https://other.example/v1'",
             "auth_header='x-api-key'",

@@ -38,7 +38,7 @@ async def test_admission_persists_real_version_and_does_not_rewrite_it_on_rotati
     user = await User.objects.create(
         username=marker,
         email=marker + "@example.invalid",
-        hashed_password="synthetic-only",
+        hashed_password="synthetic-only",  # pragma: allowlist secret (synthetic)
         role_id=role.id,
         is_active=True,
     )

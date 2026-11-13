@@ -23,9 +23,9 @@ def test_legacy_api_and_admin_do_not_echo_credentialed_endpoint():
         name="Synthetic",
         description=None,
         api_format="openai",
-        base_url="https://user:SYNTHETIC_KEY@example.org/v1?api_key=SYNTHETIC_KEY",
+        base_url="https://user:SYNTHETIC_KEY@example.org/v1?api_key=SYNTHETIC_KEY",  # pragma: allowlist secret (synthetic)
         auth_header="Bearer SYNTHETIC_KEY",
-        encrypted_api_key="SYNTHETIC_CIPHERTEXT",
+        encrypted_api_key="SYNTHETIC_CIPHERTEXT",  # pragma: allowlist secret (synthetic)
         is_active=True,
         created_at=None,
         updated_at=None,

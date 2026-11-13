@@ -44,7 +44,10 @@ ORIGINAL_QUOTED_SCHEMA = postgresql.dialect().identifier_preparer.quote_schema(O
 
 
 def _load(name):
-    spec = importlib.util.spec_from_file_location(f"p2t17_{name}_test", ROOT / f"migrations/versions/p2t17_{name}.py")
+    revision = {"service_plan_storage": "0154", "service_plan_finalize": "0155"}[name]
+    spec = importlib.util.spec_from_file_location(
+        f"p2t17_{name}_test", ROOT / f"migrations/versions/{revision}_p2t17_{name}.py"
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -381,7 +384,7 @@ def test_offline_downgrade_is_refused_without_attempting_ddl(monkeypatch):
     assert operations.sql == []
 
 
-# ── finalization revision (p2t17_service_plan_finalize) ─────────────────────
+# ── finalization revision (0155) ───────────────────────────────────────────
 
 
 class FinalizationOps:

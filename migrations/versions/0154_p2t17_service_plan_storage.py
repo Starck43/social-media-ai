@@ -1,7 +1,7 @@
 """P2-T17 dormant user tariff storage, without backfill or runtime cutover.
 
-The integrator assigns the numeric revision at merge. No policy seeds or economic
-ledger are introduced. Downgrade refuses retained target data/sponsorship.
+Revision 0154 follows the integrated credential boundary. No policy seeds or
+economic ledger are introduced. Downgrade refuses retained data/sponsorship.
 """
 
 import sqlalchemy as sa
@@ -9,8 +9,8 @@ from alembic import context, op
 
 from app.core.config import settings
 
-revision = "p2t17_service_plan_storage"
-down_revision = "p17t08_onec_history_status"
+revision = "0154"
+down_revision = "0153"
 branch_labels = None
 depends_on = None
 

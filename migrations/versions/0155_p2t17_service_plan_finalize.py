@@ -1,6 +1,6 @@
 """Finalize sponsorship only after an explicit, recorded operator backfill.
 
-No data reassignment or runtime activation. The integrator numbers at merge.
+Revision 0155 follows the additive storage cut; no reassignment or activation.
 """
 
 import sqlalchemy as sa
@@ -8,8 +8,8 @@ from alembic import context, op
 
 from app.core.config import settings
 
-revision = "p2t17_service_plan_finalize"
-down_revision = "p2t17_service_plan_storage"
+revision = "0155"
+down_revision = "0154"
 branch_labels = None
 depends_on = None
 

@@ -6,8 +6,7 @@
 1. holds advisory lock 1370093 on a dedicated autocommit connection for the whole
    run, refuses a pre-existing `test_p2_t17`, snapshots the `public` and
    `test_schema` inventories, then creates the schema;
-2. runs `p17t08_onec_history_status -> p2t17_service_plan_storage ->
-   p2t17_service_plan_finalize` through `migrations/env.py`'s
+2. runs `0153 -> 0154 -> 0155` through `migrations/env.py`'s
    `config.attributes["connection"]` contract on an ordinary transactional
    SQLAlchemy connection, so a refused migration rolls back intact;
 3. probes the storage CHECK constraints, immutability triggers and the policy
@@ -48,9 +47,9 @@ if str(ROOT) not in sys.path:
 
 LOCK_ID = 1370093
 SCHEMA = "test_p2_t17"
-PREDECESSOR = "p17t08_onec_history_status"
-STORAGE = "p2t17_service_plan_storage"
-FINALIZE = "p2t17_service_plan_finalize"
+PREDECESSOR = "0153"
+STORAGE = "0154"
+FINALIZE = "0155"
 STORAGE_TABLES = ("service_plan_policies", "user_service_plans", "service_plan_backfill_resolutions")
 #: Registered collection capabilities only: a key the validator would reject is
 #: never used. CONSUME is what the engine checks, GRANTED what the policy grants.

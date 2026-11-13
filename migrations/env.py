@@ -108,8 +108,8 @@ def on_version_apply(
         # Credential freshness adds no resource, permission or catalog row.
         "0153",
         # Account tariffs are private policy/history, not generic CRUD resources.
-        "p2t17_service_plan_storage",
-        "p2t17_service_plan_finalize",
+        "0154",
+        "0155",
     }:
         return
     from scripts.migrations.register_model_types import register_model_types

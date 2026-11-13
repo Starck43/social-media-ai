@@ -114,7 +114,9 @@ authenticity/replay contract.
 The compatibility rule is checked before the next try: the funding class of the
 next row and the payer of the attempt must equal the ones of the try it
 replaces. A mismatch is a denial (`fallback_funding_class_mismatch`,
-`fallback_payer_mismatch`), not a switch.
+`fallback_payer_mismatch`), not a switch. Only proven bindings can differ: an
+attempt without a proven payer keeps its binding, and a strict attempt without
+a proven payer is already denied earlier as `payer_unresolved`.
 
 ## 6. Redacted error taxonomy
 

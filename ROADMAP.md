@@ -42,7 +42,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P21-T10](docs/tasks/p21-t10.md) Prompt and tool safety coverage audit — **IN_PROGRESS** · opencode-p21-t10 · independent; feeds P21-T12 · dialogue `qoder-ide-p21-t10-20261113` · `P0` · `C3`
 - [P21-T11](docs/tasks/p21-t11.md) Credential boundary and rotation hardening — **TODO** · unassigned · independent custody prerequisite; owner gate for crypto changes · `P0` · `C4`
-- [P2-T17](docs/tasks/p2-t17.md) User-level tariffs, module entitlements and shared token allowances — **TODO** · unassigned · owner direction `ses_e2fa3690affea2bSCgS5dlSVmg`; tariff/holder prerequisite for P21 · `P1` · `C5`
+- [P2-T17](docs/tasks/p2-t17.md) User-level tariffs, module entitlements and shared token allowances — **IN_PROGRESS** · opencode-local-p2-t17 · owner direction `ses_e2fa3690affea2bSCgS5dlSVmg`; tariff/holder prerequisite for P21 · dialogue `ses_e2fa3690affea2bSCgS5dlSVmg` · `P1` · `C5`
 - [P21-T12](docs/tasks/p21-t12.md) Single LLM dispatch seam and resolution contract — **TODO** · unassigned · depends on P21-T10/P21-T11 and P2-T17 holder contract · `P1` · `C3`
 - [P21-T13](docs/tasks/p21-t13.md) Unified model catalog, plan grants and generation policy — **TODO** · unassigned · depends on P21-T12/P2-T17; dormant catalog, no activation · `P1` · `C4`
 - [P21-T14](docs/tasks/p21-t14.md) Provider rate limits and bounded backpressure — **TODO** · unassigned · depends on P21-T12/P21-T13 · `P1` · `C4`

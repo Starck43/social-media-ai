@@ -1,7 +1,7 @@
 # Reply-evidence migration `0149` — allocation record for P15-T08
 
 Registry: [ROADMAP](../../../ROADMAP.md#priority-p3); the task row and owner live there.
-Card: [P15-T08](../../tasks/p15-t08.md) · Request: PR [#448](https://github.com/Starck43/social-media-ai/pull/448) comment 2026-11-09
+Card: [P15-T08](p15-t08.md) · Request: PR [#448](https://github.com/Starck43/social-media-ai/pull/448) comment 2026-11-09
 
 - **Revision:** `0149`
 - **Parent:** `0148` (`down_revision = "0148"`) — P19-T04 approval, merged first

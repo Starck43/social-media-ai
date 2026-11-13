@@ -38,7 +38,7 @@ already in the tree, and the user-facing notifications P16-T02 wants to add.
   the window ends, and is delivered at the first moment the user's window allows. The
   reminder is a promise about a deadline; losing it silently because the clock was
   wrong is the one outcome the user cannot detect. A reminder deferred past its own
-  deadline is still delivered, marked as late. [P16-T02](../tasks/p16-t02.md) does not
+  deadline is still delivered, marked as late. [P16-T02](../archive/tasks/p16-t02.md) does not
   need to invent a policy.
 
 - D23 — **answered (owner, 2026-11-05): a CRM event stays a CRM event; a task is a
@@ -47,8 +47,8 @@ already in the tree, and the user-facing notifications P16-T02 wants to add.
   `(tenant_id, contact_id, event_type, year)` already prevents a second greeting for
   the same event in the same year; `P14-T04` already lists them for 7/3/1 days, which
   **is** the reminder for them. A one-off "call Ivanov on Friday" is a planner task
-  ([P16-T01](../tasks/p16-t01.md)), and if it needs a reminder, the reminder is the
-  planner's own ([P16-T02](../tasks/p16-t02.md)). The planner does **not** get a
+  ([P16-T01](../archive/tasks/p16-t01.md)), and if it needs a reminder, the reminder is the
+  planner's own ([P16-T02](../archive/tasks/p16-t02.md)). The planner does **not** get a
   second contact-event model, and the CRM does **not** get ad-hoc actions.
 
 ## Consequences worth remembering for D23
@@ -62,7 +62,7 @@ already in the tree, and the user-facing notifications P16-T02 wants to add.
   become a third table and must not copy either item.
 - **Recurrence is server-side in two different places on purpose:** `greeting_history`
   for calendar-year deduplication of contact events, and the RRULE engine in
-  [P16-T01](../tasks/p16-t01.md) for task recurrence. They must not share a table;
+  [P16-T01](../archive/tasks/p16-t01.md) for task recurrence. They must not share a table;
   they may share the timezone helper.
 
 
@@ -79,7 +79,7 @@ already in the tree, and the user-facing notifications P16-T02 wants to add.
   channel that is configured but not implemented, and the answer cannot be silence.
 
 - **Two later tasks will want the same answers.** Notifications for planner
-  ([P16-T02](../tasks/p16-t02.md)) and calendar reminders
+  ([P16-T02](../archive/tasks/p16-t02.md)) and calendar reminders
   ([P16-T03](https://github.com/Starck43/social-media-ai/blob/dd7571ebf940c6e2eecb2e3903373ec13858dcee/docs/tasks/p16-t03.md)) are the same mechanism at two call sites; the
   second one must not repeat D18.
 

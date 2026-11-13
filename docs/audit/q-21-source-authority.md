@@ -56,7 +56,7 @@ reference plus what is genuinely ours.
   exist in Google Calendar and in a client's Bitrix24; a task may be in our planner and
   in a Yandex calendar. The registry records which source is authoritative for which
   field, per object, and the merge is read-time. Never auto-merge two source objects:
-  suggestion first, a human decides, exactly as [P15-T03](../tasks/p15-t03.md) settles
+  suggestion first, a human decides, exactly as [P15-T03](../archive/tasks/p15-t03.md) settles
   contacts.
 
 - **Per-connection consent is not shared** ([D4](q-18-owner-decisions.md)). Connecting a
@@ -106,7 +106,7 @@ and pretending they do is how a small decision becomes a phase.
 
 **Cheap — text and one column per module.** D24 in full: a module keeps only what we
 decided; an unreachable source degrades to "unavailable"; the planner stores its rule
-as text with `recurrence_source` ([P16-T01](../tasks/p16-t01.md) steps 2/2a/2b). No new
+as text with `recurrence_source` ([P16-T01](../archive/tasks/p16-t01.md) steps 2/2a/2b). No new
 table, no new migration beyond the one each task already needs.
 
 **Cheap — one small table at the second consumer, not the first.** D25's shared
@@ -122,7 +122,7 @@ matching, no scoring, no heuristic. The overlap prompt on a second connection is
 read of "more than one registered connection of this capability", which the connection
 table already answers. What is *not* cheap, and is explicitly out of scope: detecting
 that two *objects* are the same thing. That stays a suggestion surfaced through a normal
-flow ([P15-T03](../tasks/p15-t03.md) rule), never an automatic merge.
+flow ([P15-T03](../archive/tasks/p15-t03.md) rule), never an automatic merge.
 
 **Not cheap, and not asked for.** A unified task model spanning every provider, a
 merged calendar view stored as rows, recurrence reconciliation across providers. All
@@ -157,12 +157,12 @@ and per moment by the agent in [P15-T07](p15-t07.md), bounded only by consent
 
 | Task | The source decides | We keep | Forbidden |
 | --- | --- | --- | --- |
-| [P16-T01](../tasks/p16-t01.md) planner tasks | nothing yet — no external task system is connected | the task itself, its recurrence, its status, its visibility | a mirrored copy of a Bitrix24 task or calendar event |
+| [P16-T01](../archive/tasks/p16-t01.md) planner tasks | nothing yet — no external task system is connected | the task itself, its recurrence, its status, its visibility | a mirrored copy of a Bitrix24 task or calendar event |
 | [P16-T03](https://github.com/Starck43/social-media-ai/blob/dd7571ebf940c6e2eecb2e3903373ec13858dcee/docs/tasks/p16-t03.md)/[P16-T04](https://github.com/Starck43/social-media-ai/blob/dd7571ebf940c6e2eecb2e3903373ec13858dcee/docs/tasks/p16-t04.md) calendar | event times, recurrence, attendees, which calendar | our link, our per-connection consent ([D4](q-18-owner-decisions.md)), our per-event audit | a second calendar model that re-computes recurrence once the connection exists |
 | [P14-T01..T04](p13-t04-p14-t04-business-crm.md) greetings | birthdays/anniversaries and contact facts from Bitrix24 | the draft text and the once-per-year ledger | a copy of the contact's events |
 | [P14-T02](p13-t04-p14-t04-business-crm.md) CRM sync | entity fields, deletion, ownership | the link and the sync position | a third party's field values served from our copy when the portal answers |
 | P16-T01/T03 together | which source owns a field of a shared object | the registry entry and the read-time merge | a merged event or task stored as a new object |
-| [P15-T02](../tasks/p15-t02.md) unified messages | the message itself and its body | metadata, original URL, content hash | storing bodies or attachments (D11) |
+| [P15-T02](../archive/tasks/p15-t02.md) unified messages | the message itself and its body | metadata, original URL, content hash | storing bodies or attachments (D11) |
 
 ## Consequences worth remembering
 
@@ -176,7 +176,7 @@ and per moment by the agent in [P15-T07](p15-t07.md), bounded only by consent
   recurrence from the calendar and stops computing it. That is a call-site change
   **only if** the planner never expands a rule into pre-created occurrences and carries
   a `recurrence_source` column from its first migration
-  ([P16-T01](../tasks/p16-t01.md), steps 2, 2a, 2b). Expanding a rule into a year of
+  ([P16-T01](../archive/tasks/p16-t01.md), steps 2, 2a, 2b). Expanding a rule into a year of
   rows would turn the hand-over into a data migration with a reconciliation on top.
 
 - **The reference is not a licence to read.** Holding the identifier of an upstream

@@ -59,12 +59,12 @@
 | Wave | Task ID | Priority / Complexity | Recommended Agent Role | Depends On | Parallelizable With | Strictly Isolated `Owned paths` |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Wave 0** | [P12-T01](../audit/p12-t01.md) | `P2` · `C2` | **AI Studio Coordinator** (**DONE**) | — | — | `app/web/nav.py`, `app/web/templates/web/_shell_nav.html` |
-| **Wave 1A** | [P12-T02](../tasks/p12-t02.md) | `P2` · `C3` | **AI Studio Coordinator** *(or Remote Agent)* | `P12-T01`, `Q-16` | `P12-T05` | `app/types/enums/platform_types.py`, `app/services/social/platform_config.py`, `app/services/social/connections.py`, `app/web/settings.py`, `app/web/templates/web/settings.html`, `tests/unit_web/test_p12_t02_settings_connectors.py` |
-| **Wave 1B / 2C** | [P12-T05](../tasks/p12-t05.md) | `P3` · **`C3`** | **Local Agent (`<= C3`)** *(can start immediately!)* | `P12-T01` | `P12-T02`, `P12-T03`, `P12-T04` | `app/services/cases/`, `app/web/cases.py`, `app/web/templates/web/cases.html`, `tests/unit_web/test_p12_t05_cases_comparison.py` |
-| **Wave 2A** | [P12-T03](../tasks/p12-t03.md) | `P3` · `C4` | **AI Studio Coordinator** | `P12-T01`, `P12-T02` | `P12-T04`, `P12-T05` | `app/services/knowledge/`, `app/web/knowledge.py`, `app/web/documents.py`, `app/web/templates/web/knowledge.html`, `app/web/templates/web/documents.html`, `tests/unit_web/test_p12_t03_knowledge_documents.py` |
-| **Wave 2B** | [P12-T04](../tasks/p12-t04.md) | `P3` · `C4` | **Remote Agent** | `P12-T01`, `P12-T02` | `P12-T03`, `P12-T05` | `app/services/communications/`, `app/web/communications.py`, `app/web/followups.py`, `app/web/templates/web/communications.html`, `app/web/templates/web/followups.html`, `tests/unit_web/test_p12_t04_communications_followups.py` |
-| **Wave 3** | [P12-T06](../tasks/p12-t06.md) | `P3` · `C3` | **Evidence drawer / chat handoff** | `P12-T03`, `P12-T04`, `P12-T05` | P12-T09 (disjoint implementation paths) | `app/web/templates/web/base.html`, `app/web/chat.py`, `app/web/templates/web/chat.html`, `app/static/js/context_panel.js`, `tests/unit_web/test_p12_t06_context_handoff.py` |
-| **Wave 3 follow-up** | [P12-T09](../tasks/p12-t09.md) | historical | **Route reachability / nav activation** | `P12-T03`, `P12-T04`, `P12-T05` | P12-T06 (disjoint implementation paths) | `app/web/__init__.py`, `app/web/nav.py`, `tests/unit_web/test_p12_t01_nav_groups.py`, `tests/unit_web/test_p12_t03_knowledge_documents.py`, `tests/unit_web/test_p12_t04_communications_followups.py`, `tests/unit_web/test_p12_t05_cases_comparison.py`, `tests/web/test_p12_routes.py` |
+| **Wave 1A** | P12-T02 *(accepted)* | `P2` · `C3` | **AI Studio Coordinator** *(or Remote Agent)* | `P12-T01`, `Q-16` | `P12-T05` | `app/types/enums/platform_types.py`, `app/services/social/platform_config.py`, `app/services/social/connections.py`, `app/web/settings.py`, `app/web/templates/web/settings.html`, `tests/unit_web/test_p12_t02_settings_connectors.py` |
+| **Wave 1B / 2C** | P12-T05 *(accepted)* | `P3` · **`C3`** | **Local Agent (`<= C3`)** *(can start immediately!)* | `P12-T01` | `P12-T02`, `P12-T03`, `P12-T04` | `app/services/cases/`, `app/web/cases.py`, `app/web/templates/web/cases.html`, `tests/unit_web/test_p12_t05_cases_comparison.py` |
+| **Wave 2A** | P12-T03 *(accepted)* | `P3` · `C4` | **AI Studio Coordinator** | `P12-T01`, `P12-T02` | `P12-T04`, `P12-T05` | `app/services/knowledge/`, `app/web/knowledge.py`, `app/web/documents.py`, `app/web/templates/web/knowledge.html`, `app/web/templates/web/documents.html`, `tests/unit_web/test_p12_t03_knowledge_documents.py` |
+| **Wave 2B** | P12-T04 *(accepted)* | `P3` · `C4` | **Remote Agent** | `P12-T01`, `P12-T02` | `P12-T03`, `P12-T05` | `app/services/communications/`, `app/web/communications.py`, `app/web/followups.py`, `app/web/templates/web/communications.html`, `app/web/templates/web/followups.html`, `tests/unit_web/test_p12_t04_communications_followups.py` |
+| **Wave 3** | P12-T06 *(accepted)* | `P3` · `C3` | **Evidence drawer / chat handoff** | `P12-T03`, `P12-T04`, `P12-T05` | P12-T09 (disjoint implementation paths) | `app/web/templates/web/base.html`, `app/web/chat.py`, `app/web/templates/web/chat.html`, `app/static/js/context_panel.js`, `tests/unit_web/test_p12_t06_context_handoff.py` |
+| **Wave 3 follow-up** | P12-T09 *(DONE `e577951b`)* | historical | **Route reachability / nav activation** | `P12-T03`, `P12-T04`, `P12-T05` | P12-T06 (disjoint implementation paths) | `app/web/__init__.py`, `app/web/nav.py`, `tests/unit_web/test_p12_t01_nav_groups.py`, `tests/unit_web/test_p12_t03_knowledge_documents.py`, `tests/unit_web/test_p12_t04_communications_followups.py`, `tests/unit_web/test_p12_t05_cases_comparison.py`, `tests/web/test_p12_routes.py` |
 
 ---
 
@@ -80,10 +80,10 @@ Draft Jinja2 templates for all expansion views are already checked into `app/web
 
 ## Provider-specific connector follow-up
 
-- [P12-T08](../tasks/p12-t08.md): provider catalog, workspace connection configuration and
+- P12-T08: provider catalog, workspace connection configuration and
   safe credential UX. **DONE 2026-11-02**, merge `f36a1a53` (PR #304), migration 0121
   applied to `public`. Review: [audit/p12-t08.md](../audit/p12-t08.md).
-- [P12-T10](../tasks/p12-t10.md): unified provider presentation catalog. **DONE 2026-11-02**,
+- P12-T10: unified provider presentation catalog. **DONE 2026-11-02**,
   merge `3a4af09e` (PR #305). Code-owned descriptors, local SVG glyphs, shared
   components; no transport, migration or production change.
 - [P12-T11](../audit/p12-t11.md): **DONE 2026-11-02**. Persisted tenant-isolated

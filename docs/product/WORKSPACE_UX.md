@@ -1,6 +1,6 @@
 # Workspace experience and information architecture
 
-Target design recorded by [P20-T01](../tasks/p20-t01.md) at the owner's request
+Target design recorded by P20-T01 ([../audit/p20-t01.md](../audit/p20-t01.md)) at the owner's request
 (2026-11-05). It is **not shipped**: every change lands through its own task and
 acceptance. Current navigation is data in `app/web/nav.py`; current chat behavior
 is in [AGENT](../agent/AGENT.md). Russian strings below are proposed UI labels, except
@@ -15,7 +15,7 @@ where owner decisions are recorded below.
    the sidebar.
 2. **Chat is the primary interaction, not the only place.** Contact cards,
    calendar, documents and inbox work without the agent; the agent sits beside
-   them through context handoff ([P12-T06](../tasks/p12-t06.md)). Nothing is
+   them through context handoff (P12-T06). Nothing is
    available only through a prompt.
 3. **The UI may join, storage may not** ([Q-20 D23](../audit/q-20-notification-surface.md),
    [Q-21 D24/D25](../audit/q-21-source-authority.md)). «Сегодня», the unified task
@@ -37,8 +37,8 @@ where owner decisions are recorded below.
 | --- | --- | --- | --- |
 | Работа | Сегодня | Current dashboard `/app/`, [P20-T07](../audit/p20-t07.md) | Default landing; user can choose another in settings |
 | Работа | Чат с агентом | `/app/chat`, [P20-T08](../audit/p20-t08.md) | Same conversation as the Telegram/MAX bot |
-| Работа | Входящие | `/app/communications` inbox, [P15-T04](../tasks/p15-t04.md), triage [P20-T09 accepted](../audit/p20-t09.md) | Inbound and outbound in one thread |
-| Работа | Задачи | hub over `/app/planner` ([P16-T01](../tasks/p16-t01.md)) and `/app/tasks`, [P20-T10 accepted](../audit/p20-t10.md) | Tabs «Мои дела», «Поручения агенту», «Календарь» |
+| Работа | Входящие | `/app/communications` inbox, P15-T04, triage [P20-T09 accepted](../audit/p20-t09.md) | Inbound and outbound in one thread |
+| Работа | Задачи | hub over `/app/planner` (P16-T01) and `/app/tasks`, [P20-T10 accepted](../audit/p20-t10.md) | Tabs «Мои дела», «Поручения агенту», «Календарь» |
 | Клиенты | Контакты, Договорённости, Предложения | `/app/contacts`, `/app/followups`, `/app/cases` | CRM/1C data appears inside these as context |
 | Знания | База знаний, Документы, Файлы | `/app/knowledge`, `/app/documents`, file workspace | |
 | Мониторинг | Источники, Сценарии, Аналитика, Дайджесты | existing routes | Specialist area of the first vertical |
@@ -82,7 +82,7 @@ editor), brief (attention items).
 2. «Ждут решения» — the actor's pending decisions, filtered to the selected
    context when there is one.
 3. «В работе» — running and recent agent runs and delegated steps with progress
-   and cancel ([P20-T04](../tasks/p20-t04.md)).
+   and cancel ([../audit/p20-t04.md](../audit/p20-t04.md)).
 4. «Материалы» — citations/evidence of the last answer and attachments.
 
 **Chat dock.** Every object page offers «Спросить агента», which opens the same
@@ -109,13 +109,13 @@ social results as the first provider.
 
 ## Correspondence
 
-Connected mailboxes ([P15-T01](../tasks/p15-t01.md)) and Telegram/MAX
-([P15-T02](../tasks/p15-t02.md); personal Telegram behind P12-T14) form threads per
+Connected mailboxes (P15-T01) and Telegram/MAX
+(P15-T02; personal Telegram behind P12-T14) form threads per
 contact. Personal VK messages need their own authorized capability; none is
 planned. Flow: ingest metadata → thread → triage («Нужен ответ», «К сведению»,
 «Подождёт», «Не уверен» with a reason) → the agent proposes a reply draft, a
 planner task, a follow-up, a document or a CRM note → the user edits and approves
-→ outbox ([P15-T05](../tasks/p15-t05.md)) and senders ([P15-T06](../audit/p15-t06.md))
+→ outbox ([../audit/p15-t05-0141.md](../audit/p15-t05-0141.md)) and senders ([P15-T06](../audit/p15-t06.md))
 → delivery status in the same thread. The agent never sends without the owning
 approval; notifying a workspace user never uses the outbox (D19).
 
@@ -153,7 +153,7 @@ use the one notification surface (D18).
 These open as context from a contact, case, thread or task; the agent works on
 them through context chips. Writes use their existing previews and approvals
 ([P13-T04](../audit/p13-t04-p14-t04-business-crm.md), [P17-T04](../tasks/p17-t04.md),
-[P19-T04](../tasks/p19-t04.md)).
+[../audit/p19-t04.md](../audit/p19-t04.md)).
 
 ## Surface parity
 
@@ -178,4 +178,4 @@ Source: [owner answers](https://app.notion.com/chat?t=40fa7457748980d094a100a930
 - **O-3 decided (owner, 2026-11-07):** the mobile bar is «Сегодня», «Чат», «Входящие» (when permitted and ready), «Задачи», «Ещё» — exactly as proposed above.
 - **O-4 decided in principle:** users choose their own task service. The first supported connector and rollout order remain open; no universal provider mandated.
 - **O-5 decided for now:** use a stub for web search; prioritize Yandex Search API for a future provider. Real-provider activation and spending have not been approved.
-- **O-6 decided (owner, 2026-11-11):** enable a bounded public-web research step in the delegated task workflow. This resolves the P20-T12 ↔ P20-T04 circular gate: [P20-T12](../audit/p20-t12.md) delivers an agent-task web-research step, while accepted [P20-T04](../tasks/p20-t04.md) refuses such steps until P20-T12 is accepted. Bounds stay as scoped there: public pages only, no login, form submission or CAPTCHA handling, the O-5 stub remains clearly marked and is never presented as live evidence, no paid provider activation and no new spend. The step is admitted only when the web-research capability is available and under the existing delegation caps. The accepted v1 workflow keeps rejecting the step; the capability ships as the next workflow version, so pinning callers to v1 remains the rollback.
+- **O-6 decided (owner, 2026-11-11):** enable a bounded public-web research step in the delegated task workflow. This resolves the P20-T12 ↔ P20-T04 circular gate: [P20-T12](../audit/p20-t12.md) delivers an agent-task web-research step, while accepted [P20-T04](../audit/p20-t04.md) refuses such steps until P20-T12 is accepted. Bounds stay as scoped there: public pages only, no login, form submission or CAPTCHA handling, the O-5 stub remains clearly marked and is never presented as live evidence, no paid provider activation and no new spend. The step is admitted only when the web-research capability is available and under the existing delegation caps. The accepted v1 workflow keeps rejecting the step; the capability ships as the next workflow version, so pinning callers to v1 remains the rollback.

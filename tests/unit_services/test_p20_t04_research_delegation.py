@@ -1,6 +1,6 @@
 """Unit and security tests for P20-T04 (Bounded specialist delegation for research).
 
-Covers all acceptance criteria in `docs/tasks/p20-t04.md`:
+Covers all acceptance criteria in `docs/archive/tasks/p20-t04.md`:
 - Fixed versioned workflow (`collect` -> `analyze` -> `synthesize`) and provenance/citations
 - Permission revocation between steps (fails closed, preserves prior step receipts)
 - Tenant isolation and child privilege escalation refusal (actor, tenant, sources, boundary, tools, depth)

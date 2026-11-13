@@ -1,8 +1,8 @@
 # P8-T33 / T46 / T47 / T48 — VK search-result categories, mocked contract slice
 
 - **Date:** 2026-11-11
-- **Tasks:** [P8-T33](../tasks/p8-t33.md) (registry and `people`), [P8-T46](../tasks/p8-t46.md) (video),
-  [P8-T47](../tasks/p8-t47.md) (apps/games), [P8-T48](../tasks/p8-t48.md) (owner-scoped market)
+- **Tasks:** [P8-T33](../archive/tasks/p8-t33.md) (registry and `people`), [P8-T46](../archive/tasks/p8-t46.md) (video),
+  [P8-T47](../archive/tasks/p8-t47.md) (apps/games), [P8-T48](../archive/tasks/p8-t48.md) (owner-scoped market)
 - **Integration:** [#295](https://github.com/Starck43/social-media-ai/pull/295) merge
   `9857f411` (registry, `people`, five-surface catalog) and
   [#298](https://github.com/Starck43/social-media-ai/pull/298) merge `8a687f4f` (video, apps,

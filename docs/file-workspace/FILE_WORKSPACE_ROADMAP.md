@@ -248,7 +248,7 @@ merge. Report those checks as pending/unrun until performed.
 The original planning PR #307 is merged into the current implementation history;
 this roadmap preserves its product and acceptance requirements in English.
 Current implementation and verification detail stays in the active
-[P12-T12 card](../tasks/p12-t12.md), its [local handoff](../tasks/p12-t12-local-handoff.md),
+[P12-T12 card](../tasks/p12-t12.md), its [local handoff](../archive/tasks/p12-t12-local-handoff.md),
 and [PR #327](https://github.com/Starck43/social-media-ai/pull/327). Contract,
 Yandex and folder-action work remains owned by the linked task cards. This
 document records requirements and their owners; it does not change task status

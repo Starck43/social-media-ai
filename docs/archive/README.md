@@ -15,7 +15,7 @@ by [DOCS_INDEX](../DOCS_INDEX.md).
 - `OWNER_BOOTSTRAP_INVENTORY`, `SOURCE_IDENTITY_INVENTORY`: the two runbooks were
   merged into [OPERATOR_INVENTORIES](../platform/OPERATOR_INVENTORIES.md).
 - `tasks/`: completed task cards whose ROADMAP row is closed and whose result is
-  recorded in `docs/audit/`.
+  recorded in `docs/audit/`; the phase plan keeps the outcome line and audit link.
 
 Do not add a document here while a live document still depends on it; fix the
 link in the live document instead.

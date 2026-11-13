@@ -49,12 +49,14 @@ Top-level `docs/` holds only this router; current contracts are grouped by subje
 - `docs/phases/`: active phase plans and compact completed summaries; each links
   its product parent, active tasks and accepted audits. No task-status copies.
 - `docs/tasks/`: active task/question detail, parent/related links, documents read,
-  checks and PR handoff. ROADMAP alone owns open status/owner/dialogue.
+  checks and PR handoff. ROADMAP alone owns open status/owner/dialogue. A card
+  leaves this folder once its row closes (see below).
 - `docs/audit/`: accepted task summaries, blocked diagnostics and lazy historical
   evidence. Accepted orphan tasks leave only an audit here.
 - `docs/archive/`: history that current work no longer needs — superseded routers,
-  closed one-off reviews/validations and completed task cards whose audit already
-  carries the result. Nothing here is a current contract.
+  closed one-off reviews/validations and completed task cards
+  (`archive/tasks/<id>.md`) whose audit already carries the result. Nothing here
+  is a current contract.
 - Technical contracts live in the subject folders above; shared test JSON is in
   `tests/shared/fixtures/`. There is no `docs/design` or `docs/validation` folder.
 

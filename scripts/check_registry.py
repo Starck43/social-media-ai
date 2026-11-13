@@ -13,6 +13,10 @@ Heuristics, per open row in ``ROADMAP.md``:
   (the ``## Acceptance`` section header itself is part of normal cards);
 * the card links a merged PR but the row is not ``READY``/``BLOCKED``/``DEFERRED``;
 * the card links ``docs/audit/<row>.md`` — the audit closeout step was skipped.
+
+Second check: every card in ``docs/tasks/`` must appear in ``ROADMAP.md``. A card
+left there after its row was removed belongs in ``docs/archive/tasks/``; a card
+the registry cannot see is either closed or never registered.
 """
 
 from __future__ import annotations
@@ -77,6 +81,13 @@ def main(argv: list[str]) -> int:
 
     rows = open_rows(ROADMAP.read_text(encoding="utf-8"))
     messages = [message for row in rows for message in findings(row)]
+    linked = {Path(card).resolve() for _, card, _ in rows}
+    for card in sorted(Path("docs/tasks").glob("*.md")):
+        if card.resolve() not in linked:
+            messages.append(
+                f"{card.as_posix()}: card has no open ROADMAP row — "
+                "archive it to docs/archive/tasks/ or register the work"
+            )
     for message in messages:
         print(f"WARN {message}")
     print(f"check_registry: {len(rows)} open rows, {len(messages)} warnings")

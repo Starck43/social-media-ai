@@ -49,6 +49,15 @@ product-parent backlink, goal, numbered plan, active-card links and accepted aud
 links. Plan substantial work by creating/revising a numbered phase with continuity
 and reasons; keep short standalone tasks as cards, not artificial stages.
 
+A task card is working material for an **open** item, not its result. Once the row
+leaves ROADMAP the card has no owner, status or dialogue left to maintain, so it
+moves to `docs/archive/tasks/<id>.md` — never kept in `docs/tasks/`, never deleted
+while the history is useful. The phase line states the outcome and links the audit;
+the audit owns the durable record. A phase or contract that still owns a living
+decision keeps that text itself instead of pointing at an archived card.
+`scripts/check_registry.py` warns about a card in `docs/tasks/` with no open ROADMAP
+row: every card there must be visible to the registry.
+
 ## State machine
 
 Open row statuses: `TODO`, `IN_PROGRESS`, `READY`, `BLOCKED`, `DEFERRED`;
@@ -65,8 +74,8 @@ summary.
   passed, with the [Evidence](#evidence) record in the card or linked PR body.
   Actionable failure keeps the row IN_PROGRESS.
 - `READY → DONE`: the auditor applies the [Acceptance](#acceptance) steps only
-  after verified integration into fresh `origin/dev`; the row and card are
-  removed, the audit record and phase line remain.
+  after verified integration into fresh `origin/dev`; the row is removed, the
+  card moves to `docs/archive/tasks/`, and the audit record plus phase line stay.
 - rejected, correctable: back to IN_PROGRESS; the auditor returns findings,
   required checks and a recommended fix. Remote findings ride PR comments,
   never the PR body, which stays executor-owned.
@@ -392,7 +401,7 @@ so it is resolved once, at merge, instead of being negotiated between agents.
 
 An allocation note under `docs/tasks/` stays useful only while a task is open;
 it records the placeholder and its dependency, not a promise of a future number.
-The [reservation register](../tasks/p19-t04-migration-allocation.md) is history, not
+The [reservation register](../archive/tasks/p19-t04-migration-allocation.md) is history, not
 a lock file.
 
 ## State transitions

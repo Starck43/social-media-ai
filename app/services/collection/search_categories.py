@@ -62,11 +62,11 @@ REASON_NO_PUBLIC_METHOD = "no_promised_public_search_method"
 REASON_PARTIAL_VIA_COMMUNITIES = "partially_represented_by_communities"
 
 Q5_EVIDENCE_REF = "docs/tasks/q-5.md"
-T33_CARD_REF = "docs/tasks/p8-t33.md"
-T46_CARD_REF = "docs/tasks/p8-t46.md"
-T47_CARD_REF = "docs/tasks/p8-t47.md"
-T48_CARD_REF = "docs/tasks/p8-t48.md"
-T49_CARD_REF = "docs/tasks/p8-t49.md"
+T33_CARD_REF = "docs/archive/tasks/p8-t33.md"
+T46_CARD_REF = "docs/archive/tasks/p8-t46.md"
+T47_CARD_REF = "docs/archive/tasks/p8-t47.md"
+T48_CARD_REF = "docs/archive/tasks/p8-t48.md"
+T49_CARD_REF = "docs/archive/tasks/p8-t49.md"
 
 
 class SearchCategoryError(ValueError):

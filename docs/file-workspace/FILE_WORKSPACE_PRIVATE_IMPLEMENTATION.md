@@ -118,7 +118,7 @@ projection, full original, retained prompt/response or public URL is introduced.
 
 ## Local verification and audit handoff
 
-Use the focused [local handoff](../tasks/p12-t12-local-handoff.md) for prerequisites,
+Use the focused [local handoff](../archive/tasks/p12-t12-local-handoff.md) for prerequisites,
 commands, unrun checks and review gates. The PR body records remote evidence.
 
 ## Default-off file actions (remote completion package)

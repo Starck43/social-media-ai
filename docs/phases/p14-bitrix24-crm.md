@@ -10,14 +10,14 @@ Owner estimate (TZ): 3–4 weeks — not a repository commitment.
 ## Baseline: done and arriving
 
 - Accepted core: Bitrix24 connection, incremental sync, encrypted contact cards, upcoming events and greeting drafts ([T01–T04](../audit/p13-t04-p14-t04-business-crm.md)); approved greeting delivery and consented batch messaging through the P15 outbox ([T05](../audit/p14-t05.md), [T06](../audit/p14-t06.md)).
-- Depends on P13 (PII, contact core, rate limits, OAuth, commands). Sending depends on [P15-T05](../tasks/p15-t05.md)/T06.
+- Depends on P13 (PII, contact core, rate limits, OAuth, commands). Sending depends on P15-T05/T06.
 
 ## Adapted requirements
 
 TZ 1.1–1.4, adapted:
 
 - **Connector:** OAuth 2.0 with refresh (decision D2 keeps the webhook as an admin alternative); contacts, companies, leads, deals; incremental sync every 15 min by `DATE_MODIFY` watermark; optional real-time event handlers (R-14); 2 req/s per portal with `batch` (R-11).
-- **Contacts:** imported into the contact core as identities (R-02, R-16); birthday, anniversary and allowlisted custom fields encrypted ([P13-T02 accepted](../audit/p13-t02.md)); duplicates surfaced for [P15-T03](../tasks/p15-t03.md) merge.
+- **Contacts:** imported into the contact core as identities (R-02, R-16); birthday, anniversary and allowlisted custom fields encrypted ([P13-T02 accepted](../audit/p13-t02.md)); duplicates surfaced for P15-T03 merge.
 - **Greetings:** reminders 7/3/1 days ahead; AI drafts; history prevents repeats; scheduled sending with approval; delivery via email/Telegram bot/MAX bot.
 - **Mass messaging:** selected contacts, channel choice, `{name}`/`{company}` personalization, delivery tracking, retry, unsubscribe; consent basis and channel limits per R-10/D7.
 

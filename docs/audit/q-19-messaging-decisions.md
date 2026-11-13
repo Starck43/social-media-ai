@@ -35,7 +35,7 @@ is removed once every decision is answered.
 
 - D13 — **answered (owner, 2026-11-04): mail networking is an outbound consumer,
   not a bypass.** SMTP and IMAP resolve and validate their destination through the
-  [P14-T09](../tasks/p14-t09.md) seam exactly like every other connector: no connector keeps
+  [P14-T09](../archive/tasks/p14-t09.md) seam exactly like every other connector: no connector keeps
   its own allowlist, DNS call or `is_global` shortcut. The pinned TLS policy in
   `app/integrations/mail_check.py` stays the transport detail; the seam decides
   **where** we may connect. Private-network mail servers therefore need an
@@ -104,7 +104,7 @@ is removed once every decision is answered.
   that the two are connected — a record in Bitrix24 that does not look like a
   contact. Replying to and briefing a client from a single thread therefore needs
   both permissions. This is a Bitrix-linkage defect that predates sending and is
-  **not fixed here**; recorded so that P14-T05/T06 and [P15-T08](../tasks/p15-t08.md)
+  **not fixed here**; recorded so that P14-T05/T06 and [P15-T08](../archive/tasks/p15-t08.md)
   do not invent a per-feature workaround for it.
 
 - **D14 removes a tempting shortcut.** `comms.outbox` gets no `CREATE` action: nothing

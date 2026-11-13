@@ -30,9 +30,9 @@ work are separate facts; see [P8-T29 history](../audit/p8-t29-history.md).
 6. **VK search-result categories — mocked slice accepted 2026-11-11**
    ([audit](../audit/p8-t33-search-categories.md), [#295](https://github.com/Starck43/social-media-ai/pull/295)
    `9857f411` + [#298](https://github.com/Starck43/social-media-ai/pull/298) `8a687f4f`):
-   [P8-T33](../tasks/p8-t33.md) registry/`people`, [P8-T46](../tasks/p8-t46.md) video,
-   [P8-T47](../tasks/p8-t47.md) apps/games, [P8-T48](../tasks/p8-t48.md) owner-scoped market —
-   all `mocked`, 217 contract checks passed. [P8-T49](../tasks/p8-t49.md) music is `unsupported`
+   P8-T33 registry/`people`, P8-T46 video,
+   P8-T47 apps/games, P8-T48 owner-scoped market —
+   all `mocked`, 217 contract checks passed. P8-T49 music is `unsupported`
    ([audit](../audit/p8-t49.md), #469): no public search method since the 2016 audio API shutdown.
    Clips and channels stay `unsupported`. Live enablement of the four `mocked` categories is
    [Q-5](../tasks/q-5.md) and nothing else; no category is user-available today.

@@ -17,11 +17,11 @@ Owner estimate (TZ): 5–6 weeks — not a repository commitment.
 
 TZ 2.1–2.5, adapted:
 
-- **Identity reconciliation:** by email/phone/username through blind indexes; suggestions with reasons; manual merge/unmerge with journal; conflict resolution ([P15-T03](../tasks/p15-t03.md)).
-- **Unified inbox:** thread view, filters (channel, date, read state), search (metadata always; content per D3), chronological order, read/archive, local delete, reply ([P15-T04](../tasks/p15-t04.md), T08).
+- **Identity reconciliation:** by email/phone/username through blind indexes; suggestions with reasons; manual merge/unmerge with journal; conflict resolution (P15-T03, [../audit/p15-stack.md](../audit/p15-stack.md)).
+- **Unified inbox:** thread view, filters (channel, date, read state), search (metadata always; content per D3), chronological order, read/archive, local delete, reply (P15-T04, [../audit/p15-stack.md](../audit/p15-stack.md); T08).
 - **Channel recommendation:** frequency, last active channel, manual preference, optional AI hint, confidence score ([P15-T07 audit](../audit/p15-t07.md)).
-- **Outbox & scheduling:** drafts with approval, scheduled sending, one text → several channels, delivery tracking, retry only on definite transient failure, cancel ([P15-T05](../tasks/p15-t05.md)/T06).
-- **Storage strategy:** metadata in `unified_messages`, optional content cache, originals stay in source systems, periodic sync, deleted originals → `unavailable` ([P15-T02](../tasks/p15-t02.md)).
+- **Outbox & scheduling:** drafts with approval, scheduled sending, one text → several channels, delivery tracking, retry only on definite transient failure, cancel (P15-T05, [../audit/p15-t05-0141.md](../audit/p15-t05-0141.md)/T06).
+- **Storage strategy:** metadata in `unified_messages`, optional content cache, originals stay in source systems, periodic sync, deleted originals → `unavailable` (P15-T02, [../audit/p15-stack.md](../audit/p15-stack.md)).
 
 ## Data model (adapted)
 
@@ -39,19 +39,19 @@ TZ criteria: contacts merged by email/phone (T03); chronological per-contact vie
 
 ## Plan
 
-1. [P15-T01](../tasks/p15-t01.md) — Email connector: IMAP incremental read sync · `P3` · `C4` · depends: [P13-T03 accepted](../audit/p13-t03.md), [P13-T07 accepted](../audit/p13-t07.md)
-2. [P15-T02](../tasks/p15-t02.md) — Unified message store and channel ingestion (Telegram, MAX, email) · `P3` · `C4` · depends: [P13-T07 accepted](../audit/p13-t07.md), P12-T14 integrated (Telegram personal runtime gates)
-3. [P15-T03](../tasks/p15-t03.md) — Identity reconciliation: suggestions, manual merge and unmerge · `P3` · `C4` · depends: [P15-T02](../tasks/p15-t02.md), [P14-T03 accepted](../audit/p13-t04-p14-t04-business-crm.md) (CRM duplicate candidates, optional)
-4. [P15-T04](../tasks/p15-t04.md) — Unified inbox: threads, filters, search and read state · `P3` · `C4` · depends: [P15-T02](../tasks/p15-t02.md), [P15-T03](../tasks/p15-t03.md)
+1. P15-T01 — Email connector: IMAP incremental read sync · `P3` · `C4` · depends: [P13-T03 accepted](../audit/p13-t03.md), [P13-T07 accepted](../audit/p13-t07.md)
+2. P15-T02 — Unified message store and channel ingestion (Telegram, MAX, email) · `P3` · `C4` · depends: [P13-T07 accepted](../audit/p13-t07.md), P12-T14 integrated (Telegram personal runtime gates)
+3. P15-T03 — Identity reconciliation: suggestions, manual merge and unmerge · `P3` · `C4` · depends: P15-T02, [P14-T03 accepted](../audit/p13-t04-p14-t04-business-crm.md) (CRM duplicate candidates, optional)
+4. P15-T04 — Unified inbox: threads, filters, search and read state · `P3` · `C4` · depends: P15-T02, P15-T03
 5. [P15-T06 accepted](../audit/p15-t06.md) — **DONE 2026-11-07**, source `b9eb76d5f0a3c12a6349ec6d2a94de756f413ef5`: default-off customer SMTP and private bot senders, honest outcomes and guarded package validation.
-6. [P15-T05](../tasks/p15-t05.md) — Persistent outbox, scheduling and delivery tracking — **accepted 2026-11-06** ([audit](../audit/p15-t05-0141.md), revision `0141`) · `P3` · `C4`
+6. P15-T05 — Persistent outbox, scheduling and delivery tracking — **accepted 2026-11-06** ([audit](../audit/p15-t05-0141.md), revision `0141`) · `P3` · `C4`
 7. ~~P15-T07 — Channel recommendation with confidence score~~ **DONE 2026-11-08**, accepted source `8afafd93`, PR #438 — [audit](../audit/p15-t07.md)
-8. [P15-T08](../tasks/p15-t08.md) — Reply from the unified interface · `P3` · `C3` · depends: [P15-T04](../tasks/p15-t04.md), [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md)
-9. [P15-T09](../tasks/p15-t09.md) — Register D14 `comms.outbox` in the central permission catalog and presets · `P3` · `C2` · depends: [P15-T05](../tasks/p15-t05.md), [P15-T06](../audit/p15-t06.md)
+8. P15-T08 — Reply from the unified interface ([../audit/p15-t08.md](../audit/p15-t08.md)) · `P3` · `C3` · depends: P15-T04, P15-T05 accepted, [P15-T06](../audit/p15-t06.md)
+9. P15-T09 — Register D14 `comms.outbox` in the central permission catalog and presets · `P3` · `C2` · depends: P15-T05 accepted, [P15-T06](../audit/p15-t06.md)
 
-10. [P15-T11](../tasks/p15-t11.md) — Restore the red channels test suite · `P2` · `C2` — **DONE 2026-11-07**, PR #429 (`57de19ea`); two FloodWait reds stay by owner decision and move to [P15-T12](../tasks/p15-t12.md)
+10. P15-T11 — Restore the red channels test suite · `P2` · `C2` — **DONE 2026-11-07**, PR #429 (`57de19ea`); two FloodWait reds stay by owner decision and move to P15-T12
 
-11. [P15-T12](../tasks/p15-t12.md) — Restore Telegram FloodWait deferral in the guarded runtime · `P2` · `C3` — **DONE 2026-11-07**, PR #432 (`f3d28601`)
+11. P15-T12 — Restore Telegram FloodWait deferral in the guarded runtime · `P2` · `C3` — **DONE 2026-11-07**, PR #432 (`f3d28601`)
 
 12. [P15-T13](../audit/p15-t13.md) — Preserve the personal Telegram source owner · **DONE 2026-11-07**, PR #437 (`2e1bdeb5`).
 

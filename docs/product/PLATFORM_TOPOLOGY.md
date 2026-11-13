@@ -1,6 +1,6 @@
 # Platform topology and access clients (future direction)
 
-Direction recorded by [P20-T01](../tasks/p20-t01.md) at the owner's request
+Direction recorded by P20-T01 ([../audit/p20-t01.md](../audit/p20-t01.md)) at the owner's request
 (2026-11-05). **Not scheduled and not shipped.** The supported target remains the
 single-VPS monolith in [DEPLOYMENT](../platform/DEPLOYMENT.md#supported-single-vps-topology-prepared-not-provisioned).
 Complete the monolith first; the guardrails below keep a later split possible

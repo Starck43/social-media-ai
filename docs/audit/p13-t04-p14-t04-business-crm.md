@@ -20,7 +20,7 @@ local application), D4, D5, D6.
 
 ## Later rule that constrains P14-T02/T04
 
-[D24](../audit/q-21-source-authority.md) (owner, 2026-11-05) fixes what these tasks
+[D24](q-21-source-authority.md) (owner, 2026-11-05) fixes what these tasks
 already do in part: the portal decides entity fields, deletion and ownership, and
 birthday/anniversary dates; we keep the link, the sync position, the greeting draft
 text and the once-per-year ledger. A record that vanishes upstream is marked

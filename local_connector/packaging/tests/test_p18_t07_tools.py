@@ -103,6 +103,15 @@ def test_linux_build_tool_tampering_denied(tmp_path):
         formats.build(tmp_path, tmp_path, "0.2.0", tool, tool)
 
 
+def test_linux_runtime_tampering_denied(tmp_path, monkeypatch):
+    formats = load("linux_formats")
+    tool = tmp_path / "tool"
+    tool.write_bytes(b"synthetic tool")
+    monkeypatch.setattr(formats, "APPIMAGETOOL_SHA256", hashlib.sha256(tool.read_bytes()).hexdigest())
+    with pytest.raises(ValueError, match="untrusted AppImage runtime"):
+        formats.build(tmp_path, tmp_path, "0.2.0", tool, tool)
+
+
 def test_offline_signing_synthetic_key(tmp_path, monkeypatch):
     # Script imports its adjacent verifier, not server/runtime dependencies.
     monkeypatch.syspath_prepend(str(Path(__file__).parents[1]))

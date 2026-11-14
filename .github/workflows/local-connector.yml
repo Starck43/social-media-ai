@@ -33,6 +33,12 @@ jobs:
         run: python -m pytest local_connector/packaging/tests --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
       - name: Build and probe unsigned bundle
         run: python local_connector/packaging/build.py --output connector-build
+      - name: Prepare throwaway update identity (never a release key)
+        run: python local_connector/packaging/probe.py prepare --directory connector-probe/fixture
+      - name: Build synthetic-key probe bundle (never uploaded)
+        run: python local_connector/packaging/build.py --output connector-probe/build --update-public-key connector-probe/fixture/public-key
+      - name: Verify frozen tamper rejection (no runtime or activation)
+        run: python local_connector/packaging/probe.py check --directory connector-probe/fixture --binary connector-probe/build/dist/ai-assistant-connector/ai-assistant-connector${{ runner.os == 'Windows' && '.exe' || '' }}
       - name: Produce Linux AppImage and deb (no deployment)
         if: runner.os == 'Linux'
         shell: bash

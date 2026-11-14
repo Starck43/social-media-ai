@@ -29,6 +29,7 @@ def _registry() -> dict[str, AuditCode]:
     register("planner", "task", ("task_create", "task_update", "task_complete"))
     register("calendar", "event", ("event_create", "event_update", "event_delete"))
     register("onec", "command", ("command_approve", "command_execute"))
+    register("onec", "workspace", ("audit_export",))
     register("files.connector", "local_connector", ("register", "revoke", "search", "fetch", "index_delete"))
     register("documents", "document", ("create", "approve", "export"))
     register("commands", "command", ("create", "approve", "execute"))

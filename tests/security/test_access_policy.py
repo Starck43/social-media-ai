@@ -184,6 +184,8 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
         # P17-T05 capability-only catalog identities; no ORM tables are created.
         "onec_data": ("onec.data", "onecdata", {"view", "export"}, True, False),
         "onec_command": ("onec.command", "oneccommand", {"create", "configure"}, True, False),
+        # 0148 declares this resource and configure for owner/admin/manager.
+        "document_approvals": ("documents.approval", "documentapproval", {"configure"}, True, False),
         "local_connectors": (
             "integrations.local_connector",
             "localconnector",
@@ -276,6 +278,7 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
             )
             | post_0096_grants[role]
             | onec_grants[role]
+            | ({("documents.approval", "configure")} if role in ("owner", "admin", "manager") else set())
         )
         assert canonical == baseline_pairs
 

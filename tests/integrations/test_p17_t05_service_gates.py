@@ -364,7 +364,7 @@ async def test_nl_export_invalid_format_refused_before_authorization(monkeypatch
 
 
 async def test_nl_export_passes_export_capability_to_loader(monkeypatch):
-    authorize = AsyncMock(return_value="analyst")
+    authorize = AsyncMock(return_value="admin")
     monkeypatch.setattr(nl_query_mod, "authorize_capability", authorize)
     reader = export_stub_reader()
     monkeypatch.setattr(
@@ -373,7 +373,10 @@ async def test_nl_export_passes_export_capability_to_loader(monkeypatch):
         lambda payload: query_mod.OneCQueryPlan(entity_set="Catalog_Номенклатура", select_fields=("Ref_Key",)),
     )
     monkeypatch.setattr(nl_query_mod, "export_result", lambda result, fmt, title=None: object())
-    history = SimpleNamespace(mark_exported=AsyncMock())
+    history = SimpleNamespace(
+        load_plan=AsyncMock(return_value=SimpleNamespace(connection_id=CONNECTION_ID, plan_json={})),
+        mark_exported=AsyncMock(),
+    )
 
     file, history_id = await OneCQueryAnswerService().export(
         tenant_id=TENANT_ID,
@@ -389,6 +392,10 @@ async def test_nl_export_passes_export_capability_to_loader(monkeypatch):
     assert authorize.await_args.kwargs["capability"] == CAPABILITY_EXPORT
     assert reader.load_connection_context.await_args.kwargs["policy_capability"] == CAPABILITY_EXPORT
     assert reader.execute_query.await_args.kwargs["policy_capability"] == CAPABILITY_EXPORT
+    history.load_plan.assert_awaited_once_with(tenant_id=TENANT_ID, actor_id=ACTOR_ID, history_id=42)
+    history.mark_exported.assert_awaited_once_with(
+        tenant_id=TENANT_ID, actor_id=ACTOR_ID, history_id=42, exported_format="xlsx"
+    )
     assert history_id == 42
     assert file is not None
 

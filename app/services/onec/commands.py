@@ -1483,6 +1483,18 @@ class OneCCommandService:
 
         payload = dict(cmd.payload or {})
         entity_set = str(payload.get("entity_set") or "")
+        # Policy refusals precede the ledger's dispatch transition: they are not
+        # provider failures or indeterminate observations of an external write.
+        if not entity_set or entity_set not in allowed_sets:
+            log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=CAPABILITY_COMMAND_APPROVE)
+            raise OneCCommandError("entity_not_allowed")
+        outgoing_fields = (
+            payload.get("fields", {}) if cmd.capability == CAPABILITY_DOCUMENT_CREATE else payload.get("changes", {})
+        )
+        permitted_fields = allowed_fields.get(entity_set)
+        if permitted_fields is not None and not set(outgoing_fields).issubset(permitted_fields):
+            log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=CAPABILITY_COMMAND_APPROVE)
+            raise OneCCommandError("field_not_allowed")
         conflict_error: OneCCommandError | None = None
 
         async def _onec_write_adapter(
@@ -1499,18 +1511,9 @@ class OneCCommandService:
             budget = budget_for(PROVIDER, account_key, connection_id=locked_cmd.connection_id)
 
             try:
-                if not entity_set or entity_set not in allowed_sets:
-                    raise OneCCommandError("entity_not_allowed")
                 if expected_sha256 is not None and cmd_payload.get("metadata_sha256") != expected_sha256:
                     raise OneCCommandError("metadata_hash_mismatch")
-                outgoing_fields = (
-                    cmd_payload.get("fields", {})
-                    if cap == CAPABILITY_DOCUMENT_CREATE
-                    else cmd_payload.get("changes", {})
-                )
                 permitted_fields = allowed_fields.get(ent_set)
-                if permitted_fields is not None and not set(outgoing_fields).issubset(permitted_fields):
-                    raise OneCCommandError("field_not_allowed")
                 if cap == CAPABILITY_DOCUMENT_CREATE:
                     comment_field = str(cmd_payload.get("idempotency_field") or "Комментарий")
                     fields_dict = dict(cmd_payload.get("fields") or {})
@@ -1769,21 +1772,25 @@ class OneCCommandService:
         ext_ref = str(payload["external_ref"])
         target_ref_str = cmd.target_refs[0]
 
+        # A policy refusal is not a new provider observation. Preserve the prior
+        # unknown state without inserting an invented unknown audit event.
+        if ent_set not in allowed_sets:
+            log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=CAPABILITY_COMMAND_APPROVE)
+            raise OneCCommandError("entity_not_allowed")
+        read_fields = set(payload.get("changes") or {})
+        if cap == CAPABILITY_DOCUMENT_CREATE:
+            read_fields.add(str(payload.get("idempotency_field") or "Комментарий"))
+        if permitted_fields is not None and not read_fields.issubset(permitted_fields):
+            log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=CAPABILITY_COMMAND_APPROVE)
+            raise OneCCommandError("field_not_allowed")
+
         resolved_state = "failed"
         provider_receipts: dict[str, str] | None = None
 
         with tenant_scope(tenant_id):
             try:
-                if ent_set not in allowed_sets:
-                    raise OneCCommandError("entity_not_allowed")
                 if expected_sha256 is not None and payload.get("metadata_sha256") != expected_sha256:
                     raise OneCCommandError("metadata_hash_mismatch")
-                read_fields = set(payload.get("changes") or {})
-                if cap == CAPABILITY_DOCUMENT_CREATE:
-                    read_fields.add(str(payload.get("idempotency_field") or "Комментарий"))
-                if permitted_fields is not None and not read_fields.issubset(permitted_fields):
-                    raise OneCCommandError("field_not_allowed")
-
                 if cap == CAPABILITY_DOCUMENT_CREATE:
                     comment_field = str(payload.get("idempotency_field") or "Комментарий")
                     fields_dict = dict(payload.get("fields") or {})

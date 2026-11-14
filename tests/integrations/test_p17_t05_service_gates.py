@@ -275,6 +275,52 @@ async def test_read_query_refusal_precedes_secret_network_and_history(monkeypatc
     assert service.list_history_metadata(tenant_id=TENANT_ID) == ()
 
 
+@pytest.mark.parametrize("operation", ["execute", "reconcile"])
+@pytest.mark.parametrize("refusal", ["entity_not_allowed", "field_not_allowed"])
+async def test_write_policy_refusal_precedes_dispatch_and_unknown_evidence(monkeypatch, caplog, operation, refusal):
+    """Revoked scopes are denials, not failed dispatches or new remote observations."""
+    entity = "Catalog_Номенклатура"
+    state = "approved" if operation == "execute" else "unknown"
+    command = SimpleNamespace(
+        id=99,
+        state=state,
+        error_code=None,
+        capability=commands_mod.CAPABILITY_CATALOG_UPDATE,
+        connection_id=CONNECTION_ID,
+        payload={"entity_set": entity, "changes": {"Description": "synthetic"}, "external_ref": "SM1C:test"},
+        target_refs=["onec:catalog:test"],
+    )
+    session = CommandSession(write_row(), command)
+    ledger = SimpleNamespace(execute_command=AsyncMock(), reconcile_unknown=AsyncMock())
+    service = OneCCommandService(ledger=ledger, transport=AsyncMock())
+    allowed_sets = frozenset() if refusal == "entity_not_allowed" else frozenset({entity})
+    service._load_authorized_write_connection = AsyncMock(
+        return_value=(endpoint(), credentials(), "account-digest-01", allowed_sets, {entity: frozenset()}, None, {})
+    )
+    unknown = AsyncMock()
+    success = AsyncMock()
+    monkeypatch.setattr(commands_mod.ActionAuditEvent.objects, "record_unknown", unknown)
+    monkeypatch.setattr(commands_mod.ActionAuditEvent.objects, "record_success", success)
+
+    with pytest.raises(OneCCommandError, match=refusal):
+        if operation == "execute":
+            await service._execute_command_in_session(
+                tenant_id=TENANT_ID, actor_id=ACTOR_ID, command_id=99, now=None, session=session, resolver=None
+            )
+        else:
+            await service.reconcile_command(
+                tenant_id=TENANT_ID, actor_id=ACTOR_ID, command_id=99, session=session, resolver=None
+            )
+
+    assert "action=onec.command.approve reason_code=permission_denied" in caplog.text
+    assert command.state == state and command.error_code is None
+    service._transport.assert_not_awaited()
+    ledger.execute_command.assert_not_awaited()
+    ledger.reconcile_unknown.assert_not_awaited()
+    unknown.assert_not_awaited()
+    success.assert_not_awaited()
+
+
 async def test_read_export_capability_is_passed_through_loader(monkeypatch):
     gate = Gate(monkeypatch, query_mod, role="analyst")
     service = read_service(monkeypatch, gate=gate)

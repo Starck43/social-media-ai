@@ -113,6 +113,9 @@ class AdapterPrivacyContract:
             HTTPStatusError=httpx.HTTPStatusError,
             TransportError=httpx.TransportError,
         )
+        # Provider egress is now a separate boundary. Bind its client factory,
+        # not an unused module.httpx attribute; keep real MockTransport parsing.
+        self.module.provider_http_client = lambda: httpx.AsyncClient(transport=transport)
 
     def raw(self, content=None, *, usage=True):
         content = content if content is not None else {"score": PRIVATE}

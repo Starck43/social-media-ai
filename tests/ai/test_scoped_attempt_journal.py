@@ -204,6 +204,9 @@ class CustomClient:
 
 
 def source_functions(path, names, scope):
+    scope.setdefault("__name__", "_isolated_chat_journal")
+    if "chat_with_fallback" in names:
+        names = set(names) | {"_payload_has_media"}
     tree = ast.parse((ROOT / path).read_text())
     nodes = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name in names]
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(ROOT / path), "exec"), scope)

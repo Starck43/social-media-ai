@@ -100,6 +100,49 @@ async def _resolve_usage_tariff(entry: dict[str, Any]):
     return rows[0] if len(rows) == 1 else None
 
 
+def _seam_module() -> Any:
+    """The dispatch seam module, or None when this build does not carry it."""
+    try:
+        from app.services.ai import dispatch_seam
+
+        return dispatch_seam
+    except Exception:
+        return None
+
+
+def _dispatch_denial_type() -> Any:
+    """The seam denial class, or None when the seam is not importable."""
+    seam = _seam_module()
+    return getattr(seam, "DispatchDenial", None) if seam is not None else None
+
+
+def _require_fallback_compatibility(previous: Any, following: Any) -> None:
+    """Refuse a candidate fallback that would switch the funding class or payer (§5).
+
+    Resolved defensively: an unbound catalog or an unwired seam skips the check
+    and keeps the legacy candidate walk, never turning it into a new error.
+    """
+    seam = _seam_module()
+    if seam is None:
+        return
+    try:
+        from app.core.personal_catalog_context import current_catalog_owner_id
+        from app.core.tenant_context import current_tenant_id
+
+        owner = current_catalog_owner_id()
+        tenant_id = current_tenant_id()
+    except Exception:
+        return
+    if type(owner) is not int or owner <= 0:
+        return
+    seam.require_same_funding_class(
+        previous,
+        following,
+        catalog_owner_id=owner,
+        payer=f"tenant:{tenant_id}" if tenant_id is not None else None,
+    )
+
+
 class AIAnalyzer(AnalysisStatsMixin):
     """
     AI Analyzer with multi-LLM support.
@@ -564,6 +607,10 @@ class AIAnalyzer(AnalysisStatsMixin):
         except Exception as e:
             from app.services.billing.errors import raise_personal_billing_block
 
+            # A dispatch denial is not a failed analysis: it ends the stage as a denial.
+            denial_type = _dispatch_denial_type()
+            if denial_type is not None and isinstance(e, denial_type):
+                raise
             raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=base error_kind=%s", _analysis_error_kind(e))
@@ -749,7 +796,12 @@ class AIAnalyzer(AnalysisStatsMixin):
 
             result = None
             last_error_kind = None
+            previous_candidate = None
             for candidate in candidates:
+                if previous_candidate is not None:
+                    # A class/payer switch is a denial, not a fallback; it ends the stage.
+                    _require_fallback_compatibility(previous_candidate, candidate)
+                previous_candidate = candidate
                 client = LLMClientFactory.create(candidate)
                 try:
                     result = await client.analyze(prompt, pydantic_model=pydantic_model, **dict(kwargs))
@@ -757,6 +809,10 @@ class AIAnalyzer(AnalysisStatsMixin):
                 except Exception as e:
                     from app.services.billing.errors import raise_personal_billing_block
 
+                    # A dispatch denial never becomes a fallback envelope or a next try.
+                    denial_type = _dispatch_denial_type()
+                    if denial_type is not None and isinstance(e, denial_type):
+                        raise
                     raise_personal_billing_block(e)
                     self.reported_errors += 1
                     last_error_kind = _analysis_error_kind(e)
@@ -798,6 +854,10 @@ class AIAnalyzer(AnalysisStatsMixin):
         except Exception as e:
             from app.services.billing.errors import raise_personal_billing_block
 
+            # A dispatch denial is not a failed analysis: it ends the stage as a denial.
+            denial_type = _dispatch_denial_type()
+            if denial_type is not None and isinstance(e, denial_type):
+                raise
             raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=text error_kind=%s", _analysis_error_kind(e))
@@ -879,6 +939,10 @@ class AIAnalyzer(AnalysisStatsMixin):
         except Exception as e:
             from app.services.billing.errors import raise_personal_billing_block
 
+            # A dispatch denial is not a failed analysis: it ends the stage as a denial.
+            denial_type = _dispatch_denial_type()
+            if denial_type is not None and isinstance(e, denial_type):
+                raise
             raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=image error_kind=%s", _analysis_error_kind(e))
@@ -945,6 +1009,10 @@ class AIAnalyzer(AnalysisStatsMixin):
         except Exception as e:
             from app.services.billing.errors import raise_personal_billing_block
 
+            # A dispatch denial is not a failed analysis: it ends the stage as a denial.
+            denial_type = _dispatch_denial_type()
+            if denial_type is not None and isinstance(e, denial_type):
+                raise
             raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=video error_kind=%s", _analysis_error_kind(e))
@@ -1000,6 +1068,10 @@ class AIAnalyzer(AnalysisStatsMixin):
         except Exception as e:
             from app.services.billing.errors import raise_personal_billing_block
 
+            # A dispatch denial is not a failed analysis: it ends the stage as a denial.
+            denial_type = _dispatch_denial_type()
+            if denial_type is not None and isinstance(e, denial_type):
+                raise
             raise_personal_billing_block(e)
             self.reported_errors += 1
             logger.error("analysis_failed stage=summary error_kind=%s", _analysis_error_kind(e))

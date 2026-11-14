@@ -18,6 +18,7 @@ from .inlines import related_inlines
 from .knowledge_registry import KnowledgeRegistryAdmin
 from .registry import TableRegistryAdmin
 from .related import RelatedAdmin, related_controls, related_token
+from .view_modules.plan_model_grants import PlanModelGrantAdmin
 from .views import (
     AgentScenarioAdmin,
     AgentTaskAdmin,
@@ -134,6 +135,7 @@ def setup_admin(app):
         NotificationAdmin,
         LLMProviderAdmin,
         LLMModelAdmin,
+        PlanModelGrantAdmin,
         TenantAdmin,
         UserCredentialAdmin,
     ]

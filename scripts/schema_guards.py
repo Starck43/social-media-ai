@@ -448,6 +448,124 @@ GUARD_FUNCTIONS: dict[str, str] = {
         "RAISE EXCEPTION 'Action audit evidence is immutable outside retention cleanup' "
         "USING ERRCODE = '55000'; END; "
     ),
+    # P21-T13 - catalog custody owns providers/models; the retained owner columns
+    # mirror it, so a platform row stays owner-free and a personal row matches.
+    "guard_llm_catalog_custody": (
+        "DECLARE catalog_kind varchar(16); catalog_owner integer; parent_catalog integer; parent_owner integer; "
+        "BEGIN IF TG_OP = 'UPDATE' AND NEW.catalog_id IS DISTINCT FROM OLD.catalog_id THEN "
+        "RAISE EXCEPTION 'Catalog custody is immutable' USING ERRCODE = '23514'; END IF; "
+        "IF TG_OP = 'INSERT' AND NEW.catalog_id IS NULL THEN "
+        "IF NEW.owner_user_id IS NULL THEN RAISE EXCEPTION 'Explicit platform catalog required' "
+        "USING ERRCODE = '23514'; END IF; "
+        "IF TG_TABLE_NAME = 'llm_providers' THEN "
+        "PERFORM id FROM {s}.users WHERE id = NEW.owner_user_id AND is_active IS TRUE FOR UPDATE; "
+        "IF NOT FOUND THEN RAISE EXCEPTION 'Active personal owner required' USING ERRCODE = '23514'; END IF; "
+        "INSERT INTO {s}.llm_catalogs (kind, owner_user_id) VALUES ('personal', NEW.owner_user_id) "
+        "ON CONFLICT (owner_user_id) WHERE kind = 'personal' DO NOTHING; "
+        "SELECT id INTO NEW.catalog_id FROM {s}.llm_catalogs "
+        "WHERE kind = 'personal' AND owner_user_id = NEW.owner_user_id; "
+        "ELSE SELECT catalog_id, owner_user_id INTO parent_catalog, parent_owner FROM {s}.llm_providers "
+        "WHERE id = NEW.provider_id; IF NOT FOUND THEN RAISE EXCEPTION 'Provider does not exist' "
+        "USING ERRCODE = '23503'; END IF; "
+        "IF parent_owner IS DISTINCT FROM NEW.owner_user_id THEN RAISE EXCEPTION 'Personal provider owner mismatch' "
+        "USING ERRCODE = '23514'; END IF; NEW.catalog_id := parent_catalog; END IF; END IF; "
+        "SELECT kind, owner_user_id INTO catalog_kind, catalog_owner "
+        "FROM {s}.llm_catalogs WHERE id = NEW.catalog_id; "
+        "IF catalog_kind IS NULL THEN RAISE EXCEPTION 'Catalog % does not exist', NEW.catalog_id "
+        "USING ERRCODE = '23503'; END IF; "
+        "IF catalog_kind = 'platform' THEN "
+        "IF NEW.owner_user_id IS NOT NULL THEN "
+        "RAISE EXCEPTION 'Platform catalog rows must not retain an owner' USING ERRCODE = '23514'; END IF; "
+        "ELSIF catalog_kind = 'personal' THEN "
+        "IF NEW.owner_user_id IS DISTINCT FROM catalog_owner THEN "
+        "RAISE EXCEPTION 'Retained owner must equal the personal catalog owner' USING ERRCODE = '23514'; END IF; "
+        "ELSE RAISE EXCEPTION 'Unknown catalog kind' USING ERRCODE = '23514'; END IF; "
+        "IF TG_TABLE_NAME = 'llm_models' THEN "
+        "SELECT catalog_id INTO parent_catalog FROM {s}.llm_providers WHERE id = NEW.provider_id; "
+        "IF parent_catalog IS DISTINCT FROM NEW.catalog_id THEN "
+        "RAISE EXCEPTION 'Model catalog must equal its provider catalog' USING ERRCODE = '23514'; END IF; "
+        "END IF; RETURN NEW; END; "
+    ),
+    "guard_llm_catalog_identity": (
+        "BEGIN IF TG_OP = 'UPDATE' AND (NEW.kind IS DISTINCT FROM OLD.kind OR "
+        "NEW.owner_user_id IS DISTINCT FROM OLD.owner_user_id) THEN RAISE EXCEPTION "
+        "'Catalog identity is immutable' USING ERRCODE = '23514'; END IF; RETURN NEW; END; "
+    ),
+    "guard_llm_managed_retirement": (
+        "BEGIN IF TG_OP = 'DELETE' THEN IF EXISTS (SELECT 1 FROM {s}.llm_catalogs "
+        "WHERE id = OLD.catalog_id AND kind = 'platform') THEN RAISE EXCEPTION "
+        "'Managed rows must be deactivated, not deleted' USING ERRCODE = '23514'; END IF; "
+        "RETURN OLD; END IF; RETURN NEW; END; "
+    ),
+    # P21-T13 - platform rows hold deployment secret aliases only, personal rows
+    # hold encrypted BYOK only; neither side can borrow the other's source.
+    "guard_llm_provider_credential_custody": (
+        " DECLARE catalog_kind varchar(16); BEGIN "
+        "SELECT kind INTO catalog_kind FROM {s}.llm_catalogs WHERE id = NEW.catalog_id; "
+        "IF catalog_kind = 'platform' THEN "
+        "IF NEW.encrypted_api_key IS NOT NULL THEN "
+        "RAISE EXCEPTION 'Platform providers must not store personal key material' "
+        "USING ERRCODE = '23514'; END IF; "
+        "ELSIF catalog_kind = 'personal' THEN "
+        "IF NEW.managed_credential_ref IS NOT NULL THEN "
+        "RAISE EXCEPTION 'Personal providers must not reference managed credentials' "
+        "USING ERRCODE = '23514'; END IF; "
+        "ELSE RAISE EXCEPTION 'Unknown catalog kind' USING ERRCODE = '23514'; END IF; "
+        "RETURN NEW; END; "
+    ),
+    # P21-T13 - the JSONB capability set is validated and mirrors legacy model_type.
+    "guard_llm_model_capability": (
+        "BEGIN IF (TG_OP = 'INSERT' AND NEW.capabilities IS NULL) OR "
+        "(TG_OP = 'UPDATE' AND NEW.model_type IS DISTINCT FROM OLD.model_type "
+        "AND NEW.capabilities IS NOT DISTINCT FROM OLD.capabilities) THEN "
+        "IF NOT EXISTS (SELECT 1 FROM unnest(string_to_array(NEW.model_type, ',')) AS t "
+        "WHERE btrim(t) <> '' AND btrim(t) NOT IN ('text','image','video','embedding','audio')) THEN "
+        "SELECT jsonb_agg(DISTINCT btrim(t) ORDER BY btrim(t)) INTO NEW.capabilities "
+        "FROM unnest(string_to_array(NEW.model_type, ',')) AS t WHERE btrim(t) <> ''; "
+        "ELSIF NEW.owner_user_id IS NOT NULL THEN NEW.capabilities := NULL; ELSE "
+        "RAISE EXCEPTION 'Unknown platform model capability' USING ERRCODE = '23514'; END IF; END IF; "
+        "IF NEW.capabilities IS NOT NULL THEN "
+        "IF jsonb_typeof(NEW.capabilities) <> 'array' THEN "
+        "RAISE EXCEPTION 'Capabilities must be a JSON array' USING ERRCODE = '23514'; END IF; "
+        "IF EXISTS (SELECT 1 FROM jsonb_array_elements_text(NEW.capabilities) AS e(value) "
+        "WHERE e.value NOT IN ('text','image','video','embedding','audio')) THEN "
+        "RAISE EXCEPTION 'Unknown model capability' USING ERRCODE = '23514'; END IF; "
+        "IF (SELECT count(*) FROM jsonb_array_elements_text(NEW.capabilities)) "
+        "<> (SELECT count(DISTINCT value) FROM jsonb_array_elements_text(NEW.capabilities) AS e(value)) THEN "
+        "RAISE EXCEPTION 'Duplicate model capability' USING ERRCODE = '23514'; END IF; "
+        "IF (SELECT array_agg(value ORDER BY value) FROM jsonb_array_elements_text(NEW.capabilities) "
+        "AS e(value)) IS DISTINCT FROM (SELECT array_agg(DISTINCT t ORDER BY t) FROM "
+        "unnest(string_to_array(NEW.model_type, ',')) AS t WHERE btrim(t) <> '') THEN "
+        "RAISE EXCEPTION 'Legacy model_type must name exactly the capability set' "
+        "USING ERRCODE = '23514'; END IF; "
+        "END IF; RETURN NEW; END; "
+    ),
+    # P21-T13 - a plan grant names a model of an active platform catalog whose
+    # provider is active and which supports the granted capability.
+    "guard_plan_model_grant_platform": (
+        " DECLARE catalog_kind varchar(16); catalog_active boolean; model_active boolean; "
+        "provider_active boolean; supported boolean; BEGIN "
+        "SELECT c.kind, c.is_active, m.is_active, p.is_active "
+        "INTO catalog_kind, catalog_active, model_active, provider_active "
+        "FROM {s}.llm_models m "
+        "JOIN {s}.llm_providers p ON p.id = m.provider_id AND p.catalog_id = m.catalog_id "
+        "JOIN {s}.llm_catalogs c ON c.id = m.catalog_id WHERE m.id = NEW.llm_model_id; "
+        "IF catalog_kind IS DISTINCT FROM 'platform' THEN RAISE EXCEPTION 'Platform model required' "
+        "USING ERRCODE = '23514'; END IF; "
+        "IF TG_OP = 'UPDATE' AND NEW.plan = OLD.plan AND NEW.capability = OLD.capability "
+        "AND NEW.llm_model_id = OLD.llm_model_id AND NEW.is_default IS FALSE "
+        "AND (NEW.is_active IS FALSE OR NEW.is_active IS NOT DISTINCT FROM OLD.is_active) THEN "
+        "RETURN NEW; END IF; "
+        "IF catalog_active IS DISTINCT FROM TRUE "
+        "OR model_active IS DISTINCT FROM TRUE OR provider_active IS DISTINCT FROM TRUE THEN "
+        "RAISE EXCEPTION 'Plan grants accept models of an active platform catalog only' "
+        "USING ERRCODE = '23514'; END IF; "
+        "SELECT coalesce(jsonb_typeof(m.capabilities) = 'array' AND m.capabilities ? NEW.capability, false) "
+        "INTO supported FROM {s}.llm_models m WHERE m.id = NEW.llm_model_id; "
+        "IF supported IS DISTINCT FROM TRUE THEN "
+        "RAISE EXCEPTION 'Granted capability is not supported by the model' USING ERRCODE = '23514'; END IF; "
+        "RETURN NEW; END; "
+    ),
 }
 
 # Migration 0128's revocation path is installed only once all private ledger
@@ -805,6 +923,47 @@ GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
         events=("TRUNCATE",),
         for_each_row=False,
     ),
+    # P21-T13 - catalog custody and credential-source exclusivity.
+    GuardTrigger(
+        table="llm_catalogs",
+        name="guard_llm_catalog_identity",
+        function="guard_llm_catalog_identity",
+        events=("INSERT", "UPDATE"),
+    ),
+    *(
+        GuardTrigger(
+            table=table,
+            name="guard_llm_managed_retirement",
+            function="guard_llm_managed_retirement",
+            events=("DELETE",),
+            required_tables=("llm_catalogs",),
+        )
+        for table in ("llm_providers", "llm_models")
+    ),
+    *(
+        GuardTrigger(
+            table=table,
+            name="guard_llm_catalog_custody",
+            function="guard_llm_catalog_custody",
+            events=("INSERT", "UPDATE"),
+            required_tables=("llm_catalogs",),
+        )
+        for table in ("llm_providers", "llm_models")
+    ),
+    GuardTrigger(
+        table="llm_providers",
+        name="guard_llm_provider_credential_custody",
+        function="guard_llm_provider_credential_custody",
+        events=("INSERT", "UPDATE"),
+        required_tables=("llm_catalogs",),
+    ),
+    GuardTrigger(
+        table="llm_models",
+        name="guard_llm_model_capability",
+        function="guard_llm_model_capability",
+        events=("INSERT", "UPDATE"),
+        required_tables=("llm_catalogs",),
+    ),
     # 0119
     GuardTrigger(
         table="workspace_offboarding_events",
@@ -818,6 +977,13 @@ GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
         function="guard_workspace_offboarding_mutation",
         events=("TRUNCATE",),
         for_each_row=False,
+    ),
+    GuardTrigger(
+        table="plan_model_grants",
+        name="guard_plan_model_grant_platform",
+        function="guard_plan_model_grant_platform",
+        events=("INSERT", "UPDATE"),
+        required_tables=("llm_catalogs",),
     ),
 )
 

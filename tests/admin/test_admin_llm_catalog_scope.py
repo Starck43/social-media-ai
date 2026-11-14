@@ -405,7 +405,7 @@ def test_a_new_model_inherits_the_owner_of_its_own_provider():
 
     original_objects = LLMProvider.objects
     original_insert = ModelView.insert_model
-    LLMProvider.objects = _manager(SimpleNamespace(id=7, owner_user_id=ADMIN.id))
+    LLMProvider.objects = _manager(SimpleNamespace(id=7, owner_user_id=ADMIN.id, catalog_id=17))
     ModelView.insert_model = insert
     try:
         asyncio.run(view.insert_model(_request(ADMIN), {"provider": "7", "name": "Probe"}))
@@ -415,13 +415,14 @@ def test_a_new_model_inherits_the_owner_of_its_own_provider():
 
     assert captured["owner_user_id"] == ADMIN.id
     assert captured["provider_id"] == 7
+    assert captured["catalog_id"] == 17
     assert "provider" not in captured
 
 
 def test_editing_a_model_never_resolves_the_composite_relation():
     """`provider` carries two FK columns; sqladmin can only resolve one."""
     view = _view(LLMModelAdmin, type("Model", (), {"__personal_scoped__": True, "__name__": "Model"}))
-    data = {"name": "Renamed", "provider": "44", "provider_id": 44}
+    data = {"name": "Renamed", "provider": "44", "provider_id": 44, "catalog_id": 44}
 
     original = BaseAdmin.on_model_change
     BaseAdmin.on_model_change = AsyncMock()

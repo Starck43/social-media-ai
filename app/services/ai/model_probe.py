@@ -32,6 +32,15 @@ def probe_status(model) -> dict[str, Any]:
     Returns ``{"ok": bool, "checks": [...], "hint": str}``. Each check is a
     ``(label, passed)`` pair for the UI. Never touches the network.
     """
+    from app.services.ai.catalog_reads import current_catalog_reads
+
+    if current_catalog_reads() is not None:
+        return {
+            "ok": False,
+            "checks": [("Доступ только к метаданным", False)],
+            "hint": "Каталог доступен для чтения. Проверка ключей и запросы не активированы.",
+            "tokens_spent": 0,
+        }
     provider = getattr(model, "provider", None)
     checks: list[tuple[str, bool]] = []
     try:
@@ -130,7 +139,10 @@ def request_parameters(model, prompt: str = "") -> tuple[str, int]:
         raise ValueError("Prompt exceeds 8000 characters")
     question = prompt.strip()
     limit = REQUEST_MAX_TOKENS if question else PROBE_MAX_TOKENS
-    return question or PROBE_PROMPT, min(limit, max(1, int(model.max_tokens)))
+    from app.services.ai.generation_policy import requested_output_limit
+
+    requested = min(limit, max(1, int(model.max_tokens)))
+    return question or PROBE_PROMPT, requested_output_limit(model, requested=requested)
 
 
 def _dispatch_ready(model) -> bool:

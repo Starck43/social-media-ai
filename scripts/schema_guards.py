@@ -36,6 +36,10 @@ from dataclasses import dataclass
 # Every ``{s}`` is the target schema, quoted once at render time. It appears
 # only in table references: NEW/OLD rows and keywords are never qualified.
 GUARD_FUNCTIONS: dict[str, str] = {
+    # 0154 - metadata bootstrap must retain the accepted immutable tariff history.
+    "service_plan_policy_immutable": (
+        " BEGIN RAISE EXCEPTION 'Service plan policy versions are immutable; insert a new version'; END "
+    ),
     # P21-T11 - monotonic personal credential/configuration freshness.
     "guard_llm_credential_version": (
         " BEGIN IF TG_OP = 'INSERT' THEN IF NEW.credential_version <> 1 THEN "
@@ -683,6 +687,29 @@ def _immutable_guards() -> list[GuardTrigger]:
 
 
 GUARD_TRIGGERS: tuple[GuardTrigger, ...] = (
+    GuardTrigger(
+        "service_plan_policies", "service_plan_policy_immutable", "service_plan_policy_immutable", ("UPDATE", "DELETE")
+    ),
+    GuardTrigger(
+        "service_plan_policies",
+        "service_plan_policy_no_truncate",
+        "service_plan_policy_immutable",
+        ("TRUNCATE",),
+        for_each_row=False,
+    ),
+    GuardTrigger(
+        "service_plan_backfill_resolutions",
+        "service_plan_backfill_immutable",
+        "service_plan_policy_immutable",
+        ("UPDATE", "DELETE"),
+    ),
+    GuardTrigger(
+        "service_plan_backfill_resolutions",
+        "service_plan_backfill_no_truncate",
+        "service_plan_policy_immutable",
+        ("TRUNCATE",),
+        for_each_row=False,
+    ),
     GuardTrigger("llm_providers", "guard_llm_credential_version", "guard_llm_credential_version", ("INSERT", "UPDATE")),
     GuardTrigger(
         "llm_models", "invalidate_llm_endpoint_version", "invalidate_llm_endpoint_version", ("UPDATE",), timing="AFTER"

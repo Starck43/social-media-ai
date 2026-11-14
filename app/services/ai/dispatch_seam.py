@@ -542,6 +542,19 @@ async def admit(
             raise DispatchDenial(CODE_CREDENTIAL_VERSION_STALE, "step8_version")
         if fresh != ctx:
             raise DispatchDenial(CODE_WORKSPACE_RIGHTS_MISSING, "step8_freshness")
+        # T13: grant/custody revocation during reservation is a fresh denial,
+        # even when the actor, policy and credential identities did not change.
+        # Metadata caches never authorize this pre-HTTP read.
+        fresh_grant = await _call_service(
+            grants,
+            "resolve",
+            request,
+            fresh,
+            detail="step4_grants",
+            fallback_code=CODE_PLAN_GRANT_MISSING,
+        )
+        if not isinstance(fresh_grant, DispatchGrant) or fresh_grant.catalog_id != ctx.catalog_id:
+            raise DispatchDenial(CODE_CATALOG_ACCESS_MISSING, "step4_grants")
         return admitted
     except BaseException:
         # A committed receipt that never sent HTTP must be released, including

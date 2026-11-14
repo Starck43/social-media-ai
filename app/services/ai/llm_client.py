@@ -85,9 +85,12 @@ async def _personal_admission(
     uses_tools: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Reserve one trusted provider envelope before HTTP when personal billing is active."""
+    from app.services.ai.generation_policy import requested_output_limit
     from app.services.ai.personal_dispatch import validate_personal_dispatch
 
     await validate_personal_dispatch(client)
+    if "max_tokens" in payload:
+        payload["max_tokens"] = requested_output_limit(client.model, requested=payload["max_tokens"])
     if not settings.PERSONAL_BILLING_ENABLED:
         return None, None
     api_format = getattr(client.provider, "api_format", None)
@@ -120,7 +123,9 @@ async def _personal_admission(
 
         if type(payload.get("max_tokens")) is not int or payload["max_tokens"] <= 0:
             raise BudgetAdmissionUnavailable("Request output token limit is invalid")
-        payload["max_tokens"] = min(payload["max_tokens"], max_output)
+        payload["max_tokens"] = requested_output_limit(
+            client.model, requested=payload["max_tokens"], approved_plan_limit=max_output
+        )
     dispatch_id = admission["dispatch_id"]
     return admission, dispatch_id
 
@@ -350,6 +355,12 @@ def _cap_text(m: LLMModel) -> bool:
     return bool({"text", "image"}.intersection(m.capabilities))
 
 
+def _catalog_read_scope():
+    from app.services.ai.catalog_reads import current_catalog_reads
+
+    return current_catalog_reads()
+
+
 def _eligible_text_model(m: LLMModel, allowed_types: Optional[set[str]]) -> bool:
     """One automatic routing gate for capabilities, owner, tier and provider.
 
@@ -358,13 +369,18 @@ def _eligible_text_model(m: LLMModel, allowed_types: Optional[set[str]]) -> bool
     preferred flag. The explicit AGENT_MODEL lookup passes this same ownership
     and activity gate and only bypasses the tier.
     """
+    loader = globals().get("_catalog_read_scope")
+    scope = loader() if loader else None
+    if scope is not None:
+        return scope.eligible_row(m, capabilities={"text"})
+
     from app.core.personal_catalog_context import current_catalog_owner_id
     from app.services.ai.personal_catalog import eligible_chat_model
 
     return eligible_chat_model(m, user_id=current_catalog_owner_id(), allowed_types=allowed_types)
 
 
-def default_model_sort_key(m: LLMModel) -> tuple[bool, int]:
+def default_model_sort_key(m: LLMModel) -> tuple[bool, int] | tuple[bool, int, int]:
     """Order key for default-model resolution.
 
     Shared by every place that picks "the" model (digest, agent fallback
@@ -374,6 +390,10 @@ def default_model_sort_key(m: LLMModel) -> tuple[bool, int]:
     model and forked the fleet when two providers were flagged. A missing
     attribute is treated as non-default so the picker never crashes.
     """
+    loader = globals().get("_catalog_read_scope")
+    scope = loader() if loader else None
+    if scope is not None:
+        return scope.default_key(m)
     return (not bool(getattr(m, "is_default", False)), int(getattr(m, "id", 0) or 0))
 
 
@@ -385,6 +405,11 @@ async def _allowed_model_types() -> Optional[set[str]]:
     workspace to a vision model breaks it. Returns None (allow everything) when
     no workspace is in scope, so operator-level calls and seeding still work.
     """
+    loader = globals().get("_catalog_read_scope")
+    scope = loader() if loader else None
+    if scope is not None:
+        return set(scope.context.workspace_plan.policy.resource_limits["model_types"])
+
     from app.core.tenant_context import current_tenant_id
     from app.models.managers.tenant_manager import tenants
 
@@ -405,6 +430,12 @@ async def _allowed_model_types() -> Optional[set[str]]:
 
 class LLMClient(ABC):
     def __init__(self, model: LLMModel):
+        # T13 exposes read-only funding-aware choices, not dispatch activation.
+        # No scoped projection may enter the legacy BYOK/decrypt path.
+        if _catalog_read_scope() is not None:
+            from app.services.ai.dispatch_seam import CODE_ADMISSION_UNAVAILABLE, DispatchDenial
+
+            raise DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_admission")
         from app.core.personal_catalog_context import assert_catalog_model
 
         assert_catalog_model(model)
@@ -415,7 +446,9 @@ class LLMClient(ABC):
         self.custom_endpoint_path = getattr(model, "custom_endpoint_path", None)
         self.base_url = model.provider.base_url.rstrip("/")
         self.model_name = model.model_id
-        self.max_tokens = model.max_tokens
+        from app.services.ai.generation_policy import requested_output_limit
+
+        self.max_tokens = requested_output_limit(model)
         self.default_temperature = model.default_temperature
         self.timeout = float(getattr(settings, "LLM_DEFAULT_TIMEOUT", 60.0))
 
@@ -1512,7 +1545,15 @@ async def chat_with_fallback(
     # Accounting label only, never sent to the provider.
     accounting_purpose = kwargs.pop("accounting_purpose", "chat")
     kwargs.setdefault("personal_billing_purpose", accounting_purpose)
-    models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
+    loader = globals().get("_catalog_read_scope")
+    scope = loader() if loader else None
+    if scope is None:
+        models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
+    else:
+        required = {"text", "image"} if _payload_has_media(messages) else {"text"}
+        if preferred_model is not None:
+            await scope.models(capabilities=required, model_id=preferred_model.id)
+        models = await scope.models(capabilities=required)
 
     allowed_types = await _allowed_model_types()
     # The same eligibility gate as automatic resolution: capability lists,
@@ -1529,6 +1570,10 @@ async def chat_with_fallback(
         raise ValueError("No active image-capable LLM model available for this workspace")
     if not text_models and allowed_types is not None:
         logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
+    if scope is not None:
+        from app.services.ai.dispatch_seam import CODE_ADMISSION_UNAVAILABLE, DispatchDenial
+
+        raise DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_admission")
     text_models.sort(
         key=lambda m: (
             m.id != getattr(preferred_model, "id", None),
@@ -1767,6 +1812,11 @@ def _is_tools_not_supported_error(e: httpx.HTTPStatusError) -> bool:
 
 
 async def resolve_model() -> Optional[LLMModel]:
+    loader = globals().get("_catalog_read_scope")
+    scope = loader() if loader else None
+    if scope is not None:
+        models = await scope.models(capabilities={"text"}, model_name=settings.AGENT_MODEL or None)
+        return models[0] if models else None
     if settings.AGENT_MODEL:
         m = await _llm_models(LLMModel.objects.filter(name=settings.AGENT_MODEL))
         m = m[0] if m else None

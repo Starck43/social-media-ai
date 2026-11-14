@@ -1102,6 +1102,15 @@ class AIAnalyzer(AnalysisStatsMixin):
         if isinstance(media_type, str):
             media_type = MediaType(media_type)
 
+        from app.services.ai.catalog_reads import current_catalog_reads
+
+        scope = current_catalog_reads()
+        if scope is not None:
+            capability = get_enum_value(media_type)
+            selected_id = getattr(agent_scenario, f"{capability}_llm_model_id", None) if agent_scenario else None
+            models = await scope.models(capabilities={capability}, model_id=selected_id)
+            return next((model for model in models if analysis_capable(model)), None)
+
         # Priority 1: Get model by media type from scenario, then provider from model
         if agent_scenario:
             model_id = None
@@ -1173,6 +1182,12 @@ class AIAnalyzer(AnalysisStatsMixin):
 
     async def _auto_resolve_model(self, agent_scenario: AgentScenario, media_type: MediaType) -> Optional[LLMModel]:
         """Resolve the requested media capability, preserving fleet defaults."""
+        from app.services.ai.catalog_reads import current_catalog_reads
+
+        scope = current_catalog_reads()
+        if scope is not None:
+            models = await scope.models(capabilities={get_enum_value(media_type)})
+            return models[0] if models else None
         return await LLMModel.objects.resolve_default_model(
             get_enum_value(media_type), strategy=get_enum_value(agent_scenario.llm_strategy)
         )

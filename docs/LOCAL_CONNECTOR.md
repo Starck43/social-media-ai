@@ -77,6 +77,33 @@ signing credentials, production trust anchor or automatic installation is enable
 by this development work. Never treat an unsigned checksum list as authentication.
 Do not load a trust key supplied by the same untrusted download as the manifest.
 
+The offline verifier in `local_connector/packaging/updates.py` authenticates an
+Ed25519 detached signature (64 raw bytes) over the **exact UTF-8 manifest bytes**
+using an authenticated release-bundled public key (32 raw bytes). Verification
+precedes JSON parsing. The closed manifest schema is:
+
+```json
+{
+  "schema": 1,
+  "product": "ai-assistant-connector",
+  "version": "0.3.0",
+  "platform": "linux-x86_64",
+  "sha256": "<64 lowercase hexadecimal characters>",
+  "size": 123456,
+  "issued_at": 1800000000,
+  "expires_at": 1800086400
+}
+```
+
+Times are integer Unix seconds with at most a 30-day validity period; the
+release must be newer than the installed version. Unknown/duplicate fields,
+wrong product/platform, invalid signatures, expired/future manifests, malformed
+versions, and artifact size/hash mismatches are rejected. This module is only
+an offline primitive, **not an integrated updater**: it has no key provisioning,
+network, staging, installation, extraction, execution or rollback authority.
+Its `cryptography` dependency belongs to the packaging/test tools, not the
+unchanged runtime wheel; it is not imported by the development bootstrap.
+
 Until the remaining updater/OS acceptance gates pass, updates are manual: stop,
 verify the reviewed artifact and use a fresh version directory. Keep the previous
 build and a private offline backup of local derived data before upgrading. To

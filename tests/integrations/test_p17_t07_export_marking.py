@@ -5,9 +5,11 @@ from decimal import Decimal
 
 import pytest
 
+from app.services.onec import nl_query as nl_query_mod
 from app.services.onec.metadata import parse_odata_metadata_xml
 from app.services.onec.nl_query import OneCNaturalLanguageError, OneCQueryAnswerService
 from app.services.onec.query import (
+    CAPABILITY_EXPORT,
     MonetaryValue,
     OneCConnectionContext,
     OneCQueryHistoryMetadata,
@@ -55,6 +57,25 @@ def catalog():
     return parse_odata_metadata_xml(METADATA_XML.encode("utf-8"))
 
 
+@pytest.fixture()
+def capability_calls(monkeypatch):
+    """Mocked capability authority for an export-only, DB-exempt fixture.
+
+    P17-T05 authorizes `onec.export` inside the answer service before any context
+    load; that gate is exercised for real in `test_p17_t05_service_gates.py`. Here
+    the fixture replaces it with an allowing double and returns the calls so each
+    test can still prove the gate runs with the export capability.
+    """
+    calls: list[dict] = []
+
+    async def allowed_capability(*, tenant_id, actor_id, capability, session=None):
+        calls.append({"tenant_id": tenant_id, "actor_id": actor_id, "capability": capability})
+        return "owner"
+
+    monkeypatch.setattr(nl_query_mod, "authorize_capability", allowed_capability)
+    return calls
+
+
 class FakeHistory:
     def __init__(self, *, connection_id=7):
         self.connection_id = connection_id
@@ -78,7 +99,8 @@ class FakeReader:
     def __init__(self, catalog):
         self._catalog = catalog
 
-    async def load_connection_context(self, *, tenant_id, actor_id, connection_id):
+    async def load_connection_context(self, *, tenant_id, actor_id, connection_id, policy_capability=None):
+        assert policy_capability == CAPABILITY_EXPORT
         return OneCConnectionContext(
             endpoint=FakeEndpoint(),
             credentials=object(),
@@ -124,7 +146,7 @@ class FakeReader:
 
 
 @pytest.mark.asyncio
-async def test_export_of_a_stored_result_marks_the_same_row(catalog):
+async def test_export_of_a_stored_result_marks_the_same_row(catalog, capability_calls):
     history = FakeHistory()
     file, history_id = await OneCQueryAnswerService().export(
         tenant_id=1,
@@ -136,6 +158,7 @@ async def test_export_of_a_stored_result_marks_the_same_row(catalog):
         reader=FakeReader(catalog),
     )
 
+    assert capability_calls == [{"tenant_id": 1, "actor_id": 2, "capability": CAPABILITY_EXPORT}]
     assert history_id == 42
     assert history.marked == [(42, "xlsx")]
     assert history.recorded == []
@@ -143,7 +166,7 @@ async def test_export_of_a_stored_result_marks_the_same_row(catalog):
 
 
 @pytest.mark.asyncio
-async def test_export_of_a_stored_result_of_another_connection_is_refused(catalog):
+async def test_export_of_a_stored_result_of_another_connection_is_refused(catalog, capability_calls):
     history = FakeHistory(connection_id=8)
 
     with pytest.raises(OneCNaturalLanguageError) as excinfo:
@@ -157,5 +180,6 @@ async def test_export_of_a_stored_result_of_another_connection_is_refused(catalo
             reader=FakeReader(catalog),
         )
 
+    assert capability_calls == [{"tenant_id": 1, "actor_id": 2, "capability": CAPABILITY_EXPORT}]
     assert excinfo.value.code == "stored_plan_connection_mismatch"
     assert history.marked == [] and history.recorded == []

@@ -34,6 +34,8 @@ class CapabilitySpec:
     audit_create: str = "commands.create"
     audit_approve: str = "commands.approve"
     audit_execute: str = "commands.execute"
+    proposal_resource: str | None = None
+    proposal_action: ActionType | None = None
 
 
 def _build_registry() -> dict[str, CapabilitySpec]:
@@ -92,8 +94,10 @@ def _build_registry() -> dict[str, CapabilitySpec]:
             version=1,
             domain="onec",
             risk_class="critical",
-            required_resource="botaction",
-            required_action=ActionType.CREATE,
+            required_resource="oneccommand",
+            required_action=ActionType.CONFIGURE,
+            proposal_resource="oneccommand",
+            proposal_action=ActionType.CREATE,
             approval_policy="per_item",
             kill_switch_key="KILL_ONEC_DOCUMENT_CREATE",
             audit_create="commands.create",
@@ -105,8 +109,10 @@ def _build_registry() -> dict[str, CapabilitySpec]:
             version=1,
             domain="onec",
             risk_class="critical",
-            required_resource="botaction",
-            required_action=ActionType.CREATE,
+            required_resource="oneccommand",
+            required_action=ActionType.CONFIGURE,
+            proposal_resource="oneccommand",
+            proposal_action=ActionType.CREATE,
             approval_policy="per_item",
             kill_switch_key="KILL_ONEC_DOCUMENT_POST",
             audit_create="commands.create",
@@ -118,8 +124,10 @@ def _build_registry() -> dict[str, CapabilitySpec]:
             version=1,
             domain="onec",
             risk_class="critical",
-            required_resource="botaction",
-            required_action=ActionType.CREATE,
+            required_resource="oneccommand",
+            required_action=ActionType.CONFIGURE,
+            proposal_resource="oneccommand",
+            proposal_action=ActionType.CREATE,
             approval_policy="per_item",
             kill_switch_key="KILL_ONEC_CATALOG_UPDATE",
             audit_create="commands.create",

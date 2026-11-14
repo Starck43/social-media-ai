@@ -109,7 +109,9 @@ def _is_capability_enabled(spec: CapabilitySpec) -> bool:
     return spec.enabled_by_default
 
 
-async def _verify_member_grant(session, tenant_id: int, user_id: int, spec: CapabilitySpec) -> None:
+async def _verify_member_grant(
+    session, tenant_id: int, user_id: int, spec: CapabilitySpec, *, propose: bool = False
+) -> None:
     user = (
         await session.execute(select(User.id).where(User.id == user_id, User.is_active.is_(True)))
     ).scalar_one_or_none()
@@ -131,7 +133,10 @@ async def _verify_member_grant(session, tenant_id: int, user_id: int, spec: Capa
         await session.execute(select(WorkspaceRole.codename).where(WorkspaceRole.id == member.role_id))
     ).scalar_one_or_none()
     grants = workspace_grants(role_code) if role_code is not None else frozenset()
-    if (spec.required_resource, spec.required_action) not in grants:
+    required = (spec.required_resource, spec.required_action)
+    if propose and spec.proposal_resource is not None and spec.proposal_action is not None:
+        required = (spec.proposal_resource, spec.proposal_action)
+    if required not in grants:
         raise CommandDenied("Insufficient workspace role permissions for capability")
 
 
@@ -223,7 +228,7 @@ class BusinessCommandLedger:
                     session=owned,
                 )
 
-        await _verify_member_grant(session, tenant_id, actor_id, spec)
+        await _verify_member_grant(session, tenant_id, actor_id, spec, propose=True)
         await _verify_connection(session, tenant_id, connection_id)
 
         existing = (

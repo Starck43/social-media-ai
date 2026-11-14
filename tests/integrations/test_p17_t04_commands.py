@@ -292,8 +292,14 @@ def write_env(monkeypatch: pytest.MonkeyPatch):
     async def _noop_authorize(_session, _tenant_id, _actor_id, **_kwargs):
         return None
 
-    async def _noop_member_grant(_session, _tenant_id, _user_id, _spec):
+    async def _noop_member_grant(_session, _tenant_id, _user_id, _spec, *, propose=False):
         return None
+
+    # DB membership is already mocked in this command-state fixture; capability
+    # policy is tested independently by P17-T05, never disabled in production.
+    async def _allow_capability(*, tenant_id, actor_id, capability, session=None):
+        assert capability in {"onec.command.propose", "onec.command.approve"}
+        return "admin"
 
     async def _noop_verify_conn(_session, _tenant_id, _conn_id):
         return None
@@ -302,6 +308,7 @@ def write_env(monkeypatch: pytest.MonkeyPatch):
         return None
 
     monkeypatch.setattr(commands_mod, "_authorize", _noop_authorize)
+    monkeypatch.setattr(commands_mod, "authorize_capability", _allow_capability)
     monkeypatch.setattr(commands_mod.WorkspaceOutboundHostManager, "require_approved", _noop_require_approved)
     monkeypatch.setattr(commands_mod, "budget_for", lambda *_a, **_kw: SimpleNamespace(key="onec:test"))
     monkeypatch.setattr(ledger_mod, "_verify_member_grant", _noop_member_grant)

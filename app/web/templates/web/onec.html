@@ -4,6 +4,9 @@
 {% block page_context %}Активное пространство{% endblock %}
 {% block content %}
 <a href="/app/settings?tab=connections">← К подключениям</a>
+{% if perms.can('onecdata', 'view') and perms.can('actionauditevent', 'view') %}
+<a href="/app/settings/onec/audit" class="ml-4">Аудит 1С</a>
+{% endif %}
 <section class="ui-card mt-4">
   <h2>Хосты пространства</h2>
   <p class="ui-muted">Хост разрешает владелец или администратор пространства. Только публичный HTTPS: локальные и внутренние IP-адреса запрещены. Для приватной сети нужен отдельный локальный коннектор.</p>

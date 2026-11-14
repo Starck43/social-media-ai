@@ -64,6 +64,7 @@ from app.services.onec.metadata import (
     parse_odata_metadata_xml,
     validate_entity_access,
 )
+from app.services.onec.policy import authorize_capability, log_denial, role_entity_allowlist
 
 MAX_ROWS_PER_REQUEST = 1000
 DEFAULT_ROWS_PER_REQUEST = 100
@@ -73,6 +74,10 @@ MAX_CACHE_TTL_SECONDS = 300
 MAX_METADATA_CACHE_ENTRIES = 32
 METADATA_CACHE_TTL_SECONDS = 60
 MAX_HISTORY_ENTRIES = 200
+
+# P17-T05 capability keys: a workspace grant plus connection ownership, never a role name.
+CAPABILITY_QUERY = "onec.query"
+CAPABILITY_EXPORT = "onec.export"
 
 _GUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
@@ -895,10 +900,13 @@ class OneCConnectionContext:
 class OneCReadQueryService:
     """Authorized read-only 1C metadata and data extraction service (P17-T02).
 
-    Enforces workspace RBAC (`require_source_view=True`), active/verified connection state,
-    approved workspace host (`WorkspaceOutboundHostManager.require_approved`),
-    per-connection administrator entity/field allowlists, shared provider rate budget,
-    and IP-pinned HTTPS GET execution.
+    Enforces the P17-T05 workspace capability for the requested operation (`onec.query`
+    by default, `onec.export` for export), the current role's optional entity
+    intersection, active/verified connection state, approved workspace host
+    (`WorkspaceOutboundHostManager.require_approved`), per-connection administrator
+    entity/field allowlists, shared provider rate budget, and IP-pinned HTTPS GET
+    execution. The capability and role gates run before any secret is opened or any
+    network request is emitted.
     """
 
     def __init__(
@@ -925,11 +933,21 @@ class OneCReadQueryService:
         )
 
     async def load_connection_context(
-        self, *, tenant_id: int, actor_id: int, connection_id: int
+        self,
+        *,
+        tenant_id: int,
+        actor_id: int,
+        connection_id: int,
+        policy_capability: str = CAPABILITY_QUERY,
     ) -> OneCConnectionContext:
         """Return the authorized endpoint, allowlists and metadata pin for one connection."""
         endpoint, credentials, account_key, allowed_sets, allowed_fields, metadata_sha256 = (
-            await self._load_authorized_connection(tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id)
+            await self._load_authorized_connection(
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+                connection_id=connection_id,
+                policy_capability=policy_capability,
+            )
         )
         return OneCConnectionContext(
             endpoint=endpoint,
@@ -940,10 +958,25 @@ class OneCReadQueryService:
             metadata_sha256=metadata_sha256,
         )
 
-    async def _load_authorized_connection(self, *, tenant_id: int, actor_id: int, connection_id: int):
+    async def _load_authorized_connection(
+        self,
+        *,
+        tenant_id: int,
+        actor_id: int,
+        connection_id: int,
+        policy_capability: str = CAPABILITY_QUERY,
+    ):
         if type(connection_id) is not int or connection_id <= 0:
             raise ConnectionDenied()
         async with self._sessions._get_owned_session() as session:
+            # P17-T05: fresh workspace capability and current role, before reading the
+            # connection row; the role only narrows the entity list, never widens it.
+            role = await authorize_capability(
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+                capability=policy_capability,
+                session=session,
+            )
             await _authorize(session, tenant_id, actor_id, require_source_view=True)
             from sqlalchemy import select
 
@@ -966,9 +999,16 @@ class OneCReadQueryService:
                 or row.schema_version != SCHEMA_VERSION
                 or row.state != "verified"
             ):
+                log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=policy_capability)
                 raise ConnectionDenied()
 
             config = dict(row.config or {})
+            try:
+                allowed_sets, allowed_fields = extract_connection_allowlist(config)
+                allowed_sets = role_entity_allowlist(config, role)
+                allowed_fields = {name: fields for name, fields in allowed_fields.items() if name in allowed_sets}
+            except OneCMetadataError as exc:
+                raise OneCQueryError(exc.code) from None
             endpoint = _stored_endpoint(config)
             if endpoint.interface != "odata_standard":
                 raise OneCQueryError("unsupported_interface")
@@ -981,11 +1021,6 @@ class OneCReadQueryService:
             try:
                 credentials = open_basic_credentials(ciphertext)
             except OneCCredentialError as exc:
-                raise OneCQueryError(exc.code) from None
-
-            try:
-                allowed_sets, allowed_fields = extract_connection_allowlist(config)
-            except OneCMetadataError as exc:
                 raise OneCQueryError(exc.code) from None
 
             metadata_sha256 = config.get("metadata_sha256")
@@ -1008,6 +1043,7 @@ class OneCReadQueryService:
         actor_id: int,
         connection_id: int,
         resolver: Resolver = default_dns_resolver,
+        policy_capability: str = CAPABILITY_QUERY,
     ) -> OneCMetadataCatalog:
         """Fetch and parse `$metadata` for an authorized, verified 1C OData connection.
 
@@ -1023,7 +1059,12 @@ class OneCReadQueryService:
             _allowed_sets,
             _allowed_fields,
             expected_sha256,
-        ) = await self._load_authorized_connection(tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id)
+        ) = await self._load_authorized_connection(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            connection_id=connection_id,
+            policy_capability=policy_capability,
+        )
         cache_key = (tenant_id, connection_id, expected_sha256 or "")
         cached = self._metadata_cache.get(cache_key)
         if cached is not None and (expected_sha256 is None or cached.metadata_sha256 == expected_sha256):
@@ -1065,6 +1106,7 @@ class OneCReadQueryService:
         catalog: OneCMetadataCatalog,
         cache_ttl_seconds: int = 0,
         resolver: Resolver = default_dns_resolver,
+        policy_capability: str = CAPABILITY_QUERY,
     ) -> OneCQueryResult:
         """Validate `plan` against `catalog` and connection allowlist, then execute a bounded OData GET."""
         if type(cache_ttl_seconds) is not int or not (0 <= cache_ttl_seconds <= MAX_CACHE_TTL_SECONDS):
@@ -1078,17 +1120,27 @@ class OneCReadQueryService:
             allowed_sets,
             allowed_fields,
             expected_sha256,
-        ) = await self._load_authorized_connection(tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id)
+        ) = await self._load_authorized_connection(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            connection_id=connection_id,
+            policy_capability=policy_capability,
+        )
 
         # Validate the plan and allowlist BEFORE checking cache or consuming provider rate budget.
-        validated = build_odata_query_target(
-            plan,
-            catalog,
-            allowed_entity_sets=allowed_sets,
-            allowed_fields_by_entity=allowed_fields,
-            expected_metadata_sha256=expected_sha256,
-            base_path=endpoint.base_path,
-        )
+        try:
+            validated = build_odata_query_target(
+                plan,
+                catalog,
+                allowed_entity_sets=allowed_sets,
+                allowed_fields_by_entity=allowed_fields,
+                expected_metadata_sha256=expected_sha256,
+                base_path=endpoint.base_path,
+            )
+        except OneCQueryError as exc:
+            if exc.code in {"entity_not_allowed", "field_not_allowed"}:
+                log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=policy_capability)
+            raise
 
         cache_key = (
             tenant_id,

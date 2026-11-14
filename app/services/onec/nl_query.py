@@ -23,8 +23,10 @@ from app.services.onec.metadata import (
     OneCMetadataError,
     is_valid_identifier,
 )
+from app.services.onec.policy import authorize_capability
 from app.services.onec.query import (
     ALLOWED_FILTER_OPERATORS,
+    CAPABILITY_EXPORT,
     DEFAULT_ROWS_PER_REQUEST,
     MAX_ROWS_PER_REQUEST,
     OneCConnectionContext,
@@ -725,14 +727,25 @@ class OneCQueryAnswerService:
         if format not in {"xlsx", "pdf"}:
             raise OneCNaturalLanguageError("invalid_export_format")
         reader = reader if reader is not None else _SHARED_READER
+        # P17-T05: the export capability is checked before any context load, catalog
+        # fetch, planner call or provider request, so a refusal costs nothing.
+        await authorize_capability(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            capability=CAPABILITY_EXPORT,
+        )
         context = await reader.load_connection_context(
-            tenant_id=tenant_id, actor_id=actor_id, connection_id=connection_id
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            connection_id=connection_id,
+            policy_capability=CAPABILITY_EXPORT,
         )
         if catalog is None:
             catalog = await reader.fetch_metadata_catalog(
                 tenant_id=tenant_id,
                 actor_id=actor_id,
                 connection_id=connection_id,
+                policy_capability=CAPABILITY_EXPORT,
                 **({"resolver": resolver} if resolver is not None else {}),
             )
 
@@ -779,6 +792,7 @@ class OneCQueryAnswerService:
             connection_id=connection_id,
             plan=plan,
             catalog=catalog,
+            policy_capability=CAPABILITY_EXPORT,
             **kwargs,
         )
         file = export_result(result, format, title=title)  # type: ignore[arg-type]

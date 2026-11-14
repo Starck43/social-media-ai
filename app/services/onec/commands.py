@@ -91,11 +91,16 @@ from app.services.onec.metadata import (
     is_valid_identifier,
     parse_odata_metadata_xml,
 )
+from app.services.onec.policy import authorize_capability, log_denial, role_entity_allowlist
 from app.services.onec.query import TIMEOUT_SECONDS, MonetaryValue, OneCQueryError
 
 WRITE_METHOD = "odata_write_credentials"
 MIN_TTL_SECONDS = 60
 MAX_INTERACTIVE_TTL_SECONDS = 60 * 60
+
+# P17-T05 capability keys: proposing and approving are separate workspace capabilities.
+CAPABILITY_COMMAND_PROPOSE = "onec.command.propose"
+CAPABILITY_COMMAND_APPROVE = "onec.command.approve"
 
 CAPABILITY_DOCUMENT_CREATE = "onec.document.create.v1"
 CAPABILITY_DOCUMENT_POST = "onec.document.post.v1"
@@ -826,16 +831,30 @@ class OneCCommandService:
         actor_id: int,
         connection_id: int,
         capability: str,
+        policy_capability: str = CAPABILITY_COMMAND_PROPOSE,
     ):
         """Load and verify a 1C write connection (`auth_method == 'odata_write_credentials'`).
 
         Strictly rejects read-only `odata_credentials` connections with
         `OneCCommandError("write_connection_required")`.
+
+        P17-T05: the workspace capability (`onec.command.propose` by default, or
+        `onec.command.approve` for approval/execution/reconcile) and the current role
+        are checked before the connection row or its secret is read. The role only
+        narrows the connection entity list; it never supplies credentials or bypasses
+        connection ownership, capability enablement or the kill switches.
         """
         if type(connection_id) is not int or connection_id <= 0:
             raise ConnectionDenied()
 
+        role = await authorize_capability(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            capability=policy_capability,
+            session=session,
+        )
         await _authorize(session, tenant_id, actor_id, write=True)
+
         row = (
             await session.execute(
                 select(WorkspaceConnection)
@@ -848,12 +867,14 @@ class OneCCommandService:
             )
         ).scalar_one_or_none()
         if row is None or not row.is_active or row.provider_id != PROVIDER or row.schema_version != SCHEMA_VERSION:
+            log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=policy_capability)
             raise ConnectionDenied()
 
         if row.auth_method == READ_ONLY_METHOD or row.auth_method != WRITE_METHOD:
             raise OneCCommandError("write_connection_required")
 
         if row.state != "verified":
+            log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=policy_capability)
             raise ConnectionDenied()
 
         config = dict(row.config or {})
@@ -861,6 +882,12 @@ class OneCCommandService:
         if not enabled:
             raise OneCCommandError(disable_reason or "capability_disabled")
 
+        try:
+            allowed_sets, allowed_fields = extract_connection_allowlist(config)
+            allowed_sets = role_entity_allowlist(config, role)
+            allowed_fields = {name: fields for name, fields in allowed_fields.items() if name in allowed_sets}
+        except OneCMetadataError as exc:
+            raise OneCCommandError(exc.code) from None
         endpoint = _stored_endpoint(config)
         if endpoint.interface != "odata_standard":
             raise OneCCommandError("unsupported_interface")
@@ -871,11 +898,6 @@ class OneCCommandService:
         try:
             credentials = open_basic_credentials(ciphertext)
         except OneCCredentialError as exc:
-            raise OneCCommandError(exc.code) from None
-
-        try:
-            allowed_sets, allowed_fields = extract_connection_allowlist(config)
-        except OneCMetadataError as exc:
             raise OneCCommandError(exc.code) from None
 
         metadata_sha256 = config.get("metadata_sha256")
@@ -1042,6 +1064,7 @@ class OneCCommandService:
         )
 
         if not allowed_sets or request.entity_set not in allowed_sets:
+            log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=CAPABILITY_COMMAND_PROPOSE)
             raise OneCCommandError("entity_not_allowed")
 
         with tenant_scope(tenant_id):
@@ -1312,6 +1335,7 @@ class OneCCommandService:
             actor_id=actor_id,
             connection_id=cmd.connection_id,
             capability=cmd.capability,
+            policy_capability=CAPABILITY_COMMAND_APPROVE,
         )
 
         prev_user = get_current_user()
@@ -1454,6 +1478,7 @@ class OneCCommandService:
             actor_id=actor_id,
             connection_id=cmd.connection_id,
             capability=cmd.capability,
+            policy_capability=CAPABILITY_COMMAND_APPROVE,
         )
 
         payload = dict(cmd.payload or {})
@@ -1734,6 +1759,7 @@ class OneCCommandService:
             actor_id=actor_id,
             connection_id=cmd.connection_id,
             capability=cmd.capability,
+            policy_capability=CAPABILITY_COMMAND_APPROVE,
         )
 
         payload = dict(cmd.payload or {})

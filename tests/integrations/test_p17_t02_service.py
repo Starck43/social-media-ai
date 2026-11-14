@@ -122,7 +122,9 @@ def fake_network(monkeypatch, payload: bytes):
     return calls, writer
 
 
-def service_fixture(monkeypatch, *, allowed_sets=None, allowed_fields=None, state="verified", interface="odata_standard"):
+def service_fixture(
+    monkeypatch, *, allowed_sets=None, allowed_fields=None, state="verified", interface="odata_standard"
+):
     catalog = parse_odata_metadata_xml(SYNTHETIC_METADATA_XML)
     config = {
         "host": "erp.example.com",
@@ -130,14 +132,16 @@ def service_fixture(monkeypatch, *, allowed_sets=None, allowed_fields=None, stat
         "base_path": "/base",
         "interface": interface,
         "metadata_sha256": catalog.metadata_sha256,
-        "allowed_entity_sets": allowed_sets
-        if allowed_sets is not None
-        else [
-            "Catalog_Номенклатура",
-            "Document_РеализацияТоваровУслуг",
-            "AccumulationRegister_ТоварыНаСкладах",
-            "InformationRegister_ЦеныНоменклатуры",
-        ],
+        "allowed_entity_sets": (
+            allowed_sets
+            if allowed_sets is not None
+            else [
+                "Catalog_Номенклатура",
+                "Document_РеализацияТоваровУслуг",
+                "AccumulationRegister_ТоварыНаСкладах",
+                "InformationRegister_ЦеныНоменклатуры",
+            ]
+        ),
     }
     if allowed_fields is not None:
         config["allowed_fields"] = allowed_fields
@@ -169,6 +173,15 @@ def service_fixture(monkeypatch, *, allowed_sets=None, allowed_fields=None, stat
     service._sessions._get_owned_session = owned_session
     service._hosts.require_approved = AsyncMock(return_value="erp.example.com")
     monkeypatch.setattr(query_mod, "_authorize", AsyncMock())
+
+    # This transport/cache fixture already replaces DB authorization. Keep the
+    # new capability boundary explicit; P17-T05 tests exercise real policy logic.
+    async def allowed_capability(*, tenant_id, actor_id, capability, session=None):
+        assert (tenant_id, actor_id) == (11, 7)
+        assert capability in {"onec.query", "onec.export"}
+        return "admin"
+
+    monkeypatch.setattr(query_mod, "authorize_capability", allowed_capability)
     monkeypatch.setattr(
         query_mod,
         "open_basic_credentials",
@@ -240,21 +253,31 @@ async def test_fetch_odata_bytes_status_mapping_and_redaction(monkeypatch, statu
 async def test_fetch_odata_bytes_rejects_gzip_oversize_and_invalid_inputs(monkeypatch):
     fake_network(monkeypatch, http_response(200, b"{}", extra=b"Content-Encoding: gzip\r\n"))
     with pytest.raises(OneCQueryError, match="unsupported_encoding"):
-        await fetch_odata_bytes(endpoint(), "/base/odata", "reader", "secret", limiter=Limiter(), budget=1, resolver=dns)
+        await fetch_odata_bytes(
+            endpoint(), "/base/odata", "reader", "secret", limiter=Limiter(), budget=1, resolver=dns
+        )
 
     fake_network(monkeypatch, http_response(200, b"x" * (MAX_BODY_BYTES + 1)))
     with pytest.raises(OneCQueryError, match="response_too_large"):
-        await fetch_odata_bytes(endpoint(), "/base/odata", "reader", "secret", limiter=Limiter(), budget=1, resolver=dns)
+        await fetch_odata_bytes(
+            endpoint(), "/base/odata", "reader", "secret", limiter=Limiter(), budget=1, resolver=dns
+        )
 
     fake_network(monkeypatch, http_response(200, b""))
     with pytest.raises(OneCQueryError, match="empty_response"):
-        await fetch_odata_bytes(endpoint(), "/base/odata", "reader", "secret", limiter=Limiter(), budget=1, resolver=dns)
+        await fetch_odata_bytes(
+            endpoint(), "/base/odata", "reader", "secret", limiter=Limiter(), budget=1, resolver=dns
+        )
 
     with pytest.raises(OneCQueryError, match="invalid_credentials"):
-        await fetch_odata_bytes(endpoint(), "/base/odata", "bad:login", "secret", limiter=Limiter(), budget=1, resolver=dns)
+        await fetch_odata_bytes(
+            endpoint(), "/base/odata", "bad:login", "secret", limiter=Limiter(), budget=1, resolver=dns
+        )
 
     with pytest.raises(OneCQueryError, match="invalid_query_target"):
-        await fetch_odata_bytes(endpoint(), "relative/path", "reader", "secret", limiter=Limiter(), budget=1, resolver=dns)
+        await fetch_odata_bytes(
+            endpoint(), "relative/path", "reader", "secret", limiter=Limiter(), budget=1, resolver=dns
+        )
 
 
 @pytest.mark.asyncio

@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import String, cast, delete, select, text
 
 from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
 from app.services.audit_codes import AUDIT_ACTIONS, AUDIT_CODES
@@ -164,6 +164,10 @@ class ActionAuditEventManager(BaseManager):
         before_id: int | None = None,
         outcome: str | None = None,
         action: str | None = None,
+        onec_only: bool = False,
+        connection_id: int | None = None,
+        actor_id: int | None = None,
+        session=None,
     ) -> list:
         """Read only a bounded, explicitly tenant-scoped event window."""
         tenant_id = self._tenant()
@@ -179,6 +183,13 @@ class ActionAuditEventManager(BaseManager):
             raise ValueError("Unsupported persisted action-audit outcome")
         if action is not None and action not in _SAFE_ACTIONS:
             raise ValueError("Unsupported action-audit action")
+        if type(onec_only) is not bool:
+            raise ValueError("Invalid audit domain filter")
+        for value in (connection_id, actor_id):
+            if value is not None and (type(value) is not int or not 0 < value <= _MAX_DB_ID):
+                raise ValueError("Invalid audit identity filter")
+        if connection_id is not None and not onec_only:
+            raise ValueError("Connection filter requires OneC projection")
         conditions = [
             self.model.tenant_id == tenant_id,
             self.model.occurred_at >= since,
@@ -190,16 +201,30 @@ class ActionAuditEventManager(BaseManager):
             conditions.append(self.model.outcome == outcome)
         if action is not None:
             conditions.append(self.model.action == action)
-        async with self._get_owned_session() as session:
-            return list(
-                (
-                    await session.execute(
-                        select(self.model).where(*conditions).order_by(self.model.id.desc()).limit(limit)
-                    )
-                )
-                .scalars()
-                .all()
+        if actor_id is not None:
+            conditions.extend((self.model.actor_kind == "user", self.model.actor_id == str(actor_id)))
+        statement = select(self.model)
+        if onec_only:
+            conditions.append(
+                self.model.action.in_(("onec.command_approve", "onec.command_execute", "onec.audit_export"))
             )
+        if connection_id is not None:
+            from app.models.actions.business_command import BusinessCommand
+
+            statement = statement.join(
+                BusinessCommand,
+                (
+                    (self.model.resource_kind == "command")
+                    & (self.model.resource_id == cast(BusinessCommand.id, String))
+                    & (self.model.tenant_id == BusinessCommand.tenant_id)
+                ),
+            )
+            conditions.extend((BusinessCommand.tenant_id == tenant_id, BusinessCommand.connection_id == connection_id))
+        statement = statement.where(*conditions).order_by(self.model.id.desc()).limit(limit)
+        if session is not None:
+            return list((await session.execute(statement)).scalars().all())
+        async with self._get_owned_session() as owned:
+            return list((await owned.execute(statement)).scalars().all())
 
     async def delete_expired(self, *, now: datetime | None = None, batch_size: int = 500, session=None) -> int:
         """Expire evidence using the workspace's existing plan retention limit.

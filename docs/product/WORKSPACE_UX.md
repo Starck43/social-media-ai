@@ -152,7 +152,7 @@ use the one notification surface (D18).
 
 These open as context from a contact, case, thread or task; the agent works on
 them through context chips. Writes use their existing previews and approvals
-([P13-T04](../audit/p13/p13-t04-p14-t04-business-crm.md), [P17-T04](../tasks/p17-t04.md),
+([P13-T04](../audit/p13/p13-t04-p14-t04-business-crm.md), [P17-T04](../audit/p17/p17-t04.md),
 [../audit/p19-t04.md](../audit/p19/p19-t04.md)).
 
 ## Surface parity

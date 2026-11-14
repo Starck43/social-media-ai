@@ -1,0 +1,42 @@
+name: Local connector unsigned development bundles
+
+on:
+  # Preserve Q-13: no Actions execution on dev, feature branches or PRs.
+  push:
+    branches: [master]
+    paths:
+      - 'local_connector/**'
+      - 'docs/LOCAL_CONNECTOR.md'
+      - '.github/workflows/local-connector.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Install standalone build tools and connector (no server)
+        run: python -m pip install ./local_connector pyinstaller==6.16.0 pytest==8.4.2 cryptography==46.0.3
+      - name: Verify update authentication (no DB or application fixtures)
+        run: python -m pytest local_connector/packaging/tests --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
+      - name: Build and probe unsigned bundle
+        run: python local_connector/packaging/build.py --output connector-build
+      - name: Retain development artifacts only (not a release or activation)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: local-connector-${{ matrix.os }}-${{ github.sha }}
+          path: connector-build/*.zip
+          if-no-files-found: error
+          retention-days: 14

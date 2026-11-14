@@ -33,10 +33,32 @@ jobs:
         run: python -m pytest local_connector/packaging/tests --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
       - name: Build and probe unsigned bundle
         run: python local_connector/packaging/build.py --output connector-build
+      - name: Produce Linux AppImage and deb (no deployment)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --proto '=https' --proto-redir '=https' \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage \
+            -o connector-build/appimagetool
+          curl --fail --location --proto '=https' --proto-redir '=https' \
+            https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64 \
+            -o connector-build/appimage-runtime
+          echo 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  connector-build/appimagetool' | sha256sum --check
+          echo '617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46  connector-build/appimage-runtime' | sha256sum --check
+          chmod u+x connector-build/appimagetool
+          version=$(python -c "import tomllib; print(tomllib.load(open('local_connector/pyproject.toml', 'rb'))['project']['version'])")
+          python local_connector/packaging/linux_formats.py \
+            --bundle connector-build/dist/ai-assistant-connector --output connector-build \
+            --version "$version" --appimagetool connector-build/appimagetool \
+            --runtime connector-build/appimage-runtime
       - name: Retain development artifacts only (not a release or activation)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: local-connector-${{ matrix.os }}-${{ github.sha }}
-          path: connector-build/*.zip
+          path: |
+            connector-build/*.zip
+            connector-build/*.AppImage
+            connector-build/*.deb
           if-no-files-found: error
           retention-days: 14

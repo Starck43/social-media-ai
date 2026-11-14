@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
+from typing import BinaryIO
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -114,4 +115,17 @@ def verify_artifact(release: Release, artifact: bytes) -> None:
     same bytes at use and provide native private-directory/no-follow guarantees.
     """
     if len(artifact) != release.size or hashlib.sha256(artifact).hexdigest() != release.sha256:
+        raise UpdateRejected("artifact authentication failed")
+
+
+def verify_artifact_stream(release: Release, artifact: BinaryIO) -> None:
+    """Bound streamed artifact reads; never extract, install or execute bytes."""
+    digest = hashlib.sha256()
+    size = 0
+    while chunk := artifact.read(min(1024 * 1024, release.size - size + 1)):
+        size += len(chunk)
+        if size > release.size:
+            raise UpdateRejected("artifact authentication failed")
+        digest.update(chunk)
+    if size != release.size or digest.hexdigest() != release.sha256:
         raise UpdateRejected("artifact authentication failed")

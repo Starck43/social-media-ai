@@ -14,7 +14,7 @@ Only use artifacts from the repository's **Local connector unsigned development
 bundles** workflow at the reviewed commit. CI follows the existing master-only
 Actions policy; opening a dev PR does not produce artifacts. Extract the complete
 zip into a new version-specific directory owned by your account. Keep the old
-directory for rollback. Do not merge directories, install as administrator or
+directory for rollback. Do not merge directories, elevate portable builds or
 overwrite a running executable. The executable requires no system Python.
 
 `ai-assistant-connector --version` (Windows: `.exe`) probes the packaged version
@@ -44,8 +44,17 @@ or remove quarantine recursively. If managed policy blocks execution, stop.
 
 Extract into `~/.local/opt/ai-assistant-connector/<version>`. Run
 `chmod u+x ai-assistant-connector` if the extraction tool lost executable mode,
-then `./ai-assistant-connector`. AppImage and deb installers are not yet delivered;
-the zip is a portable development bundle, not evidence for those required formats.
+then `./ai-assistant-connector`.
+
+The Linux workflow additionally produces x86-64 AppImage and deb artifacts.
+These require Ubuntu 24.04-compatible libraries (glibc 2.39 or newer); they are
+not certified on older distributions or other architectures. AppImage:
+`chmod u+x <artifact>.AppImage`, then `./<artifact>.AppImage`; if FUSE is unavailable,
+use `./<artifact>.AppImage --appimage-extract-and-run`. Debian package:
+`sudo apt install ./<artifact>.deb` where administrator policy permits. Run
+`ai-assistant-connector` from a terminal or its development desktop entry. The
+deb contains no maintainer scripts, service or login auto-start. Native Linux
+artifact execution remains unrun on the remote macOS lane; CI must prove it.
 
 ## Local use and data
 
@@ -98,11 +107,41 @@ precedes JSON parsing. The closed manifest schema is:
 Times are integer Unix seconds with at most a 30-day validity period; the
 release must be newer than the installed version. Unknown/duplicate fields,
 wrong product/platform, invalid signatures, expired/future manifests, malformed
-versions, and artifact size/hash mismatches are rejected. This module is only
-an offline primitive, **not an integrated updater**: it has no key provisioning,
-network, staging, installation, extraction, execution or rollback authority.
-Its `cryptography` dependency belongs to the packaging/test tools, not the
-unchanged runtime wheel; it is not imported by the development bootstrap.
+versions, and artifact size/hash mismatches are rejected. This module provides
+verification, **not an automatic installer**: it has no network, staging,
+installation, extraction, execution or rollback authority. Its `cryptography`
+dependency belongs to packaging/test tools and the frozen verification command,
+not the unchanged runtime wheel.
+
+Release preparation (authorized release operator only):
+
+```sh
+python local_connector/packaging/sign_manifest.py --artifact <bundle> \
+  --version <version> --platform <platform> --key <private-ed25519.pem> \
+  --encrypted-key --output <manifest.json>
+python local_connector/packaging/build.py --output <build-directory> \
+  --update-public-key <authenticated-32-byte-public-key>
+```
+
+The operator supplies an existing offline key; these commands neither create
+keys nor publish releases. Keep private keys outside the repository, restricted
+to the release account; never pass passwords in command arguments or CI logs.
+The build embeds the authenticated public key. The end user cannot supply a
+replacement trust key through CLI, environment, working directory or manifest.
+Default development builds have an empty trust anchor and deny all updates.
+Key rotation/revocation must be reviewed before enabling a feed; no production
+key or signing secret is provisioned by this PR.
+
+The frozen executable supports:
+
+```sh
+ai-assistant-connector --verify-update <manifest.json> <manifest.json.sig> <bundle>
+```
+
+Success authenticates bounded artifact bytes at verification time only; it does
+not apply them. A future installer must reverify at use, maintain durable update
+state and preserve private-directory/no-follow semantics. Never treat this
+verification receipt as authorization to execute a later modified artifact.
 
 Until the remaining updater/OS acceptance gates pass, updates are manual: stop,
 verify the reviewed artifact and use a fresh version directory. Keep the previous
@@ -119,6 +158,9 @@ copy old state over revocation/deletion fences once pairing is implemented.
    indexing and deletes derived content only, not the installation directory.
 3. Remove each version-specific extracted installation directory and downloaded
    archive. Do not remove their parent directory if it contains unrelated apps.
+   For deb installs use `sudo apt remove ai-assistant-connector`; this removes
+   packaged application files but intentionally preserves personal derived data.
+   For AppImage remove the downloaded file and any extraction/shortcut you made.
 4. To remove local state completely, remove only the exact per-OS data directory
    above, including SQLite sidecars/lock files. Source folders are untouched.
 5. Remove any shortcuts you created and any explicit private index backups. OS

@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.util
+import io
 import json
 import sys
 from pathlib import Path
@@ -115,3 +116,10 @@ def test_tampered_artifact(sample):
     for changed in (sample[1] + b"x", b"x" * len(sample[1])):
         with pytest.raises(updates.UpdateRejected):
             updates.verify_artifact(release, changed)
+
+
+def test_streamed_artifact_and_bound(sample):
+    release = verify(sample)
+    updates.verify_artifact_stream(release, io.BytesIO(sample[1]))
+    with pytest.raises(updates.UpdateRejected):
+        updates.verify_artifact_stream(release, io.BytesIO(sample[1] + b"x" * 1000))

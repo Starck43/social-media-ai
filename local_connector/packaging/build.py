@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import platform
 import shutil
 import subprocess
@@ -17,11 +18,17 @@ NAME = "ai-assistant-connector"
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--update-public-key", type=Path, help="Authenticated release Ed25519 public key, 32 raw bytes")
     args = parser.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     version = tomllib.loads((ROOT / "local_connector/pyproject.toml").read_text())["project"]["version"]
     work = output / "work"
+    key = args.update_public_key.read_bytes() if args.update_public_key else b""
+    if args.update_public_key and len(key) != 32:
+        raise ValueError("update public key must contain 32 raw bytes")
+    key_file = output / "update-key.bin"
+    key_file.write_bytes(key)
     subprocess.run(
         [
             sys.executable,
@@ -37,6 +44,8 @@ def main() -> None:
             str(ROOT),
             "--copy-metadata",
             "social-media-ai-local-connector",
+            "--add-data",
+            f"{key_file}{os.pathsep}connector-release",
             "--collect-submodules",
             "watchdog.observers",
             "--distpath",

@@ -685,6 +685,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         # a foreign or unknown id is simply not found, so the case never reaches
         # here. The owner comes from the provider — the form has no such field.
         data["owner_user_id"] = provider.owner_user_id
+        data["catalog_id"] = provider.catalog_id
         data["provider_id"] = provider.id
         with self._catalog_scope(request):
             return await super().insert_model(request, data)
@@ -699,6 +700,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         if is_created:
             model.owner_user_id = data["owner_user_id"]
             model.provider_id = data["provider_id"]
+            model.catalog_id = data["catalog_id"]
         else:
             # SQLAdmin resolves the `provider` relation from the provider's
             # primary key alone, and this relation carries two FK columns — a
@@ -708,6 +710,7 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
             data.pop("provider", None)
             data.pop("provider_id", None)
             data.pop("owner_user_id", None)
+            data.pop("catalog_id", None)
         with self._catalog_scope(request):
             await super().on_model_change(data, model, is_created, request)
 

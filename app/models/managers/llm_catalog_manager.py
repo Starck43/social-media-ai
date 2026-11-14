@@ -52,9 +52,7 @@ class PlanModelGrantManager(BaseManager):
         query = self.filter(plan=plan, capability=capability)
         if active_only:
             query = query.filter(is_active=True)
-        return await query.order_by(
-            PlanModelGrant.is_default.desc(), PlanModelGrant.priority, PlanModelGrant.llm_model_id
-        ).all()
+        return await query.order_by(PlanModelGrant.priority, PlanModelGrant.llm_model_id).all()
 
     async def active_default(self, plan: str, capability: str) -> "PlanModelGrant" | None:
         from ..llm.plan_model_grant import PlanModelGrant

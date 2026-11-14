@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    FetchedValue,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -59,7 +60,7 @@ class LLMProvider(Base, TimestampMixin):
     )
 
     id: Mapped[int] = Column(Integer, primary_key=True)
-    catalog_id: Mapped[int] = Column(Integer, nullable=False)
+    catalog_id: Mapped[int] = Column(Integer, nullable=False, server_default=FetchedValue())
     # Retained compatibility owner: personal catalog owner, or NULL for platform.
     owner_user_id: Mapped[int | None] = Column(
         ForeignKey(

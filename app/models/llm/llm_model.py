@@ -9,9 +9,11 @@ from sqlalchemy import (
     CheckConstraint,
     Column,
     DateTime,
+    FetchedValue,
     Float,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     Numeric,
     String,
@@ -20,7 +22,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import Mapped, relationship
+from sqlalchemy.orm import Mapped, relationship, validates
 
 from ...core.config import settings
 from ...core.decorators import app_label
@@ -100,6 +102,7 @@ class LLMModel(Base, TimestampMixin):
             ondelete="CASCADE",
         ),
         UniqueConstraint("provider_id", "model_id", name="uq_llm_model_provider_model"),
+        Index("ix_llm_model_catalog_id", "catalog_id"),
         CheckConstraint(
             "(cache_read_cost_per_1m IS NULL OR cache_read_cost_per_1m >= 0) "
             "AND (cache_write_5m_cost_per_1m IS NULL OR cache_write_5m_cost_per_1m >= 0) "
@@ -149,7 +152,7 @@ class LLMModel(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
-    catalog_id: Mapped[int] = Column(Integer, nullable=False)
+    catalog_id: Mapped[int] = Column(Integer, nullable=False, server_default=FetchedValue())
 
     # Retained compatibility owner: personal catalog owner, or NULL for platform.
     owner_user_id: Mapped[int | None] = Column(
@@ -168,8 +171,12 @@ class LLMModel(Base, TimestampMixin):
     model_type: Mapped[str] = Column(
         String(20), nullable=False, default="text", comment="Legacy CSV mirror; increment B retires it"
     )
-    input_capabilities: Mapped[list | None] = Column(JSONB, nullable=True, comment="Accepted input modalities")
-    operation_capabilities: Mapped[list | None] = Column(JSONB, nullable=True, comment="Supported API operations")
+    input_capabilities: Mapped[list | None] = Column(
+        JSONB(none_as_null=True), nullable=True, comment="Accepted input modalities"
+    )
+    operation_capabilities: Mapped[list | None] = Column(
+        JSONB(none_as_null=True), nullable=True, comment="Supported API operations"
+    )
 
     custom_endpoint_path: Mapped[str | None] = Column(
         String(200), nullable=True, comment="Custom endpoint path for api_format=custom, e.g. /v1/systemone"
@@ -246,7 +253,12 @@ class LLMModel(Base, TimestampMixin):
     #: it can never collide with the hybrid ``capabilities`` property below; the
     #: table column itself is still named ``capabilities``.
     _capabilities_column: Mapped[list | None] = Column(
-        "capabilities", JSONB, nullable=True, comment="Validated capability set"
+        "capabilities",
+        JSONB(none_as_null=True),
+        nullable=True,
+        server_default=FetchedValue(),
+        server_onupdate=FetchedValue(),
+        comment="Validated capability set",
     )
 
     if TYPE_CHECKING:
@@ -262,6 +274,17 @@ class LLMModel(Base, TimestampMixin):
         """Capability set: the stored column, else the legacy CSV until B retires it."""
         stored = self.__dict__.get("_capabilities_column")
         return list(stored) if stored is not None else _model_type_to_capabilities(self.model_type)
+
+    @validates("model_type")
+    def _mirror_legacy_capabilities(self, key, value):
+        """Legacy writers remain authoritative until B migrates each consumer."""
+        tokens = _model_type_to_capabilities(value)
+        self._capabilities_column = sorted(set(tokens)) if tokens and set(tokens) <= LEGACY_CAPABILITIES else None
+        return value
+
+    @capabilities.expression
+    def capabilities(cls):
+        return cls._capabilities_column
 
     @capabilities.setter
     def capabilities(self, value) -> None:

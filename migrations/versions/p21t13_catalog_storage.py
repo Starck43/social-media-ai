@@ -54,9 +54,15 @@ MODEL_COLUMNS = (
 GUARD_TRIGGERS = (
     ("guard_llm_catalog_custody", "llm_providers", "guard_llm_catalog_custody"),
     ("guard_llm_catalog_custody", "llm_models", "guard_llm_catalog_custody"),
+    ("guard_llm_catalog_identity", "llm_catalogs", "guard_llm_catalog_identity"),
     ("guard_llm_provider_credential_custody", "llm_providers", "guard_llm_provider_credential_custody"),
     ("guard_llm_model_capability", "llm_models", "guard_llm_model_capability"),
     ("guard_plan_model_grant_platform", "plan_model_grants", "guard_plan_model_grant_platform"),
+)
+
+GUARD_DELETE_TRIGGERS = (
+    ("guard_llm_managed_retirement", "llm_providers", "guard_llm_managed_retirement"),
+    ("guard_llm_managed_retirement", "llm_models", "guard_llm_managed_retirement"),
 )
 
 #: ``(function, body)`` pairs in creation order; each body already carries the
@@ -66,7 +72,24 @@ GUARD_FUNCTIONS = (
     (
         "guard_llm_catalog_custody",
         (
-            "DECLARE catalog_kind varchar(16); catalog_owner integer; parent_catalog integer; BEGIN SELECT "
+            "DECLARE catalog_kind varchar(16); catalog_owner integer; parent_catalog integer; parent_owner integer; "
+            "BEGIN IF TG_OP = 'UPDATE' AND NEW.catalog_id IS DISTINCT FROM OLD.catalog_id THEN "
+            "RAISE EXCEPTION 'Catalog custody is immutable' USING ERRCODE = '23514'; END IF; "
+            "IF TG_OP = 'INSERT' AND NEW.catalog_id IS NULL THEN "
+            "IF NEW.owner_user_id IS NULL THEN RAISE EXCEPTION 'Explicit platform catalog required' "
+            "USING ERRCODE = '23514'; END IF; "
+            "IF TG_TABLE_NAME = 'llm_providers' THEN "
+            "PERFORM id FROM {s}.users WHERE id = NEW.owner_user_id AND is_active IS TRUE FOR UPDATE; "
+            "IF NOT FOUND THEN RAISE EXCEPTION 'Active personal owner required' USING ERRCODE = '23514'; END IF; "
+            "INSERT INTO {s}.llm_catalogs (kind, owner_user_id) VALUES ('personal', NEW.owner_user_id) "
+            "ON CONFLICT (owner_user_id) WHERE kind = 'personal' DO NOTHING; "
+            "SELECT id INTO NEW.catalog_id FROM {s}.llm_catalogs "
+            "WHERE kind = 'personal' AND owner_user_id = NEW.owner_user_id; "
+            "ELSE SELECT catalog_id, owner_user_id INTO parent_catalog, parent_owner FROM {s}.llm_providers "
+            "WHERE id = NEW.provider_id; IF NOT FOUND THEN RAISE EXCEPTION 'Provider does not exist' "
+            "USING ERRCODE = '23503'; END IF; "
+            "IF parent_owner IS DISTINCT FROM NEW.owner_user_id THEN RAISE EXCEPTION 'Personal provider owner mismatch' "
+            "USING ERRCODE = '23514'; END IF; NEW.catalog_id := parent_catalog; END IF; END IF; SELECT "
             "kind, owner_user_id INTO catalog_kind, catalog_owner FROM "
             "{s}.llm_catalogs WHERE id = NEW.catalog_id; IF catalog_kind IS NULL THEN RAISE EXCEPTION "
             "'Catalog % does not exist', NEW.catalog_id USING ERRCODE = '23503'; END IF; "
@@ -79,6 +102,23 @@ GUARD_FUNCTIONS = (
             "{s}.llm_providers WHERE id = NEW.provider_id; IF parent_catalog IS DISTINCT FROM "
             "NEW.catalog_id THEN RAISE EXCEPTION 'Model catalog must equal its provider catalog' "
             "USING ERRCODE = '23514'; END IF; END IF; RETURN NEW; END; "
+        ),
+    ),
+    (
+        "guard_llm_catalog_identity",
+        (
+            "BEGIN IF TG_OP = 'UPDATE' AND (NEW.kind IS DISTINCT FROM OLD.kind OR "
+            "NEW.owner_user_id IS DISTINCT FROM OLD.owner_user_id) THEN RAISE EXCEPTION "
+            "'Catalog identity is immutable' USING ERRCODE = '23514'; END IF; RETURN NEW; END; "
+        ),
+    ),
+    (
+        "guard_llm_managed_retirement",
+        (
+            "BEGIN IF TG_OP = 'DELETE' THEN IF EXISTS (SELECT 1 FROM {s}.llm_catalogs "
+            "WHERE id = OLD.catalog_id AND kind = 'platform') THEN RAISE EXCEPTION "
+            "'Managed rows must be deactivated, not deleted' USING ERRCODE = '23514'; END IF; "
+            "RETURN OLD; END IF; RETURN NEW; END; "
         ),
     ),
     (
@@ -96,7 +136,16 @@ GUARD_FUNCTIONS = (
     (
         "guard_llm_model_capability",
         (
-            "BEGIN IF NEW.capabilities IS NOT NULL THEN IF jsonb_typeof(NEW.capabilities) <> 'array' THEN "
+            "BEGIN IF (TG_OP = 'INSERT' AND NEW.capabilities IS NULL) OR "
+            "(TG_OP = 'UPDATE' AND NEW.model_type IS DISTINCT FROM OLD.model_type "
+            "AND NEW.capabilities IS NOT DISTINCT FROM OLD.capabilities) THEN "
+            "IF NOT EXISTS (SELECT 1 FROM unnest(string_to_array(NEW.model_type, ',')) AS t "
+            "WHERE btrim(t) <> '' AND btrim(t) NOT IN ('text','image','video','embedding','audio')) THEN "
+            "SELECT jsonb_agg(DISTINCT btrim(t) ORDER BY btrim(t)) INTO NEW.capabilities "
+            "FROM unnest(string_to_array(NEW.model_type, ',')) AS t WHERE btrim(t) <> ''; "
+            "ELSIF NEW.owner_user_id IS NOT NULL THEN NEW.capabilities := NULL; ELSE "
+            "RAISE EXCEPTION 'Unknown platform model capability' USING ERRCODE = '23514'; END IF; END IF; "
+            "IF NEW.capabilities IS NOT NULL THEN IF jsonb_typeof(NEW.capabilities) <> 'array' THEN "
             "RAISE EXCEPTION 'Capabilities must be a JSON array' USING ERRCODE = '23514'; END IF; "
             "IF EXISTS (SELECT 1 FROM jsonb_array_elements_text(NEW.capabilities) AS e(value) WHERE "
             "e.value NOT IN ('text','image','video','embedding','audio')) THEN RAISE EXCEPTION "
@@ -120,7 +169,13 @@ GUARD_FUNCTIONS = (
             "{s}.llm_models m JOIN "
             "{s}.llm_providers p ON p.id = m.provider_id AND p.catalog_id = m.catalog_id JOIN "
             "{s}.llm_catalogs c ON c.id = m.catalog_id WHERE m.id = NEW.llm_model_id; "
-            "IF catalog_kind IS DISTINCT FROM 'platform' OR catalog_active IS DISTINCT FROM TRUE "
+            "IF catalog_kind IS DISTINCT FROM 'platform' THEN RAISE EXCEPTION 'Platform model required' "
+            "USING ERRCODE = '23514'; END IF; "
+            "IF TG_OP = 'UPDATE' AND NEW.plan = OLD.plan AND NEW.capability = OLD.capability "
+            "AND NEW.llm_model_id = OLD.llm_model_id AND NEW.is_default IS FALSE "
+            "AND (NEW.is_active IS FALSE OR NEW.is_active IS NOT DISTINCT FROM OLD.is_active) THEN "
+            "RETURN NEW; END IF; "
+            "IF catalog_active IS DISTINCT FROM TRUE "
             "OR model_active IS DISTINCT FROM TRUE OR provider_active IS DISTINCT FROM TRUE THEN RAISE EXCEPTION "
             "'Plan grants accept models of an active platform catalog only' USING ERRCODE = '23514'; END IF; "
             "SELECT coalesce(jsonb_typeof(m.capabilities) = 'array' AND m.capabilities ? NEW.capability, false) "
@@ -296,13 +351,14 @@ def upgrade():
         "model_type names a capability outside the stored vocabulary",
         f"SELECT count(*) FROM {s}.llm_models m CROSS JOIN LATERAL "
         f"unnest(string_to_array(m.model_type, ',')) AS t WHERE btrim(t) <> '' AND btrim(t) NOT IN "
-        f"{_CAPABILITY_VALUES}",
+        "('text', 'image', 'video', 'embedding', 'audio', 'decision')",
     )
     connection.execute(
         sa.text(
             f"UPDATE {s}.llm_models SET capabilities = "
             f"{BACKFILLED_CAPABILITIES.format(a='capabilities', t='model_type')} "
-            f"WHERE capabilities IS NULL"
+            f"WHERE capabilities IS NULL AND NOT EXISTS (SELECT 1 FROM "
+            f"unnest(string_to_array(llm_models.model_type, ',')) AS t WHERE btrim(t) = 'decision')"
         )
     )
     connection.execute(
@@ -342,6 +398,7 @@ def upgrade():
     )
     op.create_unique_constraint("uq_llm_provider_id_catalog", "llm_providers", ["id", "catalog_id"], schema=schema)
     op.create_index("ix_llm_provider_catalog_id", "llm_providers", ["catalog_id"], schema=schema)
+    op.create_index("ix_llm_model_catalog_id", "llm_models", ["catalog_id"], schema=schema)
     op.create_foreign_key(
         "fk_llm_model_provider_catalog",
         "llm_models",
@@ -453,6 +510,14 @@ def upgrade():
             )
         )
 
+    for guard_trigger, guard_table, guard_function in GUARD_DELETE_TRIGGERS:
+        op.execute(
+            sa.text(
+                f"CREATE TRIGGER {guard_trigger} BEFORE DELETE ON {s}.{guard_table} "
+                f"FOR EACH ROW EXECUTE FUNCTION {s}.{guard_function}()"
+            )
+        )
+
     # Staged retirement: the new guards exist and every retained owner is a
     # projection of its catalog, then the owner-only constraints yield. The
     # composite model FK goes first (it owns the old provider unique and pins the
@@ -514,9 +579,8 @@ def downgrade():
     op.drop_index("ix_llm_provider_catalog_id", table_name="llm_providers", schema=schema)
     op.alter_column("llm_models", "owner_user_id", existing_type=sa.Integer, nullable=False, schema=schema)
     op.alter_column("llm_providers", "owner_user_id", existing_type=sa.Integer, nullable=False, schema=schema)
-    # After the widening: a `SET NOT NULL` scans and may rebuild these indexes.
-    op.create_index("ix_llm_providers_owner_user_id", "llm_providers", ["owner_user_id"], schema=schema)
-    op.create_index("ix_llm_models_owner_user_id", "llm_models", ["owner_user_id"], schema=schema)
+    # Compatibility owner indexes were never dropped by upgrade.
+    op.drop_index("ix_llm_model_catalog_id", table_name="llm_models", schema=schema)
     op.create_unique_constraint("uq_llm_provider_id_owner", "llm_providers", ["id", "owner_user_id"], schema=schema)
     op.create_unique_constraint("uq_llm_provider_owner_uid", "llm_providers", ["owner_user_id", "uid"], schema=schema)
     op.create_foreign_key(
@@ -530,7 +594,7 @@ def downgrade():
         ondelete="CASCADE",
     )
 
-    for guard_trigger, guard_table, _guard_function in GUARD_TRIGGERS:
+    for guard_trigger, guard_table, _guard_function in (*GUARD_TRIGGERS, *GUARD_DELETE_TRIGGERS):
         op.execute(sa.text(f"DROP TRIGGER IF EXISTS {guard_trigger} ON {s}.{guard_table}"))
     for guard_name, _guard_body in GUARD_FUNCTIONS:
         op.execute(sa.text(f"DROP FUNCTION IF EXISTS {s}.{guard_name}()"))

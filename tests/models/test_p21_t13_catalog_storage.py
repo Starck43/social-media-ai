@@ -10,6 +10,9 @@ defaults and hybrid behaviour are pure source artefacts.
 
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+
 import pytest
 
 from app.models import LLMCatalog, LLMModel, LLMProvider, PlanModelGrant
@@ -96,6 +99,9 @@ def test_capability_vocabulary_matches_the_plan_limits_set():
 
 def test_legacy_csv_read_falls_back_when_nothing_is_stored():
     model = LLMModel(name="legacy", model_id="legacy", model_type="text,image")
+    # Hydrated legacy NULLs bypass assignment validators; reproduce that state.
+    model._capabilities_column = None
+    assert model._capabilities_column is None
     assert model.capabilities == ["text", "image"]
     assert model.can_handle("image") is True
     assert model.can_handle("audio") is False
@@ -136,3 +142,67 @@ def test_pricing_state_keeps_the_storage_vocabulary():
     assert LLMModel.__table__.c.pricing_state.nullable is True
     assert LLMModel.__table__.c.input_price.nullable is True
     assert LLMModel.__table__.c.output_price.nullable is True
+
+
+def test_legacy_csv_only_edits_update_the_persisted_projection():
+    model = LLMModel(name="legacy", model_id="legacy", model_type="text,image")
+    model.model_type = "video"
+    assert model.capabilities == ["video"]
+    assert model._capabilities_column == ["video"]
+
+
+def test_legacy_decision_stays_readable_without_becoming_a_managed_capability():
+    model = LLMModel(name="legacy", model_id="legacy", model_type="text,decision")
+    assert model.capabilities == ["text", "decision"]
+    assert model._capabilities_column is None
+    assert LLMModel.__table__.c.capabilities.type.none_as_null is True
+    with pytest.raises(ValueError):
+        model.capabilities = ["text", "decision"]
+
+
+def test_server_generated_catalog_is_fetched_after_a_legacy_insert():
+    for model in (LLMProvider, LLMModel):
+        column = model.__table__.c.catalog_id
+        assert column.nullable is False
+        assert column.server_default is not None
+    assert LLMModel.capabilities.__clause_element__().name == "capabilities"
+
+
+def _migration():
+    path = Path(__file__).resolve().parents[2] / "migrations/versions/p21t13_catalog_storage.py"
+    spec = importlib.util.spec_from_file_location("_p21_t13_storage_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_task_guard_bodies_match_bootstrap_without_the_unrelated_0154_parser():
+    from scripts.schema_guards import GUARD_FUNCTIONS, GUARD_TRIGGERS
+
+    migration = _migration()
+    for name, body in migration.GUARD_FUNCTIONS:
+        assert " ".join(body.split()) == " ".join(GUARD_FUNCTIONS[name].split()), name
+    for name, table, function in (*migration.GUARD_TRIGGERS, *migration.GUARD_DELETE_TRIGGERS):
+        actual = next(guard for guard in GUARD_TRIGGERS if (guard.name, guard.table) == (name, table))
+        assert actual.function == function
+        assert actual.events == (("DELETE",) if "retirement" in name else ("INSERT", "UPDATE"))
+
+
+def test_compatibility_custody_does_not_infer_platform_or_rehome_updates():
+    body = dict(_migration().GUARD_FUNCTIONS)["guard_llm_catalog_custody"]
+    assert "TG_OP = 'INSERT' AND NEW.catalog_id IS NULL" in body
+    assert "IF NEW.owner_user_id IS NULL THEN RAISE EXCEPTION" in body
+    assert "ON CONFLICT (owner_user_id) WHERE kind = 'personal' DO NOTHING" in body
+    assert "NEW.catalog_id IS DISTINCT FROM OLD.catalog_id" in body
+    assert "NEW.catalog_id := parent_catalog" in body
+    assert "parent_owner IS DISTINCT FROM NEW.owner_user_id" in body
+
+
+def test_downgrade_keeps_unchanged_owner_indexes_and_drops_every_added_guard():
+    import inspect
+
+    source = inspect.getsource(_migration().downgrade)
+    assert 'op.create_index("ix_llm_providers_owner_user_id"' not in source
+    assert 'op.create_index("ix_llm_models_owner_user_id"' not in source
+    assert "*GUARD_DELETE_TRIGGERS" in source
+    assert 'op.drop_index("ix_llm_model_catalog_id"' in source

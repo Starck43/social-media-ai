@@ -171,7 +171,7 @@ def service_fixture(
         yield session
 
     service._sessions._get_owned_session = owned_session
-    service._hosts.require_approved = AsyncMock(return_value="erp.example.com")
+    service._hosts.require_approved_for_read = AsyncMock(return_value="erp.example.com")
     monkeypatch.setattr(query_mod, "_authorize", AsyncMock())
 
     # This transport/cache fixture already replaces DB authorization. Keep the

@@ -10,7 +10,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-assert os.environ.get("DB_SCHEMA") == "p17_t05_validation"
+assert os.environ.get("DB_TEST_SCHEMA") == "p17_t05_validation"
+# Unlike pytest, this bounded migration command has no root-conftest redirect.
+# Reuse the parent-validated test target, never its canonical working schema.
+os.environ.update(POSTGRES_URL=os.environ["TEST_POSTGRES_URL"], DB_SCHEMA="p17_t05_validation")
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import delete, select, text

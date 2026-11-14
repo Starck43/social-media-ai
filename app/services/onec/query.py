@@ -1013,7 +1013,7 @@ class OneCReadQueryService:
             if endpoint.interface != "odata_standard":
                 raise OneCQueryError("unsupported_interface")
 
-            await self._hosts.require_approved(
+            await self._hosts.require_approved_for_read(
                 session=session, tenant_id=tenant_id, actor_id=actor_id, host=endpoint.host
             )
             secret = await session.get(WorkspaceConnectionSecret, connection_id)

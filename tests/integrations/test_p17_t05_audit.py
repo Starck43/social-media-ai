@@ -3,7 +3,7 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, create_autospec
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -133,6 +133,31 @@ async def test_missing_audit_grant_does_not_read(monkeypatch, export):
         await policy.OneCAuditView().read(tenant_id=7, actor_id=12, export=export)
     listing.assert_not_awaited()
     recording.assert_not_awaited()
+
+
+@pytest.mark.parametrize("window", ["default", "upper", "explicit"])
+async def test_service_supplies_bounded_window_to_real_manager_signature(monkeypatch, window):
+    @asynccontextmanager
+    async def owned():
+        yield object()
+
+    listing = create_autospec(ActionAuditEvent.objects.list_events, return_value=[])
+    monkeypatch.setattr(policy, "authorize_capability", AsyncMock(return_value="admin"))
+    monkeypatch.setattr(ActionAuditEvent.objects, "_get_owned_session", owned)
+    monkeypatch.setattr(ActionAuditEvent.objects, "list_events", listing)
+    before = datetime.now(timezone.utc)
+    upper = before - timedelta(days=2)
+    lower = upper - timedelta(days=7)
+    supplied = {} if window == "default" else {"until": upper}
+    if window == "explicit":
+        supplied["since"] = lower
+    assert await policy.OneCAuditView().read(tenant_id=7, actor_id=12, **supplied) == []
+    filters = listing.call_args.kwargs
+    if window == "default":
+        assert before <= filters["until"] <= datetime.now(timezone.utc)
+    else:
+        assert filters["until"] == upper
+    assert filters["since"] == (lower if window == "explicit" else filters["until"] - timedelta(days=30))
 
 
 def test_migration_checks_match_live_registry():

@@ -100,7 +100,7 @@ def service_fixture(monkeypatch, *, clock=None, metadata_cache=None, query_cache
         yield session
 
     service._sessions._get_owned_session = owned_session
-    service._hosts.require_approved = AsyncMock(return_value="erp.example.com")
+    service._hosts.require_approved_for_read = AsyncMock(return_value="erp.example.com")
     monkeypatch.setattr(query_mod, "_authorize", AsyncMock())
     # DB-free fixture: the P17-T05 capability authority is replaced with an
     # allowing double (the real gate is covered by test_p17_t05_service_gates.py)

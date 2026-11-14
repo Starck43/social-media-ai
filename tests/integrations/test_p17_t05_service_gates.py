@@ -195,7 +195,7 @@ def read_service(monkeypatch, *, gate: Gate, row=None, session=None) -> OneCRead
         yield session
 
     service._sessions._get_owned_session = owned_session
-    service._hosts.require_approved = AsyncMock(return_value="erp.example.com")
+    service._hosts.require_approved_for_read = AsyncMock(return_value="erp.example.com")
     monkeypatch.setattr(query_mod, "_authorize", AsyncMock())
     return service
 
@@ -223,6 +223,9 @@ async def test_read_loader_authorizes_onec_query_and_intersects_role_before_secr
     assert gate.trail[1] == ("role_allowlist", "analyst")
     assert gate.trail.index(("credentials",)) > gate.trail.index(("role_allowlist", "analyst"))
     assert context.allowed_entity_sets == frozenset({"Catalog_Номенклатура"})
+    service._hosts.require_approved_for_read.assert_awaited_once_with(
+        session=gate.calls[0]["session"], tenant_id=TENANT_ID, actor_id=ACTOR_ID, host="erp.example.com"
+    )
 
 
 async def test_read_loader_absent_role_map_keeps_connection_allowlist(monkeypatch):

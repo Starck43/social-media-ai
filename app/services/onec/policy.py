@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from datetime import datetime, timedelta, timezone
 
 from app.core.access_catalog import workspace_grants
 from app.core.permissions import get_current_user, member_decision
@@ -140,6 +141,10 @@ class OneCAuditView:
             if ("actionauditevent", action) not in workspace_grants(role):
                 log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=capability)
                 raise ConnectionDenied()
+            # Direct service callers use the same bounded default as the web
+            # projection. Explicit windows still pass through manager validation.
+            filters.setdefault("until", datetime.now(timezone.utc))
+            filters.setdefault("since", filters["until"] - timedelta(days=30))
             events = await ActionAuditEvent.objects.list_events(
                 session=session, onec_only=True, actor_id=event_actor_id, **filters
             )

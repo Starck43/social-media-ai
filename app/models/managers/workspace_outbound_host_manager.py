@@ -95,6 +95,16 @@ class WorkspaceOutboundHostManager:
         """Authorize this actor and lock one exact approval for the caller's transaction."""
         normalized = validate_host(host)
         await _authorize(session, tenant_id, actor_id, write=True)
+        return await self._lock_approval(session, tenant_id, normalized)
+
+    async def require_approved_for_read(self, *, session, tenant_id, actor_id, host):
+        """Use an existing approval for source reads, never approve or edit a host."""
+        normalized = validate_host(host)
+        await _authorize(session, tenant_id, actor_id, require_source_view=True)
+        return await self._lock_approval(session, tenant_id, normalized)
+
+    @staticmethod
+    async def _lock_approval(session, tenant_id, normalized):
         row = (
             await session.execute(
                 select(WorkspaceOutboundHost.id)

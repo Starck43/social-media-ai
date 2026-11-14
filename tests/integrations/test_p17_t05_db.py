@@ -647,6 +647,21 @@ async def test_refused_identity_reads_and_writes_never_reach_the_provider(
 ):
     """A missing/deactivated identity is refused, logged, and costs no provider call."""
     tenant_id = onec_connections.primary.id
+    transmitted = provider_transport(monkeypatch)
+    read, commands = read_service(), OneCCommandService(ledger=BusinessCommandLedger())
+    # Seed a real preview while the workspace is active. A nonexistent command
+    # answers command_not_found before the capability gate and proves no refusal.
+    with tenant_scope(tenant_id), permission_scope(onec_connections.owner):
+        preview = await commands.preview_command(
+            tenant_id=tenant_id,
+            actor_id=onec_connections.owner.id,
+            connection_id=onec_connections.write,
+            request=write_request(f"identity-seed-{case}"),
+            catalog=CATALOG,
+        )
+    assert len(transmitted.calls) == 1 and transmitted.writes == []
+    transmitted.calls.clear()
+    caplog.clear()
     user = {
         "missing_account": None,
         "deactivated_account": onec_world.inactive_account,
@@ -667,8 +682,6 @@ async def test_refused_identity_reads_and_writes_never_reach_the_provider(
             (await session.get(Tenant, tenant_id)).is_active = False
     elif case == "unresolved_role":
         await change_membership(user.id, role=None)
-    transmitted = provider_transport(monkeypatch)
-    read, commands = read_service(), OneCCommandService(ledger=BusinessCommandLedger())
     scope = {"tenant_id": tenant_id, "actor_id": user.id}
     try:
         with tenant_scope(tenant_id), permission_scope(user):
@@ -690,9 +703,11 @@ async def test_refused_identity_reads_and_writes_never_reach_the_provider(
                     catalog=CATALOG,
                 )
             with pytest.raises(ConnectionDenied):
-                await commands.approve_command(**scope, command_id=1, expected_payload_hash="sha256:" + "0" * 64)
+                await commands.approve_command(
+                    **scope, command_id=preview.id, expected_payload_hash=preview.payload_hash
+                )
             with pytest.raises(ConnectionDenied):
-                await commands.execute_command(**scope, command_id=1)
+                await commands.execute_command(**scope, command_id=preview.id)
     finally:
         if case == "deactivated_account":
             await change_account(user.id, is_active=True)
@@ -702,6 +717,8 @@ async def test_refused_identity_reads_and_writes_never_reach_the_provider(
         elif case == "unresolved_role":
             await change_membership(user.id, role="owner")
     assert transmitted.calls == []
+    async with async_session_maker() as session:
+        assert (await session.get(BusinessCommand, preview.id)).state == "previewed"
     for action in CAPABILITIES:
         assert _denial_lines(caplog, action=action, tenant_id=tenant_id, actor_id=user.id)
     assert await count_events(tenant_id, action="onec.command_approve") == 0
@@ -804,6 +821,8 @@ async def test_revoked_and_changed_role_is_reread_before_execution(onec_world, o
             await authorize_capability(tenant_id=tenant_id, actor_id=user.id, capability="onec.command.approve")
             == "owner"
         )
+        assert len(transmitted.calls) == 1 and transmitted.writes == []
+        transmitted.calls.clear()
         await change_membership(user.id, role="analyst")
         try:
             with pytest.raises(ConnectionDenied):
@@ -1043,6 +1062,8 @@ async def test_map_change_after_preview_is_enforced_at_execution(onec_world, one
             await commands.approve_command(
                 tenant_id=tenant_id, actor_id=user.id, command_id=preview.id, expected_payload_hash=preview.payload_hash
             )
+            assert len(transmitted.calls) == 1 and transmitted.writes == []
+            transmitted.calls.clear()
             # 1. The entity set leaves the role intersection after approval.
             await _set_role_map(onec_connections.write, {"owner": [OTHER_WRITE_SET]})
             assert await count_events(tenant_id, action="onec.command_execute") == 0
@@ -1051,6 +1072,7 @@ async def test_map_change_after_preview_is_enforced_at_execution(onec_world, one
                 await commands.execute_command(tenant_id=tenant_id, actor_id=user.id, command_id=preview.id)
             entity_denials = _denial_lines(caplog, action="onec.command.approve", tenant_id=tenant_id, actor_id=user.id)
             assert len(entity_denials) == 1
+            assert transmitted.calls == []
 
             # 2. The entity set stays permitted, but the field allowlist narrows.
             await _set_role_map(onec_connections.write, {"owner": [WRITE_SET]})
@@ -1067,6 +1089,8 @@ async def test_map_change_after_preview_is_enforced_at_execution(onec_world, one
                 command_id=field_preview.id,
                 expected_payload_hash=field_preview.payload_hash,
             )
+            assert len(transmitted.calls) == 1 and transmitted.writes == []
+            transmitted.calls.clear()
             async with async_session_maker() as session, session.begin():
                 row = await session.get(WorkspaceConnection, onec_connections.write)
                 row.config = {
@@ -1288,7 +1312,7 @@ async def test_combined_audit_filters_apply_in_sql_before_limit(onec_world, onec
         for filters in (
             {"connection_id": onec_connections.foreign},
             {"connection_id": onec_connections.foreign, "action": "onec.command_execute"},
-            {"actor_id": foreign_owner.id},
+            {"event_actor_id": foreign_owner.id},
         ):
             assert await OneCAuditView().read(tenant_id=tenant_a, actor_id=owner.id, **window, **filters) == []
 

@@ -144,8 +144,15 @@ with engine.connect() as lock:
             # redirects to DB_TEST_SCHEMA. Never bypass that isolation guard.
             child_env = os.environ.copy()
             child_env.update(POSTGRES_URL=working_url, DB_SCHEMA=working_schema)
+            before_run = {s: snapshot(s) for s in ["test_schema", SCHEMA]}
             result = subprocess.run(cmd, cwd=ROOT, env=child_env, check=False)
-            raise SystemExit(result.returncode)
+            after_run = {s: snapshot(s) for s in before_run}
+            problems = {s: diff(before_run[s], after_run[s]) for s in before_run}
+            if any(problems.values()):
+                print("Run inventory differences:", problems, flush=True)
+            else:
+                print("Run inventory PASS: shared and isolated schema layouts/revisions unchanged", flush=True)
+            raise SystemExit(result.returncode or int(any(problems.values())))
         else:
             if not STATE.exists():
                 raise SystemExit("Owned preparation inventory required")

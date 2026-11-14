@@ -95,7 +95,7 @@ def service_fixture(monkeypatch, *, clock=None, pinned=True, connection_id=5):
         yield session
 
     service._sessions._get_owned_session = owned_session
-    service._hosts.require_approved = AsyncMock(return_value="erp.example.com")
+    service._hosts.require_approved_for_read = AsyncMock(return_value="erp.example.com")
     monkeypatch.setattr(query_mod, "_authorize", AsyncMock())
     # This DB-free fixture already replaces connection authorization, so it also
     # replaces the P17-T05 capability authority; the real gate is covered by

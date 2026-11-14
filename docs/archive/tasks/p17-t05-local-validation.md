@@ -1,5 +1,9 @@
 # P17-T05 — deferred local validation
 
+Archived fulfilled assignment. Actual implementation, checks and acceptance:
+[P17-T05 audit](../../audit/p17/p17-t05.md). Commands and UNRUN statements below
+describe the original remote handoff/placeholder, not current schema instructions.
+
 Assignment: [task card](p17-t05.md) · Draft [PR #487](https://github.com/Starck43/social-media-ai/pull/487)
 · branch `feat/p17-t05-onec-rbac`, base `origin/dev`. These checks are **UNRUN**
 in the remote lane. The PR body names the exact pushed candidate SHA; require

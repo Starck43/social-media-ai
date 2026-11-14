@@ -58,8 +58,10 @@ def load_analyzer(schema, builder):
             AIAnalytics=NS(objects=Mock()),
             LLMModel=NS(),
             Source=NS(),
+            AnalyzedContentReceipt=NS(objects=NS(record_successes=AsyncMock())),
         ),
         "app.services.ai.attempt_journal": NS(record_analysis_attempts=AsyncMock()),
+        "app.services.ai.analysis_context": NS(analysis_fingerprint=Mock(return_value="fixture-fingerprint")),
         "app.services.ai.chain_resolver": NS(
             _normalize=lambda value: value, _token_set_ratio=Mock(), resolve_chain_async=AsyncMock()
         ),
@@ -69,6 +71,7 @@ def load_analyzer(schema, builder):
             hashes_hash=Mock(return_value="hashes"),
             item_hash=lambda item: str(item["id"]),
             filter_analyzed=AsyncMock(),
+            filter_by_context_receipts=AsyncMock(side_effect=lambda content, *_args: (content, set())),
         ),
         "app.services.ai.json_schema_builder": builder,
         "app.services.ai.scenario_schema": schema,

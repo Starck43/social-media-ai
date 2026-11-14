@@ -28,7 +28,7 @@ from app.services.ai.llm_client import AnthropicClient, CustomClient, LLMClientF
 OWNER = 7
 TENANT = 3
 PRIVATE_PROMPT = "PRIVATE-PROMPT-CUSTOMER-CONTENT"
-PRIVATE_KEY = "sk-PRIVATE-CREDENTIAL-TOKEN"
+PRIVATE_KEY = "sk-PRIVATE-CREDENTIAL-TOKEN"  # pragma: allowlist secret -- synthetic privacy sentinel
 PRIVATE_BODY = "PRIVATE-PROVIDER-BODY"
 TEXT_ONLY = {"type": "object", "properties": {"analysis": {"type": "string"}}}
 

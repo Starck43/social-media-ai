@@ -64,7 +64,7 @@ from app.services.onec.metadata import (
     parse_odata_metadata_xml,
     validate_entity_access,
 )
-from app.services.onec.policy import authorize_capability, role_entity_allowlist
+from app.services.onec.policy import authorize_capability, log_denial, role_entity_allowlist
 
 MAX_ROWS_PER_REQUEST = 1000
 DEFAULT_ROWS_PER_REQUEST = 100
@@ -999,6 +999,7 @@ class OneCReadQueryService:
                 or row.schema_version != SCHEMA_VERSION
                 or row.state != "verified"
             ):
+                log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=policy_capability)
                 raise ConnectionDenied()
 
             config = dict(row.config or {})
@@ -1127,14 +1128,19 @@ class OneCReadQueryService:
         )
 
         # Validate the plan and allowlist BEFORE checking cache or consuming provider rate budget.
-        validated = build_odata_query_target(
-            plan,
-            catalog,
-            allowed_entity_sets=allowed_sets,
-            allowed_fields_by_entity=allowed_fields,
-            expected_metadata_sha256=expected_sha256,
-            base_path=endpoint.base_path,
-        )
+        try:
+            validated = build_odata_query_target(
+                plan,
+                catalog,
+                allowed_entity_sets=allowed_sets,
+                allowed_fields_by_entity=allowed_fields,
+                expected_metadata_sha256=expected_sha256,
+                base_path=endpoint.base_path,
+            )
+        except OneCQueryError as exc:
+            if exc.code in {"entity_not_allowed", "field_not_allowed"}:
+                log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=policy_capability)
+            raise
 
         cache_key = (
             tenant_id,

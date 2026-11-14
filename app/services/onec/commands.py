@@ -91,7 +91,7 @@ from app.services.onec.metadata import (
     is_valid_identifier,
     parse_odata_metadata_xml,
 )
-from app.services.onec.policy import authorize_capability, role_entity_allowlist
+from app.services.onec.policy import authorize_capability, log_denial, role_entity_allowlist
 from app.services.onec.query import TIMEOUT_SECONDS, MonetaryValue, OneCQueryError
 
 WRITE_METHOD = "odata_write_credentials"
@@ -867,12 +867,14 @@ class OneCCommandService:
             )
         ).scalar_one_or_none()
         if row is None or not row.is_active or row.provider_id != PROVIDER or row.schema_version != SCHEMA_VERSION:
+            log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=policy_capability)
             raise ConnectionDenied()
 
         if row.auth_method == READ_ONLY_METHOD or row.auth_method != WRITE_METHOD:
             raise OneCCommandError("write_connection_required")
 
         if row.state != "verified":
+            log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=policy_capability)
             raise ConnectionDenied()
 
         config = dict(row.config or {})
@@ -1062,6 +1064,7 @@ class OneCCommandService:
         )
 
         if not allowed_sets or request.entity_set not in allowed_sets:
+            log_denial(tenant_id=tenant_id, actor_id=actor_id, capability=CAPABILITY_COMMAND_PROPOSE)
             raise OneCCommandError("entity_not_allowed")
 
         with tenant_scope(tenant_id):

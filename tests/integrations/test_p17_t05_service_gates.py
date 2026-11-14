@@ -366,7 +366,19 @@ async def test_nl_export_invalid_format_refused_before_authorization(monkeypatch
 async def test_nl_export_passes_export_capability_to_loader(monkeypatch):
     authorize = AsyncMock(return_value="admin")
     monkeypatch.setattr(nl_query_mod, "authorize_capability", authorize)
-    reader = export_stub_reader()
+    context = query_mod.OneCConnectionContext(
+        endpoint=endpoint(),
+        credentials=credentials(),
+        account_key="account-digest-01",
+        allowed_entity_sets=frozenset(_ALLOWED_SETS),
+        allowed_fields={"Catalog_Номенклатура": frozenset({"Ref_Key"})},
+        metadata_sha256=CATALOG.metadata_sha256,
+    )
+    reader = SimpleNamespace(
+        load_connection_context=AsyncMock(return_value=context),
+        fetch_metadata_catalog=AsyncMock(return_value=CATALOG),
+        execute_query=AsyncMock(return_value=object()),
+    )
     monkeypatch.setattr(
         nl_query_mod,
         "plan_from_json",
@@ -631,3 +643,56 @@ def test_gate_error_codes_never_echo_provider_text():
     assert OneCCommandError("write_connection_required").code == "write_connection_required"
     assert OneCQueryError("entity_not_allowed").code == "entity_not_allowed"
     assert str(ConnectionDenied()) == "connection_unavailable"
+
+
+@pytest.mark.parametrize("role", ["owner", "admin"])
+async def test_read_account_scope_denial_is_logged_without_opening_credentials(monkeypatch, caplog, role):
+    gate = Gate(monkeypatch, query_mod, role=role)
+    service = read_service(monkeypatch, gate=gate, session=RecordingSession(None))
+    with pytest.raises(ConnectionDenied):
+        await service.load_connection_context(tenant_id=TENANT_ID, actor_id=ACTOR_ID, connection_id=CONNECTION_ID)
+    assert "action=onec.query reason_code=permission_denied" in caplog.text
+    assert gate.credentials_opened == 0
+
+
+@pytest.mark.parametrize("role", ["owner", "admin"])
+async def test_write_account_scope_denial_is_logged_without_opening_credentials(monkeypatch, caplog, role):
+    gate = Gate(monkeypatch, commands_mod, role=role)
+    session = RecordingSession(None)
+    service = command_service(monkeypatch, gate=gate, session=session)
+    with pytest.raises(ConnectionDenied):
+        await service._load_authorized_write_connection(
+            session=session,
+            tenant_id=TENANT_ID,
+            actor_id=ACTOR_ID,
+            connection_id=CONNECTION_ID,
+            capability=commands_mod.CAPABILITY_DOCUMENT_CREATE,
+        )
+    assert "action=onec.command.propose reason_code=permission_denied" in caplog.text
+    assert gate.credentials_opened == 0
+
+
+async def test_entity_scope_denial_is_logged_before_transport(monkeypatch, caplog):
+    gate = Gate(monkeypatch, query_mod, role="analyst")
+    config = {
+        "host": "erp.example.com",
+        "port": 443,
+        "base_path": "/base",
+        "interface": "odata_standard",
+        "allowed_entity_sets": list(_ALLOWED_SETS),
+        "allowed_entity_sets_by_role": {"analyst": []},
+    }
+    service = read_service(monkeypatch, gate=gate, row=connection_row(config=config))
+    transport = AsyncMock()
+    monkeypatch.setattr(query_mod, "fetch_odata_bytes", transport)
+    with pytest.raises(OneCQueryError, match="entity_not_allowed"):
+        await service.execute_query(
+            tenant_id=TENANT_ID,
+            actor_id=ACTOR_ID,
+            connection_id=CONNECTION_ID,
+            plan=query_mod.OneCQueryPlan(entity_set="Catalog_Номенклатура", select_fields=("Ref_Key",)),
+            catalog=CATALOG,
+        )
+    assert "action=onec.query reason_code=permission_denied" in caplog.text
+    transport.assert_not_awaited()
+    assert service.list_history_metadata(tenant_id=TENANT_ID) == ()

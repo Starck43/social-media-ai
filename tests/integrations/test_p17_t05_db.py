@@ -178,7 +178,14 @@ class ProviderTransport:
 def provider_transport(monkeypatch: pytest.MonkeyPatch, entities: Mapping[str, tuple[str, ...]] | None = None):
     """Patch both provider seams immediately with one recording double."""
     double = ProviderTransport(entities)
-    monkeypatch.setattr(query_mod, "fetch_odata_bytes", double)
+
+    async def fetch(endpoint, target_path, login, password, **kwargs):
+        # The read seam accepts positional target/credentials; the write seam
+        # uses an explicit keyword method. Keep one recorder without conflating
+        # their distinct HTTP contracts.
+        return await double(endpoint, method=b"GET", target_path=target_path, **kwargs)
+
+    monkeypatch.setattr(query_mod, "fetch_odata_bytes", fetch)
     monkeypatch.setattr(commands_mod, "send_odata_command_request", double)
     return double
 
@@ -1200,7 +1207,7 @@ async def test_reconcile_of_a_revoked_entity_preserves_unknown_and_writes_no_eve
     assert await count_events(tenant_id, action="onec.command_execute", outcome="succeeded") == 0
 
 
-def test_absent_role_map_preserves_the_connection_allowlist():
+async def test_absent_role_map_preserves_the_connection_allowlist():
     """The accepted connection-level list survives an omitted map; provided maps only narrow."""
     allowlist = {"allowed_entity_sets": [ITEM_SET, OTHER_SET], "allowed_fields": {ITEM_SET: ["Ref_Key"]}}
     assert role_entity_allowlist(allowlist, "viewer") == frozenset({ITEM_SET, OTHER_SET})

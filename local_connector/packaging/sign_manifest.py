@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
-
 from updates import MAX_ARTIFACT_BYTES, PLATFORMS, _version, verify_manifest
 
 

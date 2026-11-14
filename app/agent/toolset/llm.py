@@ -180,8 +180,12 @@ async def llm_model_test(model_id: int, prompt: str = "Привет! Расск�
         client = LLMClientFactory.create(model)
         try:
             response = await client.chat([{"role": "user", "content": prompt}], max_tokens=200)
-        except Exception:
-            await journal_chat_attempt(client, "model_test", None)
+        except Exception as error:
+            from app.services.ai.dispatch_seam import DispatchDenial
+
+            if isinstance(error, DispatchDenial):
+                raise
+            await journal_chat_attempt(client, "model_test", None, dispatch_id=getattr(error, "dispatch_id", None))
             raise
         await journal_chat_attempt(client, "model_test", response)
         content = response.get("content") or ""
@@ -382,8 +386,7 @@ async def llm_model_update(
         updates["custom_endpoint_path"] = custom_endpoint_path
     try:
         if any(
-            value is None
-            for value in (input_cost_per_1k, output_cost_per_1k, input_cost_per_1m, output_cost_per_1m)
+            value is None for value in (input_cost_per_1k, output_cost_per_1k, input_cost_per_1m, output_cost_per_1m)
         ):
             return {"error": "update_failed", "message": "Ordinary prices cannot be null; omit to preserve them"}
         raw_input = _raw_price(input_cost_per_1k, input_cost_per_1m, target_unit)

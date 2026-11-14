@@ -10,7 +10,7 @@
 2. ~~P20-T02 — social triage, the shared attention-item contract and a morning brief.~~ **DONE 2026-11-12**, accepted source `fe68a25da530d9d86818b90a053a7973936f4cbc`, merge `ccd85a4ba3efb879bafd581053bc8aeb9b00b1d5` — [audit](../audit/p20/p20-t02.md).
 3. ~~P20-T03 — one decision projection over existing approval ledgers.~~ **DONE 2026-11-10**, accepted source `a8afa2eb3a577b24eb803155af3d63681776f343`, merge `a53e1741c2c83d6db7e4efa40becbb85c6c323d0` — [audit](../audit/p20/p20-t03.md).
 4. P20-T04 — bounded specialist delegation for research. **DONE 2026-11-11** — [../audit/p20-t04.md](../audit/p20/p20-t04.md).
-5. [P20-T05](../tasks/p20-t05.md) — review-gated isolated browser pilot, only after T12 shows a measured gap.
+5. [P20-T05](../tasks/p20-t05.md) — review-gated isolated browser pilot, only after T12 shows a measured gap · **DEFERRED 2026-11-14** (owner): T12 named no such source and the Chromium fallback is disabled.
 6. ~~P20-T06 — navigation regrouping and mobile entry points.~~ **DONE 2026-11-07**, accepted source `aa9f4e87`, merge `efcbc8b9` (+ regression fix `e4fe0a33`) — [audit](../audit/p20/p20-t06.md).
 7. ~~P20-T07 — «Сегодня» home as a read-time projection.~~ **DONE 2026-11-08**, accepted source `76da862`, merge `bc550ac5` — [audit](../audit/p20/p20-t07.md).
 8. ~~P20-T08 — chat context panel, inline cards and chat dock.~~ **DONE 2026-11-08**, accepted source `cc121ba`, merge `b86d5b45` — [audit](../audit/p20/p20-t08.md).

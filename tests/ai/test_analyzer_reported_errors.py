@@ -356,6 +356,9 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
             BotAction=SimpleNamespace(objects=Mock()),
         )
         self.trigger_evaluator = SimpleNamespace(should_analyze=AsyncMock(side_effect=lambda content, task: content))
+        # This fixture tests staged diagnostic propagation, not tariff storage.
+        # Admission remains an explicit observed boundary with no database.
+        self.entitlements = SimpleNamespace(admit_execution=AsyncMock())
         self.module = load_isolated_source(
             "_staged_analyzer_signal",
             ROOT / "app/jobs/handlers.py",
@@ -364,6 +367,13 @@ class StagedSignalTests(unittest.IsolatedAsyncioTestCase):
                     AuthorizationRequired=type("Auth", (Exception,), {})
                 ),
                 "app.models": self.models,
+                "app.models.managers.entitlement_manager": SimpleNamespace(
+                    EntitlementManager=lambda: self.entitlements
+                ),
+                "app.services.collection.entitlements": SimpleNamespace(
+                    intent_capabilities=lambda *_args, **_kwargs: frozenset(),
+                    source_capabilities=lambda _sources: frozenset({"analysis.text"}),
+                ),
                 "app.models.managers.agent_task_manager": SimpleNamespace(
                     AgentTaskManager=lambda: SimpleNamespace(
                         # A taskless run with no owning-task scenario falls through to the

@@ -69,3 +69,6 @@ backups/
 
 # Private last-successful image digest for VPS operator commands.
 .deployed-image.*
+
+# Owner private working plan (local only, never commit)
+/tasks_plan.md

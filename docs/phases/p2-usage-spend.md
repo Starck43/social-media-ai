@@ -28,21 +28,41 @@
 
 ## Remaining allowance activation gates
 
-Increment A acceptance does not answer or authorize these owner choices:
+**Resolved 2026-11-14 by the owner.** The four gates below are answered; the
+answers are the operational policy for P21-T15/T16, and a consumer that still
+treats them as open is stale. Counting/period/package choices were commercial and
+security decisions, so they are recorded here rather than inferred from code.
 
-- Token unit/counting: input/output/cached/reasoning/tool/multimodal usage, including
-  failed or partially charged attempts; no conversion from USD/capability counts.
-- Period boundary/reset/rollover and expiry/proration: UTC calendar vs paid rolling
-  period; plan change must not silently reset an active shared pool.
-- Finite package sizes, zero/unlimited packaging and overage: fail closed until
-  explicitly configured; no guessed commercial quantities or paid-on-top behavior.
-- BYOK applicability and host-sponsored invitee consent: token allowance, USD payer
-  consent and credential custody remain distinct.
+- **Token unit/counting — all provider-reported billable usage.** One unit: prompt
+  input including the cache read and cache write buckets as reported, completion
+  output, reasoning and media tokens when the provider reports them. A failed or
+  partially charged attempt counts the usage the provider reports for it. When no
+  usage is reported, the reserved worst-case ceiling is charged and only
+  provider-reported usage for that same attempt may correct it — never a silent
+  free call and never a conversion from USD or capability counts.
+- **Period — anchored rolling 30-day cycles per holder.** The first consumption
+  starts the cycle; it ends 30 days after that instant; the next consumption after
+  expiry starts the next cycle. No accumulation, no rollover, no proration. A plan
+  change applies the new limit to the already consumed total of the active cycle
+  and never resets it. A reservation binds the cycle snapshot taken at admission,
+  so an attempt admitted in one cycle settles against that cycle.
+- **Packages and overage — finite, hard stop.** Starter 1 000 000 tokens, Pro
+  10 000 000, Business explicitly unlimited (`token_limit = NULL`; a missing
+  policy or row denies). Exhausting the allowance denies new token-governed
+  dispatch until the cycle rolls; there is no paid top-up and no automatic
+  downgrade to a cheaper model. Paid overage needs checkout and a billing cycle
+  that do not exist, so it remains a separate, unregistered commercial decision.
+- **BYOK and delegated use — distinct.** Managed (platform-credential) dispatch
+  and host-sponsored invitee dispatch consume the holder's pool. Personal BYOK
+  dispatch is recorded as attribution and does not consume it, because it meters
+  the holder's own provider cost. Token allowance, USD payer consent and
+  credential custody stay separate facts; consenting to a payer is not consenting
+  to a credential.
 
-P21-T13/T15/T16 consume the accepted holder/definition interface, but activation
-must resolve these gates and complete separately reviewed dispatch/ledger controls.
-AI-path consumer increment B, rollout/signup provisioning and public apply need
-their own scoped assignment/authorization; they are not a reopened P2-T17 card.
+Activation still requires the separately reviewed dispatch/ledger controls of
+P21-T15/T16 and an explicit cutover choice. AI-path consumer increment B,
+rollout/signup provisioning and public apply keep their own scoped
+assignment/authorization; they are not a reopened P2-T17 card.
 
 **Deferred:** [P2-T08](../tasks/p2-t08.md) — corporate/shared billing accounts;
 keep the owner's prior deferral. Service-plan entitlements and checkout in T15/T16

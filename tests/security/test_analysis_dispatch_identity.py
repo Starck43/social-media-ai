@@ -16,6 +16,7 @@ import json
 import socket
 import sys
 import unittest
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from datetime import date
 from decimal import Decimal
@@ -73,6 +74,9 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
             imports={
                 "app.core.personal_catalog_context": self.catalog,
                 "app.core.tenant_context": tenant_context,
+                "app.services.ai.credential_boundary": load_isolated_source(
+                    "_dispatch_credential_boundary", ROOT / "app/services/ai/credential_boundary.py"
+                ),
                 "app.models": SimpleNamespace(
                     LLMModel=Model,
                     User=SimpleNamespace(
@@ -107,13 +111,40 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
                     request=httpx.Request("POST", url),
                 )
 
+        @asynccontextmanager
+        async def fake_provider_client():
+            yield Transport()
+
+        egress = load_isolated_source(
+            "_dispatch_provider_egress",
+            ROOT / "app/services/ai/provider_egress.py",
+            imports={
+                "app.core.outbound": SimpleNamespace(
+                    acquire_outbound_target=Mock(side_effect=AssertionError("No network")), registry_scope=Mock()
+                )
+            },
+        )
+        egress.provider_http_client = fake_provider_client
+        settings = SimpleNamespace(
+            LLM_DEFAULT_TIMEOUT=60.0, PERSONAL_BILLING_ENABLED=False, LLM_DISPATCH_SEAM_ENABLED=False
+        )
+        dispatch_seam = load_isolated_source(
+            "_dispatch_seam",
+            ROOT / "app/services/ai/dispatch_seam.py",
+            imports={
+                "app.core.config": SimpleNamespace(settings=settings),
+                "app.core.personal_catalog_context": self.catalog,
+                "app.core.tenant_context": tenant_context,
+            },
+        )
+
         self.module = load_isolated_source(
             "_analysis_dispatch_clients",
             ROOT / "app/services/ai/llm_client.py",
             imports={
-                "app.core.config": SimpleNamespace(
-                    settings=SimpleNamespace(LLM_DEFAULT_TIMEOUT=60.0, PERSONAL_BILLING_ENABLED=False)
-                ),
+                "app.core.config": SimpleNamespace(settings=settings),
+                "app.services.ai": SimpleNamespace(dispatch_seam=dispatch_seam),
+                "app.services.ai.provider_egress": egress,
                 "app.models": SimpleNamespace(LLMModel=Model),
                 "app.core.personal_catalog_context": self.catalog,
                 "app.services.ai.personal_dispatch": self.dispatch,
@@ -154,6 +185,8 @@ class AnalysisDispatchIdentityTests(unittest.IsolatedAsyncioTestCase):
 
     def client(self, name):
         provider = SimpleNamespace(
+            id=4,
+            credential_version=1,
             name="Synthetic",
             owner_user_id=7,
             is_active=True,

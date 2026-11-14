@@ -402,7 +402,7 @@ async def onec_connections(onec_world, monkeypatch: pytest.MonkeyPatch):
     connections = OneCConnectionService()
     primary, secondary = onec_world.primary, onec_world.secondary
     owner, foreign_owner = onec_world.owner, onec_world.foreign_owner
-    created: dict[str, tuple[int, int, int]] = {}
+    created: dict[str, Any] = {"approvals": []}
     try:
         for tenant, user, key, method in (
             (primary, owner, "read", READ_METHOD),
@@ -410,7 +410,10 @@ async def onec_connections(onec_world, monkeypatch: pytest.MonkeyPatch):
             (secondary, foreign_owner, "foreign", WRITE_METHOD),
         ):
             with tenant_scope(tenant.id), permission_scope(user):
-                approval = await hosts.approve(tenant_id=tenant.id, actor_id=user.id, host=HOST)
+                # Host approval is unique per workspace, not per connection.
+                if not any(tid == tenant.id for tid, _actor, _host in created["approvals"]):
+                    approval = await hosts.approve(tenant_id=tenant.id, actor_id=user.id, host=HOST)
+                    created["approvals"].append((tenant.id, user.id, int(approval["id"])))
                 record = await connections.create(
                     tenant_id=tenant.id,
                     actor_id=user.id,
@@ -422,8 +425,6 @@ async def onec_connections(onec_world, monkeypatch: pytest.MonkeyPatch):
                     auth_method=method,
                 )
             created[key] = (tenant.id, user.id, int(record["id"]))
-            approval_ids = created.setdefault("approvals", [])
-            approval_ids.append((tenant.id, user.id, int(approval["id"])))
     except BaseException:
         await _remove_owned_connections(connections, hosts, created)
         raise
@@ -631,7 +632,15 @@ async def test_capability_is_bound_to_workspace_and_request_actor(onec_world):
 
 
 @pytest.mark.parametrize(
-    "case", ["deactivated_account", "inactive_membership", "missing_membership", "unresolved_role"]
+    "case",
+    [
+        "missing_account",
+        "deactivated_account",
+        "deactivated_tenant",
+        "inactive_membership",
+        "missing_membership",
+        "unresolved_role",
+    ],
 )
 async def test_refused_identity_reads_and_writes_never_reach_the_provider(
     onec_world, onec_connections, monkeypatch, caplog, case
@@ -639,13 +648,23 @@ async def test_refused_identity_reads_and_writes_never_reach_the_provider(
     """A missing/deactivated identity is refused, logged, and costs no provider call."""
     tenant_id = onec_connections.primary.id
     user = {
+        "missing_account": None,
         "deactivated_account": onec_world.inactive_account,
+        "deactivated_tenant": onec_world.owner,
         "inactive_membership": onec_world.revoked_member,
         "missing_membership": onec_world.foreign_owner,
         "unresolved_role": onec_world.stale_grant,
     }[case]
-    if case == "deactivated_account":
+    if case == "missing_account":
+        async with async_session_maker() as session:
+            missing_id = int(await session.scalar(select(func.max(User.id)))) + 1
+            assert await session.get(User, missing_id) is None
+        user = SimpleNamespace(id=missing_id, is_active=True)
+    elif case == "deactivated_account":
         await change_account(user.id, is_active=False)
+    elif case == "deactivated_tenant":
+        async with async_session_maker() as session, session.begin():
+            (await session.get(Tenant, tenant_id)).is_active = False
     elif case == "unresolved_role":
         await change_membership(user.id, role=None)
     transmitted = provider_transport(monkeypatch)
@@ -677,10 +696,14 @@ async def test_refused_identity_reads_and_writes_never_reach_the_provider(
     finally:
         if case == "deactivated_account":
             await change_account(user.id, is_active=True)
+        elif case == "deactivated_tenant":
+            async with async_session_maker() as session, session.begin():
+                (await session.get(Tenant, tenant_id)).is_active = True
         elif case == "unresolved_role":
             await change_membership(user.id, role="owner")
     assert transmitted.calls == []
-    assert "reason_code=permission_denied" in caplog.text
+    for action in CAPABILITIES:
+        assert _denial_lines(caplog, action=action, tenant_id=tenant_id, actor_id=user.id)
     assert await count_events(tenant_id, action="onec.command_approve") == 0
     assert await count_events(tenant_id, action="onec.command_execute") == 0
     assert await count_events(tenant_id, action="onec.audit_export") == 0
@@ -710,6 +733,55 @@ async def test_foreign_connection_is_refused_for_a_permitted_actor(onec_connecti
                 catalog=CATALOG,
             )
     assert transmitted.calls == []
+
+
+async def test_same_workspace_connection_owner_is_rechecked(onec_world, onec_connections, monkeypatch, caplog):
+    """An admin's capability grants never supply another actor's provider account."""
+    transmitted = provider_transport(monkeypatch)
+    tenant_id = onec_connections.primary.id
+    owner, admin = onec_connections.owner, onec_world.admin
+    commands = OneCCommandService(ledger=BusinessCommandLedger())
+    with tenant_scope(tenant_id), permission_scope(owner):
+        preview = await commands.preview_command(
+            tenant_id=tenant_id,
+            actor_id=owner.id,
+            connection_id=onec_connections.write,
+            request=write_request("different-account-owner"),
+            catalog=CATALOG,
+        )
+        await commands.approve_command(
+            tenant_id=tenant_id,
+            actor_id=owner.id,
+            command_id=preview.id,
+            expected_payload_hash=preview.payload_hash,
+        )
+    transmitted.calls.clear()
+    caplog.clear()
+    with tenant_scope(tenant_id), permission_scope(admin):
+        with pytest.raises(ConnectionDenied):
+            await read_service().execute_query(
+                tenant_id=tenant_id,
+                actor_id=admin.id,
+                connection_id=onec_connections.read,
+                plan=read_plan(),
+                catalog=CATALOG,
+            )
+        with pytest.raises(ConnectionDenied):
+            await commands.preview_command(
+                tenant_id=tenant_id,
+                actor_id=admin.id,
+                connection_id=onec_connections.write,
+                request=write_request("different-account-owner-denied"),
+                catalog=CATALOG,
+            )
+        with pytest.raises(ConnectionDenied):
+            await commands.execute_command(tenant_id=tenant_id, actor_id=admin.id, command_id=preview.id)
+    assert transmitted.calls == []
+    for action in ("onec.query", "onec.command.propose", "onec.command.approve"):
+        assert _denial_lines(caplog, action=action, tenant_id=tenant_id, actor_id=admin.id)
+    async with async_session_maker() as session:
+        assert (await session.get(BusinessCommand, preview.id)).state == "approved"
+    assert await count_events(tenant_id, action="onec.command_execute") == 0
 
 
 async def test_revoked_and_changed_role_is_reread_before_execution(onec_world, onec_connections, monkeypatch):
@@ -1344,7 +1416,7 @@ async def test_empty_export_is_audited_too(onec_world, onec_connections):
     assert await count_events(tenant_id, action="onec.audit_export") == 1
 
 
-async def test_export_refusals_release_no_csv_and_record_no_success(onec_world, onec_connections):
+async def test_export_refusals_release_no_csv_and_record_no_success(onec_world, onec_connections, caplog):
     """A CSRF failure or a missing OneC/audit grant releases nothing and claims no success."""
     tenant_id = onec_connections.primary.id
     request = make_request(user=onec_connections.owner, tenant_id=tenant_id, csrf=CSRFTokenManager(uuid4().hex))
@@ -1353,8 +1425,10 @@ async def test_export_refusals_release_no_csv_and_record_no_success(onec_world, 
     assert "onec.command_execute" not in refused.body.decode("utf-8")
 
     for user in (onec_world.viewer, onec_world.manager, onec_world.analyst):
+        caplog.clear()
         unauthorised = await csv_export(user, tenant_id)
         assert unauthorised.status_code == 403
+        assert _denial_lines(caplog, action="onec.export", tenant_id=tenant_id, actor_id=user.id)
     assert await count_events(tenant_id, action="onec.audit_export") == 0
 
 

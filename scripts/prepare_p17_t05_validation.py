@@ -160,6 +160,7 @@ with engine.connect() as lock:
                 print("Cleanup inventory differences:", problems)
                 raise SystemExit(1)
             print("Cleanup PASS: task schema/owned synthetic data absent; shared schema inventory unchanged")
+            STATE.unlink()
     finally:
         lock.rollback()
         released = lock.execute(text("select pg_advisory_unlock(1370093)")).scalar_one()

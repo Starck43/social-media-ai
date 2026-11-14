@@ -117,7 +117,8 @@ async def test_projection_uses_existing_manager_and_export_audit(monkeypatch, ex
         assert recording.call_args.kwargs["session"] is session
 
 
-async def test_missing_audit_grant_does_not_read(monkeypatch):
+@pytest.mark.parametrize("export", [False, True])
+async def test_missing_audit_grant_does_not_read(monkeypatch, export):
     @asynccontextmanager
     async def owned():
         yield object()
@@ -125,10 +126,13 @@ async def test_missing_audit_grant_does_not_read(monkeypatch):
     monkeypatch.setattr(policy, "authorize_capability", AsyncMock(return_value="manager"))
     monkeypatch.setattr(ActionAuditEvent.objects, "_get_owned_session", owned)
     listing = AsyncMock()
+    recording = AsyncMock()
     monkeypatch.setattr(ActionAuditEvent.objects, "list_events", listing)
+    monkeypatch.setattr(ActionAuditEvent.objects, "record_success", recording)
     with pytest.raises(ConnectionDenied):
-        await policy.OneCAuditView().read(tenant_id=7, actor_id=12)
+        await policy.OneCAuditView().read(tenant_id=7, actor_id=12, export=export)
     listing.assert_not_awaited()
+    recording.assert_not_awaited()
 
 
 def test_migration_checks_match_live_registry():

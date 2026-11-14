@@ -75,16 +75,22 @@ def migrate(target, *, down=False):
 
 
 def reference_inventory():
-    """Compare complete catalog rows, normalizing only task-owned surrogate IDs."""
+    """Compare catalog semantics; only owned IDs/creation timestamps may change."""
     owned = "m.resource_key IN ('onec.data', 'onec.command')"
     statements = [
-        f"SELECT CASE WHEN {owned} THEN to_jsonb(m)-'id' ELSE to_jsonb(m) END " f"FROM {SCHEMA}.model_types m",
-        f"SELECT CASE WHEN {owned} THEN (to_jsonb(p)-'id'-'model_type_id') "
+        f"SELECT CASE WHEN {owned} THEN to_jsonb(m)-'id'-'created_at'-'updated_at' ELSE to_jsonb(m) END "
+        f"FROM {SCHEMA}.model_types m",
+        f"SELECT CASE WHEN {owned} THEN (to_jsonb(p)-'id'-'model_type_id'-'created_at'-'updated_at') "
         "|| jsonb_build_object('resource_key',m.resource_key) ELSE to_jsonb(p) END "
         f"FROM {SCHEMA}.permissions p JOIN {SCHEMA}.model_types m ON m.id=p.model_type_id",
         f"SELECT CASE WHEN {owned} THEN (to_jsonb(l)-'permission_id') "
         "|| jsonb_build_object('resource_key',m.resource_key,'action_type',p.action_type::text) "
         f"ELSE to_jsonb(l) END FROM {SCHEMA}.workspace_role_permission l "
+        f"JOIN {SCHEMA}.permissions p ON p.id=l.permission_id "
+        f"JOIN {SCHEMA}.model_types m ON m.id=p.model_type_id",
+        f"SELECT CASE WHEN {owned} THEN (to_jsonb(l)-'permission_id') "
+        "|| jsonb_build_object('resource_key',m.resource_key,'action_type',p.action_type::text) "
+        f"ELSE to_jsonb(l) END FROM {SCHEMA}.role_permission l "
         f"JOIN {SCHEMA}.permissions p ON p.id=l.permission_id "
         f"JOIN {SCHEMA}.model_types m ON m.id=p.model_type_id",
     ]

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "social-media-ai-local-connector"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local-only selected-folder connector development scaffold with bounded extraction and OCR"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,8 +15,16 @@ dependencies = [
     "Pillow>=10",
 ]
 
+[project.optional-dependencies]
+desktop = [
+    "cryptography>=46",
+    "keyring>=25",
+    "PySide6-Essentials>=6.8",
+    "SecretStorage>=3.3; sys_platform == 'linux'",
+]
+
 [tool.setuptools]
-packages = ["local_connector", "local_connector.extract"]
+packages = ["local_connector", "local_connector.extract", "local_connector.packaging"]
 
 [tool.setuptools.package-dir]
 local_connector = "."

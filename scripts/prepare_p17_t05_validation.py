@@ -74,6 +74,26 @@ def migrate(target, *, down=False):
     config.attributes.pop("connection", None)
 
 
+def reference_inventory():
+    """Compare complete catalog rows, normalizing only task-owned surrogate IDs."""
+    owned = "m.resource_key IN ('onec.data', 'onec.command')"
+    statements = [
+        f"SELECT CASE WHEN {owned} THEN to_jsonb(m)-'id' ELSE to_jsonb(m) END " f"FROM {SCHEMA}.model_types m",
+        f"SELECT CASE WHEN {owned} THEN (to_jsonb(p)-'id'-'model_type_id') "
+        "|| jsonb_build_object('resource_key',m.resource_key) ELSE to_jsonb(p) END "
+        f"FROM {SCHEMA}.permissions p JOIN {SCHEMA}.model_types m ON m.id=p.model_type_id",
+        f"SELECT CASE WHEN {owned} THEN (to_jsonb(l)-'permission_id') "
+        "|| jsonb_build_object('resource_key',m.resource_key,'action_type',p.action_type::text) "
+        f"ELSE to_jsonb(l) END FROM {SCHEMA}.workspace_role_permission l "
+        f"JOIN {SCHEMA}.permissions p ON p.id=l.permission_id "
+        f"JOIN {SCHEMA}.model_types m ON m.id=p.model_type_id",
+    ]
+    with engine.connect() as conn:
+        return [
+            sorted(json.dumps(row, sort_keys=True) for row in conn.execute(text(sql)).scalars()) for sql in statements
+        ]
+
+
 with engine.connect() as lock:
     if not lock.execute(text("select pg_try_advisory_lock(1370093)")).scalar_one():
         raise SystemExit("Another runner owns DB lock")
@@ -145,9 +165,22 @@ with engine.connect() as lock:
             child_env = os.environ.copy()
             child_env.update(POSTGRES_URL=working_url, DB_SCHEMA=working_schema)
             before_run = {s: snapshot(s) for s in ["test_schema", SCHEMA]}
+            cycle = len(cmd) == 2 and (ROOT / cmd[1]).resolve() == ROOT / "scripts/verify_p17_t05_migration.py"
+            references_before = reference_inventory() if cycle else None
             result = subprocess.run(cmd, cwd=ROOT, env=child_env, check=False)
             after_run = {s: snapshot(s) for s in before_run}
-            problems = {s: diff(before_run[s], after_run[s]) for s in before_run}
+            compared = {s: dict(state) for s, state in after_run.items()}
+            references_unchanged = not cycle or references_before == reference_inventory()
+            if cycle and references_unchanged:
+                # Empty downgrade/re-upgrade deliberately recreates the two
+                # owned capability resources. No foreign row/ID, permission,
+                # role link, layout, row count or revision may change.
+                if before_run[SCHEMA].get("model_types_max") != compared[SCHEMA].get("model_types_max"):
+                    print("Cycle inventory: expected owned catalog ID rekey; complete reference signatures unchanged")
+                    compared[SCHEMA]["model_types_max"] = before_run[SCHEMA]["model_types_max"]
+            problems = {s: diff(before_run[s], compared[s]) for s in before_run}
+            if not references_unchanged:
+                problems[SCHEMA].append("Catalog reference signatures changed")
             if any(problems.values()):
                 print("Run inventory differences:", problems, flush=True)
             else:

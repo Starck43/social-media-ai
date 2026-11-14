@@ -103,6 +103,23 @@ def test_short_fails_closed_without_provider_traffic(state):
     post.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_failed_real_probe_journals_the_provider_attempt_identity():
+    module, _ = probe_module()
+    client = module.LLMClientFactory.create(model())
+    failure = httpx.ReadTimeout("synthetic timeout")
+    failure.dispatch_id = "e" * 32
+
+    async def failed_chat(*_args, **_kwargs):
+        client._probe_diagnostics.update(stage="transport", dispatch_state="possible")
+        raise failure
+
+    client.chat = AsyncMock(side_effect=failed_chat)
+    result = await module.probe_real_capped(model())
+    assert not result["ok"]
+    module.journal_chat_attempt.assert_awaited_once_with(client, "admin_probe", None, dispatch_id="e" * 32)
+
+
 def test_short_is_prompt_free_and_never_escalates():
     module, post = probe_module()
     answer = module.probe_short(model())

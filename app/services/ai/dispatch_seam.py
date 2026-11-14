@@ -115,7 +115,7 @@ class DispatchDenial(RuntimeError):
     """
 
     def __init__(self, code: str, detail: str | None = None):
-        self.code = code if code in DENIAL_CODES else CODE_PARAMS_INVALID
+        self.code = code if type(code) is str and code in DENIAL_CODES else CODE_PARAMS_INVALID
         # Caller-provided labels can themselves be credentials. Only repository
         # labels are allowed, not arbitrary text that happens to match a regex.
         self.detail = detail if type(detail) is str and detail in _DENIAL_DETAILS else None
@@ -381,6 +381,8 @@ async def admit(
     # 2. Verified workspace scope.
     if ctx.tenant_id is not None and not _positive_int(ctx.tenant_id):
         raise DispatchDenial(CODE_WORKSPACE_RIGHTS_MISSING, "step2_tenant")
+    if not _positive_int(ctx.plan_holder_user_id):
+        raise DispatchDenial(CODE_PLAN_HOLDER_UNRESOLVED, "step4_holder")
     # 3. Owner-configured model choice: a readable provider row.
     row_id, provider_id = _row_identifiers(request.model)
     if not _positive_int(row_id) or not _positive_int(provider_id):
@@ -396,8 +398,6 @@ async def admit(
         raise DispatchDenial(CODE_FUNDING_CLASS_UNSUPPORTED, "class_unknown")
 
     # 4. Catalog access, plan grant and the sponsoring holder.
-    if not _positive_int(ctx.plan_holder_user_id):
-        raise DispatchDenial(CODE_PLAN_HOLDER_UNRESOLVED, "step4_holder")
     grants = foundation.grants
     if grants is None:
         raise DispatchDenial(CODE_PLAN_GRANT_MISSING, "step4_grants")

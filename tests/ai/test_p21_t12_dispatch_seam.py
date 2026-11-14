@@ -1138,6 +1138,7 @@ async def test_invalid_token_limit_is_denied_before_capacity(bad):
 
 
 def test_denial_labels_and_identity_reject_secret_shaped_values():
+    assert seam.DispatchDenial(["secret"]).code == seam.CODE_PARAMS_INVALID
     assert seam.DispatchDenial(seam.CODE_PARAMS_INVALID, "sk_secret_token").detail is None
     assert seam.DispatchDenial(seam.CODE_PARAMS_INVALID, ["secret"]).detail is None
     assert not seam.is_valid_dispatch_id("a" * 32 + "\n")
@@ -1145,6 +1146,20 @@ def test_denial_labels_and_identity_reject_secret_shaped_values():
         seam.require_same_funding_class(
             make_model(), make_model(), catalog_owner_id=OWNER, payer="holder:7", next_payer="holder:8"
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("api_format", ["openai", "anthropic", "custom"])
+async def test_missing_strict_foundation_sends_no_http_for_either_method(monkeypatch, scope, quiet_client, api_format):
+    http = HttpSpy()
+    install_transport(monkeypatch, http, fail=True)
+    monkeypatch.setattr(settings, "LLM_DISPATCH_SEAM_ENABLED", True)
+    client = client_for(make_model(api_format=api_format), monkeypatch)
+    with pytest.raises(seam.DispatchDenial):
+        await client.chat([{"role": "user", "content": "x"}])
+    with pytest.raises(seam.DispatchDenial):
+        await client.analyze("x")
+    assert not http.requests
 
 
 @pytest.mark.asyncio

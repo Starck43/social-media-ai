@@ -109,7 +109,7 @@ async def test_ambiguous_env_name_never_falls_back(read_scope, monkeypatch):
 def test_scoped_legacy_client_denies_before_decrypt_or_http(read_scope):
     session, context, metadata, model, statements = read_scope
     with catalog_reads.catalog_read_scope(session, context), pytest.raises(DispatchDenial) as denied:
-        llm_client.OpenAIClient(model)
+        llm_client.OpenAICompatibleClient(model)
     assert denied.value.code == CODE_ADMISSION_UNAVAILABLE
     assert statements == []
 

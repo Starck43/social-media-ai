@@ -139,3 +139,51 @@ def test_migration_checks_match_live_registry():
     migration = runpy.run_path("migrations/versions/p17t05_onec_audit_export.py")
     assert migration["checks"](export=True) == audit_check_sql()
     assert "onec.audit_export" not in migration["checks"](export=False)["action"]
+
+
+def test_migration_capability_metadata_matches_runtime():
+    import runpy
+
+    from app.core.access_catalog import resource_for, workspace_grants
+
+    migration = runpy.run_path("migrations/versions/p17t05_onec_audit_export.py")
+    for key, model, table, actions in migration["CAPABILITY_RESOURCES"]:
+        resource = resource_for(key)
+        assert (resource.model_name, resource.table_name) == (model, table)
+        assert {action.name for action in resource.actions} == set(actions)
+    for role, pairs in migration["CAPABILITY_GRANTS"].items():
+        actual = {
+            (resource_for(model).key, action.name)
+            for model, action in workspace_grants(role)
+            if resource_for(model).key.startswith("onec.")
+        }
+        assert actual == set(pairs)
+
+
+@pytest.mark.parametrize("present", [False, True])
+def test_migration_downgrade_locks_and_preserves_export_evidence(monkeypatch, present):
+    import runpy
+
+    from alembic import op
+    from sqlalchemy.dialects import postgresql
+
+    statements = []
+
+    def execute(statement, *args):
+        statements.append(str(statement))
+        return SimpleNamespace(first=lambda: (1,) if present else None)
+
+    bind = SimpleNamespace(execute=execute, dialect=postgresql.dialect())
+    monkeypatch.setattr(op, "get_bind", lambda: bind)
+    monkeypatch.setattr(op, "drop_constraint", lambda *args, **kwargs: statements.append("drop-check"))
+    monkeypatch.setattr(op, "create_check_constraint", lambda *args, **kwargs: statements.append("create-check"))
+    migration = runpy.run_path("migrations/versions/p17t05_onec_audit_export.py")
+    if present:
+        with pytest.raises(ValueError, match="onec_audit_downgrade_requires_expired_events"):
+            migration["downgrade"]()
+        assert not any("drop-check" in sql or "DELETE" in sql for sql in statements)
+    else:
+        migration["downgrade"]()
+        assert "drop-check" in statements
+        assert any("DELETE" in sql and "model_types" in sql for sql in statements)
+    assert "LOCK TABLE" in statements[0] and "ACCESS EXCLUSIVE" in statements[0]

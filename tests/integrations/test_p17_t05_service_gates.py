@@ -8,6 +8,7 @@ cannot weaken a gate silently.
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
@@ -43,6 +44,11 @@ ACTOR_ID = 7
 CONNECTION_ID = 5
 
 _ALLOWED_SETS = ("Catalog_Номенклатура", "Document_РеализацияТоваровУслуг")
+
+
+@pytest.fixture(autouse=True)
+def capture_policy_denials(caplog):
+    caplog.set_level(logging.WARNING, logger="app.action_audit.onec_denied")
 
 
 class Result:

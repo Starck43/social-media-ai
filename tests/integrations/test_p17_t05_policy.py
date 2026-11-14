@@ -1,5 +1,6 @@
 """DB-exempt OneC policy checks; authority boundaries use explicit mock identities."""
 
+import logging
 from types import SimpleNamespace
 
 import pytest
@@ -76,6 +77,7 @@ def test_optional_role_config_preserves_existing_connection_contract():
 
 
 def test_denial_has_only_source_owned_fields(caplog):
+    caplog.set_level(logging.WARNING, logger="app.action_audit.onec_denied")
     log_denial(tenant_id=7, actor_id=12, capability="onec.query")
     assert "outcome=denied" in caplog.text
     assert "permission_denied" in caplog.text

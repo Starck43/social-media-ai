@@ -31,10 +31,12 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
+from urllib.parse import unquote
 from uuid import uuid4
 
 import pytest
@@ -56,6 +58,7 @@ from app.models.managers.workspace_connection_manager import ConnectionDenied
 from app.models.managers.workspace_outbound_host_manager import WorkspaceOutboundHostManager
 from app.services.commands import ledger as ledger_mod
 from app.services.commands.ledger import BusinessCommandLedger
+from app.services.onec import commands as commands_mod
 from app.services.onec import query as query_mod
 from app.services.onec.commands import (
     CAPABILITY_CATALOG_UPDATE,
@@ -147,7 +150,10 @@ class ProviderTransport:
 
     async def __call__(self, _endpoint, *, method: bytes, target_path: str, **_kwargs) -> bytes:
         self.calls.append((method, target_path))
+        target_path = unquote(target_path)
         if method == b"GET":
+            if "$metadata" in target_path:
+                return SAMPLE_METADATA_XML.encode("utf-8")
             if WRITE_SET in target_path:
                 return json.dumps(
                     {"Ref_Key": CAT_GUID, "DataVersion": "DV_001=", "DeletionMark": False, "Description": "Synthetic"}
@@ -173,7 +179,7 @@ def provider_transport(monkeypatch: pytest.MonkeyPatch, entities: Mapping[str, t
     """Patch both provider seams immediately with one recording double."""
     double = ProviderTransport(entities)
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", double)
-    monkeypatch.setattr("app.services.onec.commands.fetch_odata_bytes", double)
+    monkeypatch.setattr(commands_mod, "send_odata_command_request", double)
     return double
 
 
@@ -181,12 +187,14 @@ def provider_transport(monkeypatch: pytest.MonkeyPatch, entities: Mapping[str, t
 
 
 @pytest.fixture(autouse=True)
-def forbid_unmocked_provider_calls(monkeypatch):
+def forbid_unmocked_provider_calls(monkeypatch, caplog):
+    caplog.set_level(logging.WARNING, logger="app.action_audit.onec_denied")
+
     async def forbidden(*_args, **_kwargs):
         raise AssertionError("A PostgreSQL acceptance case attempted an unmocked provider call")
 
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", forbidden)
-    monkeypatch.setattr("app.services.onec.commands.fetch_odata_bytes", forbidden)
+    monkeypatch.setattr(commands_mod, "send_odata_command_request", forbidden)
 
 
 async def _create_workspaces(slug_prefix: str, holders) -> list[Tenant]:
@@ -1041,7 +1049,7 @@ async def test_reconcile_of_a_revoked_entity_preserves_unknown_and_writes_no_eve
             raise TimeoutError("synthetic adapter timeout")
         return json.dumps({"Ref_Key": CAT_GUID, "DataVersion": "DV_001=", "Description": "Synthetic"}).encode()
 
-    monkeypatch.setattr("app.services.onec.commands.fetch_odata_bytes", failing_transport)
+    monkeypatch.setattr(commands_mod, "send_odata_command_request", failing_transport)
     commands = OneCCommandService(ledger=BusinessCommandLedger())
     async with async_session_maker() as session:
         original = dict((await session.get(WorkspaceConnection, onec_connections.write)).config)
@@ -1076,7 +1084,7 @@ async def test_reconcile_of_a_revoked_entity_preserves_unknown_and_writes_no_eve
         observed_after_revoke.append(method)
         return json.dumps({"value": []}).encode()
 
-    monkeypatch.setattr("app.services.onec.commands.fetch_odata_bytes", recording_transport)
+    monkeypatch.setattr(commands_mod, "send_odata_command_request", recording_transport)
     try:
         await _set_role_map(onec_connections.write, {"owner": [OTHER_WRITE_SET]})
         with tenant_scope(tenant_id), permission_scope(user):

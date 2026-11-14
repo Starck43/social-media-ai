@@ -930,7 +930,8 @@ async def test_timeout_transitions_to_unknown_and_reconciles_by_external_ref(wri
 @pytest.mark.asyncio
 @pytest.mark.parametrize("capability", [CAPABILITY_DOCUMENT_CREATE, CAPABILITY_CATALOG_UPDATE])
 @pytest.mark.parametrize("revocation", ["field", "metadata", "entity"])
-async def test_execute_rechecks_approved_connection_contract(write_env, capability, revocation) -> None:
+async def test_execute_rechecks_approved_connection_contract(write_env, capability, revocation, caplog) -> None:
+    caplog.set_level("WARNING", logger="app.action_audit.onec_denied")
     conn, secret = _make_write_connection()
     session = FakeOneCCommandSession(connection=conn, secret=secret)
     mutations = []
@@ -981,12 +982,20 @@ async def test_execute_rechecks_approved_connection_contract(write_env, capabili
     with pytest.raises(OneCCommandError, match=expected_error):
         await service.execute_command(tenant_id=10, actor_id=101, command_id=preview.id, session=session)
     assert mutations == []
-    assert session.commands[preview.id].state == "failed"
-    assert session.commands[preview.id].error_code == expected_error
     entries = await service.list_audit_log(tenant_id=10, actor_id=101, session=session)
-    assert any(
-        e.command_id == preview.id and e.outcome == "denied" and e.reason_code == expected_error for e in entries
-    )
+    if revocation in {"field", "entity"}:
+        # Policy refusal is neither dispatch nor a new provider observation.
+        assert session.commands[preview.id].state == "approved"
+        assert session.commands[preview.id].error_code is None
+        assert "action=onec.command.approve reason_code=permission_denied" in caplog.text
+        assert not any(e.command_id == preview.id and e.action == "execute" for e in entries)
+        assert not any(e.action == "onec.command_execute" for e in write_env.events)
+    else:
+        assert session.commands[preview.id].state == "failed"
+        assert session.commands[preview.id].error_code == expected_error
+        assert any(
+            e.command_id == preview.id and e.outcome == "denied" and e.reason_code == expected_error for e in entries
+        )
 
 
 @pytest.mark.asyncio
@@ -1179,8 +1188,9 @@ async def test_catalog_reconcile_compares_typed_values(write_env, remote_value, 
     ],
 )
 async def test_failed_reconcile_retains_unknown_and_records_audit(
-    write_env, owned_session, failure, expected_error
+    write_env, owned_session, failure, expected_error, caplog
 ) -> None:
+    caplog.set_level("WARNING", logger="app.action_audit.onec_denied")
     from urllib.parse import unquote
 
     conn, secret = _make_write_connection()
@@ -1267,12 +1277,15 @@ async def test_failed_reconcile_retains_unknown_and_records_audit(
         )
     assert outcomes == (["commit"] if owned_session else [])
     assert session.commands[preview.id].state == "unknown"
-    assert session.commands[preview.id].error_code == expected_error
+    policy_refusal = failure in {"revoked_field", "revoked_entity"}
+    assert session.commands[preview.id].error_code == ("adapter_timeout_unknown" if policy_refusal else expected_error)
     target = next(t for t in session.targets.values() if t.command_id == preview.id)
     assert target.state == "unknown"
     assert target.provider_receipt is None
     unknown = [e for e in write_env.events if e.action == "onec.command_execute" and e.outcome == "unknown"]
-    assert len(unknown) == len(previous_unknown) + 1
+    assert len(unknown) == len(previous_unknown) + (0 if policy_refusal else 1)
+    if policy_refusal:
+        assert "action=onec.command.approve reason_code=permission_denied" in caplog.text
     assert unknown[-1].reason_code == "operation_unconfirmed"
     assert unknown[-1].resource_id == str(preview.id)
     assert not any(e.action == "onec.command_execute" and e.outcome == "success" for e in write_env.events)
@@ -1668,6 +1681,7 @@ async def test_validation_error_branches_and_owned_session_paths(write_env) -> N
         "entity_set": "Document_РеализацияТоваровУслуг",
         "target_guid": DOC_GUID,
         "external_ref": rec.external_ref,
+        "metadata_sha256": CATALOG.metadata_sha256,
     }
     rec_post = await service.reconcile_command(tenant_id=10, actor_id=101, command_id=rec.id, session=None)
     assert rec_post.state == "succeeded"
@@ -1679,6 +1693,7 @@ async def test_validation_error_branches_and_owned_session_paths(write_env) -> N
         "target_guid": CAT_GUID,
         "external_ref": rec.external_ref,
         "changes": {"Description": "Обновлено"},
+        "metadata_sha256": CATALOG.metadata_sha256,
     }
     rec_cat = await service.reconcile_command(tenant_id=10, actor_id=101, command_id=rec.id, session=None)
     assert rec_cat.state == "succeeded"

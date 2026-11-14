@@ -102,6 +102,16 @@ def service_fixture(monkeypatch, *, clock=None, metadata_cache=None, query_cache
     service._sessions._get_owned_session = owned_session
     service._hosts.require_approved = AsyncMock(return_value="erp.example.com")
     monkeypatch.setattr(query_mod, "_authorize", AsyncMock())
+    # DB-free fixture: the P17-T05 capability authority is replaced with an
+    # allowing double (the real gate is covered by test_p17_t05_service_gates.py)
+    # and its calls are returned so a test can assert the gate still ran.
+    capability_calls: list[dict] = []
+
+    async def allowed_capability(*, tenant_id, actor_id, capability, session=None):
+        capability_calls.append({"tenant_id": tenant_id, "actor_id": actor_id, "capability": capability})
+        return "owner"
+
+    monkeypatch.setattr(query_mod, "authorize_capability", allowed_capability)
     monkeypatch.setattr(
         query_mod,
         "open_basic_credentials",
@@ -112,7 +122,7 @@ def service_fixture(monkeypatch, *, clock=None, metadata_cache=None, query_cache
         "budget_for",
         lambda provider, account, *, connection_id: f"budget:{provider}:{account}:{connection_id}",
     )
-    return service, catalog, row
+    return service, catalog, row, capability_calls
 
 
 def plan_for(entity_set="Catalog_Номенклатура"):
@@ -254,7 +264,7 @@ def test_the_answer_service_uses_one_shared_reader():
 
 @pytest.mark.asyncio
 async def test_the_opt_in_result_cache_serves_a_repeated_query(monkeypatch):
-    service, catalog, _ = service_fixture(monkeypatch)
+    service, catalog, _, _ = service_fixture(monkeypatch)
     transport = AsyncMock(return_value=b'{"value": [{"Ref_Key": "a"}]}')
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", transport)
     plan = plan_for()

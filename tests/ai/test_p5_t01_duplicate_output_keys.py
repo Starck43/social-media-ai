@@ -131,6 +131,7 @@ class AdapterContract:
             TimeoutException=httpx.TimeoutException,
             TransportError=httpx.TransportError,
         )
+        self.module.provider_http_client = lambda: httpx.AsyncClient(transport=transport)
 
     def record(self, result):
         return JOURNAL.build_attempt_records({"text_analysis": result}, None, tenant_id=7, source_id=3)[0]

@@ -32,7 +32,7 @@ def load_contract():
 
 
 def scenario(raw=None, **changes):
-    return NS(output_schema=raw, analysis_types=[], scope={}, max_tokens=None, id=11, **changes)
+    return NS(output_schema=raw, analysis_types=[], scope={}, max_tokens=None, id=11, is_active=True, **changes)
 
 
 def object_schema(properties=None, **changes):
@@ -58,8 +58,10 @@ def load_analyzer(schema, builder):
             AIAnalytics=NS(objects=Mock()),
             LLMModel=NS(),
             Source=NS(),
+            AnalyzedContentReceipt=NS(objects=NS(record_successes=AsyncMock())),
         ),
         "app.services.ai.attempt_journal": NS(record_analysis_attempts=AsyncMock()),
+        "app.services.ai.analysis_context": NS(analysis_fingerprint=Mock(return_value="fixture-fingerprint")),
         "app.services.ai.chain_resolver": NS(
             _normalize=lambda value: value, _token_set_ratio=Mock(), resolve_chain_async=AsyncMock()
         ),
@@ -69,6 +71,7 @@ def load_analyzer(schema, builder):
             hashes_hash=Mock(return_value="hashes"),
             item_hash=lambda item: str(item["id"]),
             filter_analyzed=AsyncMock(),
+            filter_by_context_receipts=AsyncMock(side_effect=lambda content, *_args: (content, set())),
         ),
         "app.services.ai.json_schema_builder": builder,
         "app.services.ai.scenario_schema": schema,
@@ -316,6 +319,7 @@ class AnalyzerContractTests(unittest.IsolatedAsyncioTestCase):
         }
         self.analyzer._calculate_content_stats = Mock(return_value={})
         self.analyzer._get_platform_name = AsyncMock(return_value="synthetic")
+        self.analyzer._get_llm_model = AsyncMock(return_value=NS(id=1, name="synthetic"))
         methods = [AsyncMock(return_value={"parsed": {"summary": "useful"}, "response": {}}) for _ in range(3)]
         self.analyzer._analyze_text, self.analyzer._analyze_images, self.analyzer._analyze_videos = methods
         self.analyzer._create_unified_summary = AsyncMock(return_value=None)
@@ -364,7 +368,10 @@ class AnalyzerContractTests(unittest.IsolatedAsyncioTestCase):
             await self.analyzer._analyze_images([], self.row, "synthetic", output_contract=self.contract)
 
     async def test_existing_partial_row_guard_precedes_compilation(self):
-        self.module.AIAnalytics.objects.filter.return_value = NS(first=AsyncMock(return_value=NS(id=7)))
+        self.module.AIAnalytics.objects.filter.return_value = NS(
+            first=AsyncMock(return_value=NS(id=7, summary_data={"content_hashes": ["already-covered"]}))
+        )
+        self.module.AIAnalytics.objects.update_by_id = AsyncMock()
         self.row.output_schema = object_schema({"x": {"type": "unsupported"}})
         compile_spy = Mock(side_effect=AssertionError("must not reach schema compilation"))
         with patch.object(self.module, "compile_scenario_output", compile_spy):
@@ -373,6 +380,9 @@ class AnalyzerContractTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertIsNone(result)
         compile_spy.assert_not_called()
+        self.module.AIAnalytics.objects.update_by_id.assert_awaited_once_with(
+            7, summary_data={"content_hashes": ["already-covered"]}
+        )
 
     async def test_direct_save_rejects_invalid_parsed_before_pricing(self):
         results = {"text_analysis": {"parsed": {"summary": 9}, "response": {"usage": {"prompt_tokens": 3}}}}

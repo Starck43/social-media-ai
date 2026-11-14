@@ -381,6 +381,8 @@ class Settings(BaseSettings):
     LLM_DEFAULT_TIMEOUT: float = 60.0  # Request timeout in seconds
     # Opaque alias -> deployment environment name. Personal catalogs never use it.
     LLM_MANAGED_CREDENTIAL_REFS: dict[str, str] = Field(default_factory=dict, repr=False)
+    # The dispatch seam stays dormant until P21-T13...P21-T16 provide the foundations.
+    LLM_DISPATCH_SEAM_ENABLED: bool = False
 
 
 settings = Settings()

@@ -253,6 +253,7 @@ LLM_DEFAULT_TEMPERATURE=0.3    # for analysis tasks
 LLM_DEFAULT_MAX_TOKENS=400     # for social media annotations
 LLM_DEFAULT_STREAM=false       # complete responses for processing
 LLM_DEFAULT_TIMEOUT=90.0       # seconds
+LLM_DISPATCH_SEAM_ENABLED=false # strict dispatch seam; needs the P21-T13…P21-T16 foundations
 
 # ─── Logging ──────────────────────────────────────────────────
 LOG_LEVEL=INFO
@@ -467,6 +468,7 @@ is no export or offboarding flow yet. Lowering the value takes effect at the nex
 | `LLM_DEFAULT_MAX_TOKENS` | `400` | Max tokens for social media annotations |
 | `LLM_DEFAULT_STREAM` | `false` | Use streaming for LLM responses |
 | `LLM_DEFAULT_TIMEOUT` | `90.0` | Request timeout in seconds |
+| `LLM_DISPATCH_SEAM_ENABLED` | `false` | Strict LLM dispatch seam ([contract](LLM_DISPATCH_CONTRACT.md)). Default `false` runs the compatibility adapter: same responses, journal, accounting and fallback order, no reservation and no denial. `true` denies every provider attempt before HTTP until P21-T13…P21-T16 inject the grant, rate, admission and settlement foundations; it never falls back to the legacy path. |
 
 ### Logging
 

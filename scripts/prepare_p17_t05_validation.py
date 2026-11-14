@@ -57,7 +57,7 @@ dev_config.set_main_option("script_location", str(args.dev_checkout / "migration
 dev_heads = ScriptDirectory.from_config(dev_config).get_heads()
 task_graph = ScriptDirectory.from_config(config)
 task_heads = task_graph.get_heads()
-if len(dev_heads) != 1 or task_heads != ["p17t05_onec_audit_export"]:
+if len(dev_heads) != 1 or task_heads != ["0156"]:
     raise SystemExit("One fresh dev head and the expected task head are required")
 if task_graph.get_revision(task_heads[0]).down_revision != dev_heads[0]:
     raise SystemExit("Task migration parent differs from fresh dev baseline")
@@ -147,8 +147,8 @@ with engine.connect() as lock:
 
                 asyncio.run(seed())
                 baseline = snapshot(SCHEMA)
-                migrate("p17t05_onec_audit_export")
-                print("Prepared isolated Alembic 0155 -> p17t05_onec_audit_export; canonical reference rows")
+                migrate("0156")
+                print("Prepared isolated Alembic 0155 -> 0156; canonical reference rows")
                 STATE.write_text(json.dumps({"before": before, "baseline": baseline}, sort_keys=True))
             except BaseException:
                 print("PREPARATION FAILED; cleanup required with preserved inventory")

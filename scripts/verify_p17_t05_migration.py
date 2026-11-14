@@ -34,14 +34,14 @@ def migrate(*, down=False):
         if down:
             command.downgrade(cfg, "0155")
         else:
-            command.upgrade(cfg, "p17t05_onec_audit_export")
+            command.upgrade(cfg, "0156")
     cfg.attributes.pop("connection", None)
 
 
 def metadata(export):
     with engine.connect() as conn:
         revision = conn.execute(text(f"select version_num from {S}.alembic_version")).scalar_one()
-        assert revision == ("p17t05_onec_audit_export" if export else "0155")
+        assert revision == ("0156" if export else "0155")
         checks = conn.execute(
             text(
                 "select conname, pg_get_constraintdef(oid) from pg_constraint "

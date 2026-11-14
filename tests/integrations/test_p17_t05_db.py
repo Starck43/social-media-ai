@@ -8,7 +8,7 @@ write happens.
 Reuse the root `conftest.py` redirect and run the file on an exclusively owned,
 migrated isolated schema (never the shared `test_schema`, never the public
 schema). The module also requires placeholder migration
-`p17t05_onec_audit_export` to be applied: the root reference check rejects a
+`0156` to be applied: the root reference check rejects a
 schema without its capability catalog rows.
 
 Because migration 0155 makes `tenants.plan_holder_user_id` NOT NULL, the module

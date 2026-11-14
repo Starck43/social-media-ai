@@ -5,7 +5,7 @@ from alembic import op
 
 from app.core.config import settings
 
-revision = "p17t05_onec_audit_export"
+revision = "0156"
 down_revision = "0155"
 branch_labels = None
 depends_on = None

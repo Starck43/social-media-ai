@@ -23,10 +23,14 @@ args = parser.parse_args()
 from dotenv import load_dotenv
 
 load_dotenv(args.env_file)
+working_url = os.environ.get("POSTGRES_URL", "")
+working_schema = os.environ.get("DB_SCHEMA", "").strip() or "public"
 url = os.environ.get("TEST_POSTGRES_URL") or os.environ.get("POSTGRES_URL", "")
 p = urlsplit(url)
 if p.hostname not in {"localhost", "127.0.0.1", "::1"} or p.path != "/social_manager":
     raise SystemExit("Only local social_manager is authorized")
+if working_schema == SCHEMA:
+    raise SystemExit("The assigned test schema cannot be the canonical working schema")
 os.environ.update(
     POSTGRES_URL=url,
     TEST_POSTGRES_URL=url,
@@ -135,7 +139,12 @@ with engine.connect() as lock:
                 "Locked runner; head=" + subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
                 flush=True,
             )
-            result = subprocess.run(cmd, cwd=ROOT, env=os.environ.copy(), check=False)
+            # Preparation uses the isolated schema directly; pytest must see the
+            # canonical working target before its root conftest validates and
+            # redirects to DB_TEST_SCHEMA. Never bypass that isolation guard.
+            child_env = os.environ.copy()
+            child_env.update(POSTGRES_URL=working_url, DB_SCHEMA=working_schema)
+            result = subprocess.run(cmd, cwd=ROOT, env=child_env, check=False)
             raise SystemExit(result.returncode)
         else:
             if not STATE.exists():
@@ -153,6 +162,7 @@ with engine.connect() as lock:
             print("Cleanup PASS: task schema/owned synthetic data absent; shared schema inventory unchanged")
     finally:
         lock.rollback()
-        lock.execute(text("select pg_advisory_unlock(1370093)"))
+        released = lock.execute(text("select pg_advisory_unlock(1370093)")).scalar_one()
         lock.commit()
+        print("DB advisory lock released:", released, flush=True)
 engine.dispose()

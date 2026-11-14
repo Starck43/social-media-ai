@@ -14,8 +14,10 @@ The owner decision of 2026-11-13 (OpenCode `ses_e2fa3690affea2bSCgS5dlSVmg`) set
 one user tariff across owned workspaces, configurable module grants, token limits
 (including explicit unlimited) and an owned-workspace count limit.
 [P2-T17 increment A](../audit/p2/p2-t17.md) supplies the accepted dormant
-[holder/policy interface](../platform/SERVICE_PLANS.md). Remaining
-period/counting/BYOK-applicability/overage choices stay in the
+[holder/policy interface](../platform/SERVICE_PLANS.md). The owner resolved the
+period/counting/BYOK/overage choices on 2026-11-14: anchored 30-day cycles, all
+provider-reported billable tokens, 1M/10M/unlimited packages with a hard stop,
+BYOK as attribution only — see the
 [P2 activation gates](p2-usage-spend.md#remaining-allowance-activation-gates).
 
 Invited members use the host owner's configured models and functionality subject

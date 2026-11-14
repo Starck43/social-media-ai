@@ -75,7 +75,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULE
 
 ### Priority P3
 
-- [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **TODO** · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
+- [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **DEFERRED** (owner, 2026-11-14: P20-T12 named no source where an official API and plain fetch fail, and disabled the unconfined Chromium fallback; resume only with an evidenced named source + a new owner decision on infrastructure and cost) · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
 - [P17-T05](docs/tasks/p17-t05.md) 1C role-based access policy and audit views — **IN_PROGRESS** · opencode-audit-p17-t05 · audit corrections/local validation; required DB checks unrun · [dialogue](https://github.com/Starck43/social-media-ai/pull/487#issuecomment-6880204395) · [request](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 - [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **IN_PROGRESS** · opencode-p18-t05 · remote lane; `local_connector/` only, DB-exempt, no file upload (that is P18-T06) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`

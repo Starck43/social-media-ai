@@ -59,8 +59,9 @@ independent ceilings.
 For owned-workspace and token limits, **unconfigured is not unlimited**:
 configuration plus `None` means explicitly unlimited; zero permits no new usage.
 In the DTO, `policy.token_policy is None` means no allowance definition, whereas
-`TokenAllowancePolicy(token_limit=None)` means explicitly unlimited. Token unit,
-period, counting rules and commercial amounts must not be invented by consumers.
+`TokenAllowancePolicy(token_limit=None)` means explicitly unlimited. Consumers
+must not invent the token unit, period, counting rule or commercial amount; the
+answered policy is recorded below and in the [P2 activation gates](../phases/p2-usage-spend.md#remaining-allowance-activation-gates).
 
 Source: `app/services/tenancy/service_plan_management.py` and
 `app/models/managers/tenant_manager.py`.
@@ -99,10 +100,24 @@ data or sponsorship refuses downgrade. Follow [database safeguards](../process/C
 for any separately authorized apply/rollback. Derive revision IDs and live Alembic
 head from migration files, not a stored deployment assumption.
 
-## Open allowance activation decisions
+## Allowance activation policy (resolved 2026-11-14)
 
-Preserved by [P2](../phases/p2-usage-spend.md#remaining-allowance-activation-gates):
-token counting/unit; period boundaries/reset/proration; finite package sizes and
-overage; BYOK applicability and delegated-use consent. Storage definitions and
-holder interfaces are accepted, but these choices remain unanswered and cannot
-be treated as an operational allowance policy.
+Owner answers, authoritative copy in [P2](../phases/p2-usage-spend.md#remaining-allowance-activation-gates):
+
+- **Unit** — all provider-reported billable tokens of one attempt: prompt input
+  including reported cache read/write, completion output, reasoning and media.
+  Partially charged failures count reported usage; unreported usage is charged at
+  the reserved worst-case ceiling and corrected only by provider-reported usage
+  for the same attempt.
+- **Period** — anchored rolling 30-day cycles per holder. First consumption starts
+  the cycle, expiry starts the next one, no rollover and no proration; a plan
+  change applies to the consumed total of the active cycle and never resets it.
+  A reservation settles against the cycle snapshot bound at admission.
+- **Packages** — Starter 1 000 000, Pro 10 000 000, Business explicitly unlimited
+  (`token_limit = NULL`). Exhaustion is a hard stop with no paid overage and no
+  automatic cheaper-model downgrade; missing policy or row denies.
+- **Scope** — managed and host-sponsored invitee dispatch consume the holder's
+  pool; personal BYOK dispatch is attribution only.
+
+Storage definitions and holder interfaces remain accepted; activation still
+requires P21-T15/T16 controls and an explicit cutover decision.

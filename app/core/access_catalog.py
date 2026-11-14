@@ -24,6 +24,9 @@ def _resource(key, model, table, actions, workspace=False, personal=False):
 
 
 RESOURCES = (
+    # Capability-only identities: no ORM tables or implicit provider-account access.
+    _resource("onec.data", "OneCData", "onec_data", "VIEW EXPORT", True),
+    _resource("onec.command", "OneCCommand", "onec_command", "CREATE CONFIGURE", True),
     _resource(
         "integrations.local_connector", "LocalConnector", "local_connectors", "VIEW CREATE DELETE CONFIGURE", True
     ),
@@ -118,6 +121,7 @@ _OLD_DOMAINS = {
     "integrations": (),
     "planner": (),
     "documents": (),
+    "onec": (),
 }
 _ALIASES = {
     f"{old}.{r.model_name}.{a.db_value}": (r, a)
@@ -129,6 +133,14 @@ _ALIASES.update(
     {
         f"app.role.{a.db_value}": (_BY_KEY["identity.platform_role"], a)
         for a in _BY_KEY["identity.platform_role"].actions
+    }
+)
+_ALIASES.update(
+    {
+        "onec.query": (_BY_KEY["onec.data"], ActionType.VIEW),
+        "onec.export": (_BY_KEY["onec.data"], ActionType.EXPORT),
+        "onec.command.propose": (_BY_KEY["onec.command"], ActionType.CREATE),
+        "onec.command.approve": (_BY_KEY["onec.command"], ActionType.CONFIGURE),
     }
 )
 
@@ -178,7 +190,11 @@ def workspace_grants(codename):
         if role in (WorkspaceRoleType.OWNER, WorkspaceRoleType.ADMIN):
             actions = set(r.actions)
         elif role == WorkspaceRoleType.MANAGER:
-            if r.key in ("collection.source", "analysis.scenario", "scheduling.task", "planner.task"):
+            if r.key == "onec.data":
+                actions = {ActionType.VIEW}
+            elif r.key == "onec.command":
+                actions = {ActionType.CREATE}
+            elif r.key in ("collection.source", "analysis.scenario", "scheduling.task", "planner.task"):
                 actions = set(r.actions)
             elif r.key == "documents.approval":
                 actions = {ActionType.CONFIGURE}
@@ -189,7 +205,9 @@ def workspace_grants(codename):
             elif r.key in ("analysis.result", "notifications.digest_run", "notifications.notification"):
                 actions = {ActionType.VIEW}
         elif role == WorkspaceRoleType.ANALYST:
-            if r.key == "collection.source":
+            if r.key == "onec.data":
+                actions = {ActionType.VIEW}
+            elif r.key == "collection.source":
                 actions = {ActionType.VIEW, ActionType.ANALYZE, ActionType.EXPORT}
             elif r.key == "analysis.result":
                 actions = {ActionType.VIEW, ActionType.ANALYZE, ActionType.EXPORT}

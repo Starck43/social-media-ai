@@ -181,6 +181,9 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
     # and 0139 unified messages. P15-T09's outbox is catalog-only until its
     # storage task; its metadata actions were approved in PR #417.
     post_0096_resources = {
+        # P17-T05 capability-only catalog identities; no ORM tables are created.
+        "onec_data": ("onec.data", "onecdata", {"view", "export"}, True, False),
+        "onec_command": ("onec.command", "oneccommand", {"create", "configure"}, True, False),
         "local_connectors": (
             "integrations.local_connector",
             "localconnector",
@@ -245,6 +248,23 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
         | {("planner.task", action) for action in ("create", "update")},
         "viewer": {("comms.message", "view"), ("comms.outbox", "view"), ("planner.task", "view")},
     }
+    onec_grants = {
+        "owner": {
+            ("onec.data", "view"),
+            ("onec.data", "export"),
+            ("onec.command", "create"),
+            ("onec.command", "configure"),
+        },
+        "admin": {
+            ("onec.data", "view"),
+            ("onec.data", "export"),
+            ("onec.command", "create"),
+            ("onec.command", "configure"),
+        },
+        "manager": {("onec.data", "view"), ("onec.command", "create")},
+        "analyst": {("onec.data", "view")},
+        "viewer": set(),
+    }
     for role, pairs in migration._workspace_grant_pairs().items():
         canonical = {(resource_for(model).key, action.db_value) for model, action in workspace_grants(role)}
         baseline_pairs = (
@@ -255,6 +275,7 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
                 else set()
             )
             | post_0096_grants[role]
+            | onec_grants[role]
         )
         assert canonical == baseline_pairs
 

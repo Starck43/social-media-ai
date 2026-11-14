@@ -73,10 +73,12 @@ from .llm import (
     LLMAttempt,
     LLMBudgetDay,
     LLMBudgetReservation,
+    LLMCatalog,
     LLMDispatchReceipt,
     LLMModel,
     LLMOutcomeEvent,
     LLMProvider,
+    PlanModelGrant,
 )
 from .notifications import DigestRun, Notification, NotificationDelivery, NotificationPreference, NotificationReceipt
 from .onec import OneCQueryHistory
@@ -186,6 +188,8 @@ __all__ = [
     # AI models
     "LLMProvider",
     "LLMModel",
+    "LLMCatalog",
+    "PlanModelGrant",
     # Analytics models
     "AIAnalytics",
     "AnalyzedContentReceipt",

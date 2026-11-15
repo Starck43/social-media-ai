@@ -20,13 +20,22 @@ def _metadata(path: Path) -> dict[str, object]:
     return result
 
 
-def test_alembic_history_is_one_initial_revision():
-    revisions = sorted(VERSIONS.glob("*.py"))
-    assert len(revisions) == 1, f"Expected one executable revision, found {[p.name for p in revisions]}"
+def test_alembic_history_has_one_base_and_one_head():
+    metadata = {path.stem: _metadata(path) for path in sorted(VERSIONS.glob("*.py"))}
+    assert metadata, "Expected an executable migration history"
 
-    metadata = _metadata(revisions[0])
-    assert isinstance(metadata.get("revision"), str) and metadata["revision"]
-    assert metadata.get("down_revision") is None
+    bases = [name for name, meta in metadata.items() if meta.get("down_revision") in (None, (), [])]
+    assert len(bases) == 1, f"Expected one initial revision, found {bases}"
+
+    parents: set[object] = set()
+    for meta in metadata.values():
+        parent = meta.get("down_revision")
+        if isinstance(parent, tuple):
+            parents.update(parent)
+        elif parent:
+            parents.add(parent)
+    heads = sorted(meta.get("revision") for meta in metadata.values() if meta.get("revision") not in parents)
+    assert len(heads) == 1, f"Expected one head revision, found {heads}"
 
 
 def test_initial_schema_resource_contains_sql_without_psql_commands():

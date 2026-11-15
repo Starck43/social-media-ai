@@ -176,9 +176,11 @@ async def world():
         if platform is None:
             session.add(LLMCatalog(id=9201, kind="platform", owner_user_id=None, is_active=True))
             await session.flush()
+            platform = await session.scalar(select(LLMCatalog).where(LLMCatalog.kind == "platform"))
         else:
             platform.is_active = True
             await session.flush()
+        assert platform is not None, "the platform catalog row must exist"
         catalog_id = platform.id
 
         provider = await session.scalar(select(LLMProvider).where(LLMProvider.uid == PLATFORM_UID))

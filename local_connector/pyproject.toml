@@ -24,7 +24,7 @@ desktop = [
 ]
 
 [tool.setuptools]
-packages = ["local_connector", "local_connector.extract", "local_connector.packaging"]
+packages = ["local_connector", "local_connector.extract", "local_connector.packaging", "local_connector.search"]
 
 [tool.setuptools.package-dir]
 local_connector = "."

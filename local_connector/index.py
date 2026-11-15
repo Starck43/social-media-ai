@@ -57,6 +57,13 @@ class ScanReport:
     errors: tuple[str, ...] = ()
 
 
+def root_hash(root: SelectedRoot) -> str:
+    """Stable identity of a selected root: canonical path plus approved device/inode."""
+
+    identity = f"{root.path}\x00{root.device}\x00{root.inode}"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
 class DeleteConflict(ValueError):
     """Raised when one request id is reused with different content or scope."""
 
@@ -600,8 +607,7 @@ class IndexEngine:
 
     @staticmethod
     def _root_hash(root: SelectedRoot) -> str:
-        identity = f"{root.path}\x00{root.device}\x00{root.inode}"
-        return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        return root_hash(root)
 
     @staticmethod
     def _excluded(relative_path: str, excluded_paths: set[tuple[str, ...]], excluded_names: set[str]) -> bool:

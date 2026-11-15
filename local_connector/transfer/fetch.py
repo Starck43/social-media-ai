@@ -15,7 +15,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from ..index import FileRecord, IndexStore
+from ..index import FileRecord, IndexStore, root_hash
 from ..paths import PathSafetyError, SelectedRoot, open_selected_file
 from ..search.acl import verify_root_and_file_access
 from ..search.models import RootRegistration
@@ -50,11 +50,6 @@ class FetchResult:
     @property
     def complete(self) -> bool:
         return self.state == "complete"
-
-
-def _root_hash(root: SelectedRoot) -> str:
-    identity = f"{root.path}\x00{root.device}\x00{root.inode}"
-    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
 class LocalFetcher:
@@ -102,7 +97,7 @@ class LocalFetcher:
         root = self._roots.get(consent.root_id)
         if root is None or not isinstance(root, SelectedRoot):
             return self._result(consent, "denied")
-        if _root_hash(root) != record.root_hash:
+        if root_hash(root) != record.root_hash:
             return self._result(consent, "stale")
 
         try:

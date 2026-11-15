@@ -218,9 +218,15 @@ def test_receiver_handles_search_health_status_and_unimplemented_allowlist_ops(
             )
             assert json.loads(receiver.handle_payload(bad_st, now=now))["outcome"] == "denied"
 
-            # 4. P18-T06 ops in protocol allowlist stay fail-closed unavailable in P18-T05
-            for op in ("file.metadata", "file.fetch", "index.delete"):
-                op_payload, _ = sign_control_payload(_make_envelope(operation=op, args={}), signing_key)
+            # 4. file.metadata stays unimplemented; the P18-T06 operations are implemented
+            # but remain outside this receiver's default allowlist.
+            meta_payload, _ = sign_control_payload(_make_envelope(operation="file.metadata", args={}), signing_key)
+            assert json.loads(receiver.handle_payload(meta_payload, now=now))["outcome"] == "unavailable"
+            for op, op_args in (
+                ("file.fetch", {"object_id": "object-1", "root_id": "corp", "relative_path": "a.txt"}),
+                ("index.delete", {"root_ids": ["corp"], "scope": "index"}),
+            ):
+                op_payload, _ = sign_control_payload(_make_envelope(operation=op, args=op_args), signing_key)
                 op_resp = json.loads(receiver.handle_payload(op_payload, now=now))
                 assert op_resp["outcome"] == "unavailable"
 

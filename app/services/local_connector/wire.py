@@ -185,7 +185,7 @@ class FetchResponse(WireModel):
     device_id: int = Field(gt=0)
     outcome: Literal["succeeded", "denied", "unavailable", "expired", "limit_exceeded", "stale", "unknown"]
     object_id: str = Field(pattern=TOKEN)
-    content_hash: str = Field(pattern=HEX64)
+    content_hash: str | None = Field(default=None, pattern=HEX64)
     size: int = Field(ge=0, le=MAX_FETCH_BYTES)
     version_assertion: str | None = Field(default=None, min_length=1, max_length=128)
 
@@ -199,9 +199,9 @@ class FetchResponse(WireModel):
         args = request.typed_args()
         if self.object_id != args.object_id or self.size > args.max_bytes:
             raise ConnectorUnavailable()
-        if self.outcome == "succeeded" and self.version_assertion is None:
+        if self.outcome == "succeeded" and (self.version_assertion is None or self.content_hash is None):
             raise ConnectorUnavailable()
-        if self.outcome != "succeeded" and self.size:
+        if self.outcome != "succeeded" and (self.size or self.content_hash is not None):
             raise ConnectorUnavailable()
         return self
 

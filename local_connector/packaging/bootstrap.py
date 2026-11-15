@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import signal
@@ -25,6 +26,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Local-only connector development build (not activated)")
     parser.add_argument("--version", action="store_true")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument(
+        "--desktop", action="store_true", help="Run the native tray controls instead of the loopback page"
+    )
+    parser.add_argument("--self-test", action="store_true", help="Offline packaged dependency health check; no runtime")
+    parser.add_argument("--install-update", nargs=3, metavar=("MANIFEST", "SIGNATURE", "ARTIFACT"))
+    parser.add_argument("--rollback", action="store_true")
+    parser.add_argument("--confirm", action="store_true", help="Confirm rollback of application files only")
     parser.add_argument("--verify-update", nargs=3, metavar=("MANIFEST", "SIGNATURE", "ARTIFACT"))
     args = parser.parse_args()
     if args.version:
@@ -34,6 +42,8 @@ def main() -> int:
         return 0
     if args.verify_update:
         return verify_update(args.verify_update)
+    if args.self_test:
+        return self_test()
     if sys.platform == "win32":
         print("Unavailable: native Windows handles and owner-private ACLs are not yet certified.", file=sys.stderr)
         return 2
@@ -45,11 +55,44 @@ def main() -> int:
     for event in (signal.SIGINT, signal.SIGTERM):
         signal.signal(event, lambda *_: stop.set())
     runtime = None
+    updater = None
     try:
+        key, feed = bundled_release()
+        if key:
+            from importlib.metadata import version
+
+            from local_connector.packaging.updater import UpdateManager
+
+            root = data_directory() / "updates"
+            root.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(root, 0o700)
+            updater = UpdateManager(
+                root, key, f"{sys.platform}-{platform.machine()}", version("social-media-ai-local-connector")
+            )
+        if args.install_update or args.rollback:
+            if updater is None:
+                raise ValueError("no bundled update identity")
+            if args.install_update:
+                updater.install(*map(Path, args.install_update))
+            else:
+                updater.rollback(confirmed=args.confirm)
+            print("Authenticated application version selected. Restart the connector; personal data is unchanged.")
+            return 0
+        if updater is not None:
+            active = updater.active_binary()
+            if active is not None and active.resolve() != Path(sys.executable).resolve():
+                updater.close()
+                updater = None
+                # The permanent bootstrap chooses the authenticated slot on every launch.
+                os.execv(active, [str(active), *sys.argv[1:]])
         runtime = ConnectorRuntime(ConnectorConfig(index_path=data_directory() / "index.sqlite3"))
         host, port = runtime.start()
         address = f"http://{host}:{port}"
         print(f"Local-only development connector: {address}", flush=True)
+        if args.desktop:
+            from local_connector.packaging.desktop import run_desktop
+
+            return run_desktop(runtime, address, stop, updater=updater, feed=feed)
         if not args.no_browser:
             webbrowser.open(address)
         stop.wait()
@@ -59,6 +102,60 @@ def main() -> int:
     finally:
         if runtime is not None:
             runtime.close()
+        if updater is not None:
+            updater.close()
+    return 0
+
+
+def bundled_release() -> tuple[bytes, str | None]:
+    """Only frozen build assets may define the update trust anchor and fixed feed."""
+    if not getattr(sys, "frozen", False):
+        return b"", None
+    folder = Path(sys._MEIPASS) / "connector-release"
+    with (folder / "update-key.bin").open("rb") as stream:
+        key = stream.read(33)
+    if len(key) not in (0, 32):
+        raise ValueError("invalid bundled trust anchor")
+    with (folder / "release-config.json").open("rb") as stream:
+        raw = stream.read(4097)
+    if len(raw) > 4096:
+        raise ValueError("invalid bundled release configuration")
+    payload = json.loads(raw)
+    if type(payload) is not dict or set(payload) != {"feed"} or payload["feed"] is not None and not key:
+        raise ValueError("invalid bundled release configuration")
+    feed = payload["feed"]
+    if feed is not None:
+        from local_connector.packaging.updater import _feed_base
+
+        feed = _feed_base(feed)
+    return key, feed
+
+
+def self_test() -> int:
+    """No keychain access, socket, selected folder, runtime or persistent database."""
+    try:
+        import sqlite3
+        from importlib.metadata import version
+
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        version("social-media-ai-local-connector")
+        Ed25519PublicKey.from_public_bytes(bytes(32))
+        with sqlite3.connect(":memory:") as connection:
+            connection.execute("CREATE VIRTUAL TABLE health USING fts5(content)")
+        if getattr(sys, "frozen", False):
+            bundled_release()
+    except (ImportError, OSError, ValueError, sqlite3.Error):
+        print("Packaged dependency self-test failed.", file=sys.stderr)
+        return 2
+    desktop = "absent"
+    try:
+        import PySide6  # noqa: F401
+    except ImportError:
+        desktop = "absent"
+    else:
+        desktop = "present"
+    print(f"Packaged dependency self-test passed; runtime not started; native desktop {desktop}.")
     return 0
 
 

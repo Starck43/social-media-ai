@@ -45,9 +45,14 @@ def run_desktop(runtime, address: str, stopped: threading.Event, updater=None, f
         folder = QFileDialog.getExistingDirectory(window, "Select an allowed local folder (read-only)")
         if not folder:
             return
-        if QMessageBox.question(
-            window, "Replace selected scope?", "Replace the current folder selection and clear its derived index? Original files remain untouched."
-        ) != QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                window,
+                "Replace selected scope?",
+                "Replace the current folder selection and clear its derived index? Original files remain untouched.",
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
             return
         try:
             runtime.select_roots([folder])
@@ -56,9 +61,14 @@ def run_desktop(runtime, address: str, stopped: threading.Event, updater=None, f
             report("Selection denied: folder access or cache separation could not be verified.")
 
     def delete_index() -> None:
-        if QMessageBox.question(
-            window, "Delete local index?", "Delete derived local content and pause indexing? Original files are not deleted."
-        ) != QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                window,
+                "Delete local index?",
+                "Delete derived local content and pause indexing? Original files are not deleted.",
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
             return
         try:
             runtime.delete_index(confirmed=True)
@@ -81,18 +91,23 @@ def run_desktop(runtime, address: str, stopped: threading.Event, updater=None, f
             pending.append(executor.submit(updater.automatic_update, feed))
 
     def rollback() -> None:
+        if pending:
+            report("Wait for the current update operation before requesting rollback.")
+            return
         if updater is None:
             report("Rollback unavailable: no authenticated installation is registered.")
             return
-        if QMessageBox.question(
-            window, "Roll back connector?", "Select the previous authenticated application version for the next restart? Local index and credentials are unchanged."
-        ) != QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                window,
+                "Roll back connector?",
+                "Select the previous authenticated application version for the next restart? Local index and credentials are unchanged.",
+            )
+            != QMessageBox.StandardButton.Yes
+        ):
             return
-        try:
-            updater.rollback(confirmed=True)
-            report("Previous authenticated version selected. Quit and restart; data was not downgraded.")
-        except (OSError, ValueError):
-            report("Rollback denied: previous version or installation state could not be authenticated.")
+        pending.append(executor.submit(updater.rollback, confirmed=True))
+        status.setText("Authenticating the previous application version…")
 
     def quit_app() -> None:
         stopped.set()
@@ -135,9 +150,15 @@ def run_desktop(runtime, address: str, stopped: threading.Event, updater=None, f
             job = pending.pop()
             try:
                 installed = job.result()
-                status.setText("Update authenticated and installed. Quit and restart to use it." if installed else "No newer authenticated update.")
-            except (OSError, ValueError):
-                status.setText("Update unavailable or rejected. Current application remains selected.")
+                status.setText(
+                    "Authenticated application version selected. Quit and restart the original launcher."
+                    if installed
+                    else "No newer authenticated update."
+                )
+            except (OSError, ValueError, RuntimeError):
+                status.setText(
+                    "Update or rollback failed. Application selection could not be confirmed; local data is unchanged."
+                )
 
     timer = QTimer()
     timer.timeout.connect(tick)

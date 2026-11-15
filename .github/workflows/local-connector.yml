@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install standalone build tools and connector (no server)
-        run: python -m pip install ./local_connector pyinstaller==6.16.0 pytest==8.4.2 cryptography==46.0.3
+        run: python -m pip install "./local_connector[desktop]" pyinstaller==6.16.0 pytest==8.4.2 cryptography==46.0.3
       - name: Verify update authentication (no DB or application fixtures)
         run: python -m pytest local_connector/packaging/tests --noconftest -p no:cacheprovider -o addopts='' -q --tb=short --no-header
       - name: Build and probe unsigned bundle

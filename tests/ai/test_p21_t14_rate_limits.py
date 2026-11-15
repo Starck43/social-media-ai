@@ -21,8 +21,8 @@ from app.services.ai.rate_limits import (
     BucketItem,
     ProviderSignal,
     RateAcquirer,
-    RateDenied,
     RateDeferred,
+    RateDenied,
     RateStoreUnavailable,
     classify_provider_signal,
 )
@@ -239,9 +239,7 @@ async def test_over_capacity_defers_then_admits():
     with llm_rate_limits(rpm=1.0, concurrency=5):
         clock = FakeClock(1000.0)
         store = FakeRateStore(rpm=1.0, concurrency=5, now=1000.0)  # 1 req/min refill
-        acquirer = RateAcquirer(
-            store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=200.0
-        )
+        acquirer = RateAcquirer(store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=200.0)
         await acquirer.acquire(make_request(), make_context())
         # bounded backpressure: the acquirer retries internally until refill
         clock.now += 61.0
@@ -253,9 +251,7 @@ async def test_bounded_wait_expires_into_denial():
     with llm_rate_limits(rpm=1.0, concurrency=5):
         clock = FakeClock(1000.0)
         store = FakeRateStore(rpm=1.0, concurrency=5, now=1000.0)
-        acquirer = RateAcquirer(
-            store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=0.5
-        )
+        acquirer = RateAcquirer(store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=0.5)
         await acquirer.acquire(make_request(), make_context())
         with pytest.raises(RateDenied):
             await acquirer.acquire(make_request("b" * 32), make_context())
@@ -265,13 +261,9 @@ async def test_retry_after_floor_never_shortens():
     with llm_rate_limits(rpm=60.0, concurrency=5):
         clock = FakeClock(1000.0)
         store = FakeRateStore(rpm=60.0, concurrency=5, now=1000.0)
-        acquirer = RateAcquirer(
-            store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=0.1
-        )
+        acquirer = RateAcquirer(store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=0.1)
         # a provider throttle blocks the bucket for 1000 seconds
-        await acquirer.note_signal(
-            ProviderSignal("transient", 1000.0), scope="upstream", scope_key="pool:cred-abcd"
-        )
+        await acquirer.note_signal(ProviderSignal("transient", 1000.0), scope="upstream", scope_key="pool:cred-abcd")
         # the bounded wait expires on the huge floor: denial, retry_after intact
         with pytest.raises(RateDenied) as exc:
             await acquirer.acquire(make_request(), make_context())
@@ -289,9 +281,7 @@ async def test_permanent_signals_do_not_block():
         store = FakeRateStore(now=1000.0)
         acquirer = RateAcquirer(store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock))
         for code in (401, 403, 400, 402, 418):
-            await acquirer.note_signal(
-                classify_provider_signal(code), scope="upstream", scope_key="pool:cred-abcd"
-            )
+            await acquirer.note_signal(classify_provider_signal(code), scope="upstream", scope_key="pool:cred-abcd")
         assert store.block_calls == []
         # admission still works (bucket untouched)
         lease = await acquirer.acquire(make_request(), make_context())
@@ -302,9 +292,7 @@ async def test_release_frees_slot_without_refunding_units():
     with llm_rate_limits(rpm=1.0, concurrency=2):
         clock = FakeClock(1000.0)
         store = FakeRateStore(rpm=1.0, concurrency=2, now=1000.0)
-        acquirer = RateAcquirer(
-            store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=100.0
-        )
+        acquirer = RateAcquirer(store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=100.0)
         admission = DispatchAdmission(
             dispatch_id="d" * 32,
             context=make_context(),
@@ -376,9 +364,7 @@ async def test_credential_rotation_does_not_refill_pool():
     with llm_rate_limits(rpm=1.0, concurrency=5):
         clock = FakeClock(1000.0)
         store = FakeRateStore(rpm=1.0, concurrency=5, now=1000.0)
-        acquirer = RateAcquirer(
-            store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=0.1
-        )
+        acquirer = RateAcquirer(store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=0.1)
         ctx_v1 = make_context(credential_ref="cred-abcd", credential_version=1)
         await acquirer.acquire(make_request(), ctx_v1)
         # same ref, rotated version: same pool, still empty → bounded denial
@@ -391,17 +377,13 @@ async def test_token_bucket_charges_requested_output_tokens():
     with llm_rate_limits(rpm=1000.0, tpm=100.0, concurrency=5):
         clock = FakeClock(1000.0)
         store = FakeRateStore(rpm=1000.0, tpm=100.0, concurrency=5, now=1000.0)
-        acquirer = RateAcquirer(
-            store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=0.1
-        )
+        acquirer = RateAcquirer(store=store, clock=clock, monotonic=clock, sleep=make_sleep(clock), max_wait=0.1)
         await acquirer.acquire(make_request(requested_output_tokens=50), make_context())
         bucket = store.buckets[("upstream", "pool:cred-abcd", "token", None)]
         assert bucket.available == 50.0
         # a larger request must wait for the token refill: bounded denial
         with pytest.raises(RateDenied):
-            await acquirer.acquire(
-                make_request("b" * 32, requested_output_tokens=60), make_context()
-            )
+            await acquirer.acquire(make_request("b" * 32, requested_output_tokens=60), make_context())
 
 
 async def test_plan_uses_settings_defaults_pass_through():

@@ -75,7 +75,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULE
 
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **DEFERRED** (owner, 2026-11-14: P20-T12 named no source where an official API and plain fetch fail, and disabled the unconfined Chromium fallback; resume only with an evidenced named source + a new owner decision on infrastructure and cost) · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
-- [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **IN_PROGRESS** · pi-p18-t06 · [PR #492](https://github.com/Starck43/social-media-ai/pull/492) (Draft, `feat/p18-t06-file-fetch`, head `29689430`): findings `F-1`..`F-6` fixed (`_request_roots` + audit actions, schema-complete non-success/replay `FetchResponse`/`DeleteResponse`, `company`/`cloud_consented` root + `mtime_ns`/`os.fstat` TOCTOU guards, pause-on-delete, `FetchConsent` `file_name`/`expected_size`, post-fetch cloud drift `compare_cloud_version`, `Remove all data` UI/runtime + device snippet/replay purge); 35 stdlib connector + 15 fetch tests pass; deferred full-venv `pytest`/`package_coverage` · [remediation](https://github.com/Starck43/social-media-ai/pull/492#issuecomment-6900633774) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 
 ## Deferred by explicit owner decision
 

@@ -2,7 +2,7 @@
 
 [Product direction](../product/PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../product/BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p18)
 
-**Phase status: IN_PROGRESS** (implementation started; ROADMAP owns open task status).
+**Phase status: DONE 2026-11-15** (planned tasks T01–T07 accepted; activation, [Q-19](../tasks/q-19.md), and three-OS evidence [Q-22](../tasks/q-22.md) remain open gates).
 Owner estimate (TZ): 6–8 weeks — not a repository commitment.
 
 **Goal:** An installable desktop connector that indexes user-selected folders locally (including OCR) and answers federated search from the cloud with metadata and snippets only, uploading a file only on explicit request.
@@ -43,7 +43,7 @@ TZ criteria: install (T07); index selected folders (T03); OCR (T04); full-text s
 3. [P18-T03 accepted scaffold](../audit/p18/p18-t03.md) — **DONE 2026-11-06**; local-only development scaffold; accepted source `d726a476fe95f9d0c3757082394de4de2d75e4c6`; full device/platform/security gates remain P18-T05/T06/T07 and Q-19.
 4. ~~P18-T04 — Text extraction and OCR with resource limits~~ **DONE 2026-11-08**, accepted source `e74b8e81`, merge `11767207` — [audit](../audit/p18/p18-t04.md)
 5. [P18-T05](../audit/p18/p18-t05.md) — **DONE 2026-11-15**; local search with `bm25` ranking, filters, bounded snippets, ACL/root/exclusion rechecks, durable replay ledger and the signed command receiver (accepted `ad086dd4`, merged `ccc26334`; PR #491; host `local_connector/tests` 121 passed / 1 skipped). Real mTLS, OS keystore and platform ACL evidence stay gated by Q-19 / P18-T07.
-6. [P18-T06](../tasks/p18-t06.md) — Explicit file fetch, version tracking and index deletion · `P3` · `C3` · depends: [P18-T05](../audit/p18/p18-t05.md), [P18-T02 accepted](../audit/p18/p18-t02.md)
+6. [P18-T06](../audit/p18/p18-t06.md) — **DONE 2026-11-15**; consented single-file fetch under exact-version issuer, `mtime_ns`/fstat version tracking, post-fetch cloud drift (`local_changed_after_fetch`), fenced paused `index.delete`, and `Remove all data` / device snippet & replay purge (accepted `a2c77673`, merged `e657bcdb`; PR #492; `app/services/local_connector` coverage 93.45%, 84 integration + 62 device T03/T05/T06 tests pass). Production issuer, `app/web/` confirmation UI, and byte-transfer frame stay gated by Q-19 / owner decision.
 7. [P18-T07 accepted](../audit/p18/p18-t07.md) — Packaging, signing and auto-update for Windows, macOS and Linux · `P3` · `C4` · **DONE 2026-11-15**, accepted source `9ca9e47d`, merge `ad7ae24d` — the packaging, authenticated update/rollback, OS key store, mTLS diagnostic and native Windows adapter are delivered; the three-OS native evidence and the Windows runtime enablement stay open in [Q-22](../tasks/q-22.md)
 
 ## Dependencies and gates

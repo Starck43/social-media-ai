@@ -79,7 +79,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULE
 - [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **IN_PROGRESS** · opencode-p18-t05 · remote lane (`local_connector/` only, DB-exempt); draft [PR #491](https://github.com/Starck43/social-media-ai/pull/491) (`feat/p18-t05-local-search`, tested SHA `fbd0ff7b`, base `167260b4`): `local_connector/tests/search` **16 passed** (85% coverage), full `local_connector/tests` **119 passed / 2 pre-existing container-env T03+T04 failures** (`test_cpu_limit_rlimit`, `test_root_and_ancestor_replacement_fail_closed` also failing on baseline `167260b4`); host POSIX/macOS run of `pytest local_connector/tests -q` deferred before `READY` · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C4`
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 
-
 ## Deferred by explicit owner decision
 
 - [P2-T08](docs/tasks/p2-t08.md) corporate/shared billing accounts — **DEFERRED** · product-owner · `codex resume 01a17835-5608-7112-9a99-af8b09ba405c` · `P3` · `C4`
@@ -171,7 +170,7 @@ Model catalogs, plan grants and dispatch-safety review; implementation is not ac
 Q-2/Q-5 are ordered in the execution queue; Q-12 remains owner-deferred. Q-18 is closed
 (owner decisions D1–D9, [record](docs/audit/q/q-18-owner-decisions.md)).
 - [Q-19](docs/tasks/q-19.md) Local connector protocol: second-party security review and real-device evidence — **TODO** · open
-- [Q-22](docs/tasks/q-22.md) Local connector: native platform evidence and Windows runtime enablement — **TODO** · owner · P18-T07 accepted with its platform gates recorded rather than closed (owner instruction 2026-11-15); owner asked to revisit at the end of the project · [audit](docs/audit/p18/p18-t07.md) · accepted source `9ca9e47d`, merge `ad7ae24d` · `P3` · `C4`
   The P18-T01 protocol is accepted as a design; no line of it has been exercised by a running system. Tracked so acceptance is
   never read as verification.
+- [Q-22](docs/tasks/q-22.md) Local connector: native platform evidence and Windows runtime enablement — **TODO** · owner · P18-T07 accepted with its platform gates recorded rather than closed (owner instruction 2026-11-15); owner asked to revisit at the end of the project · [audit](docs/audit/p18/p18-t07.md) · accepted source `9ca9e47d`, merge `ad7ae24d` · `P3` · `C4`
 The P6-T05 audit's two test follow-ups were accepted under [P6-T06](docs/audit/p6/p6-t06.md); the original audit remains historical evidence.

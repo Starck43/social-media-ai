@@ -11,14 +11,15 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from cryptography import x509
+from sqlalchemy import delete, func, select, update
+
 from app.core.access_catalog import workspace_grants
 from app.core.tenant_context import current_tenant_id, is_bypass
 from app.models import ActionAuditEvent, Tenant, TenantUser, User, WorkspaceRole
 from app.models.integrations.local_connector import LocalConnector, LocalConnectorPairing, LocalConnectorRequest
 from app.models.managers.base_manager import BaseManager
 from app.types import ActionType
-from cryptography import x509
-from sqlalchemy import delete, func, select, update
 
 from .wire import REPLAY_CAPACITY, REPLAY_SECONDS, ConnectorUnavailable
 

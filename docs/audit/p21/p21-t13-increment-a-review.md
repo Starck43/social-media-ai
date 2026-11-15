@@ -2,7 +2,7 @@
 
 **2026-11-14 · NOT ACCEPTED · no merge or task closure.**
 
-Task: [P21-T13](../../tasks/p21-t13.md), [PR #488](https://github.com/Starck43/social-media-ai/pull/488),
+Task: [P21-T13](../../archive/tasks/p21-t13.md), [PR #488](https://github.com/Starck43/social-media-ai/pull/488),
 branch `feat/p21-t13-catalog-storage`, target `dev`.
 Code candidate: `1beb72cbbd1faff4f27eb62e26adc2eb9a28407e`.
 Registry owner remains `opencode-p21-t13`; required DB runner is `opencode-local`.

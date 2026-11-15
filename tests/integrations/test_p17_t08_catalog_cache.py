@@ -17,6 +17,7 @@ from app.models.managers.workspace_connection_manager import ConnectionDenied
 from app.services.onec import query as query_mod
 from app.services.onec.metadata import parse_odata_metadata_xml
 from app.services.onec.query import (
+    CAPABILITY_QUERY,
     MAX_METADATA_CACHE_ENTRIES,
     METADATA_CACHE_TTL_SECONDS,
     OneCMetadataCache,
@@ -94,8 +95,18 @@ def service_fixture(monkeypatch, *, clock=None, pinned=True, connection_id=5):
         yield session
 
     service._sessions._get_owned_session = owned_session
-    service._hosts.require_approved = AsyncMock(return_value="erp.example.com")
+    service._hosts.require_approved_for_read = AsyncMock(return_value="erp.example.com")
     monkeypatch.setattr(query_mod, "_authorize", AsyncMock())
+    # This DB-free fixture already replaces connection authorization, so it also
+    # replaces the P17-T05 capability authority; the real gate is covered by
+    # test_p17_t05_service_gates.py. `capability_calls` records that the gate ran.
+    capability_calls: list[dict] = []
+
+    async def allowed_capability(*, tenant_id, actor_id, capability, session=None):
+        capability_calls.append({"tenant_id": tenant_id, "actor_id": actor_id, "capability": capability})
+        return "owner"
+
+    monkeypatch.setattr(query_mod, "authorize_capability", allowed_capability)
     monkeypatch.setattr(
         query_mod,
         "open_basic_credentials",
@@ -106,12 +117,12 @@ def service_fixture(monkeypatch, *, clock=None, pinned=True, connection_id=5):
         "budget_for",
         lambda provider, account, *, connection_id: f"budget:{provider}:{account}:{connection_id}",
     )
-    return service, catalog, row, metadata_cache
+    return service, catalog, row, metadata_cache, capability_calls
 
 
 @pytest.mark.asyncio
 async def test_two_consecutive_questions_fetch_metadata_once(monkeypatch):
-    service, catalog, _, _ = service_fixture(monkeypatch)
+    service, catalog, _, _, capability_calls = service_fixture(monkeypatch)
     transport = AsyncMock(return_value=METADATA_XML.encode("utf-8"))
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", transport)
 
@@ -121,11 +132,16 @@ async def test_two_consecutive_questions_fetch_metadata_once(monkeypatch):
     assert first.metadata_sha256 == second.metadata_sha256 == catalog.metadata_sha256
     # The second question is served from the cache: no second provider request.
     assert transport.await_count == 1
+    # The capability gate still runs on every call, cache hits included.
+    assert capability_calls == [
+        {"tenant_id": 11, "actor_id": 7, "capability": CAPABILITY_QUERY},
+        {"tenant_id": 11, "actor_id": 7, "capability": CAPABILITY_QUERY},
+    ]
 
 
 @pytest.mark.asyncio
 async def test_a_changed_metadata_pin_invalidates_the_cache(monkeypatch):
-    service, catalog, row, _ = service_fixture(monkeypatch)
+    service, catalog, row, _, _ = service_fixture(monkeypatch)
     transport = AsyncMock(return_value=METADATA_XML.encode("utf-8"))
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", transport)
 
@@ -142,7 +158,7 @@ async def test_a_changed_metadata_pin_invalidates_the_cache(monkeypatch):
 @pytest.mark.asyncio
 async def test_an_expired_entry_is_refetched(monkeypatch):
     now = [1000.0]
-    service, _, _, _ = service_fixture(monkeypatch, clock=lambda: now[0])
+    service, _, _, _, _ = service_fixture(monkeypatch, clock=lambda: now[0])
     transport = AsyncMock(return_value=METADATA_XML.encode("utf-8"))
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", transport)
 
@@ -155,7 +171,7 @@ async def test_an_expired_entry_is_refetched(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_the_cache_is_scoped_per_connection(monkeypatch):
-    service, _, _, cache = service_fixture(monkeypatch)
+    service, _, _, cache, _ = service_fixture(monkeypatch)
     transport = AsyncMock(return_value=METADATA_XML.encode("utf-8"))
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", transport)
 
@@ -168,7 +184,7 @@ async def test_the_cache_is_scoped_per_connection(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_authorization_runs_before_the_cache_is_used(monkeypatch):
-    service, _, _, _ = service_fixture(monkeypatch)
+    service, _, _, _, capability_calls = service_fixture(monkeypatch)
     transport = AsyncMock(return_value=METADATA_XML.encode("utf-8"))
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", transport)
     monkeypatch.setattr(query_mod, "_authorize", AsyncMock(side_effect=ConnectionDenied()))
@@ -177,11 +193,13 @@ async def test_authorization_runs_before_the_cache_is_used(monkeypatch):
         await service.fetch_metadata_catalog(tenant_id=11, actor_id=7, connection_id=5)
     # The refused caller never reaches the provider, and nothing is cached for it.
     transport.assert_not_awaited()
+    # The connection gate is only reached after the capability gate allowed the call.
+    assert capability_calls == [{"tenant_id": 11, "actor_id": 7, "capability": CAPABILITY_QUERY}]
 
 
 @pytest.mark.asyncio
 async def test_an_unpinned_connection_still_caches_but_only_for_the_ttl(monkeypatch):
-    service, _, _, _ = service_fixture(monkeypatch, pinned=False)
+    service, _, _, _, _ = service_fixture(monkeypatch, pinned=False)
     transport = AsyncMock(return_value=METADATA_XML.encode("utf-8"))
     monkeypatch.setattr(query_mod, "fetch_odata_bytes", transport)
 

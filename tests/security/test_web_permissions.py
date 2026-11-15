@@ -204,10 +204,13 @@ async def _platform_value() -> str:
 
 
 async def _drop(user: User | None, tenant_id: int | None) -> None:
-    if user is not None:
-        await User.objects.delete_user(user.id)
-    if tenant_id is not None:
-        await tenants.delete_by_id(tenant_id)
+    # Account deletion now refuses a live workspace sponsorship. Remove only
+    # this fixture's workspace first, then keep the real account lifecycle gate.
+    with tenant_scope(bypass=True):
+        if tenant_id is not None:
+            await tenants.delete_by_id(tenant_id)
+        if user is not None:
+            await User.objects.delete_user(user.id)
 
 
 async def _invitee(prefix: str, workspace_role: WorkspaceRoleType, tenant_id: int, password: str) -> User:

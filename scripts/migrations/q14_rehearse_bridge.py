@@ -37,7 +37,8 @@ def main():
         database, address, user = connection.execute(
             text("SELECT current_database(), inet_server_addr()::text, current_user")
         ).one()
-        if database != "social_manager" or address not in (None, "127.0.0.1", "::1"):
+        host = address.split("/", 1)[0] if address else None
+        if database != "social_manager" or host not in (None, "127.0.0.1", "::1"):
             raise SystemExit("Expected the authorized local social_manager database")
         if not connection.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": LOCK}).scalar_one():
             raise SystemExit("Another Q-14 writer owns the database")
@@ -68,7 +69,7 @@ def main():
             env.update(
                 PGDATABASE=database,
                 PGUSER=user,
-                PGHOST="/tmp" if address is None else address,
+                PGHOST="/tmp" if host is None else host,
                 PGPORT=str(url.port or 5432),
             )
             if url.password is not None:

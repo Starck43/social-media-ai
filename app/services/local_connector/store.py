@@ -28,13 +28,24 @@ PAIRING_HISTORY_RETENTION = timedelta(days=1)
 MAX_PENDING_PAIRINGS = 3
 
 
+_AUDIT_ACTION_BY_OPERATION = {
+    "search": "files.connector.search",
+    "file.fetch": "files.connector.fetch",
+    "index.delete": "files.connector.index_delete",
+}
+
+
 def _request_roots(request) -> list[str]:
-    """Roots an operation is scoped to: search/fetch roots and index-delete root ids."""
+    """Roots an operation is scoped to: search (`roots`), fetch (`root_id`), delete (`root_ids`)."""
 
     args = request.typed_args()
     roots = getattr(args, "roots", None)
     if roots is None:
         roots = getattr(args, "root_ids", None)
+    if roots is None:
+        root_id = getattr(args, "root_id", None)
+        if type(root_id) is str and root_id:
+            return [root_id]
     if not isinstance(roots, (list, tuple)) or any(type(root) is not str for root in roots):
         raise ConnectorUnavailable()
     return list(roots)
@@ -413,7 +424,7 @@ class LocalConnectorStore(BaseManager):
                 session=session,
                 actor_kind="user",
                 actor_id=request.owner_id,
-                action="files.connector.search",
+                action=_AUDIT_ACTION_BY_OPERATION.get(request.operation, "files.connector.search"),
                 resource_kind="local_connector",
                 resource_id=row.id,
             )

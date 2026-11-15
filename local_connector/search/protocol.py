@@ -448,6 +448,46 @@ class SignedCommandReceiver:
             "version": 1,
         }
 
+    def _fetch_response(
+        self,
+        cmd: VerifiedCommand,
+        *,
+        outcome: str,
+        size: int = 0,
+        content_hash: str | None = None,
+        version_assertion: str | None = None,
+    ) -> bytes:
+        resp = self._base_response(cmd, outcome=outcome)
+        resp["object_id"] = str(cmd.args["object_id"])
+        resp["size"] = int(size) if outcome == "succeeded" else 0
+        if outcome == "succeeded" and content_hash is not None and version_assertion is not None:
+            resp["content_hash"] = str(content_hash)
+            resp["version_assertion"] = str(version_assertion)
+        return canonical_json(resp)
+
+    def _delete_response(
+        self,
+        cmd: VerifiedCommand,
+        *,
+        outcome: str,
+        generation: int | None = None,
+        removed: int = 0,
+    ) -> bytes:
+        resp = self._base_response(cmd, outcome=outcome)
+        resp["scope"] = str(cmd.args.get("scope", "index"))
+        resp["generation"] = int(self.search_service.store.generation if generation is None else generation)
+        resp["removed"] = int(removed) if outcome == "succeeded" else 0
+        return canonical_json(resp)
+
+    def _error_response(self, cmd: VerifiedCommand, *, outcome: str) -> bytes:
+        if cmd.operation == "search":
+            return self._search_response(cmd, outcome=outcome)
+        if cmd.operation == "file.fetch":
+            return self._fetch_response(cmd, outcome=outcome)
+        if cmd.operation == "index.delete":
+            return self._delete_response(cmd, outcome=outcome)
+        return canonical_json(self._base_response(cmd, outcome=outcome))
+
     def _search_response(
         self,
         cmd: VerifiedCommand,
@@ -492,18 +532,29 @@ class SignedCommandReceiver:
     def _reauthorize_cached_reply(self, cmd: VerifiedCommand, cached_json: str | None) -> bytes:
         if self.revoked or not self._epochs_match(cmd) or cached_json is None:
             outcome = "denied" if self.revoked else ("stale" if not self._epochs_match(cmd) else "unknown")
-            if cmd.operation == "search":
-                return self._search_response(cmd, outcome=outcome)
-            return canonical_json(self._base_response(cmd, outcome=outcome))
+            return self._error_response(cmd, outcome=outcome)
 
         try:
             payload = decode_control_payload(cached_json.encode("utf-8"))
         except SearchProtocolError:
-            if cmd.operation == "search":
-                return self._search_response(cmd, outcome="unknown")
-            return canonical_json(self._base_response(cmd, outcome="unknown"))
+            return self._error_response(cmd, outcome="unknown")
 
         if cmd.operation != "search":
+            if payload.get("outcome") != "succeeded":
+                return canonical_json(payload)
+            consented_roots = {
+                reg.root_id
+                for reg in self.search_service.root_registrations()
+                if reg.boundary == "company" and reg.cloud_consented
+            }
+            if cmd.operation == "file.fetch":
+                if self.search_service.store.pause_reason == "deleted":
+                    return self._fetch_response(cmd, outcome="stale")
+                if cmd.args.get("root_id") not in consented_roots:
+                    return self._fetch_response(cmd, outcome="denied")
+            elif cmd.operation == "index.delete":
+                if any(root_id not in consented_roots for root_id in cmd.args.get("root_ids", [])):
+                    return self._delete_response(cmd, outcome="denied")
             return canonical_json(payload)
 
         if payload.get("outcome") != "succeeded":
@@ -589,55 +640,73 @@ class SignedCommandReceiver:
             if reg.boundary == "company" and reg.cloud_consented
         }
         if any(root_id not in consented for root_id in requested):
-            return canonical_json(self._base_response(cmd, outcome="denied")), False
+            return self._delete_response(cmd, outcome="denied"), False
         if scope == "all":
             root_hashes: list[str] | None = None
-            pause = True
         else:
             root_hashes = [root_hash(consented[root_id].selected) for root_id in requested]
-            pause = False
         store: IndexStore = self.search_service.store
         report = store.delete_scope(
             request_id=cmd.request_id,
             request_digest=cmd.digest,
             root_hashes=root_hashes,
-            pause=pause,
+            pause=True,
         )
-        resp = self._base_response(cmd, outcome="succeeded")
-        resp["scope"] = scope
-        resp["generation"] = int(report.generation)
-        resp["removed"] = int(report.removed)
-        return canonical_json(resp), bool(report.removed)
+        return (
+            self._delete_response(cmd, outcome="succeeded", generation=report.generation, removed=report.removed),
+            bool(report.removed),
+        )
 
     def _execute_file_fetch(self, cmd: VerifiedCommand) -> tuple[bytes, bool]:
         from ..transfer import FetchConsent
 
         if self.fetcher is None or not callable(self.fetch_confirmation):
-            return canonical_json(self._base_response(cmd, outcome="unavailable")), False
+            return self._fetch_response(cmd, outcome="unavailable"), False
+        consented = {
+            reg.root_id: reg
+            for reg in self.search_service.root_registrations()
+            if reg.boundary == "company" and reg.cloud_consented
+        }
+        root_id = str(cmd.args["root_id"])
+        if root_id not in consented:
+            return self._fetch_response(cmd, outcome="denied"), False
         consent = self.fetch_confirmation(cmd)
         if not isinstance(consent, FetchConsent) or consent.request_id != cmd.request_id:
             # A valid signed command is still not authority: a human confirmation must
             # already exist locally for exactly this object, root and path.
-            return canonical_json(self._base_response(cmd, outcome="denied")), False
+            return self._fetch_response(cmd, outcome="denied"), False
         if not consent.binds(
             object_id=str(cmd.args["object_id"]),
-            root_id=str(cmd.args["root_id"]),
+            root_id=root_id,
             relative_path=str(cmd.args["relative_path"]),
         ):
-            return canonical_json(self._base_response(cmd, outcome="denied")), False
-        result = self.fetcher.fetch(consent, issuer=self.version_issuer, sink=self.fetch_sink)
+            return self._fetch_response(cmd, outcome="denied"), False
+        expected_hash = cmd.args.get("expected_content_hash")
+        if consent.expected_content_hash is not None and expected_hash is not None:
+            if consent.expected_content_hash != expected_hash:
+                return self._fetch_response(cmd, outcome="stale"), False
+        result = self.fetcher.fetch(
+            consent,
+            issuer=self.version_issuer,
+            sink=self.fetch_sink,
+            max_bytes=cmd.args.get("max_bytes"),
+            expected_content_hash=expected_hash,
+        )
         outcome = (
             result.state
             if result.state in {"denied", "stale", "limit_exceeded", "unavailable", "unknown"}
             else ("succeeded" if result.state == "complete" else "denied")
         )
-        resp = self._base_response(cmd, outcome=outcome)
-        resp["object_id"] = str(cmd.args["object_id"])
-        resp["size"] = int(result.bytes_read) if result.complete else 0
-        if result.complete:
-            resp["content_hash"] = str(result.sha256)
-            resp["version_assertion"] = str(result.version_assertion)
-        return canonical_json(resp), result.complete
+        return (
+            self._fetch_response(
+                cmd,
+                outcome=outcome,
+                size=int(result.bytes_read) if result.complete else 0,
+                content_hash=result.sha256 if result.complete else None,
+                version_assertion=result.version_assertion if result.complete else None,
+            ),
+            result.complete,
+        )
 
     def handle_payload(self, payload: bytes, *, now: int | None = None) -> bytes:
         """Verify and execute one signed command payload, recording durable replay state."""
@@ -664,30 +733,16 @@ class SignedCommandReceiver:
         )
         if decision.status == "duplicate":
             if decision.state != "completed":
-                if cmd.operation == "search":
-                    return self._search_response(cmd, outcome="unknown")
-                return canonical_json(self._base_response(cmd, outcome="unknown"))
+                return self._error_response(cmd, outcome="unknown")
             return self._reauthorize_cached_reply(cmd, decision.response_json)
 
         try:
             if self.revoked:
-                response_bytes = (
-                    self._search_response(cmd, outcome="denied")
-                    if cmd.operation == "search"
-                    else canonical_json(self._base_response(cmd, outcome="denied"))
-                )
+                response_bytes = self._error_response(cmd, outcome="denied")
             elif not self._epochs_match(cmd):
-                response_bytes = (
-                    self._search_response(cmd, outcome="stale")
-                    if cmd.operation == "search"
-                    else canonical_json(self._base_response(cmd, outcome="stale"))
-                )
+                response_bytes = self._error_response(cmd, outcome="stale")
             elif cmd.operation not in self.enabled_operations:
-                response_bytes = (
-                    self._search_response(cmd, outcome="unavailable")
-                    if cmd.operation == "search"
-                    else canonical_json(self._base_response(cmd, outcome="unavailable"))
-                )
+                response_bytes = self._error_response(cmd, outcome="unavailable")
             elif cmd.operation == "search":
                 try:
                     response_bytes, _ = self._execute_search(cmd)

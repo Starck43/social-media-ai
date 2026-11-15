@@ -192,3 +192,16 @@ def test_new_request_helper_carries_operation_specific_arguments() -> None:
     assert request.operation == "file.fetch"
     assert canonical({"a": 1}) == b'{"a":1}'
     assert request.typed_args().object_id == "object-1"
+
+
+def test_request_roots_and_audit_action_support_fetch_and_delete() -> None:
+    from app.services.local_connector.store import _AUDIT_ACTION_BY_OPERATION, _request_roots
+
+    fetch_req = request_for(FetchArgs(object_id="object-1", root_id="root-a", relative_path="a.txt"), "file.fetch")
+    del_req = request_for(DeleteArgs(scope="index", root_ids=["root-a"]), "index.delete")
+    search_req = request_for(SearchArgs(query="q", roots=["root-a"]), "search")
+    assert _request_roots(fetch_req) == ["root-a"]
+    assert _request_roots(del_req) == ["root-a"]
+    assert _request_roots(search_req) == ["root-a"]
+    assert _AUDIT_ACTION_BY_OPERATION["file.fetch"] == "files.connector.fetch"
+    assert _AUDIT_ACTION_BY_OPERATION["index.delete"] == "files.connector.index_delete"

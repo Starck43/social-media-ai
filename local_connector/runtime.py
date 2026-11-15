@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -16,10 +17,20 @@ from .watcher import ConnectorWatcher
 class ConnectorRuntime:
     """Wire pinned roots, private SQLite, watcher and loopback development UI."""
 
-    def __init__(self, config: ConnectorConfig) -> None:
+    def __init__(
+        self,
+        config: ConnectorConfig,
+        *,
+        replay_ledger: object | None = None,
+        device_id: int | None = None,
+        credential_remover: Callable[[], None] | None = None,
+    ) -> None:
         initial = tuple(config.selected_roots)
         self.config = replace(config, selected_roots=list(initial))
         self._control_lock = threading.RLock()
+        self.replay_ledger = replay_ledger
+        self.device_id = device_id
+        self.credential_remover = credential_remover
         self.store = IndexStore(config.index_path)
         self.engine = IndexEngine(
             self.store,
@@ -39,6 +50,7 @@ class ConnectorRuntime:
             select_roots=self.select_roots,
             delete_index=self._delete_from_ui,
             resume_indexing=self.resume_indexing,
+            remove_all_data=self._remove_all_data_from_ui,
         )
 
         # First-run configured paths are explicit initial selections. Once a root
@@ -206,6 +218,40 @@ class ConnectorRuntime:
 
     def _delete_from_ui(self) -> None:
         self.delete_index(confirmed=True)
+
+    def remove_all_data(
+        self,
+        *,
+        confirmed: bool,
+        device_id: int | None = None,
+        credential_remover: Callable[[], None] | None = None,
+    ) -> None:
+        """Remove local index, pinned root approvals, replay cache and credentials without touching files."""
+
+        if confirmed is not True:
+            raise PermissionError("connector data removal requires explicit confirmation")
+        with self._control_lock:
+            watcher, self.watcher = self.watcher, None
+            if watcher is not None:
+                watcher.stop()
+            self.store.delete_all(pause=True)
+            self.store.set_approved_roots(())
+            self._set_selection(())
+            self._root_unavailable = False
+            self._selection_error = None
+            target_device = device_id if device_id is not None else self.device_id
+            if (
+                self.replay_ledger is not None
+                and target_device is not None
+                and hasattr(self.replay_ledger, "purge_device")
+            ):
+                self.replay_ledger.purge_device(target_device)
+            remover = credential_remover if credential_remover is not None else self.credential_remover
+            if callable(remover):
+                remover()
+
+    def _remove_all_data_from_ui(self) -> None:
+        self.remove_all_data(confirmed=True)
 
     def status_payload(self) -> dict[str, object]:
         with self._control_lock:

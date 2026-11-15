@@ -10,6 +10,7 @@ ineligible rather than served under a weaker claim.
 from __future__ import annotations
 
 import hashlib
+import os
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -58,7 +59,7 @@ class LocalFetcher:
     def __init__(
         self,
         store: IndexStore,
-        roots: Mapping[str, SelectedRoot],
+        roots: Mapping[str, SelectedRoot | RootRegistration],
         *,
         max_bytes: int = MAX_FETCH_BYTES,
         timeout_seconds: int = FETCH_TIMEOUT_SECONDS,
@@ -82,21 +83,44 @@ class LocalFetcher:
         *,
         issuer: ExactVersionIssuer | None = None,
         sink: Callable[[bytes], None] | None = None,
+        max_bytes: int | None = None,
+        expected_content_hash: str | None = None,
     ) -> FetchResult:
         """Fetch one object named by ``consent``; never a second object, never a retry."""
 
         if not isinstance(consent, FetchConsent):
             raise FetchConsentError("fetch requires a user confirmation record")
+        if max_bytes is not None and (type(max_bytes) is not int or not 0 < max_bytes <= MAX_FETCH_BYTES):
+            return self._result(consent, "limit_exceeded")
+        effective_max = self._max_bytes if max_bytes is None else min(self._max_bytes, max_bytes)
+
         record = self._store.get_by_hash(consent.object_id)
         if record is None:
             return self._result(consent, "denied")
-        if not consent.binds(object_id=record.path_hash, root_id=consent.root_id, relative_path=record.relative_path):
+        if not consent.binds(
+            object_id=record.path_hash,
+            root_id=consent.root_id,
+            relative_path=record.relative_path,
+            size=record.size,
+        ):
             return self._result(consent, "denied")
         if consent.expected_content_hash is not None and consent.expected_content_hash != record.content_hash:
             return self._result(consent, "stale")
-        root = self._roots.get(consent.root_id)
-        if root is None or not isinstance(root, SelectedRoot):
+        if expected_content_hash is not None and expected_content_hash != record.content_hash:
+            return self._result(consent, "stale")
+
+        entry = self._roots.get(consent.root_id)
+        if isinstance(entry, RootRegistration):
+            if entry.boundary != "company" or not entry.cloud_consented:
+                return self._result(consent, "denied")
+            root = entry.selected
+            registration = entry
+        elif isinstance(entry, SelectedRoot):
+            root = entry
+            registration = RootRegistration(consent.root_id, root, boundary="company", cloud_consented=True)
+        else:
             return self._result(consent, "denied")
+
         if root_hash(root) != record.root_hash:
             return self._result(consent, "stale")
 
@@ -106,7 +130,6 @@ class LocalFetcher:
             return self._result(
                 consent, "stale", version=FileVersion(record.content_hash, record.size, record.mtime_ns)
             )
-        registration = RootRegistration(consent.root_id, root, boundary="company", cloud_consented=True)
         live = verify_root_and_file_access(registration, record.relative_path, folder_policy=self._policy)
         if live is None:
             return self._result(consent, "denied")
@@ -125,7 +148,7 @@ class LocalFetcher:
         if type(assertion) is not str or not assertion:
             return self._result(consent, "ineligible", version=indexed)
 
-        return self._stream(consent, record, root, indexed, assertion, sink)
+        return self._stream(consent, record, root, indexed, assertion, sink, max_bytes=effective_max)
 
     def _stream(
         self,
@@ -135,29 +158,36 @@ class LocalFetcher:
         indexed: FileVersion,
         assertion: str,
         sink: Callable[[bytes], None] | None,
+        *,
+        max_bytes: int,
     ) -> FetchResult:
         digest = hashlib.sha256()
         total = 0
         deadline = self._clock() + self._timeout
         try:
             with open_selected_file(root, record.relative_path) as stream:
+                pre_stat = os.fstat(stream.fileno())
+                pre_version = FileVersion(indexed.content_hash, pre_stat.st_size, pre_stat.st_mtime_ns)
+                if compare_versions(indexed, pre_version).state != "current":
+                    return self._result(consent, "stale", version=indexed, bytes_read=0)
                 while True:
                     if self._clock() > deadline:
                         return self._result(consent, "limit_exceeded", version=indexed, bytes_read=total)
-                    remaining = self._max_bytes - total
+                    remaining = max_bytes - total
                     block = stream.read(min(CHUNK_BYTES, remaining))
                     if not block:
                         break
                     total += len(block)
-                    if total >= self._max_bytes and stream.read(1):
-                        return self._result(consent, "limit_exceeded", version=indexed, bytes_read=self._max_bytes)
+                    if total >= max_bytes and stream.read(1):
+                        return self._result(consent, "limit_exceeded", version=indexed, bytes_read=max_bytes)
                     digest.update(block)
                     if sink is not None:
                         sink(block)
+                post_stat = os.fstat(stream.fileno())
+                observed = FileVersion(digest.hexdigest(), total, post_stat.st_mtime_ns)
         except (OSError, PathSafetyError):
             return self._result(consent, "stale", version=indexed, bytes_read=total)
 
-        observed = FileVersion(digest.hexdigest(), total, indexed.mtime_ns)
         if compare_versions(indexed, observed).state != "current":
             return self._result(consent, "stale", version=indexed, bytes_read=total)
         return FetchResult(

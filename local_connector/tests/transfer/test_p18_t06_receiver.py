@@ -314,3 +314,81 @@ def test_revocation_stops_both_new_operations(tmp_path: Path) -> None:
     finally:
         ledger.close()
         store.close()
+
+
+def test_index_delete_pauses_scope_index_and_denies_replay_after_consent_removal(tmp_path: Path) -> None:
+    store, service, ledger, key, _ = _world(tmp_path)
+    try:
+        receiver = _receiver(service, ledger, key)
+        req_id = uuid.uuid4().hex
+        res = _send(
+            receiver,
+            key,
+            operation="index.delete",
+            args={"root_ids": ["corp"], "scope": "index"},
+            request_id=req_id,
+        )
+        assert res["outcome"] == "succeeded"
+        assert store.indexing_paused is True
+        assert store.pause_reason == "deleted"
+        selected_root = service.root_registrations()[0].selected
+        service.register_root(RootRegistration(root_id="corp", selected=selected_root, boundary="local_only"))
+        replayed = _send(
+            receiver,
+            key,
+            operation="index.delete",
+            args={"root_ids": ["corp"], "scope": "index"},
+            request_id=req_id,
+        )
+        assert replayed["outcome"] == "denied"
+        assert {"scope", "generation", "removed"} <= set(replayed.keys())
+    finally:
+        ledger.close()
+        store.close()
+
+
+def test_file_fetch_denies_unconsented_root_and_emits_schema_complete_error_replies(tmp_path: Path) -> None:
+    store, service, ledger, key, selected = _world(tmp_path)
+    try:
+        record = store.list_files()[0]
+        args = {"object_id": record.path_hash, "root_id": "corp", "relative_path": record.relative_path}
+        # Unconsented / local_only root must be denied even with confirmation + fetcher
+        service.register_root(RootRegistration(root_id="corp", selected=selected, boundary="local_only"))
+        fetcher = LocalFetcher(store, {"corp": selected})
+        denied = _send(
+            _receiver(
+                service,
+                ledger,
+                key,
+                fetcher=fetcher,
+                fetch_confirmation=lambda cmd: FetchConsent(
+                    request_id=cmd.request_id,
+                    object_id=record.path_hash,
+                    root_id="corp",
+                    relative_path=record.relative_path,
+                    confirmed_by_user_id=11,
+                    confirmed_at=NOW,
+                ),
+                version_issuer=Issuer(),
+            ),
+            key,
+            operation="file.fetch",
+            args=args,
+        )
+        assert denied["outcome"] == "denied"
+        assert denied["object_id"] == record.path_hash
+        assert denied["size"] == 0
+        # Revoked receiver also emits schema-complete FetchResponse and DeleteResponse fields
+        receiver = _receiver(service, ledger, key)
+        receiver.revoke()
+        revoked_fetch = _send(receiver, key, operation="file.fetch", args=args)
+        assert revoked_fetch["outcome"] == "denied"
+        assert revoked_fetch["object_id"] == record.path_hash
+        assert revoked_fetch["size"] == 0
+        revoked_del = _send(receiver, key, operation="index.delete", args={"root_ids": ["corp"], "scope": "index"})
+        assert revoked_del["outcome"] == "denied"
+        assert revoked_del["scope"] == "index"
+        assert revoked_del["removed"] == 0
+    finally:
+        ledger.close()
+        store.close()

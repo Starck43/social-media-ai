@@ -7,7 +7,7 @@ import pytest
 
 from local_connector.index import IndexEngine, IndexStore
 from local_connector.paths import SelectedRoot
-from local_connector.search import FolderRuleSet
+from local_connector.search import FolderRuleSet, RootRegistration
 from local_connector.transfer import (
     MAX_FETCH_BYTES,
     FetchConsent,
@@ -217,3 +217,47 @@ def test_version_evidence_never_upgrades_an_unknown_observation() -> None:
     assert compare_versions(indexed, resized).state == "changed"
     assert compare_versions(indexed, None).state == "unknown"
     assert compare_versions(None, same).state == "unknown"
+
+
+def test_fetch_consent_binds_file_name_and_expected_size(tmp_path: Path) -> None:
+    store, selected, record = _indexed(tmp_path)
+    with pytest.raises(FetchConsentError):
+        _consent(record, file_name="other.txt")
+    with pytest.raises(FetchConsentError):
+        _consent(record, expected_size=-1)
+    fetcher = LocalFetcher(store, {"work": selected})
+    wrong_size = _consent(record, file_name="file.txt", expected_size=record.size + 1)
+    assert fetcher.fetch(wrong_size, issuer=_Issuer()).state == "denied"
+    good = _consent(record, file_name="file.txt", expected_size=record.size)
+    assert fetcher.fetch(good, issuer=_Issuer()).state == "complete"
+
+
+def test_fetch_catches_same_size_in_place_edit_before_calling_issuer_or_sink(tmp_path: Path) -> None:
+    import os
+
+    store, selected, record = _indexed(tmp_path, content="confidential payload needle")
+    target = selected.path / "file.txt"
+    target.write_text("CONFIDENTIAL PAYLOAD NEEDLE", encoding="utf-8")
+    stat_after = target.stat()
+    if stat_after.st_mtime_ns == record.mtime_ns:
+        os.utime(target, ns=(stat_after.st_atime_ns, record.mtime_ns + 1_000_000))
+    issuer = _Issuer()
+    staged: list[bytes] = []
+    result = LocalFetcher(store, {"work": selected}).fetch(_consent(record), issuer=issuer, sink=staged.append)
+    assert result.state == "stale"
+    assert issuer.calls == []
+    assert staged == []
+
+
+def test_fetch_denies_local_only_or_unconsented_root_registration(tmp_path: Path) -> None:
+    store, selected, record = _indexed(tmp_path)
+    local_only = RootRegistration("work", selected, boundary="local_only", cloud_consented=False)
+    assert LocalFetcher(store, {"work": local_only}).fetch(_consent(record), issuer=_Issuer()).state == "denied"
+    unconsented = RootRegistration("work", selected, boundary="company", cloud_consented=False)
+    assert LocalFetcher(store, {"work": unconsented}).fetch(_consent(record), issuer=_Issuer()).state == "denied"
+
+
+def test_version_evidence_detects_mtime_change() -> None:
+    indexed = FileVersion("0" * 64, 10, 1)
+    touched = FileVersion("0" * 64, 10, 2)
+    assert compare_versions(indexed, touched).state == "changed"

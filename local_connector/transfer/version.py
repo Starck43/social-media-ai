@@ -70,6 +70,10 @@ def compare_versions(indexed: FileVersion | None, observed: FileVersion | None) 
 
     if indexed is None or observed is None:
         return VersionEvidence(state="unknown", indexed=indexed, observed=observed)
-    if indexed.content_hash == observed.content_hash and indexed.size == observed.size:
+    if (
+        indexed.content_hash == observed.content_hash
+        and indexed.size == observed.size
+        and indexed.mtime_ns == observed.mtime_ns
+    ):
         return VersionEvidence(state="current", indexed=indexed, observed=observed)
     return VersionEvidence(state="changed", indexed=indexed, observed=observed)

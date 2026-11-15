@@ -8,10 +8,12 @@ import pytest
 
 from app.services.local_connector.fetch import (
     CHUNK_BYTES,
+    DeviceSnippetCache,
     FetchConsent,
     FetchError,
     FetchTransfer,
     LocalFetchService,
+    compare_cloud_version,
 )
 from app.services.local_connector.wire import MAX_FETCH_BYTES, TIMEOUT
 
@@ -188,3 +190,25 @@ def test_service_limits_are_bounded_by_the_protocol_ceiling() -> None:
         LocalFetchService(staging_factory=lambda _c: staging, max_bytes=MAX_FETCH_BYTES + 1)
     with pytest.raises(FetchError):
         LocalFetchService(staging_factory=lambda _c: staging, timeout_seconds=0)
+
+
+@pytest.mark.asyncio
+async def test_cloud_version_tracking_and_device_snippet_purge_on_revoke() -> None:
+    staging = Staging()
+    cache = DeviceSnippetCache()
+    cache.store(13, [{"object_id": "object-1", "snippet": "cached preview"}])
+    svc = LocalFetchService(staging_factory=lambda _c: staging, issuer=Issuer(), snippet_cache=cache)
+    c = consent(file_name="report.txt", expected_size=len(PAYLOAD), device_id=13)
+    transfer = await svc.begin(c, content_hash=CONTENT_HASH, size=len(PAYLOAD))
+    transfer.feed(PAYLOAD)
+    assert transfer.finish().complete is True
+    record = svc.record_for(c.request_id)
+    assert record is not None and record.expires_at > record.fetched_at
+    assert compare_cloud_version(record, live_content_hash=CONTENT_HASH, live_size=len(PAYLOAD)).state == "current"
+    drift = compare_cloud_version(record, live_content_hash="f" * 64, live_size=len(PAYLOAD) + 5)
+    assert drift.state == "local_changed_after_fetch"
+    assert drift.fetched_content_hash == CONTENT_HASH
+    purged = svc.purge_device(13)
+    assert purged == {"snippets_removed": 1, "records_removed": 1}
+    assert cache.list_for_device(13) == []
+    assert svc.record_for(c.request_id) is None

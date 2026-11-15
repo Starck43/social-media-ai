@@ -52,12 +52,14 @@ class LocalStatusServer:
         select_roots: Callable[[list[str]], object] | None = None,
         delete_index: Callable[[], object] | None = None,
         resume_indexing: Callable[[], object] | None = None,
+        remove_all_data: Callable[[], object] | None = None,
     ) -> None:
         self.selection = selection or FolderSelection()
         self.status = status or (lambda: {"roots": [str(path) for path in self.selection.paths()]})
         self.select_roots = select_roots
         self.delete_index = delete_index
         self.resume_indexing = resume_indexing
+        self.remove_all_data = remove_all_data
         self.csrf_token = secrets.token_urlsafe(32)
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -86,13 +88,13 @@ class LocalStatusServer:
 <title>Local connector</title><style nonce="{nonce}">body{{font:16px system-ui;max-width:46rem;margin:3rem auto;padding:0 1rem;color:#20242a}}textarea{{width:100%;min-height:6rem}}button{{margin:.35rem;padding:.55rem 1rem}}#message{{min-height:1.5rem}}</style></head>
 <body><h1>Local connector</h1><p>Development scaffold. Selected text files stay on this device; no cloud connection is active.</p>
 <label for="roots">Folder paths on this device (one per line)</label><textarea id="roots" spellcheck="false">{selected}</textarea>
-<p><button id="save">Save selected folders</button> <button id="delete">Delete local index…</button> <button id="resume">Resume indexing</button></p>
+<p><button id="save">Save selected folders</button> <button id="delete">Delete local index…</button> <button id="resume">Resume indexing</button> <button id="removeAll">Remove all data…</button></p>
 <p>Index status: <strong id="state">{html.escape(state)}</strong></p><p id="problem" role="status" aria-live="polite">{html.escape('; '.join(status.get('errors', [])))}</p><p id="message" role="status" aria-live="polite"></p>
 <script nonce="{nonce}">const csrf="{csrf}";
 async function send(path,body){{const r=await fetch(path,{{method:'POST',headers:{{'Content-Type':'application/json','X-CSRF-Token':csrf}},body:JSON.stringify(body)}});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d}}
 document.querySelector('#save').onclick=async()=>{{try{{const roots=document.querySelector('#roots').value.split(/\\r?\\n/).map(x=>x.trim()).filter(Boolean);await send('/folders',{{roots}});const d=await refresh(true);document.querySelector('#message').textContent=d.indexing_paused?'Folders saved. Indexing remains paused; choose Resume indexing when ready.':'Folders saved. Indexing follows the selected folders.'}}catch(e){{document.querySelector('#message').textContent=e.message}}}};
 document.querySelector('#delete').onclick=async()=>{{if(!confirm('Delete the local index? Source files will remain untouched. Indexing will pause until you resume it.'))return;try{{await send('/delete',{{confirmed:true}});document.querySelector('#message').textContent='Local index deleted. Indexing is paused; choose Resume indexing when ready.';await refresh()}}catch(e){{document.querySelector('#message').textContent=e.message}}}};
-document.querySelector('#resume').onclick=async()=>{{try{{await send('/resume',{{}});const d=await refresh();document.querySelector('#message').textContent=d.roots.length?'Indexing resumed.':'No folders selected. Choose folders to start indexing.'}}catch(e){{document.querySelector('#message').textContent=e.message}}}};
+document.querySelector('#resume').onclick=async()=>{{try{{await send('/resume',{{}});const d=await refresh();document.querySelector('#message').textContent=d.roots.length?'Indexing resumed.':'No folders selected. Choose folders to start indexing.'}}catch(e){{document.querySelector('#message').textContent=e.message}}}};document.querySelector('#removeAll').onclick=async()=>{{if(!confirm('Remove all connector data (index, selections, replay cache and credentials)? Source files remain untouched.'))return;try{{await send('/remove-all-data',{{confirmed:true}});document.querySelector('#message').textContent='All connector data removed. Source files remain untouched.';await refresh(true)}}catch(e){{document.querySelector('#message').textContent=e.message}}}};
 async function refresh(updateRoots=false){{const r=await fetch('/status',{{cache:'no-store'}});const d=await r.json();document.querySelector('#state').textContent=d.indexing_paused?'Paused':((d.roots||[]).length?'Indexing':'Waiting for folder selection');document.querySelector('#problem').textContent=(d.errors||[]).join('; ');if(updateRoots)document.querySelector('#roots').value=(d.roots||[]).join('\\n');return d}}refresh();setInterval(refresh,5000);
 </script></body></html>"""
         return page.encode("utf-8"), nonce
@@ -193,7 +195,7 @@ async function refresh(updateRoots=false){{const r=await fetch('/status',{{cache
                     self._send(HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
             def do_POST(self) -> None:  # noqa: N802
-                if self.path not in ("/folders", "/delete", "/resume"):
+                if self.path not in ("/folders", "/delete", "/resume", "/remove-all-data"):
                     self._send(HTTPStatus.NOT_FOUND, {"error": "not_found"})
                     return
                 if not self._authorized_post():
@@ -215,6 +217,13 @@ async function refresh(updateRoots=false){{const r=await fetch('/status',{{cache
                         if owner.delete_index is None:
                             raise ValueError("index controls unavailable")
                         owner.delete_index()
+                        self._send(HTTPStatus.OK, {"ok": True})
+                    elif self.path == "/remove-all-data":
+                        if payload != {"confirmed": True}:
+                            raise ValueError("explicit confirmation required")
+                        if owner.remove_all_data is None:
+                            raise ValueError("index controls unavailable")
+                        owner.remove_all_data()
                         self._send(HTTPStatus.OK, {"ok": True})
                     else:
                         if payload:

@@ -622,6 +622,7 @@ def compare(
     model_tables: set[str] | None = None,
     allow_reconciliation: bool = False,
     allow_legacy: bool = True,
+    dormant_service_plans: bool = False,
 ) -> dict[str, Any]:
     allowed_public_tables = {
         name
@@ -766,6 +767,39 @@ def compare(
         if changed:
             differences[category] = {"changed": changed}
 
+    # `0155` finalizes `tenants.plan_holder_user_id` as NOT NULL on public, while a
+    # switch-off `test_schema` keeps it nullable so dormant reference seeding and
+    # dormant ORM metadata stay aligned. That split is intended; every other column
+    # difference still counts as drift.
+    if dormant_service_plans and "columns" in differences:
+        holder = (
+            differences["columns"].get("changed", {}).get("tenants", {}).get("changed", {}).get("plan_holder_user_id")
+        )
+        if holder:
+            public_column, test_column = holder["public"], holder["test_schema"]
+            differing = {
+                key for key in set(public_column) | set(test_column) if public_column.get(key) != test_column.get(key)
+            }
+            if (
+                differing == {"nullable"}
+                and public_column.get("nullable") is False
+                and test_column.get("nullable") is True
+            ):
+                tenants_entry = differences["columns"]["changed"]["tenants"]
+                tenants_entry["changed"].pop("plan_holder_user_id")
+                if (
+                    not tenants_entry["changed"]
+                    and not tenants_entry.get("missing_in_public")
+                    and not tenants_entry.get("extra_in_public")
+                ):
+                    differences["columns"]["changed"].pop("tenants")
+                if not differences["columns"]["changed"]:
+                    differences.pop("columns")
+                allowed.append(
+                    "public finalizes tenants.plan_holder_user_id while the service-plan switch is off, so the "
+                    "dormant test_schema keeps it nullable"
+                )
+
     public_triggers = public["triggers"]
     test_triggers = test["triggers"]
     if allow_legacy:
@@ -866,6 +900,7 @@ def main(argv: list[str] | None = None) -> int:
                 model_tables=model_tables,
                 allow_reconciliation=args.before_bridge,
                 allow_legacy=not args.strict_legacy,
+                dormant_service_plans=not settings.USER_SERVICE_PLANS_ENABLED,
             )
     except Exception as exc:
         # Keep connection strings, SQL values and application data out of output.

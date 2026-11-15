@@ -42,8 +42,8 @@ TZ criteria: install (T07); index selected folders (T03); OCR (T04); full-text s
 2. [P18-T02 accepted](../audit/p18/p18-t02.md) — DONE 2026-11-04; owner-scoped default-off gateway and chat references; source `8618eeb0634fa2600be558fb611c3433f51b109b`.
 3. [P18-T03 accepted scaffold](../audit/p18/p18-t03.md) — **DONE 2026-11-06**; local-only development scaffold; accepted source `d726a476fe95f9d0c3757082394de4de2d75e4c6`; full device/platform/security gates remain P18-T05/T06/T07 and Q-19.
 4. ~~P18-T04 — Text extraction and OCR with resource limits~~ **DONE 2026-11-08**, accepted source `e74b8e81`, merge `11767207` — [audit](../audit/p18/p18-t04.md)
-5. [P18-T05](../tasks/p18-t05.md) — Local search API: ranking, filters, snippets and ACL awareness · `P3` · `C4` · depends: [P18-T04 audit](../audit/p18/p18-t04.md), P12-T15 (folder policy, optional)
-6. [P18-T06](../tasks/p18-t06.md) — Explicit file fetch, version tracking and index deletion · `P3` · `C3` · depends: [P18-T05](../tasks/p18-t05.md), [P18-T02 accepted](../audit/p18/p18-t02.md)
+5. [P18-T05](../audit/p18/p18-t05.md) — **DONE 2026-11-15**; local search with `bm25` ranking, filters, bounded snippets, ACL/root/exclusion rechecks, durable replay ledger and the signed command receiver (accepted `ad086dd4`, merged `ccc26334`; PR #491; host `local_connector/tests` 121 passed / 1 skipped). Real mTLS, OS keystore and platform ACL evidence stay gated by Q-19 / P18-T07.
+6. [P18-T06](../tasks/p18-t06.md) — Explicit file fetch, version tracking and index deletion · `P3` · `C3` · depends: [P18-T05](../audit/p18/p18-t05.md), [P18-T02 accepted](../audit/p18/p18-t02.md)
 7. [P18-T07 accepted](../audit/p18/p18-t07.md) — Packaging, signing and auto-update for Windows, macOS and Linux · `P3` · `C4` · **DONE 2026-11-15**, accepted source `9ca9e47d`, merge `ad7ae24d` — the packaging, authenticated update/rollback, OS key store, mTLS diagnostic and native Windows adapter are delivered; the three-OS native evidence and the Windows runtime enablement stay open in [Q-22](../tasks/q-22.md)
 
 ## Dependencies and gates

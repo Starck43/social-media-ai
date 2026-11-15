@@ -75,7 +75,6 @@ Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULE
 
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **DEFERRED** (owner, 2026-11-14: P20-T12 named no source where an official API and plain fetch fail, and disabled the unconfined Chromium fallback; resume only with an evidenced named source + a new owner decision on infrastructure and cost) · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
-- [P18-T05](docs/tasks/p18-t05.md) Local search API: ranking, filters, snippets and ACL awareness — **READY** · opencode-p18-t05 · remote lane (`local_connector/` only, DB-exempt); [PR #491](https://github.com/Starck43/social-media-ai/pull/491) (`feat/p18-t05-local-search`, rebased on `dev` `d7538251`, tested `ad086dd4`): host macOS/APFS `local_connector/tests` **121 passed / 1 skipped / 0 failed**, search suite **16 passed / 1 skipped**; deferred red from `fbd0ff7b` fixed by a portable 4096-byte budget plus a Linux-only 64 KiB case; Q-19 / P18-T07 gates remain · [card](docs/tasks/p18-t05.md#execution-record) · `P3` · `C4`
 - [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **TODO** · unassigned · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 
 ## Deferred by explicit owner decision

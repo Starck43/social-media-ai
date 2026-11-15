@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import logging
 import stat
+import sys
 import uuid
 from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+import local_connector.search.protocol as search_protocol
 from local_connector.index import IndexEngine, IndexStore
 from local_connector.paths import SelectedRoot
 from local_connector.search import (
@@ -42,6 +44,7 @@ def _make_envelope(
     device_epoch: int = 1,
     consent_epoch: int = 1,
     policy_epoch: int = 1,
+    max_response_bytes: int = MAX_RESPONSE_BYTES,
     args: dict | None = None,
 ) -> dict:
     return {
@@ -59,7 +62,7 @@ def _make_envelope(
         "consent_epoch": consent_epoch,
         "policy_epoch": policy_epoch,
         "data_boundary": "company",
-        "max_response_bytes": MAX_RESPONSE_BYTES,
+        "max_response_bytes": max_response_bytes,
         "max_snippet_characters": 512,
         "args": args if args is not None else {"query": "alpha", "roots": ["corp"], "limit": 20},
     }
@@ -230,6 +233,59 @@ def test_receiver_handles_search_health_status_and_unimplemented_allowlist_ops(
         store.close()
 
 
+def test_response_payload_truncates_at_max_response_bytes_and_marks_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    budget = 4096
+    monkeypatch.setattr(search_protocol, "MAX_RESPONSE_BYTES", budget)
+
+    root = tmp_path / "corp"
+    nested = root / "sub"
+    nested.mkdir(parents=True)
+    for i in range(50):
+        fname = f"file_{i:02d}_" + ("n" * 30) + ".txt"
+        (nested / fname).write_text("target_needle content " + ("x" * 400), encoding="utf-8")
+
+    store = IndexStore(tmp_path / "cache" / "index.sqlite")
+    try:
+        selected = SelectedRoot(root)
+        IndexEngine(store).scan([selected])
+        service = LocalSearchService(
+            store,
+            [RootRegistration(root_id="corp", selected=selected, boundary="company", cloud_consented=True)],
+        )
+        ledger = ReplayLedger(store=store)
+        key = Ed25519PrivateKey.generate()
+        receiver = SignedCommandReceiver(
+            search_service=service,
+            replay_ledger=ledger,
+            trusted_keys={"gw-v1": key.public_key()},
+            tenant_id=7,
+            owner_id=11,
+            device_id=13,
+        )
+        payload, _ = sign_control_payload(
+            _make_envelope(
+                operation="search",
+                max_response_bytes=budget,
+                args={"query": "target_needle", "roots": ["corp"], "limit": 50},
+            ),
+            key,
+        )
+        resp_bytes = receiver.handle_payload(payload, now=1_700_000_005)
+        assert len(resp_bytes) <= budget
+        resp = json.loads(resp_bytes)
+        assert resp["outcome"] == "succeeded"
+        assert resp["partial"] is True
+        assert 1 <= len(resp["hits"]) < 50
+    finally:
+        store.close()
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="APFS/Windows PATH_MAX < 4096 cannot create ~1.4 KiB paths to exceed 64 KiB within 50 hits",
+)
 def test_response_payload_stays_within_64kib_and_marks_partial(tmp_path: Path) -> None:
     root = tmp_path / "corp"
     nested = root / ("segment_" * 15)  # ~120 chars
@@ -238,7 +294,6 @@ def test_response_payload_stays_within_64kib_and_marks_partial(tmp_path: Path) -
     long_prefix = "/".join(["d" * 120] * 10)
     (nested / long_prefix).mkdir(parents=True)
     for i in range(50):
-        (nested / long_prefix / f"f_{i:02d}_" + ("n" * 100) + ".txt") if False else None
         fname = f"file_{i:02d}_" + ("n" * 100) + ".txt"
         (nested / long_prefix / fname).write_text("target_needle content " + ("x" * 400), encoding="utf-8")
 

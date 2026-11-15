@@ -14,8 +14,8 @@ Unique bucket identity includes NULL-tolerant model family: `COALESCE(model_fami
 so a NULL family cannot admit duplicate buckets.
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 from app.core.config import settings
 

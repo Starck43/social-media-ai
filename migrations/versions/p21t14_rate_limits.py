@@ -77,7 +77,7 @@ def upgrade() -> None:
             nullable=True,
         ),
         *[
-            sa.CheckConstraint(cond, name=name, schema=SCHEMA)
+            sa.CheckConstraint(cond, name=name)
             for name, cond in BUCKET_CHECKS
         ],
         schema=SCHEMA,
@@ -124,9 +124,9 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.func.now(),
         ),
-        sa.UniqueConstraint("lease_id", name="uq_llm_dispatch_leases_identity", schema=SCHEMA),
+        sa.UniqueConstraint("lease_id", name="uq_llm_dispatch_leases_identity"),
         *[
-            sa.CheckConstraint(cond, name=name, schema=SCHEMA)
+            sa.CheckConstraint(cond, name=name)
             for name, cond in LEASE_CHECKS
         ],
         schema=SCHEMA,

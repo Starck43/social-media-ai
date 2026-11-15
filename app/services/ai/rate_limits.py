@@ -65,7 +65,7 @@ RECLAIM_BATCH = 8               # bounded reclaim per acquire attempt
 _LOCK_TIMEOUT_SQLSTATE = "55P03"
 
 #: Status codes that only transiently back off; everything else is permanent.
-_TRANSIENT_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+_TRANSIENT_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
 
 
 def _now_utc() -> datetime:
@@ -188,15 +188,23 @@ def _plan(request: Any, context: Any) -> _RatePlan:
     family = _family_of(request.model)
     ref = getattr(context, "credential_ref", None)
     ref = ref if type(ref) is str and ref else None
-    pool_key = f"pool:{ref}" if ref else "global"
+    owner = getattr(context, "credential_owner_user_id", None)
+    # Stable pool identity: the credential ref (rotation changes version, never
+    # the ref). Without a ref, fall back to the credential owner so the shared
+    # upstream quota is still bounded across retries/rotations.
+    if ref:
+        pool_key = f"pool:{ref}"
+    elif _positive(owner):
+        pool_key = f"owner:{owner}"
+    else:
+        pool_key = "global"
     buckets: list[BucketItem] = []
     token_cost = getattr(request, "requested_output_tokens", None)
     token_cost = token_cost if type(token_cost) is int and token_cost > 0 else 0
-    if ref:
-        if rpm > 0:
-            buckets.append(BucketItem("upstream", pool_key, "request", 1.0, rpm, rpm / 60.0, family))
-        if tpm > 0 and token_cost > 0:
-            buckets.append(BucketItem("upstream", pool_key, "token", float(token_cost), tpm, tpm / 60.0, family))
+    if rpm > 0:
+        buckets.append(BucketItem("upstream", pool_key, "request", 1.0, rpm, rpm / 60.0, family))
+    if tpm > 0 and token_cost > 0:
+        buckets.append(BucketItem("upstream", pool_key, "token", float(token_cost), tpm, tpm / 60.0, family))
     holder = getattr(context, "plan_holder_user_id", None)
     actor = getattr(context, "actor_user_id", None)
     tenant = getattr(context, "tenant_id", None)
@@ -253,10 +261,15 @@ class PostgresRateStore:
             await session.execute(text(f"SET LOCAL lock_timeout = '{self.lock_timeout_ms}ms'"))
             await session.execute(text("SET LOCAL statement_timeout = '2s'"))
             # Bounded reclaim of crashed in-flight slots (never refunds units).
+            # PostgreSQL has no UPDATE ... LIMIT; use a ctid sub-select.
             await session.execute(
                 text(
                     f"UPDATE {schema}.llm_dispatch_leases SET released_at = :now "
-                    f"WHERE released_at IS NULL AND expires_at <= :now LIMIT {RECLAIM_BATCH}"
+                    f"WHERE ctid IN ("
+                    f"  SELECT ctid FROM {schema}.llm_dispatch_leases "
+                    f"  WHERE released_at IS NULL AND expires_at <= :now "
+                    f"  ORDER BY expires_at LIMIT {RECLAIM_BATCH}"
+                    f")"
                 ),
                 {"now": now},
             )
@@ -285,8 +298,8 @@ class PostgresRateStore:
                         f"INSERT INTO {schema}.llm_rate_buckets "
                         f"(scope, scope_key, unit, model_family, capacity_units, "
                         f"refill_units_per_second, available_units, updated_at, blocked_until) "
-                        f"VALUES (:scope, :scope_key, :unit, :family, :capacity, "
-                        f":refill, :capacity, :now, NULL) "
+f"VALUES (:scope, :scope_key, :unit, :family, :capacity, "
+f":refill, :available, :now, NULL) "
                         f"ON CONFLICT (scope, scope_key, unit, COALESCE(model_family, '')) DO NOTHING"
                     ),
                     {
@@ -296,6 +309,7 @@ class PostgresRateStore:
                         "family": bucket.model_family,
                         "capacity": int(bucket.capacity),
                         "refill": bucket.refill_per_sec,
+                        "available": int(bucket.capacity),
                         "now": now,
                     },
                 )
@@ -329,6 +343,14 @@ class PostgresRateStore:
                         blocked_until=None,
                     )
                 )
+            # Check for an existing in-flight lease with this identity BEFORE
+            # inserting this attempt's own row, otherwise every fresh dispatch
+            # would see its just-inserted row and be refused.
+            existing = await session.scalar(
+                select(LLMDispatchLease).where(LLMDispatchLease.lease_id == dispatch_id)
+            )
+            if existing is not None and existing.released_at is None:
+                raise RateStoreUnavailable("dispatch identity already in flight")
             # One admission lease per attempt; identity is the dispatch id.
             await session.execute(
                 pg_insert(LLMDispatchLease)
@@ -343,11 +365,6 @@ class PostgresRateStore:
                 )
                 .on_conflict_do_nothing(index_elements=[LLMDispatchLease.lease_id])
             )
-            existing = await session.scalar(
-                select(LLMDispatchLease).where(LLMDispatchLease.lease_id == dispatch_id)
-            )
-            if existing is not None and existing.released_at is None:
-                raise RateStoreUnavailable("dispatch identity already in flight")
 
     async def release(self, *, dispatch_id: str, now: datetime) -> None:
         schema = _schema_ident()
@@ -452,10 +469,9 @@ class RateAcquirer:
                 wait = min(deferred.retry_after, remaining)
                 if wait <= 0:
                     raise RateDenied(deferred.retry_after) from None
-                try:
-                    await self.sleep(wait)
-                except asyncio.CancelledError:
-                    raise RateDenied(deferred.retry_after) from None
+                # Cooperative cancellation must propagate, not be reported as a
+                # rate denial.
+                await self.sleep(wait)
             except DBAPIError as exc:
                 if getattr(exc.orig, "sqlstate", None) == _LOCK_TIMEOUT_SQLSTATE:
                     raise RateStoreUnavailable("lock timeout") from None

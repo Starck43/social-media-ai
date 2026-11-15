@@ -44,6 +44,7 @@ def application_for(environment, *, debug=False, cors=False):
         SECRET_KEY="synthetic-secret",
         BACKEND_CORS_ORIGINS=["http://localhost:8000"] if cors else [],
         ADMIN_ENABLED=False,
+        API_DOCS_ENABLED=False,
     )
     tokens = {
         name: object()
@@ -53,6 +54,7 @@ def application_for(environment, *, debug=False, cors=False):
             "ApiScopeMiddleware",
             "PlatformScopeMiddleware",
             "AdminScopeMiddleware",
+            "AdminCSRFMiddleware",
             "RequestContextMiddleware",
             "CORSMiddleware",
             "health_router",
@@ -68,6 +70,8 @@ def application_for(environment, *, debug=False, cors=False):
         "entry": SimpleNamespace(router=object()),
         "add_pagination": lambda app: None,
         "CSRFTokenManager": lambda **options: options,
+        "BUSINESS_TAGS": {},
+        "openapi_options": lambda *_args, **_kwargs: {},
     }
     module = ast.Module(body=selected, type_ignores=[])
     exec(compile(ast.fix_missing_locations(module), str(path), "exec"), namespace)
@@ -118,6 +122,7 @@ class WebSessionCookieSecurityTests(unittest.TestCase):
                     "RequestContextMiddleware",
                     "PlatformScopeMiddleware",
                     "AdminScopeMiddleware",
+                    "AdminCSRFMiddleware",
                     "SessionMiddleware",
                     "CORSMiddleware",
                 )

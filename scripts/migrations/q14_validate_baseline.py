@@ -66,7 +66,8 @@ def main():
     config = Config(str(ROOT / "alembic.ini"))
     with engine.connect() as lock:
         database, address = lock.execute(text("SELECT current_database(), inet_server_addr()::text")).one()
-        if database != "social_manager" or address not in (None, "127.0.0.1", "::1"):
+        host = address.split("/", 1)[0] if address else None
+        if database != "social_manager" or host not in (None, "127.0.0.1", "::1"):
             raise SystemExit("Resolved database endpoint is not the authorized local target")
         if not lock.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": LOCK}).scalar_one():
             raise SystemExit("Another Q-14 validator owns the database")
@@ -91,6 +92,8 @@ def main():
                 operations.execute('CREATE SCHEMA "test_schema"')
                 config.attributes["connection"] = connection
                 command.upgrade(config, "head")
+                if not settings.USER_SERVICE_PLANS_ENABLED:
+                    operations.alter_column("tenants", "plan_holder_user_id", nullable=True, schema="test_schema")
 
             async def prepare():
                 from app.core.database import async_engine

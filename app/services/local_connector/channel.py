@@ -5,7 +5,13 @@ from dataclasses import dataclass, field
 
 from pydantic import ValidationError
 
-from .wire import MAX_CONTROL_BYTES, TIMEOUT, ConnectorUnavailable, SearchResponse, decode
+from .wire import (
+    MAX_CONTROL_BYTES,
+    RESPONSE_BY_OPERATION,
+    TIMEOUT,
+    ConnectorUnavailable,
+    decode,
+)
 
 
 @dataclass
@@ -36,7 +42,7 @@ class ConnectorChannels:
     async def detach(self, device_id, session):
         if self.sessions.get(device_id) is session:
             self.sessions.pop(device_id, None)
-        for future in session.pending.values():
+        for future, _request in session.pending.values():
             if not future.done():
                 future.set_exception(ConnectorUnavailable())
         session.pending.clear()
@@ -48,13 +54,17 @@ class ConnectorChannels:
             await session.socket.close(code=1008)
 
     async def search(self, device_id, request, payload, digest):
+        return await self.command(device_id, request, payload, digest)
+
+    async def command(self, device_id, request, payload, digest):
+        """Send one signed command of any supported operation and await its matching reply."""
         session = self.sessions.get(device_id)
         if session is None or session.epoch != request.device_epoch or len(session.pending) >= self.per_device:
             raise ConnectorUnavailable()
         if request.request_id in session.pending:
             raise ConnectorUnavailable()
         future = asyncio.get_running_loop().create_future()
-        session.pending[request.request_id] = future
+        session.pending[request.request_id] = (future, request)
         try:
             async with asyncio.timeout(TIMEOUT):
                 async with session.send_lock:
@@ -70,11 +80,15 @@ class ConnectorChannels:
         if self.sessions.get(device_id) is not session or len(payload) > MAX_CONTROL_BYTES:
             raise ConnectorUnavailable()
         decoded = decode(payload)
-        try:
-            response = SearchResponse.model_validate(decoded)
-        except ValidationError:
-            raise ConnectorUnavailable() from None
-        future = session.pending.get(response.request_id)
-        if future is None or future.done():
+        request_id = decoded.get("request_id")
+        entry = session.pending.get(request_id) if isinstance(request_id, str) else None
+        if entry is None:
             raise ConnectorUnavailable()
+        future, request = entry
+        if future.done():
+            raise ConnectorUnavailable()
+        try:
+            response = RESPONSE_BY_OPERATION[request.operation].model_validate(decoded)
+        except (ValidationError, KeyError):
+            raise ConnectorUnavailable() from None
         future.set_result(response)

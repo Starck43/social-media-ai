@@ -303,3 +303,18 @@ class ReplayLedger:
                     """,
                     (device_id,),
                 )
+
+    def purge_device(self, device_id: int) -> int:
+        """Delete cached replay entries for a device while keeping monotonic clock state."""
+
+        if type(device_id) is not int or device_id <= 0:
+            raise ValueError("device_id must be a positive integer")
+        with self.lock:
+            if self._closed:
+                return 0
+            with self.connection:
+                cursor = self.connection.execute(
+                    "DELETE FROM command_replay_ledger WHERE device_id = ?",
+                    (device_id,),
+                )
+                return int(cursor.rowcount)

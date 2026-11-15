@@ -63,12 +63,8 @@ class LLMRateBucket(Base):
         CheckConstraint("capacity_units > 0", name="ck_llm_rate_buckets_capacity"),
         CheckConstraint("refill_units_per_second > 0", name="ck_llm_rate_buckets_refill"),
         CheckConstraint("available_units >= 0", name="ck_llm_rate_buckets_available"),
-        CheckConstraint(
-            "available_units <= capacity_units", name="ck_llm_rate_buckets_available_bounded"
-        ),
-        CheckConstraint(
-            "model_family IS NULL OR length(model_family) > 0", name="ck_llm_rate_buckets_family"
-        ),
+        CheckConstraint("available_units <= capacity_units", name="ck_llm_rate_buckets_available_bounded"),
+        CheckConstraint("model_family IS NULL OR length(model_family) > 0", name="ck_llm_rate_buckets_family"),
         # NULL family must not admit duplicates: the expression folds NULL to ''.
         Index(
             "uq_llm_rate_buckets_scope",

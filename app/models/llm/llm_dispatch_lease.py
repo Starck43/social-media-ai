@@ -38,9 +38,7 @@ class LLMDispatchLease(Base):
         CheckConstraint("lease_id ~ '^[0-9a-f]{32}$'", name="ck_llm_dispatch_leases_identity"),
         CheckConstraint("scope IN ('upstream', 'holder', 'actor', 'workspace')", name="ck_llm_dispatch_leases_scope"),
         CheckConstraint("length(scope_key) > 0", name="ck_llm_dispatch_leases_scope_key"),
-        CheckConstraint(
-            "model_family IS NULL OR length(model_family) > 0", name="ck_llm_dispatch_leases_family"
-        ),
+        CheckConstraint("model_family IS NULL OR length(model_family) > 0", name="ck_llm_dispatch_leases_family"),
         Index("ix_llm_dispatch_leases_scope", "scope", "scope_key", "model_family", "expires_at"),
         Index(
             "ix_llm_dispatch_leases_reclaim",

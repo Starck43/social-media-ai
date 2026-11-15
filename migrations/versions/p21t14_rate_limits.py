@@ -76,10 +76,7 @@ def upgrade() -> None:
             sa.DateTime(timezone=True),
             nullable=True,
         ),
-        *[
-            sa.CheckConstraint(cond, name=name)
-            for name, cond in BUCKET_CHECKS
-        ],
+        *[sa.CheckConstraint(cond, name=name) for name, cond in BUCKET_CHECKS],
         schema=SCHEMA,
     )
     op.create_index(
@@ -125,10 +122,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
         sa.UniqueConstraint("lease_id", name="uq_llm_dispatch_leases_identity"),
-        *[
-            sa.CheckConstraint(cond, name=name)
-            for name, cond in LEASE_CHECKS
-        ],
+        *[sa.CheckConstraint(cond, name=name) for name, cond in LEASE_CHECKS],
         schema=SCHEMA,
     )
     op.create_index(

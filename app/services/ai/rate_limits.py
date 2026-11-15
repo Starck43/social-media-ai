@@ -56,10 +56,10 @@ from app.services.ai.dispatch_seam import DispatchLease, is_valid_dispatch_id
 
 logger = logging.getLogger(__name__)
 
-MAX_WAIT_DEFAULT = 8.0          # seconds: the bounded wait before a denial
-LEASE_TTL_DEFAULT = 60.0        # seconds: an in-flight lease expires this late
-LOCK_TIMEOUT_MS_DEFAULT = 250   # mirrors PostgresBudgetStore
-RECLAIM_BATCH = 8               # bounded reclaim per acquire attempt
+MAX_WAIT_DEFAULT = 8.0  # seconds: the bounded wait before a denial
+LEASE_TTL_DEFAULT = 60.0  # seconds: an in-flight lease expires this late
+LOCK_TIMEOUT_MS_DEFAULT = 250  # mirrors PostgresBudgetStore
+RECLAIM_BATCH = 8  # bounded reclaim per acquire attempt
 
 #: PostgreSQL lock-timeout (serialization failure) — fail closed, never retry.
 _LOCK_TIMEOUT_SQLSTATE = "55P03"
@@ -145,6 +145,7 @@ class RateStoreUnavailable(Exception):
 
 
 # ── Bucket plan ────────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class BucketItem:
@@ -298,8 +299,8 @@ class PostgresRateStore:
                         f"INSERT INTO {schema}.llm_rate_buckets "
                         f"(scope, scope_key, unit, model_family, capacity_units, "
                         f"refill_units_per_second, available_units, updated_at, blocked_until) "
-f"VALUES (:scope, :scope_key, :unit, :family, :capacity, "
-f":refill, :available, :now, NULL) "
+                        f"VALUES (:scope, :scope_key, :unit, :family, :capacity, "
+                        f":refill, :available, :now, NULL) "
                         f"ON CONFLICT (scope, scope_key, unit, COALESCE(model_family, '')) DO NOTHING"
                     ),
                     {
@@ -314,12 +315,14 @@ f":refill, :available, :now, NULL) "
                     },
                 )
                 row = await session.scalar(
-                    select(LLMRateBucket).where(
+                    select(LLMRateBucket)
+                    .where(
                         LLMRateBucket.scope == bucket.scope,
                         LLMRateBucket.scope_key == bucket.scope_key,
                         LLMRateBucket.unit == bucket.unit,
                         LLMRateBucket.model_family.isnot_distinct_from(bucket.model_family),
-                    ).with_for_update()
+                    )
+                    .with_for_update()
                 )
                 if row is None:
                     raise RateStoreUnavailable("bucket unavailable")
@@ -346,9 +349,7 @@ f":refill, :available, :now, NULL) "
             # Check for an existing in-flight lease with this identity BEFORE
             # inserting this attempt's own row, otherwise every fresh dispatch
             # would see its just-inserted row and be refused.
-            existing = await session.scalar(
-                select(LLMDispatchLease).where(LLMDispatchLease.lease_id == dispatch_id)
-            )
+            existing = await session.scalar(select(LLMDispatchLease).where(LLMDispatchLease.lease_id == dispatch_id))
             if existing is not None and existing.released_at is None:
                 raise RateStoreUnavailable("dispatch identity already in flight")
             # One admission lease per attempt; identity is the dispatch id.
@@ -371,7 +372,7 @@ f":refill, :available, :now, NULL) "
         async with async_session_maker() as session, session.begin():
             await session.execute(
                 text(
-                    f'UPDATE {schema}.llm_dispatch_leases SET released_at = :now '
+                    f"UPDATE {schema}.llm_dispatch_leases SET released_at = :now "
                     f"WHERE lease_id = :id AND released_at IS NULL"
                 ),
                 {"now": now, "id": dispatch_id},
@@ -432,8 +433,12 @@ class RateAcquirer:
         max_wait: float | None = None,
         lease_ttl: float | None = None,
     ) -> None:
-        self.store = store if store is not None else PostgresRateStore(
-            lock_timeout_ms=int(getattr(settings, "LLM_RATE_LOCK_TIMEOUT_MS", LOCK_TIMEOUT_MS_DEFAULT) or 0)
+        self.store = (
+            store
+            if store is not None
+            else PostgresRateStore(
+                lock_timeout_ms=int(getattr(settings, "LLM_RATE_LOCK_TIMEOUT_MS", LOCK_TIMEOUT_MS_DEFAULT) or 0)
+            )
         )
         self.clock = clock
         self.sleep = sleep
@@ -510,6 +515,3 @@ class RateAcquirer:
             raise
         except Exception:
             logger.warning("llm_dispatch_rate_block_failed scope=%s", scope)
-
-
-

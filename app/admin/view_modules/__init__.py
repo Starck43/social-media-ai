@@ -5,6 +5,7 @@ from .collection import CollectedItemAdmin
 from .llm_catalog import LLMModelAdmin, LLMProviderAdmin
 from .notifications import NotificationAdmin
 from .operations import AgentTaskAdmin, BotActionAdmin, JobAdmin
+from .plan_model_grants import PlanModelGrantAdmin
 from .scenarios import AgentScenarioAdmin
 from .sources import PlatformAdmin, SourceAdmin
 from .users import PermissionAdmin, RoleAdmin, TenantAdmin, UserAdmin, UserCredentialAdmin
@@ -22,6 +23,7 @@ __all__ = [
     "NotificationAdmin",
     "LLMProviderAdmin",
     "LLMModelAdmin",
+    "PlanModelGrantAdmin",
     "CollectedItemAdmin",
     "BotActionAdmin",
     "AgentTaskAdmin",

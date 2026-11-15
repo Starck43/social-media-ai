@@ -375,6 +375,23 @@ async def _workspace_types(user_id, tenant_id):
 
 async def chat_model_options(*, user_id, tenant_id):
     require_actor(user_id)
+    from app.services.ai.catalog_reads import current_catalog_reads
+
+    scope = current_catalog_reads()
+    if scope is not None:
+        if (scope.context.actor_user_id, scope.context.tenant_id) != (user_id, tenant_id):
+            raise PermissionError("Catalog context mismatch")
+        rows = await scope.metadata(capabilities={"text"})
+        default_id = rows[0].id if rows else None
+        return [
+            {
+                "id": row.id,
+                "label": f"[{row.funding_class}] {row.provider_name}/{row.model_id}",
+                "is_default": row.is_default,
+                "is_effective_default": row.id == default_id,
+            }
+            for row in rows
+        ]
     allowed = await _workspace_types(user_id, tenant_id)
     rows = await LLMModel.objects.select_related("provider").filter(owner_user_id=user_id, is_active=True)
     eligible = [m for m in rows if eligible_chat_model(m, user_id=user_id, allowed_types=allowed)]
@@ -393,6 +410,16 @@ async def chat_model_options(*, user_id, tenant_id):
 
 async def validate_chat_model(*, user_id, tenant_id, model_id):
     require_actor(user_id)
+    from app.services.ai.catalog_reads import current_catalog_reads
+
+    scope = current_catalog_reads()
+    if scope is not None:
+        if (scope.context.actor_user_id, scope.context.tenant_id) != (user_id, tenant_id):
+            raise PermissionError("Catalog context mismatch")
+        if model_id is None:
+            return None
+        rows = await scope.models(capabilities={"text"}, model_id=model_id)
+        return rows[0]
     allowed = await _workspace_types(user_id, tenant_id)
     if model_id is None:
         return None

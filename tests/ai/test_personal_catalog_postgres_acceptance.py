@@ -44,6 +44,7 @@ from app.core.tenant_context import tenant_scope
 from app.models import (
     AgentScenario,
     AgentTask,
+    LLMCatalog,
     LLMModel,
     LLMProvider,
     Platform,
@@ -138,6 +139,7 @@ class OwnedCatalog:
         for user in reversed(self.users):
             with self.as_user(user):
                 await LLMProvider.objects.filter(owner_user_id=user.id).delete()
+                await LLMCatalog.objects.filter(kind="personal", owner_user_id=user.id).delete()
         with tenant_scope(bypass=True), operator_permission_scope():
             for user in reversed(self.users):
                 await User.objects.delete_by_id(user.id)
@@ -270,7 +272,7 @@ async def test_database_rejects_cross_owner_provider_fk_and_owner_reassignment(o
                 )
             )
             await session.flush()
-    assert getattr(foreign_fk.value.orig, "sqlstate", None) == "23503"
+    assert getattr(foreign_fk.value.orig, "sqlstate", None) == "23514"
     with pytest.raises(IntegrityError) as owner_change:
         async with async_session_maker() as session, session.begin():
             await session.execute(
@@ -324,8 +326,8 @@ async def test_database_catalog_has_composite_fk_and_ownership_guards():
             lambda sync: inspect(sync.bind).get_foreign_keys("llm_models", schema=settings.DB_SCHEMA)
         )
         assert any(
-            fk["constrained_columns"] == ["provider_id", "owner_user_id"]
-            and fk["referred_columns"] == ["id", "owner_user_id"]
+            fk["constrained_columns"] == ["provider_id", "catalog_id"]
+            and fk["referred_columns"] == ["id", "catalog_id"]
             for fk in foreign_keys
         )
         guards = set(
@@ -343,6 +345,8 @@ async def test_database_catalog_has_composite_fk_and_ownership_guards():
         assert {
             ("llm_providers", "guard_personal_catalog_owner"),
             ("llm_models", "guard_personal_catalog_owner"),
+            ("llm_providers", "guard_llm_catalog_custody"),
+            ("llm_models", "guard_llm_catalog_custody"),
             ("agent_task_sources", "guard_task_source_binding"),
             ("sources", "guard_workspace_ownership"),
         } <= guards

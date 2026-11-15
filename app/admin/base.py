@@ -44,7 +44,7 @@ class AdminFormConverter(ModelConverter):
 
 # Foreign-key columns the console edits as a plain integer select, by column
 # name. `owner_user_id` is the same column on both the provider and the model.
-_EXPLICIT_FK_COLUMNS = frozenset({"owner_user_id"})
+_EXPLICIT_FK_COLUMNS = frozenset({"owner_user_id", "llm_model_id"})
 
 
 class BaseAdmin(ModelView):

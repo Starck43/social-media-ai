@@ -352,13 +352,15 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         vision.provider.is_active = False
         self.assertFalse(predicate(vision, user_id=2, capabilities={"image"}))
 
-    def test_real_model_mapping_enforces_owner_provider_composite(self):
-        fks = [fk for fk in Model.__table__.foreign_key_constraints if fk.name == "fk_llm_model_provider_owner"]
+    def test_real_model_mapping_enforces_catalog_provider_composite(self):
+        fks = [fk for fk in Model.__table__.foreign_key_constraints if fk.name == "fk_llm_model_provider_catalog"]
         self.assertEqual(len(fks), 1)
-        self.assertEqual(list(fks[0].column_keys), ["provider_id", "owner_user_id"])
+        self.assertEqual(list(fks[0].column_keys), ["provider_id", "catalog_id"])
         self.assertEqual(len(Model.__mapper__.relationships["provider"].local_columns), 2)
-        self.assertFalse(Model.__table__.c.owner_user_id.nullable)
-        self.assertFalse(Provider.__table__.c.owner_user_id.nullable)
+        self.assertFalse(Model.__table__.c.catalog_id.nullable)
+        self.assertFalse(Provider.__table__.c.catalog_id.nullable)
+        self.assertTrue(Model.__table__.c.owner_user_id.nullable)
+        self.assertTrue(Provider.__table__.c.owner_user_id.nullable)
 
 
 if __name__ == "__main__":

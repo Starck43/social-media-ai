@@ -74,10 +74,12 @@ from .llm import (
     LLMBudgetDay,
     LLMBudgetReservation,
     LLMCatalog,
+    LLMDispatchLease,
     LLMDispatchReceipt,
     LLMModel,
     LLMOutcomeEvent,
     LLMProvider,
+    LLMRateBucket,
     PlanModelGrant,
 )
 from .notifications import DigestRun, Notification, NotificationDelivery, NotificationPreference, NotificationReceipt
@@ -196,8 +198,10 @@ __all__ = [
     "LLMAttempt",
     "LLMBudgetDay",
     "LLMBudgetReservation",
+    "LLMDispatchLease",
     "LLMDispatchReceipt",
     "LLMOutcomeEvent",
+    "LLMRateBucket",
     # Task runner / jobs
     "AgentTask",
     "Job",

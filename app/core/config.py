@@ -375,6 +375,15 @@ class Settings(BaseSettings):
 
     # LLM rate limiting
     LLM_REQUEST_DELAY: int = 1000  # Default rate limit delay in milliseconds
+    # P21-T14 shared cross-process provider rate budget (dormant until set:
+    # 0 RPM/TPM/concurrency means the acquirer passes attempts through). The
+    # acquirer itself is the single seam wiring; no live dispatch is enabled.
+    LLM_RATE_RPM: int = 0  # requests per minute per bucket scope
+    LLM_RATE_TPM: int = 0  # tokens per minute per bucket scope
+    LLM_RATE_CONCURRENCY: int = 0  # max in-flight attempts per pool key
+    LLM_RATE_MAX_WAIT_SECONDS: float = 8.0  # bounded wait before denial
+    LLM_RATE_LEASE_TTL_SECONDS: float = 60.0  # in-flight lease expiry
+    LLM_RATE_LOCK_TIMEOUT_MS: int = 250  # per-statement lock timeout
     LLM_DEFAULT_TEMPERATURE: float = 0.3  # Conservative temperature for analysis tasks
     LLM_DEFAULT_MAX_TOKENS: int = 400  # Optimal for social media annotations
     LLM_DEFAULT_STREAM: bool = False  # Complete responses for processing

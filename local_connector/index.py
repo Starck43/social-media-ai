@@ -57,6 +57,21 @@ class ScanReport:
     errors: tuple[str, ...] = ()
 
 
+class DeleteConflict(ValueError):
+    """Raised when one request id is reused with different content or scope."""
+
+
+@dataclass(frozen=True)
+class DeleteReport:
+    """Outcome of one explicit index deletion, durable and safe to replay."""
+
+    request_id: str
+    generation: int
+    removed: int
+    scope: str
+    replayed: bool = False
+
+
 class IndexStore:
     """Durable local index. Raw content never leaves this SQLite file."""
 
@@ -175,6 +190,14 @@ class IndexStore:
                 pause_reason TEXT
             );
             INSERT OR IGNORE INTO connector_control(singleton, generation, paused, pause_reason) VALUES (1, 0, 0, NULL);
+            CREATE TABLE IF NOT EXISTS delete_fences (
+                request_id TEXT PRIMARY KEY,
+                request_digest TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                generation INTEGER NOT NULL,
+                removed INTEGER NOT NULL,
+                completed_at REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS approved_roots (
                 selection_path TEXT PRIMARY KEY,
                 canonical_path TEXT NOT NULL,
@@ -407,6 +430,85 @@ class IndexStore:
                 self.connection.execute("DELETE FROM files")
             self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             self.connection.execute("VACUUM")
+
+    def delete_scope(
+        self,
+        *,
+        request_id: str,
+        request_digest: str,
+        root_hashes: Sequence[str] | None = None,
+        pause: bool = False,
+    ) -> DeleteReport:
+        """Delete the local index for the given roots (all when ``root_hashes`` is None).
+
+        Source files are never touched. The deletion, the generation advance and the
+        durable fence row commit in one transaction, so a replayed request id returns the
+        recorded outcome instead of deleting twice, and a reused id with different content
+        or scope fails closed. Nothing here waits on network I/O.
+        """
+
+        if type(request_id) is not str or not 0 < len(request_id) <= 64:
+            raise ValueError("invalid delete request id")
+        if type(request_digest) is not str or not 0 < len(request_digest) <= 128:
+            raise ValueError("invalid delete request digest")
+        roots = None if root_hashes is None else tuple(dict.fromkeys(root_hashes))
+        if roots is not None and any(type(item) is not str or not item for item in roots):
+            raise ValueError("invalid delete scope")
+        scope = "all" if roots is None else ",".join(sorted(roots))
+        with self.lock:
+            with self.connection:
+                row = self.connection.execute(
+                    "SELECT request_digest, scope, generation, removed FROM delete_fences WHERE request_id = ?",
+                    (request_id,),
+                ).fetchone()
+                if row is not None:
+                    if str(row[0]) != request_digest or str(row[1]) != scope:
+                        raise DeleteConflict("delete request id reused with different content")
+                    return DeleteReport(
+                        request_id=request_id,
+                        generation=int(row[2]),
+                        removed=int(row[3]),
+                        scope=scope,
+                        replayed=True,
+                    )
+                if roots is None:
+                    hashes = [str(item[0]) for item in self.connection.execute("SELECT path_hash FROM files")]
+                else:
+                    marks = ",".join("?" for _ in roots)
+                    hashes = [
+                        str(item[0])
+                        for item in self.connection.execute(
+                            f"SELECT path_hash FROM files WHERE root_hash IN ({marks})", roots
+                        )
+                    ]
+                for path_hash in hashes:
+                    ids = [
+                        item[0]
+                        for item in self.connection.execute("SELECT id FROM chunks WHERE path_hash = ?", (path_hash,))
+                    ]
+                    if ids:
+                        chunk_marks = ",".join("?" for _ in ids)
+                        self.connection.execute(f"DELETE FROM chunks_fts WHERE rowid IN ({chunk_marks})", ids)
+                    self.connection.execute("DELETE FROM chunks WHERE path_hash = ?", (path_hash,))
+                    self.connection.execute("DELETE FROM files WHERE path_hash = ?", (path_hash,))
+                self.connection.execute("UPDATE connector_control SET generation = generation + 1 WHERE singleton = 1")
+                generation = int(
+                    self.connection.execute("SELECT generation FROM connector_control WHERE singleton = 1").fetchone()[
+                        0
+                    ]
+                )
+                if pause:
+                    self.connection.execute(
+                        "UPDATE connector_control SET paused = 1, pause_reason = 'deleted' WHERE singleton = 1"
+                    )
+                self.connection.execute(
+                    """INSERT INTO delete_fences(request_id, request_digest, scope, generation, removed, completed_at)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (request_id, request_digest, scope, generation, len(hashes), time.time()),
+                )
+            if pause or roots is None:
+                self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        return DeleteReport(request_id=request_id, generation=generation, removed=len(hashes), scope=scope)
 
     def get_file(self, relative_path: str) -> FileRecord | None:
         with self.lock:

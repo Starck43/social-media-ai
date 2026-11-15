@@ -40,7 +40,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
 
-- [P21-T14](docs/tasks/p21-t14.md) Provider rate limits and bounded backpressure — **TODO** · unassigned · depends on P21-T12/P21-T13 · `P1` · `C4`
+- [P21-T14](docs/tasks/p21-t14.md) Provider rate limits and bounded backpressure — **IN_PROGRESS** · opencode-p21-t14 · `feat/p21-t14-rate-limits` from `dev` `988c9607`; dialogue `ses_e1f6bec47ffeCeZHTPz0rSp6C0` · depends on P21-T12/P21-T13 · `P1` · `C4`
 - [P21-T15](docs/tasks/p21-t15.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T14/P2-T17 allowance policy; no cutover · `P1` · `C4`
 - [P21-T16](docs/tasks/p21-t16.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T15; integrated mocked phase checks; feeds P2-T09 · `P1` · `C4`
 

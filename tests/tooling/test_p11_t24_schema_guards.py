@@ -1047,6 +1047,32 @@ def upgrade():
             raise AssertionError("Unreadable loop rows were silently dropped from guard DDL")
 
 
+def test_guard_inventory_resolves_tuple_loop_with_equality_conditional():
+    """P11-T37's regression, kept here so one parser copy owns both lanes' cases."""
+    tree = ast.parse("""
+def upgrade():
+    schema = settings.DB_SCHEMA
+    quoted = op.get_context().dialect.identifier_preparer.quote_schema(schema)
+    for event, level in (("UPDATE OR DELETE", "ROW"), ("TRUNCATE", "STATEMENT")):
+        trigger = "service_plan_backfill_immutable" if level == "ROW" else "service_plan_backfill_no_truncate"
+        op.execute(sa.text(f\"\"\"
+            CREATE TRIGGER {trigger} BEFORE {event}
+            ON {quoted}.service_plan_backfill_resolutions FOR EACH {level}
+            EXECUTE FUNCTION {quoted}.service_plan_policy_immutable()
+        \"\"\"))
+""")
+    statements = set()
+    for function, sql, unresolved in _executes(tree):
+        statements.update(_statements(sql, unresolved, function, tree))
+    assert len(statements) == 2
+    assert any(
+        "service_plan_backfill_immutable BEFORE UPDATE OR DELETE" in s and "FOR EACH ROW" in s for s in statements
+    )
+    assert any(
+        "service_plan_backfill_no_truncate BEFORE TRUNCATE" in s and "FOR EACH STATEMENT" in s for s in statements
+    )
+
+
 def test_p21_t13_nested_loop_binding_preserves_correlated_outer_values():
     tree = ast.parse("""
 def upgrade():

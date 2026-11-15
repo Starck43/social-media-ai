@@ -1,7 +1,7 @@
 """P21-T13 increment A: catalog custody, model metadata and plan grants (dormant).
 
 Revision: p21t13_catalog_storage (descriptive placeholder; the number is assigned
-at merge). `down_revision` is the live `dev` head `0155`.
+at merge). `down_revision` is the live `dev` head `0156`.
 
 Order matters and is all-or-nothing inside the caller's transaction:
 
@@ -32,7 +32,7 @@ from alembic import context, op
 from app.core.config import settings
 
 revision = "p21t13_catalog_storage"
-down_revision = "0155"
+down_revision = "0156"
 branch_labels = None
 depends_on = None
 

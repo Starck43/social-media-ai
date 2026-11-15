@@ -85,8 +85,14 @@ _DRIVE = re.compile(r"^[A-Za-z]:")
 DEFAULT_TIMEOUT_SECONDS = 30.0
 
 
-class UpdaterError(ValueError):
+class UpdaterError(RuntimeError):
     """Fixed, sanitized updater denial; never echoes attacker content."""
+
+
+def _now() -> int:
+    """Trusted wall-clock seconds; only the release composition root may pin it."""
+
+    return int(time.time())
 
 
 def _fsync_dir(fd: int) -> None:
@@ -153,7 +159,8 @@ class _Tree:
 
     @staticmethod
     def _verify_dir(st: os.stat_result) -> None:
-        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid() or st.st_mode & 0o177:
+        # Only group/other bits deny; the owner needs the execute bit to traverse.
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.geteuid() or st.st_mode & 0o077:
             raise UpdaterError("update state directory is not owner-private")
 
     def close(self) -> None:
@@ -395,7 +402,7 @@ class UpdateManager:
         self._platform = platform
         self._key = trusted_key
         self._health: Callable[[Path, _Slot], bool] = self._probe_health
-        self._clock: Callable[[], int] = lambda: int(time.time())
+        self._clock: Callable[[], int] = _now
         self._timeout = DEFAULT_TIMEOUT_SECONDS
         self._mutex = threading.RLock()
         self._opener: Callable[..., object] = lambda url, timeout: urllib.request.build_opener(
@@ -556,20 +563,18 @@ class UpdateManager:
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise UpdaterError("update input is not a regular private file")
-            try:
-                chunks = []
-                total = 0
-                while chunk := os.read(fd, min(1 << 20, limit + 1 - total)):
-                    chunks.append(chunk)
-                    total += len(chunk)
-                    if total > limit:
-                        raise UpdaterError("update input exceeds read budget")
-                data = b"".join(chunks)
-            except OSError:
-                raise UpdaterError("update input is not a regular private file") from None
-            if len(data) > limit:
-                raise UpdaterError("update input is not a regular private file")
-            return data
+            chunks: list[bytes] = []
+            total = 0
+            while chunk := os.read(fd, min(1 << 20, limit + 1 - total)):
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > limit:
+                    # The signed size is the budget: a larger input is an
+                    # authentication failure, not a local I/O problem.
+                    raise UpdateRejected("artifact authentication failed")
+            return b"".join(chunks)
+        except OSError:
+            raise UpdaterError("update input is not a regular private file") from None
         finally:
             os.close(fd)
 
@@ -945,9 +950,15 @@ class UpdateManager:
                 body = bytearray()
                 while chunk := response.read(min(64 * 1024, limit + 1 - len(body))):
                     body += chunk
-                    if len(body) > limit or time.monotonic() > deadline:
+                    if len(body) > limit:
+                        # The signed size is the budget; a larger body is an
+                        # authentication failure.
+                        raise UpdateRejected("artifact authentication failed")
+                    if time.monotonic() > deadline:
                         raise UpdaterError("update feed exceeded its read budget")
                 return bytes(body)
+        except UpdateRejected:
+            raise
         except (urllib.error.URLError, OSError, ValueError, ssl.SSLError):
             raise UpdaterError("update feed unavailable") from None
 

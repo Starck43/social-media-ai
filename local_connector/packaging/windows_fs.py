@@ -199,8 +199,16 @@ PINNED_SHARE = FILE_SHARE_READ | FILE_SHARE_WRITE
 # SYNCHRONIZE in real Win32 and is granted by every data-folder ACL.
 DIRECTORY_SHARE_ACCESS = FILE_LIST_DIRECTORY | FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_READ_EA | SYNCHRONIZE
 FILE_READ_ACCESS = FILE_READ_DATA | FILE_READ_ATTRIBUTES | FILE_READ_EA | SYNCHRONIZE
+# Ancestor directories are only traversed and inspected while a descendant is
+# resolved; they never grant a listing right, so a pinned ancestor cannot be
+# read as a file.
+ANCESTOR_ACCESS = FILE_TRAVERSE | FILE_READ_ATTRIBUTES | SYNCHRONIZE
 
 INVALID_HANDLE_VALUE = -1
+# MAXIMUM_ALLOWED asks the kernel for the most rights the ACL grants. It is
+# retried only after a fixed mask was denied, and it never widens the share
+# mode, so the pinning guarantee is unchanged.
+MAXIMUM_ALLOWED = 0x02000000
 FILE_TYPE_DISK = 0x0001
 FILE_ATTRIBUTE_INFO_CLASS = 9
 FILE_STANDARD_INFO_CLASS = 1
@@ -233,6 +241,7 @@ MAX_SID_BYTES = 68
 DRIVE_REMOTE = 4
 INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF
 ERROR_ALREADY_EXISTS = 183
+ERROR_ACCESS_DENIED = 5
 ERROR_NO_MORE_FILES = 18
 MAX_NAME_CHARS = 255
 MAX_ROOT_CHARS = 240
@@ -713,15 +722,26 @@ def _handle_value(result) -> int:
 
 
 def _open_handle(path: str, *, directory: bool, access: int, share: int, creation: int, security=None) -> int:
-    """Open one object; every open is ``FILE_FLAG_OPEN_REPARSE_POINT``."""
+    """Open one object; every open is ``FILE_FLAG_OPEN_REPARSE_POINT``.
+
+    A fixed access mask can be denied by an ACL that still grants a usable
+    subset (``READ_CONTROL`` on a data folder, for example). The only retry is
+    ``MAXIMUM_ALLOWED`` with the same share mode and flags, so the kernel grants
+    exactly what the owner already allowed and nothing more.
+    """
 
     flags = FILE_FLAG_OPEN_REPARSE_POINT
     if directory:
         flags |= FILE_FLAG_BACKUP_SEMANTICS
-    handle = current_api().CreateFileW(path, access, share, security, creation, flags, None)
-    value = _handle_value(handle)
+    value = _handle_value(current_api().CreateFileW(path, access, share, security, creation, flags, None))
     if value in (0, INVALID_HANDLE_VALUE):
-        raise _denial_for_code(_last_error())
+        code = _last_error() & 0xFFFF
+        if code == ERROR_ACCESS_DENIED and access != MAXIMUM_ALLOWED:
+            value = _handle_value(
+                current_api().CreateFileW(path, MAXIMUM_ALLOWED, share, security, creation, flags, None)
+            )
+        if value in (0, INVALID_HANDLE_VALUE):
+            raise _denial_for_code(_last_error())
     return value
 
 
@@ -979,26 +999,66 @@ def _read_handle(value: int, *, max_bytes: int) -> tuple[bytes, int]:
 
 @contextmanager
 def _verified_read(root, relative, *, max_bytes: int) -> Iterator[tuple[_Handle, _Info, bytes]]:
-    """Open, bound, read and prove one file; yields ``(handle, info, bytes)``."""
+    """Open, bound, read and prove one file; yields ``(handle, info, bytes)``.
+
+    The leaf is opened first, so the bytes come from one verified object. Every
+    ancestor directory is then opened and pinned for the rest of the operation,
+    and the leaf path is resolved once more at the end: if an ancestor was
+    replaced in the meantime, the path now leads to a different object and the
+    read is refused instead of silently serving another file.
+    """
 
     if type(max_bytes) is not int or max_bytes < 0:
         raise WindowsFsError(deny_unsafe())
     canonical = _normalise_root(root)
     parts = _relative_parts(relative)
-    path = _qualified(canonical, parts)
-    with _opened(path, directory=False, access=FILE_READ_ACCESS, share=PINNED_SHARE) as (handle, before):
-        if before.is_directory or before.is_reparse:
-            raise _fail(deny_unsafe())
-        if before.size > max_bytes:
-            raise _fail(deny_unsafe())
-        data, total = _read_handle(handle.value, max_bytes=max_bytes)
-        after = _info(handle.value)
-        if after.signature() != before.signature() or total != before.size:
-            raise _fail(deny_identity())
-        current = _resolve(path, directory=False, access=FILE_READ_ACCESS, share=PINNED_SHARE)
-        if current.signature() != before.signature():
-            raise _fail(deny_identity())
-        yield handle, before, data
+    ancestors = parts[:-1]
+    leaf = _qualified(canonical, parts)
+    pinned: list[tuple[str, _Handle, _Info]] = []
+    try:
+        # The ancestors are opened first and kept open without delete sharing, so
+        # a directory that is replaced while the file is read is detected when
+        # the paths are resolved again afterwards.
+        for index in range(len(ancestors)):
+            path = _qualified(canonical, ancestors[: index + 1])
+            ancestor = _Handle(
+                _open_handle(path, directory=True, access=ANCESTOR_ACCESS, share=PINNED_SHARE, creation=OPEN_EXISTING)
+            )
+            try:
+                info = _info(ancestor.value)
+                if not info.is_directory:
+                    raise WindowsFsError(deny_identity())
+            except BaseException:
+                ancestor.close()
+                raise
+            pinned.append((path, ancestor, info))
+        # The size is checked through an attributes-only handle, so an oversized
+        # file is never opened for reading.
+        with _opened(leaf, directory=False, access=FILE_READ_ATTRIBUTES, share=PINNED_SHARE) as (_sized, size_info):
+            if size_info.is_directory or size_info.is_reparse:
+                raise _fail(deny_unsafe())
+            if size_info.size > max_bytes:
+                raise _fail(deny_unsafe())
+        with _opened(leaf, directory=False, access=FILE_READ_ACCESS, share=PINNED_SHARE) as (handle, before):
+            if before.is_directory or before.is_reparse:
+                raise _fail(deny_unsafe())
+            if before.size > max_bytes:
+                raise _fail(deny_unsafe())
+            data, total = _read_handle(handle.value, max_bytes=max_bytes)
+            after = _info(handle.value)
+            if after.signature() != before.signature() or total != before.size:
+                raise _fail(deny_identity())
+            current = _resolve(leaf, directory=False, access=FILE_READ_ACCESS, share=PINNED_SHARE)
+            if current.signature() != before.signature():
+                raise _fail(deny_identity())
+            for path, _ancestor_handle, ancestor_info in pinned:
+                resolved = _resolve(path, directory=True, access=ANCESTOR_ACCESS, share=PINNED_SHARE)
+                if resolved.identity != ancestor_info.identity:
+                    raise _fail(deny_identity())
+            yield handle, before, data
+    finally:
+        for _path, ancestor_handle, _info_before in pinned:
+            ancestor_handle.close()
 
 
 def read_relative_file(root, relative, *, max_bytes: int) -> bytes:
@@ -1244,19 +1304,19 @@ def _acl_is_owner_only(value: int, owner: _SidBuffer) -> bool:
 
     descriptor = wintypes.LPVOID()
     owner_out = wintypes.LPVOID()
-    _call(
-        current_api().GetSecurityInfo(
-            value,
-            SE_FILE_OBJECT,
-            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
-            ctypes.byref(owner_out),
-            None,
-            None,
-            None,
-            ctypes.byref(descriptor),
-        ),
-        deny_permission(),
+    # GetSecurityInfo returns an error code; 0 is success, anything else denies.
+    status = current_api().GetSecurityInfo(
+        value,
+        SE_FILE_OBJECT,
+        OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+        ctypes.byref(owner_out),
+        None,
+        None,
+        None,
+        ctypes.byref(descriptor),
     )
+    if status != 0:
+        raise WindowsFsError(deny_insecure_cache())
     try:
         if not descriptor or not owner_out:
             return False
@@ -1481,7 +1541,9 @@ def open_private_file(root, relative, *, create: bool = False, share: int = FILE
     """
 
     _require_windows()
-    if type(share) is not int or not 0 < share <= 0x7:
+    # A private file is always readable by its owner; a share mode without
+    # FILE_SHARE_READ would make the file unreadable for everyone else.
+    if type(share) is not int or not 0 < share <= 0x7 or not share & FILE_SHARE_READ:
         raise WindowsFsError(deny_unsafe())
     access = FILE_READ_DATA | FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE
     if create:

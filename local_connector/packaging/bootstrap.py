@@ -125,9 +125,12 @@ def bundled_release() -> tuple[bytes, str | None]:
         raise ValueError("invalid bundled release configuration")
     feed = payload["feed"]
     if feed is not None:
-        from local_connector.packaging.updater import _feed_base
+        from local_connector.packaging.updater import UpdaterError, _feed_base
 
-        feed = _feed_base(feed)
+        try:
+            feed = _feed_base(feed)
+        except UpdaterError:
+            raise ValueError("invalid bundled release configuration") from None
     return key, feed
 
 

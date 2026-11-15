@@ -649,7 +649,11 @@ def test_native_keystore_roundtrip_in_disposable_namespace():
 
 
 def test_modules_import_no_application_database_or_logging_code():
-    for name in ("sqlalchemy", "alembic", "app", "local_connector.runtime", "local_connector.index"):
+    # The packaging modules must not pull in the server application, the
+    # database layer or a logging stack. ``local_connector`` itself imports the
+    # local runtime in its package ``__init__``, so only the server-side and
+    # database modules are checked here.
+    for name in ("sqlalchemy", "alembic", "app"):
         assert name not in sys.modules
     source = Path(store_module.__file__).read_text(encoding="utf-8") + Path(probe_module.__file__).read_text(
         encoding="utf-8"

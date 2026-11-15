@@ -70,7 +70,9 @@ def write(tmp_path, name, data):
 
 @pytest.fixture(autouse=True)
 def synthetic_execution(monkeypatch):
-    monkeypatch.setattr(updater.time, "time", lambda: 1000)
+    # The signed lifetime is checked against a pinned clock; the real wall clock
+    # is never patched, so ZIP timestamps stay valid.
+    monkeypatch.setattr(updater, "_now", lambda: 1000)
     monkeypatch.setattr(updater.UpdateManager, "_probe_health", lambda *_: True)
 
 
@@ -467,7 +469,9 @@ def test_automatic_update_rejects_unsigned_artifact_url_override(manager, networ
     payload["url"] = "https://evil.example/artifact.zip"
     signed = json.dumps(payload).encode()
     table.update(feed_table(publisher, signed, publisher.key.sign(signed), artifact))
-    with pytest.raises(updater.UpdaterError):
+    # The extra field is not part of the closed schema, so the manifest itself
+    # is refused before any artifact is fetched.
+    with pytest.raises(updates.UpdateRejected):
         manager.automatic_update(FEED_BASE)
     assert manager.active_binary() is None
 
@@ -507,7 +511,8 @@ def test_feed_redirect_and_oversize_denied(manager):
     with pytest.raises(updater.UpdaterError):
         manager.automatic_update(FEED_BASE)
     manager._opener = lambda url, timeout: FakeResponse(url, b"x" * (65 * 1024))
-    with pytest.raises(updater.UpdaterError):
+    # An oversized manifest is refused as an authentication failure.
+    with pytest.raises(updates.UpdateRejected):
         manager.automatic_update(FEED_BASE)
 
 

@@ -2,11 +2,11 @@
 
 **Not activated or production-certified.** These unsigned PyInstaller bundles
 package the local-only scaffold, not a cloud-connected desktop product. Windows
-folder access remains denied until native handle/ACL enforcement is delivered.
-Three-OS race testing, tray integration, real OS key storage and mTLS deployment
-are still required by [P18-T07](tasks/p18-t07.md) and [Q-19](tasks/q-19.md).
-Installing a bundle never pairs a device, starts the server runtime or grants
-permission to activate users.
+folder access remains denied until the native handle/ACL path is certified on
+Windows. Three-OS race testing, native artifact execution, real OS key storage
+and mTLS deployment are still required by [P18-T07](tasks/p18-t07.md) and
+[Q-19](tasks/q-19.md). Installing a bundle never pairs a device, starts the
+server runtime or grants permission to activate users.
 
 ## Obtain and check a build
 
@@ -61,17 +61,27 @@ artifact execution remains unrun on the remote macOS lane; CI must prove it.
 On supported POSIX hosts, launch in a terminal. The connector opens its protected
 loopback page in your browser; `--no-browser` prints the address instead. Select
 folders explicitly on that page. Stop with Ctrl+C before replacing a build.
-There is no background service, login auto-start, tray process or inbound cloud
-listener. See the [scaffold boundary](../local_connector/README.md).
+`--desktop` starts the optional native tray controls instead of the browser
+page: it can open the local controls, choose a folder, delete or resume the
+local index, check for an authenticated update and roll back the application
+version. It is a development aid, not a production client. There is no
+background service, login auto-start or inbound cloud listener. See the
+[scaffold boundary](../local_connector/README.md).
 
 The default private data directory contains the local SQLite index, approved
-root identities and lock/sidecar files:
+root identities, lock/sidecar files and — when an update identity is bundled —
+the version slots and the update state:
 
 | OS | Directory |
 | --- | --- |
 | macOS | `~/Library/Application Support/AI Assistant Connector` |
 | Linux | `~/.local/share/ai-assistant-connector` |
 | Windows (reserved, runtime denied) | `%LOCALAPPDATA%\AI Assistant Connector` |
+
+Device credentials are never written there: they belong to the operating
+system key store (macOS Keychain, Windows Credential Manager, Linux Secret
+Service). The connector refuses to run without an approved OS backend and
+never falls back to a plaintext file.
 
 Do not select a folder containing the data directory. Local originals remain in
 their selected folders; installation/uninstallation never removes originals.
@@ -107,11 +117,16 @@ precedes JSON parsing. The closed manifest schema is:
 Times are integer Unix seconds with at most a 30-day validity period; the
 release must be newer than the installed version. Unknown/duplicate fields,
 wrong product/platform, invalid signatures, expired/future manifests, malformed
-versions, and artifact size/hash mismatches are rejected. This module provides
-verification, **not an automatic installer**: it has no network, staging,
-installation, extraction, execution or rollback authority. Its `cryptography`
-dependency belongs to packaging/test tools and the frozen verification command,
-not the unchanged runtime wheel.
+versions, and artifact size/hash mismatches are rejected. The installer in
+`local_connector/packaging/updater.py` builds on that verifier: it installs a
+signed release into an owner-private **version slot**, keeps the signed archive
+and manifest, health-checks the staged binary with `--self-test` and only then
+flips the active pointer. A failed check leaves the current slot, the index and
+your data untouched. Rollback re-activates the previously installed, still
+authenticated slot; the version floor never moves backwards, so a rollback can
+never re-open a downgrade path. The trust anchor and the fixed feed URL come
+from the frozen build only — never from a CLI flag, an environment variable, a
+working directory or the manifest itself.
 
 Release preparation (authorized release operator only):
 
@@ -136,20 +151,33 @@ The frozen executable supports:
 
 ```sh
 ai-assistant-connector --verify-update <manifest.json> <manifest.json.sig> <bundle>
+ai-assistant-connector --self-test
+ai-assistant-connector --install-update <manifest.json> <manifest.json.sig> <bundle>
+ai-assistant-connector --rollback --confirm
 ```
 
-Success authenticates bounded artifact bytes at verification time only; it does
-not apply them. A future installer must reverify at use, maintain durable update
-state and preserve private-directory/no-follow semantics. Never treat this
-verification receipt as authorization to execute a later modified artifact.
+`--verify-update` authenticates bounded artifact bytes without applying them.
+`--self-test` proves the packaged dependencies and the bundled trust
+configuration are usable without opening your index, a folder, a socket or a
+credential store. `--install-update` installs a signed release into a
+version slot; `--rollback --confirm` re-selects the previous authenticated
+version. Both keep your local index and credentials: only application files
+move. The update state lives in an owner-private directory next to the local
+index; the launcher selects the authenticated slot on every start, so a
+rollback takes effect on the next launch. Never treat a verification receipt as
+authorization to execute a later modified artifact.
 
-Until the remaining updater/OS acceptance gates pass, updates are manual: stop,
-verify the reviewed artifact and use a fresh version directory. Keep the previous
-build and a private offline backup of local derived data before upgrading. To
-roll back, stop the new build and run the previously verified build; never run
-old and new processes against the same index concurrently. Schema downgrade is
-not promised; restore its matching backup or delete/rebuild derived data, never
-copy old state over revocation/deletion fences once pairing is implemented.
+The automatic updater is delivered, but its three-OS native evidence is still
+missing: the slot installer, the feed client and the rollback path are proven
+only by unit and mocked-boundary checks on this macOS lane. Until an
+authorized Windows/macOS/Linux runner proves them end to end, treat
+`--install-update` and `--rollback` as development-only. Manual upgrading
+remains available: stop, verify the reviewed artifact and use a fresh version
+directory. Keep the previous build and a private offline backup of local
+derived data before upgrading. Never run old and new processes against the same
+index concurrently. Schema downgrade is not promised; restore its matching
+backup or delete/rebuild derived data, never copy old state over
+revocation/deletion fences once pairing is implemented.
 
 ## Uninstall and complete removal
 
@@ -162,11 +190,15 @@ copy old state over revocation/deletion fences once pairing is implemented.
    packaged application files but intentionally preserves personal derived data.
    For AppImage remove the downloaded file and any extraction/shortcut you made.
 4. To remove local state completely, remove only the exact per-OS data directory
-   above, including SQLite sidecars/lock files. Source folders are untouched.
+   above, including SQLite sidecars/lock files and the update slots. Source
+   folders are untouched. An OS key-store entry, if a later paired build
+   created one, must be removed in the operating system credential UI.
 5. Remove any shortcuts you created and any explicit private index backups. OS
    snapshots/backups and physical media erasure require separate administration;
    deleting a directory is not a guarantee of forensic erasure.
 
-This scaffold holds no pairing credential or OS key-store entry. A later paired
-build also requires server-side device revocation and explicit OS credential
-cleanup; deleting this local directory alone would not revoke a device.
+This scaffold holds no pairing credential and creates no OS key-store entry by
+itself. The key-store adapter only stores credentials that an operator-supplied
+enrollment provides. A later paired build also requires server-side device
+revocation and explicit OS credential cleanup; deleting this local directory
+alone would not revoke a device.

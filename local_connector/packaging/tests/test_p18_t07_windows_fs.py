@@ -136,6 +136,7 @@ class FakeWin32:
         self.on_get_security = None
         self.keep_alive = []
         self.read_only_access = None  # emulate an ACL that grants fewer rights
+        self._security_node = None  # node behind the last GetSecurityInfo call
 
     # -- helpers ---------------------------------------------------------
     def _handle(self, record):
@@ -160,11 +161,14 @@ class FakeWin32:
         key, existing = self._resolve(path, creation=creation)
         if self.read_only_access is not None and existing is not None and access != 0x02000000:
             if access & ~self.read_only_access:
+                # Real Win32 reports the denial through the return value and the
+                # last error, so the adapter can retry with MAXIMUM_ALLOWED.
                 self.error = ERROR_ACCESS_DENIED
-                raise Failure(ERROR_ACCESS_DENIED)
+                return C.INVALID_HANDLE_VALUE
         if existing is not None:
             if creation == C.CREATE_NEW:
-                raise Failure(ERROR_ALREADY_EXISTS)
+                self.error = ERROR_ALREADY_EXISTS
+                return C.INVALID_HANDLE_VALUE
             # A share mode asks for what its holder denies: ERROR_SHARING_VIOLATION
             # whenever requested and granted rights do not overlap.
             for other in self.handles.values():
@@ -175,22 +179,18 @@ class FakeWin32:
             return self._handle(_Opened(existing, key, access, share))
         parent = self.tree.get(key.rsplit("\\", 1)[0])
         if creation != C.CREATE_NEW or parent is None or not parent.directory:
-            raise Failure(ERROR_FILE_NOT_FOUND if parent is not None else ERROR_PATH_NOT_FOUND)
+            self.error = ERROR_FILE_NOT_FOUND if parent is not None else ERROR_PATH_NOT_FOUND
+            return C.INVALID_HANDLE_VALUE
         node = self._new_node(key, directory=False, owner_only=True)
         self.tree[key] = node
-        if (
-            security is not None
-            and getattr(security, "contents", None) is not None
-            and security.contents.lpSecurityDescriptor
-        ):
-            self.sddls.append(("created", key))
         return self._handle(_Opened(node, key, access, share))
 
     def ReadFile(self, handle, buffer, size, count, overlapped):
         record = self.handles.get(handle)
         if record is None:
             raise Failure(ERROR_INVALID_HANDLE)
-        if not record.access & C.FILE_READ_DATA:
+        # MAXIMUM_ALLOWED grants whatever the ACL allows, so it includes reading.
+        if not (record.access & C.FILE_READ_DATA or record.access == 0x02000000):
             raise Failure(ERROR_ACCESS_DENIED)
         data = record.node.data
         offset = record.read_offset
@@ -216,7 +216,13 @@ class FakeWin32:
         return 1
 
     def CloseHandle(self, handle):
-        record = self.handles.pop(handle, None)
+        # Real Win32 takes a plain handle value, not a ctypes box.
+        key = getattr(handle, "value", handle)
+        try:
+            key = int(key)
+        except (TypeError, ValueError):
+            pass
+        record = self.handles.pop(key, None)
         if record is not None:
             self.closed.append(record)
         return 1
@@ -335,8 +341,7 @@ class FakeWin32:
             return 0
         node = self._new_node(key, directory=True, owner_only=True)
         self.tree[key] = node
-        if security is not None:
-            self.sddls.append(("created", key))
+        self.directory_created.append(key)
         return 1
 
     def SetFileInformationByHandle(self, handle, info_class, payload, size):
@@ -358,23 +363,24 @@ class FakeWin32:
         token._obj.value = 0x7777
         return 1
 
-    def GetTokenInformation(self, token, info_class, out, size, needed):
+    def GetTokenInformation(self, token, info_class, out, length, return_length):
         # ``TOKEN_USER`` is one caller-owned buffer: a pointer-sized SID pointer
         # followed by the SID itself, both inside ``out``.
-        total = wintypes.sizeof(wintypes.LPVOID) + len(self.owner_sid)
+        total = ctypes.sizeof(wintypes.LPVOID) + len(self.owner_sid)
         if not out:
-            needed._obj.value = total
+            return_length._obj.value = total
             self.error = ERROR_INSUFFICIENT_BUFFER
             return 0
-        if int(size._obj.value) < total:
+        if int(length) < total:
+            return_length._obj.value = total
             self.error = ERROR_INSUFFICIENT_BUFFER
             return 0
         buffer = ctypes.cast(out, ctypes.POINTER(ctypes.c_char * total)).contents
-        sid_offset = wintypes.sizeof(wintypes.LPVOID)
+        sid_offset = ctypes.sizeof(wintypes.LPVOID)
         ctypes.memmove(ctypes.addressof(buffer) + sid_offset, self.owner_sid, len(self.owner_sid))
         pointer_slot = ctypes.cast(buffer, ctypes.POINTER(wintypes.LPVOID))
         pointer_slot.contents.value = ctypes.addressof(buffer) + sid_offset
-        needed._obj.value = total
+        return_length._obj.value = total
         return 1
 
     def GetLengthSid(self, sid):
@@ -410,26 +416,25 @@ class FakeWin32:
 
     def GetSecurityInfo(self, handle, obj_type, info, owner, group, dacl, sacl, descriptor):
         if not self.acl_ok:
-            raise Failure(ERROR_ACCESS_DENIED)
+            self.error = ERROR_ACCESS_DENIED
+            return ERROR_ACCESS_DENIED
         record = self.handles.get(handle)
         if record is None:
             raise Failure(ERROR_INVALID_HANDLE)
         if self.on_get_security is not None:
             self.on_get_security(record.path)
-        if not record.node.owner_only:
-            # A normal profile directory: present, owned by the user, but with
-            # inherited ACEs. It must never be treated as a private cache root.
-            descriptor._obj.value = 0x1000
-            owner._obj.value = 0x2000
-            return 0
+        self._security_node = record.node
         descriptor._obj.value = 0x1000
         owner._obj.value = 0x2000
         return 0
 
     def GetSecurityDescriptorControl(self, descriptor, control, revision):
-        # Only owner_only nodes reach the DACL walk, and their control word
-        # carries the protected flag; see GetSecurityInfo above.
-        control._obj.value = C.SE_DACL_PROTECTED | C.SE_DACL_PRESENT
+        # A node that is not owner-only carries an inherited, unprotected DACL:
+        # it must never be accepted as a private cache root.
+        node = self._security_node
+        control._obj.value = (
+            C.SE_DACL_PROTECTED | C.SE_DACL_PRESENT if node is not None and node.owner_only else C.SE_DACL_PRESENT
+        )
         revision._obj.value = 1
         return 1
 
@@ -710,18 +715,23 @@ def test_root_replacement_is_detected(windows):
     assert denied.value.reason == wf.deny_identity()
 
 
-def test_ancestor_retarget_during_walk_denies(windows):
+def test_ancestor_retarget_during_read_denies(windows):
+    """A directory replaced while the file is read must deny the read.
+
+    Windows has no ``openat``, so the adapter cannot prevent the replacement;
+    it detects it by resolving the ancestor path again after the read and
+    comparing the directory identity.
+    """
+
     table = windows(default_tree())
     switched = {"done": False}
 
-    def retarget(key, _creation):
-        if key == "C:\\USERS\\A\\DOCS" and not switched["done"]:
+    def retarget(path):
+        if not switched["done"]:
             switched["done"] = True
             table.tree["C:\\USERS\\A\\DOCS"] = table.tree["C:\\USERS\\A\\DOCS"].clone(identity=4242)
 
-    table.on_resolve = retarget
-    handle, _ = _call(wf.open_pinned_root, r"C:\Users\A")
-    handle.close()
+    table.on_read = retarget
     with pytest.raises(wf.WindowsFsError):
         _call(wf.read_relative_file, r"C:\Users\A", r"Docs\report.txt", max_bytes=64)
 
@@ -855,7 +865,12 @@ def test_listing_is_sorted_and_typed(windows):
     tree["C:\\USERS\\A\\DOCS\\A.TXT"] = Node("a.txt", data=b"a", identity=8)
     tree["C:\\USERS\\A\\DOCS\\SUB"] = Node("Sub", directory=True, identity=9)
     windows(tree)
-    assert _call(wf.list_root, ROOT) == [("a.txt", False), ("b.txt", False), ("Sub", True)]
+    assert _call(wf.list_root, ROOT) == [
+        ("a.txt", False),
+        ("b.txt", False),
+        ("report.txt", False),
+        ("Sub", True),
+    ]
 
 
 def test_iteration_scope_and_budget(windows):
@@ -864,8 +879,9 @@ def test_iteration_scope_and_budget(windows):
     tree["C:\\USERS\\A\\DOCS\\SUB"] = Node("Sub", directory=True, identity=9)
     tree["C:\\USERS\\A\\DOCS\\SUB\\INNER.TXT"] = Node("inner.txt", data=b"i", identity=10)
     windows(tree)
-    # Directories are visited first, then files; each level sorted by name.
-    assert list(_call(wf.iter_root_files, ROOT)) == ["Sub\\inner.txt", "b.txt", "report.txt"]
+    # Each level is walked in case-folded name order, exactly like the POSIX
+    # scaffold: files and directories appear in the order of their names.
+    assert list(_call(wf.iter_root_files, ROOT)) == ["b.txt", "report.txt", "Sub\\inner.txt"]
     assert list(_call(wf.iter_root_files, ROOT, recursive=False)) == ["b.txt", "report.txt"]
     with pytest.raises(wf.WindowsFsError):
         list(_call(wf.iter_root_files, ROOT, max_entries=2))
@@ -887,9 +903,10 @@ def test_iteration_never_traverses_an_excluded_subtree(windows):
     tree["C:\\USERS\\A\\DOCS\\.SSH\\ID_RSA"] = Node("id_rsa", data=b"secret", identity=22)
     tree["C:\\USERS\\A\\DOCS\\NODE_MODULES"] = Node("node_modules", directory=True, identity=23)
     tree["C:\\USERS\\A\\DOCS\\NODE_MODULES\\PKG.JS"] = Node("pkg.js", data=b"x", identity=24)
-    tree["C:\\USERS\\A\\DOCS\\CACHE\\.A"] = Node(".a", directory=True, identity=25)
-    tree["C:\\USERS\\A\\DOCS\\CACHE\\.A\\INDEX.SQLITE"] = Node("index.sqlite", data=b"db", identity=26)
-    tree["C:\\USERS\\A\\DOCS\\CACHE\\SAFE.TXT"] = Node("safe.txt", data=b"ok", identity=27)
+    tree["C:\\USERS\\A\\DOCS\\CACHE"] = Node("Cache", directory=True, identity=25)
+    tree["C:\\USERS\\A\\DOCS\\CACHE\\.A"] = Node(".a", directory=True, identity=26)
+    tree["C:\\USERS\\A\\DOCS\\CACHE\\.A\\INDEX.SQLITE"] = Node("index.sqlite", data=b"db", identity=27)
+    tree["C:\\USERS\\A\\DOCS\\CACHE\\SAFE.TXT"] = Node("safe.txt", data=b"ok", identity=28)
     table = windows(tree)
     found = list(
         _call(

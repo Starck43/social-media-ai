@@ -1,4 +1,9 @@
-"""Closed signed search protocol. No shell, URL, fetch or destructive operation.
+"""Closed signed connector protocol: search, single-object fetch and index deletion.
+
+Every operation is an explicit member of one closed, versioned envelope; there is no
+shell, arbitrary URL fetch or generic file read. ``file.fetch`` names one object and one
+destination and is additionally gated cloud-side by a reviewed exact-version assertion.
+``index.delete`` deletes local index data only, never source files.
 
 Canonical form is this restricted JSON profile, not a claim of general RFC8785:
 ASCII schema keys, no floats, duplicate keys or non-finite numbers, UTF-8 strings,
@@ -15,12 +20,13 @@ import uuid
 from typing import Literal
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MAX_CONTROL_BYTES = 65536
 MAX_QUERY_BYTES = 4096
 MAX_HITS = 50
 MAX_SNIPPETS = 8
+MAX_FETCH_BYTES = 10 * 1024 * 1024
 TIMEOUT = 30
 REPLAY_SECONDS = 86400
 REPLAY_CAPACITY = 4096
@@ -38,6 +44,9 @@ class WireModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
 
+ARGS_BY_OPERATION: dict[str, type[WireModel]] = {}
+
+
 class SearchArgs(WireModel):
     query: str = Field(min_length=1, max_length=4096, repr=False)
     roots: list[str] = Field(min_length=1, max_length=16)
@@ -51,6 +60,39 @@ class SearchArgs(WireModel):
         return self
 
 
+class FetchArgs(WireModel):
+    object_id: str = Field(pattern=TOKEN)
+    root_id: str = Field(pattern=TOKEN)
+    relative_path: str = Field(min_length=1, max_length=2048, repr=False)
+    destination: Literal["private_storage"] = "private_storage"
+    max_bytes: int = Field(default=MAX_FETCH_BYTES, ge=1, le=MAX_FETCH_BYTES)
+    expected_content_hash: str | None = Field(default=None, pattern=HEX64)
+
+    def checked(self):
+        # One object, one destination: no batch, glob or directory expansion exists.
+        parts = self.relative_path.split("/")
+        if self.relative_path.startswith("/") or "\x00" in self.relative_path:
+            raise ConnectorUnavailable()
+        if any(part in {"", ".", ".."} for part in parts):
+            raise ConnectorUnavailable()
+        return self
+
+
+class DeleteArgs(WireModel):
+    scope: Literal["index", "all"] = "index"
+    root_ids: list[str] = Field(min_length=1, max_length=16)
+
+    def checked(self):
+        if len(set(self.root_ids)) != len(self.root_ids):
+            raise ConnectorUnavailable()
+        if any(not __import__("re").fullmatch(TOKEN, root) for root in self.root_ids):
+            raise ConnectorUnavailable()
+        return self
+
+
+ARGS_BY_OPERATION.update({"search": SearchArgs, "file.fetch": FetchArgs, "index.delete": DeleteArgs})
+
+
 class SearchRequest(WireModel):
     version: Literal[1] = 1
     key_id: str = Field(pattern=TOKEN)
@@ -59,7 +101,7 @@ class SearchRequest(WireModel):
     owner_id: int = Field(gt=0)
     actor_id: int = Field(gt=0)
     device_id: int = Field(gt=0)
-    operation: Literal["search"] = "search"
+    operation: Literal["search", "file.fetch", "index.delete"] = "search"
     issued_at: int = Field(gt=0)
     expires_at: int = Field(gt=0)
     device_epoch: int = Field(gt=0)
@@ -68,7 +110,27 @@ class SearchRequest(WireModel):
     data_boundary: Literal["company"] = "company"
     max_response_bytes: Literal[65536] = 65536
     max_snippet_characters: Literal[512] = 512
-    args: SearchArgs
+    args: dict = Field(repr=False)  # query text, paths and object ids never reach repr/logs
+
+    @model_validator(mode="before")
+    @classmethod
+    def _args_payload(cls, value):
+        # Accept the typed argument models as input, but store the canonical payload so
+        # signing and verification cover exactly the bytes that travel.
+        if isinstance(value, dict):
+            args = value.get("args")
+            if isinstance(args, BaseModel):
+                value = {**value, "args": args.model_dump()}
+        return value
+
+    @model_validator(mode="after")
+    def _checked_args(self):
+        # The closed envelope names exactly one typed argument shape per operation.
+        ARGS_BY_OPERATION[self.operation].model_validate(self.args).checked()
+        return self
+
+    def typed_args(self):
+        return ARGS_BY_OPERATION[self.operation].model_validate(self.args)
 
 
 class FileReference(WireModel):
@@ -104,13 +166,77 @@ class SearchResponse(WireModel):
             or self.request_digest != digest
         ):
             raise ConnectorUnavailable()
-        if len(self.hits) > request.args.limit or sum(hit.snippet is not None for hit in self.hits) > MAX_SNIPPETS:
+        args = request.typed_args()
+        if len(self.hits) > args.limit or sum(hit.snippet is not None for hit in self.hits) > MAX_SNIPPETS:
             raise ConnectorUnavailable()
         if self.outcome != "succeeded" and self.hits:
             raise ConnectorUnavailable()
-        if any(hit.reference.root_id not in request.args.roots for hit in self.hits):
+        if any(hit.reference.root_id not in args.roots for hit in self.hits):
             raise ConnectorUnavailable()
         return self
+
+
+class FetchResponse(WireModel):
+    """Control-level receipt for one object; bytes travel only in staged frames."""
+
+    version: Literal[1] = 1
+    request_id: str = Field(pattern=HEX32)
+    request_digest: str = Field(pattern=HEX64)
+    device_id: int = Field(gt=0)
+    outcome: Literal["succeeded", "denied", "unavailable", "expired", "limit_exceeded", "stale", "unknown"]
+    object_id: str = Field(pattern=TOKEN)
+    content_hash: str = Field(pattern=HEX64)
+    size: int = Field(ge=0, le=MAX_FETCH_BYTES)
+    version_assertion: str | None = Field(default=None, min_length=1, max_length=128)
+
+    def checked(self, request: SearchRequest, digest: str):
+        if (
+            self.request_id != request.request_id
+            or self.device_id != request.device_id
+            or self.request_digest != digest
+        ):
+            raise ConnectorUnavailable()
+        args = request.typed_args()
+        if self.object_id != args.object_id or self.size > args.max_bytes:
+            raise ConnectorUnavailable()
+        if self.outcome == "succeeded" and self.version_assertion is None:
+            raise ConnectorUnavailable()
+        if self.outcome != "succeeded" and self.size:
+            raise ConnectorUnavailable()
+        return self
+
+
+class DeleteResponse(WireModel):
+    """Receipt for one explicit local index deletion; never reports source files."""
+
+    version: Literal[1] = 1
+    request_id: str = Field(pattern=HEX32)
+    request_digest: str = Field(pattern=HEX64)
+    device_id: int = Field(gt=0)
+    outcome: Literal["succeeded", "denied", "unavailable", "expired", "limit_exceeded", "stale", "unknown"]
+    scope: Literal["index", "all"]
+    generation: int = Field(ge=0)
+    removed: int = Field(ge=0)
+
+    def checked(self, request: SearchRequest, digest: str):
+        if (
+            self.request_id != request.request_id
+            or self.device_id != request.device_id
+            or self.request_digest != digest
+        ):
+            raise ConnectorUnavailable()
+        if self.scope != request.typed_args().scope:
+            raise ConnectorUnavailable()
+        if self.outcome != "succeeded" and self.removed:
+            raise ConnectorUnavailable()
+        return self
+
+
+RESPONSE_BY_OPERATION: dict[str, type[WireModel]] = {
+    "search": SearchResponse,
+    "file.fetch": FetchResponse,
+    "index.delete": DeleteResponse,
+}
 
 
 def _pairs(pairs):
@@ -155,7 +281,7 @@ def canonical(value: dict) -> bytes:
 
 
 def sign(request: SearchRequest, key: Ed25519PrivateKey) -> tuple[bytes, str]:
-    request.args.checked()
+    request.typed_args().checked()
     data = request.model_dump()
     content = canonical(data)
     digest = hashlib.sha256(content).hexdigest()
@@ -179,13 +305,15 @@ def verify(payload: bytes, key: Ed25519PublicKey, *, key_id: str, now: int | Non
             or not 0 < request.expires_at - request.issued_at <= TIMEOUT
         ):
             raise ValueError
-        request.args.checked()
+        request.typed_args().checked()
         return request
     except Exception:
         raise ConnectorUnavailable() from None
 
 
-def new_request(*, key_id, tenant_id, owner_id, device_id, device_epoch, consent_epoch, policy_epoch, args):
+def new_request(
+    *, key_id, tenant_id, owner_id, device_id, device_epoch, consent_epoch, policy_epoch, args, operation="search"
+):
     now = int(time.time())
     return SearchRequest(
         key_id=key_id,
@@ -199,5 +327,6 @@ def new_request(*, key_id, tenant_id, owner_id, device_id, device_epoch, consent
         device_epoch=device_epoch,
         consent_epoch=consent_epoch,
         policy_epoch=policy_epoch,
+        operation=operation,
         args=args,
     )

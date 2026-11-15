@@ -29,6 +29,18 @@ PAIRING_HISTORY_RETENTION = timedelta(days=1)
 MAX_PENDING_PAIRINGS = 3
 
 
+def _request_roots(request) -> list[str]:
+    """Roots an operation is scoped to: search/fetch roots and index-delete root ids."""
+
+    args = request.typed_args()
+    roots = getattr(args, "roots", None)
+    if roots is None:
+        roots = getattr(args, "root_ids", None)
+    if not isinstance(roots, (list, tuple)) or any(type(root) is not str for root in roots):
+        raise ConnectorUnavailable()
+    return list(roots)
+
+
 def now():
     return datetime.now(timezone.utc)
 
@@ -339,7 +351,7 @@ class LocalConnectorStore(BaseManager):
                 request.policy_epoch,
             ):
                 raise ConnectorUnavailable()
-            if not set(request.args.roots) <= set(row.cloud_roots):
+            if not set(_request_roots(request)) <= set(row.cloud_roots):
                 raise ConnectorUnavailable()
             scope = (LocalConnectorRequest.tenant_id == row.tenant_id, LocalConnectorRequest.device_id == row.id)
             await session.execute(
@@ -377,7 +389,7 @@ class LocalConnectorStore(BaseManager):
                 request.policy_epoch,
             ):
                 raise ConnectorUnavailable()
-            if not set(request.args.roots) <= set(row.cloud_roots):
+            if not set(_request_roots(request)) <= set(row.cloud_roots):
                 raise ConnectorUnavailable()
             ledger = (
                 await session.execute(

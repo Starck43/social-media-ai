@@ -75,7 +75,7 @@ Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULE
 
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **DEFERRED** (owner, 2026-11-14: P20-T12 named no source where an official API and plain fetch fail, and disabled the unconfined Chromium fallback; resume only with an evidenced named source + a new owner decision on infrastructure and cost) · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
 
-- [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **IN_PROGRESS** · pi-p18-t06 · `feat/p18-t06-file-fetch` from `dev` `6d309578`; device-side `local_connector/transfer/` + scoped `index.delete` with fence + version evidence (server-side fetch sink and wire operations stay gated on an exact-version issuer and owner approval) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
+- [P18-T06](docs/tasks/p18-t06.md) Explicit file fetch, version tracking and index deletion — **IN_PROGRESS** · pi-p18-t06 · `feat/p18-t06-file-fetch` from `dev` `6d309578` (`d9b2b1c2`): v1 envelope widened with `file.fetch`/`index.delete` (owner `A1`), consent-gated device fetch with exact-version gate, fenced local index deletion with durable idempotency, cloud staging with discard-on-failure; coverage gate 93.65%, device 147 passed / 1 skipped. Open: fetch byte transport and subscriber confirmation surface (Q-19/P18-T07 gate) · [dialogue](https://app.notion.com/chat?t=40d2b17295a0801ba40b00a96c95595f) · `P3` · `C3`
 
 ## Deferred by explicit owner decision
 

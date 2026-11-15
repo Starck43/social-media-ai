@@ -115,7 +115,7 @@ belongs to Wave 1 and is not claimable in Wave 0.
 | --- | --- |
 | Remote | P15-T01…T06, P16-T01, P16-T03, P16-T04, P17-T04, P19-T02, P19-T04, P14-T06 |
 | Local | P15-T07, P15-T08, P16-T02, P16-T05, P19-T01 (extends the 0122 document model; the append-only `guard_document_revision_content()` trigger forbids in-place content updates, audit F-5), P19-T03, P19-T05, P19-T06, P14-T05, P18-T06 |
-| Local / owner | P18-T07 packaging and signing (certificates, three OS) |
+| Local / owner | P18-T07 packaging and signing (accepted; certificates and three-OS native evidence remain Q-22) |
 
 Within a wave follow each card's dependencies; P15-T05/T06 must precede
 P14-T05/T06 and P19-T05.

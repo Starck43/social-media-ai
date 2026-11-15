@@ -4,7 +4,7 @@
 package the local-only scaffold, not a cloud-connected desktop product. Windows
 folder access remains denied until the native handle/ACL path is certified on
 Windows. Three-OS race testing, native artifact execution, real OS key storage
-and mTLS deployment are still required by [P18-T07](tasks/p18-t07.md) and
+and mTLS deployment are still required by [Q-22](tasks/q-22.md) and
 [Q-19](tasks/q-19.md). Installing a bundle never pairs a device, starts the
 server runtime or grants permission to activate users.
 

@@ -50,7 +50,7 @@ end-to-end routing is a future task.
   ([surface parity](WORKSPACE_UX.md#surface-parity)).
 - **Desktop app** — after the monolith. Reuse the paired P18 connector shell,
   pairing and update channel ([D6](BUSINESS_MODULES.md#owner-decisions),
-  [P18-T07](../tasks/p18-t07.md)); do not ship a second installer.
+  [P18-T07](../audit/p18/p18-t07.md)); do not ship a second installer.
 
 ## Guardrails for current work
 

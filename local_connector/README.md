@@ -31,19 +31,24 @@ must not be inside a selected folder; such folder selections are refused. Unsafe
 permissions, links, unsupported
 platform semantics, or an uncertain file identity cause the scaffold to fail
 closed. This build currently permits safe file access on POSIX platforms only;
-Windows file access is unavailable until the P18-T07 native handle and ACL work
+Windows file access is unavailable until the native handle and ACL work
 is complete. Local UI requests are loopback-only and protected by host/origin
 checks and a per-run CSRF token.
 
 ## Not provided by this scaffold
 
-- Native Windows handle and ACL enforcement, three-platform race evidence,
-  tray app, installer or production folder picker; owned by P18-T07.
+- Native Windows runtime enablement, three-platform race evidence and the
+  production installer; the native handle/ACL adapter and the packaging
+  increment are delivered in [P18-T07](../docs/audit/p18/p18-t07.md), the
+  remaining platform evidence is owned by Q-22.
 - Device-side signed command protocol, authentication and cloud search; owned
   by P18-T05/T06 and still gated by Q-19.
 - `IndexStore.search` is an internal, unfiltered storage primitive, not an
   authorized search API; P18-T05 must validate current OS ACLs and selected-root
   scope before exposing any results.
+- Real-user activation and the real mTLS/key-store roundtrip on every OS; the
+  key-store adapter and the no-data mTLS diagnostic exist, their native
+  evidence is tracked by Q-22.
 - mTLS deployment, OS device-key-store integration, or real-user activation.
 
 The session API always raises `ProtocolError` and never calls an injected

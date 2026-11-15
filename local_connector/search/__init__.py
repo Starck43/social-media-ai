@@ -1,0 +1,72 @@
+"""Authorized local search API and device-side signed command receiver."""
+
+from .acl import FolderPolicyEvaluator, FolderRuleSet, verify_root_and_file_access
+from .engine import LocalSearchService
+from .models import (
+    DEFAULT_ENABLED_OPERATIONS,
+    MAX_CONTROL_BYTES,
+    MAX_HITS,
+    MAX_QUERY_BYTES,
+    MAX_RESPONSE_BYTES,
+    MAX_SNIPPET_CHARS,
+    MAX_SNIPPETS,
+    PROTOCOL_OPERATIONS,
+    REPLAY_CAPACITY,
+    REPLAY_SECONDS,
+    TIMEOUT_SECONDS,
+    LocalFileReference,
+    LocalSearchHit,
+    LocalSearchResult,
+    RootRegistration,
+    SearchError,
+    SearchFilters,
+    SearchProtocolError,
+    SearchQuery,
+)
+from .protocol import (
+    SignedCommandReceiver,
+    VerifiedCommand,
+    canonical_json,
+    decode_control_payload,
+    sign_control_payload,
+    verify_command_envelope,
+)
+from .replay import ReplayDecision, ReplayLedger
+from .snippets import build_fts5_match_query, extract_search_terms, extract_snippet
+
+__all__ = [
+    "DEFAULT_ENABLED_OPERATIONS",
+    "FolderPolicyEvaluator",
+    "FolderRuleSet",
+    "LocalFileReference",
+    "LocalSearchHit",
+    "LocalSearchResult",
+    "LocalSearchService",
+    "MAX_CONTROL_BYTES",
+    "MAX_HITS",
+    "MAX_QUERY_BYTES",
+    "MAX_RESPONSE_BYTES",
+    "MAX_SNIPPETS",
+    "MAX_SNIPPET_CHARS",
+    "PROTOCOL_OPERATIONS",
+    "REPLAY_CAPACITY",
+    "REPLAY_SECONDS",
+    "ReplayDecision",
+    "ReplayLedger",
+    "RootRegistration",
+    "SearchError",
+    "SearchFilters",
+    "SearchProtocolError",
+    "SearchQuery",
+    "SignedCommandReceiver",
+    "TIMEOUT_SECONDS",
+    "VerifiedCommand",
+    "build_fts5_match_query",
+    "canonical_json",
+    "decode_control_payload",
+    "extract_search_terms",
+    "extract_snippet",
+    "sign_control_payload",
+    "verify_command_envelope",
+    "verify_root_and_file_access",
+]

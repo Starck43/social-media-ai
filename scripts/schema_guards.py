@@ -137,6 +137,12 @@ GUARD_FUNCTIONS: dict[str, str] = {
     "reject_llm_budget_reservation_mutation": (
         " BEGIN RAISE EXCEPTION 'Budget reservation is immutable' USING ERRCODE = '55000'; END; "
     ),
+    "reject_llm_token_allowance_reservations_mutation": (
+        " BEGIN RAISE EXCEPTION 'Token allowance reservation evidence is immutable' USING ERRCODE = '55000'; END; "
+    ),
+    "reject_llm_dispatch_reservation_events_mutation": (
+        " BEGIN RAISE EXCEPTION 'Dispatch reservation events are immutable' USING ERRCODE = '55000'; END; "
+    ),
     "check_llm_budget_reservation_receipt": (
         " DECLARE receipt RECORD; BEGIN "
         "SELECT tenant_id, utc_day, tariff_state INTO receipt "
@@ -653,6 +659,12 @@ _IMMUTABLE_TABLES: tuple[tuple[str, str, str], ...] = (
     ("personal_llm_billing_incidents", "Billing incidents are immutable", "check_personal_llm_billing_incident"),
     ("personal_billing_cutovers", "Billing cutovers are immutable", "check_personal_billing_cutover"),
     (
+        "llm_token_allowance_reservations",
+        "Token allowance reservation evidence is immutable",
+        "",
+    ),
+    ("llm_dispatch_reservation_events", "Dispatch reservation events are immutable", ""),
+    (
         "personal_legacy_attribution_consents",
         "Legacy billing attribution evidence is immutable",
         "check_personal_legacy_attribution_consent",
@@ -682,7 +694,8 @@ def _immutable_guards() -> list[GuardTrigger]:
                 for_each_row=False,
             )
         )
-        triggers.append(GuardTrigger(table=table, name=f"{table}_validate", function=validator, events=("INSERT",)))
+        if validator:
+            triggers.append(GuardTrigger(table=table, name=f"{table}_validate", function=validator, events=("INSERT",)))
     return triggers
 
 

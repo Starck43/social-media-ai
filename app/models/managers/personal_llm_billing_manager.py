@@ -142,6 +142,8 @@ class PersonalLLMBillingManager(BaseManager):
         stage: str,
         execution: Mapping[str, Any] | None = None,
         request_shape: Mapping[str, Any] | None = None,
+        dispatch_id: str | None = None,
+        session: Any = None,
     ) -> Mapping[str, Any]:
         """Atomically store the legacy receipt and personal reservation before transport."""
         from ..billing.billing import PersonalBillingAccount, TaskBillingPayer
@@ -176,8 +178,15 @@ class PersonalLLMBillingManager(BaseManager):
         if initiated_by_id is not None and (type(initiated_by_id) is not int or initiated_by_id <= 0):
             raise PersonalBillingError("Invalid trusted task initiator identity")
         now = None
-        dispatch_id = uuid4().hex
-        async with self._get_owned_session() as session:
+        dispatch_id = dispatch_id or uuid4().hex
+        if (
+            type(dispatch_id) is not str
+            or len(dispatch_id) != 32
+            or any(c not in "0123456789abcdef" for c in dispatch_id)
+        ):
+            raise PersonalBillingError("Invalid dispatch identity")
+        session_scope = self._get_owned_session(session) if session is not None else self._get_owned_session()
+        async with session_scope as session:
             workspace = (
                 await session.execute(
                     select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)).with_for_update()

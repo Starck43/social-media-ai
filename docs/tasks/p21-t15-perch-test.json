@@ -1,0 +1,16 @@
+{
+  "status": "completed",
+  "threadId": "cli-cwd-6844b813df1eab79",
+  "runId": "tkt-cli-1794849129026-ktv6mkgs",
+  "command": "python -m pytest tests/ai/test_p21_t15_atomic_admission.py -q -p no:cacheprovider",
+  "testedHead": "4f8c0ada303786e590ad8be1c8ad29e6346e17fa",
+  "branch": "feat/p21-t15-atomic-admission",
+  "worktreeState": "dirty before and after; Perch reported identical pre/post hashes for 15 changed/untracked files and identical git status",
+  "databaseAccess": "none; source-only test module",
+  "model": {
+    "label": "DeepSeek V4.1 Flash (1017)",
+    "provider": "openrouter",
+    "modelId": "deepseek/deepseek-v4.1-flash"
+  },
+  "assistantText": "Green, and nothing moved.\n\n**Command (exact, run from `/Users/admin/Projects/social-media-ai/worktrees/p21-t15`):**\n```\npython -m pytest tests/ai/test_p21_t15_atomic_admission.py -q -p no:cacheprovider\n```\n\n- **Exit code:** 0\n- **Counts:** 5 passed, 0 failed, 0 skipped, 0 errors (1 warning, unrelated: `MovedIn20Warning` on `declarative_base()` at `app/core/database.py:48`)\n- **Tested Git SHA:** `4f8c0ada303786e590ad8be1c8ad29e6346e17fa` (branch `feat/p21-t15-atomic-admission`)\n- **Runtime:** 0.48s, Python 3.14.0, pytest 9.1.1\n\n**Worktree unchanged: yes.** I hashed all 15 modified and untracked files before and after; `diff` of the two hash sets is empty. `git status --porcelain -uall` is identical pre and post, and HEAD is still `4f8c0ada`.\n\n**No database was accessed.** The test module declares `__source_only__ = True`, and `tests/conftest.py` keys off that: `pytest_collection_modifyitems` sets the only-source flag, so the session-scoped `_test_database` fixture yields without importing `app.core.database` or opening a connection. Confirming that from the run itself: there is no `[test-db] validating ...` line in the output, which is that fixture's first statement. The DB-touching path (`resolve_and_redirect` \u2192 `ensure_test_database`) is env-var validation only and never executes here. The test bodies use a fake `_Session` with `scalar_one_or_none`/`add`/`flush` doubles.\n\nI made no edits to source or tests. The only writes were two hash manifests in `/tmp`, outside the worktree."
+}

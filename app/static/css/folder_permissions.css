@@ -1,0 +1,11 @@
+/* Restrictive policy editor; use the workspace shell palette and controls. */
+.folder-permissions { max-width: 60rem; }
+.folder-permissions h2 { font-size: 1.25rem; font-weight: 650; }
+.folder-permissions h3 { font-size: 1.1rem; font-weight: 650; margin-top: 1.5rem; }
+.folder-permissions p, .folder-permissions ul { margin: .75rem 0; }
+.folder-permissions form { display: grid; gap: .5rem; margin: 1.25rem 0; }
+.folder-permissions input:not([type=hidden]), .folder-permissions select { width: 100%; min-width: 0; }
+.folder-permissions label { font-weight: 600; }
+.folder-permissions button { justify-self: start; }
+.folder-permissions li { overflow-wrap: anywhere; }
+.folder-permissions > a { display: inline-block; margin: .25rem .25rem .25rem 0; }

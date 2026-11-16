@@ -64,7 +64,11 @@ def test_untrusted_fields_are_rejected(updates):
 
 def test_model_matches_frozen_migration_and_never_widens_to_wildcards():
     migration = runpy.run_path(str(ROOT / "migrations/versions/0132_business_audit_codes.py"))
-    assert migration["NEW_CHECKS"] == audit_check_sql()
+    current = runpy.run_path(str(ROOT / "migrations/versions/p12t15_folder_policy_audit.py"))
+    assert current["checks"](policy=True) == audit_check_sql()
+    # Historical migrations retain their closed code set when new codes are added.
+    assert "files.policy_update" not in migration["NEW_CHECKS"]["action"]
+    assert "files.policy_update" not in current["checks"](policy=False)["action"]
     constraints = {c.name: str(c.sqltext) for c in ActionAuditEvent.__table__.constraints if hasattr(c, "sqltext")}
     for suffix, expression in audit_check_sql().items():
         assert constraints[f"ck_action_audit_events_{suffix}"] == expression

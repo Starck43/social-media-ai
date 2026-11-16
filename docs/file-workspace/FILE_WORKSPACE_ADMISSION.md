@@ -36,6 +36,32 @@ personal owner. Project-owner coordination does not consent on behalf of users.
 Restoring consent/policy after withdrawal needs new epochs and a new read; old
 in-flight attempts must not resurrect old content.
 
+## Restrictive policy editing (P12-T15)
+
+The default-off personal catalog editor extends the same `WorkspaceConnection.config.file_policy`
+used by reads, cached catalog/results and scan admission. It changes only one in-root
+folder denial: `none` denies LIST and READ recursively; `read_only` removes only that
+folder's own denial. Parent and descendant restrictions remain authoritative. Selected
+root, provider ACL, workspace sharing and create/modify/delete rights cannot be edited.
+Read-only provider/workspace authority is still required independently; the UI reports
+application-policy bounds, never an unverified live provider permission.
+
+Policy version 1 accepts an optional `epoch` (32 lowercase hex characters). Legacy
+policies without it retain their original binding. Each actual editor change rotates
+the epoch, included in both stored-policy fingerprints and path-capability bindings;
+revocation followed by restoration cannot revive an earlier ticket or read. Unknown
+keys or malformed epochs fail closed. Forms carry the current policy fingerprint and
+reject concurrent/stale edits. Owner checks and the connection lock serialize edits
+with readers and admission; audit failure rolls back the policy transaction.
+
+`files.policy_update` records tenant, actor, connection, time and outcome in the
+existing immutable action journal, with the workspace plan's audit retention; no
+provider paths, tokens or file contents enter that event. Removing a restriction
+restores only application-policy eligibility. The settings connection link remains
+available after root denial for owner recovery. The audit migration refuses downgrade
+while policy events remain; expire them through the normal retention flow first.
+Deployment, public migration and feature activation remain separately authorized.
+
 ## Provider capability review
 
 Reviewed official Yandex documentation:

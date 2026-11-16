@@ -1,8 +1,9 @@
 {% extends "web/base.html" %}
 {% block title %}Доступ к папкам — AI Assistant{% endblock %}
 {% block page_heading %}Доступ к папкам{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ static_v('css/folder_permissions.css') }}">{% endblock %}
 {% block content %}
-<section class="ui-card" data-folder-permissions>
+<section class="ui-card folder-permissions" data-folder-permissions>
     <h2>{{ policy.label }}</h2>
     <p>Выбранная папка: {{ policy.root }}. Правила ограничивают только это приложение; они не ограничивают другие приложения или OAuth-токен вне приложения.</p>
     <p>Итоговый доступ — пересечение прав провайдера, доступа пространства и политики агента. Права провайдера здесь не проверяются; общих папок пространства нет, доступ только у владельца подключения.</p>

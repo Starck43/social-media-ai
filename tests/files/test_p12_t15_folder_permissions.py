@@ -14,6 +14,7 @@ from app.integrations.file_workspace.policy import FileOperation
 from app.main import create_application
 from app.models import ActionAuditEvent, TenantUser, User, WorkspaceConnection
 from app.models.managers.file_catalog_manager import FileCatalogManager
+from app.models.managers.file_content_manager import FileContentManager
 from app.models.managers.workspace_connection_manager import ConnectionDenied
 from app.services.file_workspace import folder_permissions as service
 from app.services.file_workspace.yandex_reader import _stored_policy
@@ -51,7 +52,10 @@ async def test_inherited_deny_siblings_cached_catalog_and_recovery(data):
         await admit(args, "secret.txt", folder="/work/private")
         await admit(args, "visible.txt", folder="/work/public")
         secret = (await catalog.list_page(**args, query="secret"))["items"][0]
+        download = await FileContentManager(enabled=True).authorize(**args, object_id=secret["id"])
         await edit(args, "/work/private", "none")
+        with pytest.raises(ConnectionDenied):
+            await FileContentManager(enabled=True).authorize(**args, object_id=secret["id"], previous=download)
         await edit(args, "/work/private/child", "read_only")
         child = await service.get_folder_permissions(**args, path="/work/private/child")
         assert not child["list_allowed"] and not child["read_allowed"]
@@ -62,6 +66,8 @@ async def test_inherited_deny_siblings_cached_catalog_and_recovery(data):
             await catalog.detail(**args, object_id=secret["id"])
         await edit(args, "/work/private", "read_only")
         assert (await catalog.detail(**args, object_id=secret["id"]))["name"] == "secret.txt"
+        with pytest.raises(ConnectionDenied):
+            await FileContentManager(enabled=True).authorize(**args, object_id=secret["id"], previous=download)
 
 
 async def test_revoke_then_restore_never_revives_queued_ticket_or_binding(data):
@@ -209,3 +215,45 @@ async def test_authenticated_editor_csrf_stale_form_and_foreign_owner(data, web,
     monkeypatch.setattr(settings, "FILE_CATALOG_UI_ENABLED", False)
     assert (await client.get(url)).status_code == 404
     assert (await client.post(url, data=restore)).status_code == 404
+
+
+async def test_audit_prevents_lossy_downgrade_and_uses_plan_retention(data):
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
+
+    from app.core.database import engine
+    from tests.support.schema_guard import require_isolated_schema
+
+    schema = require_isolated_schema()
+    with actor(data) as args:
+        await edit(args, "/work/private", "none")
+        config = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+        config.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
+        with pytest.raises(ValueError, match="requires_expired_events"):
+            with engine.begin() as connection:
+                config.attributes["connection"] = connection
+                command.downgrade(config, "p21t14_rate_limits")
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(text(f'SELECT version_num FROM "{schema}".alembic_version')) == "p12t15_policy_audit"
+            )
+        async with async_session_maker() as session, session.begin():
+            count = await ActionAuditEvent.objects.delete_expired(
+                now=datetime.now(timezone.utc) + timedelta(days=366), session=session
+            )
+            assert count == 1
+
+
+async def test_viewer_cannot_manage_policy(data):
+    async with async_session_maker() as session, session.begin():
+        await session.execute(
+            update(TenantUser)
+            .where(TenantUser.tenant_id == data.tenants[0].id, TenantUser.user_id == data.users[0].id)
+            .values(role_id=data.roles["viewer"])
+        )
+    with actor(data) as args:
+        with pytest.raises(ConnectionDenied):
+            await service.get_folder_permissions(**args)

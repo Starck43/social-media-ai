@@ -2,7 +2,7 @@
 
 Accepted implementation: [P21-T11](../audit/p21/p21-t11.md). Consumers:
 [P21-T12](../audit/p21/p21-t12.md), [P21-T13](../audit/p21/p21-t13.md),
-[P21-T14](../tasks/p21-t14.md).
+[P21-T14 accepted](../audit/p21/p21-t14.md).
 
 ## Storage and managed references
 

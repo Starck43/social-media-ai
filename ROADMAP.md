@@ -40,7 +40,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
 
-- [P21-T14](docs/tasks/p21-t14.md) Provider rate limits and bounded backpressure — **IN_PROGRESS** · arena-p21-t14 · [PR #493](https://github.com/Starck43/social-media-ai/pull/493) (draft, `arena/63088e3f-social-media-ai`); re-audit 2026-11-16 at `3c591434`: migration, store and the real-schema file (5 passed) verified on a live schema; still rejected on one manifest line — the `app/services/ai` coverage entry caps the gate at 10.65%, and `app/services/ai/rate_limits.py` measures 84.02% PASS — [findings](docs/audit/p21/p21-t14.md) · depends on P21-T12/P21-T13 · `P1` · `C4`
 - [P21-T15](docs/tasks/p21-t15.md) Atomic LLM admission and quota reservation wiring — **TODO** · unassigned · depends on P21-T14/P2-T17 allowance policy; no cutover · `P1` · `C4`
 - [P21-T16](docs/tasks/p21-t16.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T15; integrated mocked phase checks; feeds P2-T09 · `P1` · `C4`
 

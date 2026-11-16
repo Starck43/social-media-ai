@@ -1,7 +1,7 @@
 # LLM dispatch contract
 
 Status: **normative contract, dormant implementation**. P21-T12 owns this
-contract; [P21-T13](../audit/p21/p21-t13.md), [P21-T14](../tasks/p21-t14.md),
+contract; [P21-T13](../audit/p21/p21-t13.md), [P21-T14 accepted](../audit/p21/p21-t14.md),
 [P21-T15](../tasks/p21-t15.md) and [P21-T16](../tasks/p21-t16.md) extend it by
 reference and never restate it. The accepted result is
 [P21-T12](../audit/p21/p21-t12.md); the phase plan is

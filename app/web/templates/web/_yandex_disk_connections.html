@@ -11,6 +11,7 @@
     </form>
     {% endif %}
     {% if row.is_active and workspace_connection_write|default(false) %}
+    {% if file_catalog_enabled %}<a class="ui-control" href="/app/knowledge/folders/{{ row.id }}/permissions">Доступ к папкам</a>{% endif %}
     <form method="post" action="/app/settings/yandex-connections/{{ row.id }}/disable" class="mt-3">
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         <button class="ui-control">Отключить</button>

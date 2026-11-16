@@ -294,13 +294,14 @@ def quiet_client(monkeypatch):
 # ── D1: pure seam ────────────────────────────────────────────
 
 
-def test_funding_constants_and_all_seventeen_codes():
+def test_funding_constants_and_all_eighteen_codes():
     assert (seam.FUNDING_CLASS_PLATFORM, seam.FUNDING_CLASS_PERSONAL, seam.FUNDING_CLASS_WORKSPACE) == (
         "platform",
         "personal",
         "workspace",
     )
-    assert len(seam.DENIAL_CODES) == 17
+    assert len(seam.DENIAL_CODES) == 18
+    assert seam.CODE_TOKEN_ALLOWANCE_EXHAUSTED in seam.DENIAL_CODES
     assert seam.resolve_funding_class(make_model(), catalog_owner_id=None) == seam.FUNDING_CLASS_PLATFORM
 
 

@@ -144,6 +144,7 @@ class PersonalLLMBillingManager(BaseManager):
         request_shape: Mapping[str, Any] | None = None,
         dispatch_id: str | None = None,
         session: Any = None,
+        undefined_outside_cap: bool = False,
     ) -> Mapping[str, Any]:
         """Atomically store the legacy receipt and personal reservation before transport."""
         from ..billing.billing import PersonalBillingAccount, TaskBillingPayer
@@ -419,7 +420,7 @@ class PersonalLLMBillingManager(BaseManager):
                 cap_snapshot = None
             else:
                 cap_snapshot = cap
-                if ceiling_state in {"undefined", "unbounded"}:
+                if ceiling_state == "unbounded" or (ceiling_state == "undefined" and not undefined_outside_cap):
                     raise BudgetAdmissionDenied("Capped payer requires a reviewed provider/model request bound")
 
             day = now.date()
@@ -477,13 +478,14 @@ class PersonalLLMBillingManager(BaseManager):
                 int(previous_open[2]),
                 int(previous_open[3]),
             )
-            if cap_snapshot is not None and previous_count:
-                if previous_unbounded or previous_undefined:
+            cap_applies = cap_snapshot is not None and not (undefined_outside_cap and ceiling_state == "undefined")
+            if cap_applies and previous_count:
+                if previous_unbounded or (previous_undefined and not undefined_outside_cap):
                     raise BudgetAdmissionDenied("Prior-day unresolved unknown liability blocks capped admission")
                 if previous_reserved + budget_day.settled_usd + budget_day.reserved_usd + (ceiling or 0) > cap_snapshot:
                     raise BudgetAdmissionDenied("Prior-day unresolved liability consumes capped capacity")
-            if cap_snapshot is not None:
-                if budget_day.unbounded_count or budget_day.undefined_count:
+            if cap_applies:
+                if budget_day.unbounded_count or (budget_day.undefined_count and not undefined_outside_cap):
                     raise BudgetAdmissionDenied("Current-day unresolved unknown liability blocks capped admission")
                 if budget_day.settled_usd + budget_day.reserved_usd + previous_reserved + (ceiling or 0) > cap_snapshot:
                     raise BudgetAdmissionDenied("Personal daily limit would be exceeded")

@@ -317,6 +317,7 @@ class AtomicLLMAdmissionService:
                         request_shape=_request_shape(request),
                         dispatch_id=dispatch_id,
                         session=session,
+                        undefined_outside_cap=True,
                     )
                     accepted_version = admission.get("__credential_version")
                     if accepted_version != context.credential_version:

@@ -35,11 +35,12 @@ class LLMBudgetManager(BaseManager):
         bound_version: str | None = None,
         session: Any = None,
     ) -> bool:
-        """True only after a fresh receipt/reservation/balance commit is acknowledged.
+        """True for a fresh receipt/reservation/balance in the selected transaction.
 
         False is exact historical replay, NEVER permission to resend. Exceptions,
         including ambiguous commit acknowledgement, cannot authorize dispatch.
-        Missing/frozen baseline fails closed. No external session is accepted.
+        Missing/frozen baseline fails closed. With a supplied session, the caller
+        must commit before acknowledging admission or starting HTTP.
         """
         from app.services.ai.budget_admission import (
             PLAN_FIELDS,

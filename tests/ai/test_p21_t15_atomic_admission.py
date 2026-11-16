@@ -9,15 +9,22 @@ from types import SimpleNamespace
 import pytest
 
 from app.services.ai.atomic_admission import (
+    MAX_BIGINT,
     TOKEN_ALLOWANCE_POOL,
     TOKEN_CYCLE,
+    AtomicLLMAdmissionService,
     TokenAllowanceExhausted,
     _tenant_usd_ceiling,
     _token_ceiling,
     reserve_token_ceiling,
 )
 from app.services.ai.budget_admission import BudgetAdmissionDenied, BudgetAdmissionUnavailable
-from app.services.ai.dispatch_seam import DispatchRequest
+from app.services.ai.dispatch_seam import (
+    CODE_TOKEN_ALLOWANCE_EXHAUSTED,
+    DispatchContext,
+    DispatchDenial,
+    DispatchRequest,
+)
 from app.services.ai.llm_client import _personal_admission
 
 __source_only__ = True
@@ -99,6 +106,327 @@ class _Session:
     async def flush(self):
         if self.cycle is not None and self.cycle.id is None:
             self.cycle.id = 1
+
+
+class _Scalars:
+    def __init__(self, values):
+        self.values = values
+
+    def all(self):
+        return self.values
+
+
+class _ExecuteResult:
+    def __init__(self, values):
+        self.values = values
+
+    def scalars(self):
+        return _Scalars(self.values)
+
+
+class _Transaction:
+    def __init__(self, session):
+        self.session = session
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.session.rolled_back = exc is not None
+        return False
+
+
+class _AdmissionSession(_Session):
+    def __init__(self):
+        super().__init__()
+        self.rolled_back = False
+
+    def begin(self):
+        return _Transaction(self)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        return False
+
+    async def execute(self, _statement):
+        return _ExecuteResult([11])
+
+
+class _SessionFactory:
+    def __init__(self, session):
+        self.session = session
+
+    async def __aenter__(self):
+        return self.session
+
+    async def __aexit__(self, *_):
+        return False
+
+
+@pytest.mark.asyncio
+async def test_service_rolls_back_usd_reservation_when_token_pool_is_exhausted(monkeypatch):
+    """Exercise the real UOW boundary after its USD primitive has staged a write."""
+    import app.services.ai.atomic_admission as admission_module
+    from app.models.managers.llm_budget_manager import LLMBudgetManager
+
+    session = _AdmissionSession()
+    staged_usd = []
+    monkeypatch.setattr(admission_module, "async_session_maker", lambda: _SessionFactory(session))
+    plan = SimpleNamespace(
+        plan_holder_user_id=11,
+        plan_policy_version=5,
+        actor_user_id=11,
+        policy=SimpleNamespace(token_policy=SimpleNamespace(unit="token", token_limit=10, policy_version=5)),
+    )
+
+    async def resolve(*_, **__):
+        return plan
+
+    async def reserve_usd(self, record, **_):
+        staged_usd.append(record)
+        return True
+
+    async def exhaust(_session, **_):
+        raise TokenAllowanceExhausted("exhausted after USD reserve")
+
+    monkeypatch.setattr(admission_module, "resolve_holder_context", resolve)
+    monkeypatch.setattr(LLMBudgetManager, "reserve_receipt", reserve_usd)
+    monkeypatch.setattr(admission_module, "reserve_token_ceiling", exhaust)
+    monkeypatch.setattr(
+        "app.services.ai.dispatch_receipts.build_dispatch_receipt",
+        lambda *_, **__: {"dispatch_id": "a" * 32, "tenant_id": 22, "tariff_state": "known"},
+    )
+    request = DispatchRequest(
+        model=SimpleNamespace(
+            context_window_tokens=32,
+            max_output_tokens=8,
+            provider=SimpleNamespace(id=2),
+            id=3,
+            model_id="unit-model",
+        ),
+        purpose="chat",
+        stage="chat",
+        dispatch_id="a" * 32,
+    )
+    context = DispatchContext(
+        actor_user_id=11,
+        tenant_id=22,
+        plan_holder_user_id=11,
+        catalog_id="1",
+        funding_class="platform",
+        payer="tenant:22",
+        credential_version=3,
+        plan_policy_version=5,
+    )
+
+    with pytest.raises(DispatchDenial) as denied:
+        await AtomicLLMAdmissionService().reserve(request, context)
+    assert denied.value.code == CODE_TOKEN_ALLOWANCE_EXHAUSTED
+    assert len(staged_usd) == 1
+    assert session.rolled_back is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("created", [False, None])
+async def test_exact_or_ambiguous_receipt_replay_never_returns_reservation(monkeypatch, created):
+    import app.services.ai.atomic_admission as admission_module
+    from app.models.managers.llm_budget_manager import LLMBudgetManager
+
+    session = _AdmissionSession()
+    token_path = []
+    monkeypatch.setattr(admission_module, "async_session_maker", lambda: _SessionFactory(session))
+    plan = SimpleNamespace(
+        plan_holder_user_id=11,
+        plan_policy_version=5,
+        actor_user_id=11,
+        policy=SimpleNamespace(token_policy=SimpleNamespace(unit="token", token_limit=100, policy_version=5)),
+    )
+
+    async def resolve(*_, **__):
+        return plan
+
+    def receipt(*_, **__):
+        return {"dispatch_id": "a" * 32, "tenant_id": 22, "tariff_state": "known"}
+
+    async def existing(*_, **__):
+        return created
+
+    async def reserve_tokens(*args, **kwargs):
+        token_path.append((args, kwargs))
+
+    monkeypatch.setattr(admission_module, "resolve_holder_context", resolve)
+    monkeypatch.setattr(LLMBudgetManager, "reserve_receipt", existing)
+    monkeypatch.setattr(admission_module, "reserve_token_ceiling", reserve_tokens)
+    monkeypatch.setattr("app.services.ai.dispatch_receipts.build_dispatch_receipt", receipt)
+    request = DispatchRequest(
+        model=SimpleNamespace(
+            context_window_tokens=32,
+            max_output_tokens=8,
+            provider=SimpleNamespace(id=2),
+            id=3,
+            model_id="unit-model",
+        ),
+        purpose="chat",
+        stage="chat",
+        dispatch_id="a" * 32,
+    )
+    context = DispatchContext(
+        actor_user_id=11,
+        tenant_id=22,
+        plan_holder_user_id=11,
+        catalog_id="1",
+        funding_class="platform",
+        payer="tenant:22",
+        credential_version=3,
+        plan_policy_version=5,
+    )
+
+    with pytest.raises(BudgetAdmissionDenied, match="Exact receipt replay"):
+        await AtomicLLMAdmissionService().reserve(request, context)
+    assert token_path == []
+    assert session.rolled_back is True
+
+
+@pytest.mark.asyncio
+async def test_workspace_payer_mismatch_fails_before_money_or_token_reservation(monkeypatch):
+    import app.services.ai.atomic_admission as admission_module
+    from app.models.managers.llm_budget_manager import LLMBudgetManager
+
+    session = _AdmissionSession()
+    money_path = []
+    token_path = []
+    monkeypatch.setattr(admission_module, "async_session_maker", lambda: _SessionFactory(session))
+    plan = SimpleNamespace(
+        plan_holder_user_id=11,
+        plan_policy_version=5,
+        actor_user_id=11,
+        policy=SimpleNamespace(token_policy=SimpleNamespace(unit="token", token_limit=100, policy_version=5)),
+    )
+
+    async def resolve(*_, **__):
+        return plan
+
+    async def money(*_, **__):
+        money_path.append(True)
+        return True
+
+    async def tokens(*_, **__):
+        token_path.append(True)
+
+    monkeypatch.setattr(admission_module, "resolve_holder_context", resolve)
+    monkeypatch.setattr(LLMBudgetManager, "reserve_receipt", money)
+    monkeypatch.setattr(admission_module, "reserve_token_ceiling", tokens)
+    request = DispatchRequest(
+        model=SimpleNamespace(context_window_tokens=32, max_output_tokens=8),
+        purpose="chat",
+        stage="chat",
+        dispatch_id="b" * 32,
+    )
+    context = DispatchContext(
+        actor_user_id=11,
+        tenant_id=22,
+        plan_holder_user_id=11,
+        funding_class="platform",
+        payer="tenant:999",
+        credential_version=3,
+        plan_policy_version=5,
+    )
+    with pytest.raises(BudgetAdmissionDenied, match="Workspace payer changed"):
+        await AtomicLLMAdmissionService().reserve(request, context)
+    assert money_path == []
+    assert token_path == []
+    assert session.rolled_back is True
+
+
+class _PersonalDispatchSession(_AdmissionSession):
+    def __init__(self, payer_user_id):
+        super().__init__()
+        self.payer_user_id = payer_user_id
+        self.calls = 0
+
+    async def execute(self, _statement):
+        self.calls += 1
+        if self.calls == 1:
+            return _ExecuteResult([11])
+        return _ScalarResult(SimpleNamespace(payer_user_id=self.payer_user_id))
+
+
+@pytest.mark.asyncio
+async def test_personal_dispatch_payer_mismatch_fails_closed(monkeypatch):
+    import app.services.ai.atomic_admission as admission_module
+    from app.models.managers.personal_llm_billing_manager import PersonalLLMBillingManager
+
+    session = _PersonalDispatchSession(payer_user_id=77)
+    personal_reservation = []
+    monkeypatch.setattr(admission_module, "async_session_maker", lambda: _SessionFactory(session))
+    plan = SimpleNamespace(
+        plan_holder_user_id=11,
+        plan_policy_version=5,
+        actor_user_id=11,
+        policy=SimpleNamespace(token_policy=SimpleNamespace(unit="token", token_limit=100, policy_version=5)),
+    )
+
+    async def resolve(*_, **__):
+        return plan
+
+    async def reserve_personal(*_, **kwargs):
+        personal_reservation.append(kwargs)
+        return {"__credential_version": 3}
+
+    monkeypatch.setattr(admission_module, "resolve_holder_context", resolve)
+    monkeypatch.setattr(PersonalLLMBillingManager, "reserve_dispatch", reserve_personal)
+    request = DispatchRequest(
+        model=SimpleNamespace(
+            context_window_tokens=32,
+            max_output_tokens=8,
+            provider=SimpleNamespace(api_format="openai", name="provider"),
+            model_id="model",
+        ),
+        purpose="chat",
+        stage="chat",
+        dispatch_id="c" * 32,
+    )
+    context = DispatchContext(
+        actor_user_id=11,
+        tenant_id=22,
+        plan_holder_user_id=11,
+        funding_class="personal",
+        payer="personal:88",
+        credential_version=3,
+        plan_policy_version=5,
+    )
+    with pytest.raises(BudgetAdmissionDenied, match="Personal payer changed"):
+        await AtomicLLMAdmissionService().reserve(request, context)
+    assert len(personal_reservation) == 1
+    assert personal_reservation[0]["undefined_outside_cap"] is True
+    assert session.rolled_back is True
+
+
+@pytest.mark.asyncio
+async def test_unlimited_cycles_are_independent_per_holder():
+    now = datetime(2026, 11, 16, tzinfo=timezone.utc)
+    first = await reserve_token_ceiling(
+        _Session(),
+        holder_user_id=101,
+        policy_version=1,
+        token_limit=None,
+        reserved_tokens=MAX_BIGINT // 2,
+        now=now,
+    )
+    other = await reserve_token_ceiling(
+        _Session(),
+        holder_user_id=202,
+        policy_version=1,
+        token_limit=1,
+        reserved_tokens=1,
+        now=now,
+    )
+    assert first.plan_holder_user_id == 101
+    assert first.token_limit is None
+    assert other.plan_holder_user_id == 202
+    assert other.reserved_tokens == 1
 
 
 @pytest.mark.asyncio

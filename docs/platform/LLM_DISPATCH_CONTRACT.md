@@ -259,6 +259,11 @@ ceiling separately prices the total token ceiling at the maximum immutable input
 output and cache tariff rate; a known tariff with incomplete price inputs is
 unbounded and is denied for a capped USD payer. FREE and UNDEFINED keep their
 separate zero-basis states; zero USD is never inferred from a missing price.
+Strict personal admission explicitly selects the owner's UNDEFINED-outside-cap
+policy via `undefined_outside_cap=True`: the immutable undefined classification
+and counter remain, while this attempt and prior undefined counters do not
+consume or block the finite USD cap. An unbounded known tariff still denies
+capped admission. The legacy personal entry point keeps its existing default.
 The trusted payer references are `tenant:<tenant_id>` for the workspace USD
 ledger and `personal:<payer_user_id>` for personal billing; the latter is
 rechecked against the immutable personal dispatch binding inside the same UOW.

@@ -29,16 +29,15 @@ Delegate one bounded, self-contained unit of work down this order and stop at th
 first route that is available:
 
 1. **Perch** — external CLI, headless and review-gated
-   (`perch run "<task>" --json --cwd <dir> --permission auto_review`); only Codex
-   may invoke third-party agents, every other caller starts at route 2. Route
-   details: [perch-task](../perch-task/SKILL.md).
+   (`perch run "<task>" --json --cwd <dir> --permission auto_review`). Any caller
+   may use it; the route is gated by the runtime approval on the process it
+   starts, not by which agent invoked it. Route details:
+   [perch-task](../perch-task/SKILL.md).
 2. **free-pi** — native subagent on the free-pi daily free allowance: model
    `free-pi/deepseek-v4.1-flash#medium` (DeepSeek 4.1 Flash, thinking medium).
    The provider and its token file live in the global OpenCode config. The
    `free-pi-cli` itself is a TUI-only agent with no `-p/--model/--thinking`, so
    address free-pi through the provider, never as that CLI process.
-3. **river** — native subagent on
-   `river/deepseek-ai/DeepSeek-V4.1-Flash-1017`.
 
 Fall to the next route only when the previous one is unavailable or fails, and
 report which route actually ran. Parent keeps judgment, acceptance and the

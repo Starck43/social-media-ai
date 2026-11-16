@@ -1,6 +1,7 @@
 """Real owner/tenant persistence and app middleware for restrictive-only folder edits."""
 
 import re
+import secrets
 
 import httpx
 import pytest
@@ -162,7 +163,7 @@ async def test_validation_and_membership_revocation(data):
 @pytest.fixture
 async def web(data, monkeypatch):
     monkeypatch.setattr(settings, "FILE_CATALOG_UI_ENABLED", True)
-    password = "folder-policy-synthetic-password"
+    password = secrets.token_urlsafe(24)
     async with async_session_maker() as session, session.begin():
         await session.execute(
             update(User)

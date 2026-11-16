@@ -683,12 +683,21 @@ def seam_enabled() -> bool:
 
 
 def _compat_foundation() -> Optional[DispatchFoundation]:
-    """The injected foundations; none is wired by this task.
+    """The injected foundations; only the rate acquirer is wired by P21-T14.
 
     Kept as the single wiring point so P21-T13...P21-T16 only have to populate
     it. Absent entries stay absent and are therefore denials in strict mode.
+    The rate acquirer exists whenever the seam is enabled, but strict mode
+    still denies on the missing authority/grants/admission/settlement
+    foundations before any bucket is touched, so no provider request is
+    newly admitted by this task alone.
     """
-    return DispatchFoundation()
+    rate = None
+    if seam_enabled():
+        from .rate_limits import RateAcquirer
+
+        rate = RateAcquirer()
+    return DispatchFoundation(rate=rate)
 
 
 def _compat_route_capabilities(

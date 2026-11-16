@@ -75,3 +75,7 @@ tests = [
     "tests/integrations/test_p17_t08_history_status.py",
     "tests/integrations/test_p17_t09_cache_lifecycle.py",
 ]
+
+[[package]]
+path = "app/services/ai/rate_limits.py"
+tests = ["tests/ai/test_p21_t14_rate_limits.py", "tests/ai/test_p21_t14_rate_limits_pg.py"]

@@ -65,6 +65,11 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`
 - [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **IN_PROGRESS** · codex-p12-t15 · D21 ownership settled by the [P12-T12 re-scope](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) 2026-11-11: extends P12-T12 grant management, never a second one; the mutation stage needs its own scoped authorization · [dialogue](codex resume 01a1e4b3-6fbf-7ed0-90ea-cb72ec1a33fc) · `P2` · `C4`
 
+Registered tooling follow-ups (not phase work; repo-level hygiene):
+
+- [P11-T38](docs/tasks/p11-t38.md) CI secret-candidate drift triage — **TODO** · unassigned · reproduced 2026-11-16 on `dev` `6d7305fb`: new candidates against `.ci/secret-baseline.json` on untouched files, untriaged; a real-secret finding escalates to the owner, a baseline refresh needs a reason per entry · `P2` · `C2`
+- [P11-T39](docs/tasks/p11-t39.md) Pre-existing red check inventory re-verification — **TODO** · unassigned · replaces the unportable 2026-11-13 scratch list; each entry either reproduces into its own row, becomes a recorded environment gate, or is dropped · `P2` · `C2`
+
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):
 
 - [P14-T08](docs/tasks/p14-t08.md) Bitrix24 on-premise authorization form on top of the P14-T09 seam — **DEFERRED** (owner, 2026-11-04: no on-premise customer; resumes with P14-T09) · `P2` · `C3`

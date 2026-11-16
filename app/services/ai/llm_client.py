@@ -179,6 +179,19 @@ async def _seam_dispatch_attempt(client: Any, **kwargs: Any) -> Any:
     return await seam.dispatch_attempt(client, **kwargs)
 
 
+async def _settle_seam_attempt(admission: Any, *, outcome: str, evidence: dict[str, Any] | None = None) -> None:
+    """Close a strict reservation with the provider accounting fields we own.
+
+    Compatibility attempts have no strict reservation and continue through the
+    existing personal ledger path only.
+    """
+    if not getattr(admission, "reserved", False):
+        return
+    seam = _seam_module()
+    if seam is not None:
+        await seam.settle(admission, outcome=outcome, evidence=evidence)
+
+
 def _seam_chat_key() -> str:
     """Private response key that carries the seam identity of a chat try."""
     seam = _seam_module()
@@ -237,7 +250,14 @@ async def _revalidate_personal_dispatch_before_http(
         from app.services.ai.credential_boundary import require_current_credential_version
 
         expected = getattr(getattr(seam_admission, "context", None), "credential_version", None)
-        require_current_credential_version(expected, client.credential_version)
+        try:
+            require_current_credential_version(expected, client.credential_version)
+        except asyncio.CancelledError:
+            await _settle_seam_attempt(seam_admission, outcome="not_dispatched")
+            raise
+        except Exception:
+            await _settle_seam_attempt(seam_admission, outcome="not_dispatched")
+            raise
         return
 
     from app.services.ai.personal_dispatch import validate_personal_dispatch
@@ -755,9 +775,11 @@ class OpenAICompatibleClient(LLMClient):
                 data = r.json()
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
+            await _settle_seam_attempt(admission, outcome="unknown")
             raise
         except Exception as error:
             await _observe_personal_failure(receipt)
+            await _settle_seam_attempt(admission, outcome="failed_transport")
             await _record_llm_usage(self.model, success=False)
             return self._analyze_failure(request_meta, self._analyze_transport_error(error))
 
@@ -795,11 +817,19 @@ class OpenAICompatibleClient(LLMClient):
                 accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"], data
             ),
         }
+        settlement_evidence = {
+            "accounting_usage": accounting_usage,
+            "accounting_cache_usage": self._accounting_cache_usage(data),
+            **accounting_cost,
+        }
         await _observe_personal_outcome(
             receipt,
             dispatch_state="response_received",
             outcome="failed_output" if output_failed else "succeeded",
             accounting_envelope=response,
+        )
+        await _settle_seam_attempt(
+            admission, outcome="failed_output" if output_failed else "succeeded", evidence=settlement_evidence
         )
         await _record_llm_usage(self.model, success=not output_failed, usage=response.get("usage"))
         return response
@@ -901,6 +931,9 @@ class OpenAICompatibleClient(LLMClient):
                 outcome="failed_output" if parse_error else "succeeded",
                 accounting_envelope=accounting,
             )
+            await _settle_seam_attempt(
+                admission, outcome="failed_output" if parse_error else "succeeded", evidence=accounting
+            )
             await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
             if isinstance(diagnostic, dict):
                 diagnostic.update(
@@ -909,9 +942,11 @@ class OpenAICompatibleClient(LLMClient):
             return response
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
+            await _settle_seam_attempt(admission, outcome="unknown")
             raise
         except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as error:
             await _observe_personal_failure(receipt)
+            await _settle_seam_attempt(admission, outcome="failed_transport")
             await _record_llm_usage(self.model, success=False)
             setattr(error, "personal_dispatch_id", dispatch_id)
             setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
@@ -924,6 +959,7 @@ class OpenAICompatibleClient(LLMClient):
                 setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
                 raise
             await _observe_personal_failure(receipt)
+            await _settle_seam_attempt(admission, outcome="unknown")
             setattr(error, "personal_dispatch_id", dispatch_id)
             setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
@@ -1062,9 +1098,11 @@ class AnthropicClient(LLMClient):
                 data = r.json()
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
+            await _settle_seam_attempt(admission, outcome="unknown")
             raise
         except Exception as error:
             await _observe_personal_failure(receipt)
+            await _settle_seam_attempt(admission, outcome="failed_transport")
             await _record_llm_usage(self.model, success=False)
             return self._analyze_failure(request_meta, self._analyze_transport_error(error))
 
@@ -1103,11 +1141,19 @@ class AnthropicClient(LLMClient):
                 accounting_usage["prompt_tokens"], accounting_usage["completion_tokens"], data
             ),
         }
+        settlement_evidence = {
+            "accounting_usage": accounting_usage,
+            "accounting_cache_usage": self._accounting_cache_usage(data),
+            **accounting_cost,
+        }
         await _observe_personal_outcome(
             receipt,
             dispatch_state="response_received",
             outcome="failed_output" if output_failed else "succeeded",
             accounting_envelope=response,
+        )
+        await _settle_seam_attempt(
+            admission, outcome="failed_output" if output_failed else "succeeded", evidence=settlement_evidence
         )
         await _record_llm_usage(self.model, success=not output_failed, usage=response.get("usage"))
         return response
@@ -1203,13 +1249,18 @@ class AnthropicClient(LLMClient):
                 outcome="failed_output" if parse_error else "succeeded",
                 accounting_envelope=accounting,
             )
+            await _settle_seam_attempt(
+                admission, outcome="failed_output" if parse_error else "succeeded", evidence=accounting
+            )
             await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
             return response
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
+            await _settle_seam_attempt(admission, outcome="unknown")
             raise
         except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as error:
             await _observe_personal_failure(receipt)
+            await _settle_seam_attempt(admission, outcome="failed_transport")
             await _record_llm_usage(self.model, success=False)
             setattr(error, "personal_dispatch_id", dispatch_id)
             setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
@@ -1222,6 +1273,7 @@ class AnthropicClient(LLMClient):
                 setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
                 raise
             await _observe_personal_failure(receipt)
+            await _settle_seam_attempt(admission, outcome="unknown")
             setattr(error, "personal_dispatch_id", dispatch_id)
             setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
@@ -1307,9 +1359,11 @@ class CustomClient(LLMClient):
                 data = r.json()
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
+            await _settle_seam_attempt(admission, outcome="unknown")
             raise
         except Exception as error:
             await _observe_personal_failure(receipt)
+            await _settle_seam_attempt(admission, outcome="failed_transport")
             await _record_llm_usage(self.model, success=False)
             return self._analyze_failure(request_meta, self._analyze_transport_error(error))
 
@@ -1346,11 +1400,19 @@ class CustomClient(LLMClient):
             **accounting_cost,
             "usage": self._analyze_usage_projection(0, 0, data),
         }
+        settlement_evidence = {
+            "accounting_usage": accounting_usage,
+            "accounting_cache_usage": self._accounting_cache_usage(data),
+            **accounting_cost,
+        }
         await _observe_personal_outcome(
             receipt,
             dispatch_state="response_received",
             outcome="failed_output" if output_failed else "succeeded",
             accounting_envelope=response,
+        )
+        await _settle_seam_attempt(
+            admission, outcome="failed_output" if output_failed else "succeeded", evidence=settlement_evidence
         )
         await _record_llm_usage(self.model, success=not output_failed)
         return response
@@ -1442,13 +1504,20 @@ class CustomClient(LLMClient):
                 outcome="failed_output" if data.get("error") or parse_error else "succeeded",
                 accounting_envelope=accounting,
             )
+            await _settle_seam_attempt(
+                admission,
+                outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+                evidence=accounting,
+            )
             await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
             return response
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
+            await _settle_seam_attempt(admission, outcome="unknown")
             raise
         except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.TransportError) as error:
             await _observe_personal_failure(receipt)
+            await _settle_seam_attempt(admission, outcome="failed_transport")
             await _record_llm_usage(self.model, success=False)
             setattr(error, "personal_dispatch_id", dispatch_id)
             setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
@@ -1461,6 +1530,7 @@ class CustomClient(LLMClient):
                 setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
                 raise
             await _observe_personal_failure(receipt)
+            await _settle_seam_attempt(admission, outcome="unknown")
             setattr(error, "personal_dispatch_id", dispatch_id)
             setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise

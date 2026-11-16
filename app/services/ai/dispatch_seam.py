@@ -580,9 +580,15 @@ async def settle(
     credential. Cancellation is re-raised so the caller's cancellation is
     preserved.
     """
-    service = foundation.settlement if isinstance(foundation, DispatchFoundation) else None
     if not isinstance(admission, DispatchAdmission):
         return
+    if foundation is None and admission.reserved:
+        # Disabling admission during a request must not disable its accounting.
+        from .rate_limits import RateAcquirer
+        from .settlement import LLMSettlementService
+
+        foundation = DispatchFoundation(rate=RateAcquirer(), settlement=LLMSettlementService())
+    service = foundation.settlement if isinstance(foundation, DispatchFoundation) else None
     safe_outcome = (
         outcome
         if type(outcome) is str
@@ -695,14 +701,16 @@ def _compat_foundation() -> Optional[DispatchFoundation]:
     foundations before any bucket is touched, so no provider request is
     newly admitted by this task alone.
     """
-    rate = admission = None
+    rate = admission = settlement = None
     if seam_enabled():
         from .atomic_admission import AtomicLLMAdmissionService
         from .rate_limits import RateAcquirer
+        from .settlement import LLMSettlementService
 
         rate = RateAcquirer()
         admission = AtomicLLMAdmissionService()
-    return DispatchFoundation(rate=rate, admission=admission)
+        settlement = LLMSettlementService()
+    return DispatchFoundation(rate=rate, admission=admission, settlement=settlement)
 
 
 def _compat_route_capabilities(

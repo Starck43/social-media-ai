@@ -2,14 +2,38 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.api import social_brief
+from app.api.v1.endpoints import (
+    action_audit,
+    auth,
+    bitrix,
+    calendar,
+    commands,
+    communication,
+    connector_accounts,
+    contacts,
+    credentials,
+    dashboard,
+    document_delivery,
+    documents,
+    files_connectors,
+    llm_models,
+    llm_providers,
+    monitoring,
+    notifications,
+    onec,
+    outbox,
+    planner,
+    roles,
+    scenarios,
+    social,
+    sources,
+    tasks,
+    user,
+    web_research,
+)
 from app.models import Permission, User
 from app.services.user.auth import get_authenticated_user
-
-from app.api.v1.endpoints import (
-	auth, user, roles, monitoring, scenarios, 
-	notifications, dashboard, llm_providers, social,
-    sources, tasks, credentials, llm_models
-)
 
 router = APIRouter()
 DB_PROBE_TIMEOUT_SECONDS = 2.0
@@ -20,6 +44,19 @@ DB_PROBE_TIMEOUT_SECONDS = 2.0
 # `/auth` stays public — it is how you get a token in the first place.
 API_AUTH = [Depends(get_authenticated_user)]
 
+router.include_router(contacts.router, prefix="/contacts", tags=["contacts"], dependencies=API_AUTH)
+router.include_router(planner.router, dependencies=API_AUTH)
+router.include_router(calendar.router, dependencies=API_AUTH)
+router.include_router(documents.router, dependencies=API_AUTH)
+router.include_router(document_delivery.router, dependencies=API_AUTH)
+router.include_router(web_research.router, dependencies=API_AUTH)
+router.include_router(outbox.router, dependencies=API_AUTH)
+router.include_router(communication.router, prefix="/communication", tags=["communication"], dependencies=API_AUTH)
+router.include_router(commands.router, dependencies=API_AUTH)
+router.include_router(onec.router, prefix="/integrations/1c", tags=["ERP / 1C"], dependencies=API_AUTH)
+router.include_router(bitrix.router, prefix="/integrations/bitrix", tags=["CRM"], dependencies=API_AUTH)
+# Public (no API_AUTH): signed one-click unsubscribe token authenticates the action without login (D16).
+router.include_router(bitrix.public_router, prefix="/integrations/bitrix", tags=["CRM"])
 router.include_router(user.router, prefix="/users", tags=["user"], dependencies=API_AUTH)
 router.include_router(roles.router, prefix="/users/roles", tags=["user"], dependencies=API_AUTH)
 router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -31,9 +68,15 @@ router.include_router(llm_providers.router, prefix="/llm", tags=["llm"], depende
 router.include_router(llm_models.router, prefix="/llm", tags=["llm"], dependencies=API_AUTH)
 # Public (no API_AUTH): the platform redirects the browser here after consent.
 router.include_router(social.router, prefix="/social", tags=["social"])
+router.include_router(social_brief.router, dependencies=API_AUTH)
 router.include_router(sources.router, prefix="/sources", tags=["sources"], dependencies=API_AUTH)
 router.include_router(tasks.router, prefix="/tasks", tags=["tasks"], dependencies=API_AUTH)
 router.include_router(credentials.router, prefix="/credentials", tags=["credentials"], dependencies=API_AUTH)
+router.include_router(
+    connector_accounts.router, prefix="/connector-accounts", tags=["connector-accounts"], dependencies=API_AUTH
+)
+router.include_router(files_connectors.router)
+router.include_router(action_audit.router, prefix="/audit", tags=["action-audit"], dependencies=API_AUTH)
 
 
 # Keep the test endpoints for backward compatibility.
@@ -63,7 +106,7 @@ async def test_database():
 
 @router.get("/test-auth", include_in_schema=False)
 async def test_auth(current_user: User = Depends(get_authenticated_user)):
-	return {"message": "Auth endpoint works", "user_id": current_user.id}
+    return {"message": "Auth endpoint works", "user_id": current_user.id}
 
 
 @router.get("/health", tags=["Health"])

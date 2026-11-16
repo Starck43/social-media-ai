@@ -9,8 +9,8 @@ Three kinds make an L2 session work:
 | `session`  | Telethon `StringSession` after login      |
 
 These are *personal* secrets (they act as the logged-in user), so they live in
-`user_credentials` keyed by `users.id` — never duplicated per workspace — with
-the environment as a legacy fallback.
+`user_credentials` keyed by `users.id`. This legacy vault is not workspace-scoped;
+a workspace-scoped authorization flow is still required before rollout.
 
 The session string is a full-access credential (equivalent to being logged in
 as the user): store it only in the vault, never log or echo it. telethon is
@@ -46,16 +46,16 @@ class TelegramSession:
 
 
 async def load_session(user_id: Optional[int] = None) -> Optional[TelegramSession]:
-    """Resolve api_id/api_hash/session from the personal vault or env.
+    """Resolve all three parts from one personal vault, never the environment.
 
-    With `user_id` the parts come from `user_credentials` (env as fallback);
-    without it, only env is consulted. Returns None when any part is missing —
-    partial configuration never produces a half-working client. Never logs the
-    secrets.
+    No owner or an incomplete vault returns None. This legacy person-scoped
+    lookup does not yet supply the required workspace-scoped connection model.
     """
-    api_id = await resolve_token("telegram", kinds=("api_id",), owner_user_id=user_id)
-    api_hash = await resolve_token("telegram", kinds=("api_hash",), owner_user_id=user_id)
-    session = await resolve_token("telegram", kinds=("session",), owner_user_id=user_id)
+    if type(user_id) is not int or user_id <= 0:
+        return None
+    api_id = await resolve_token("telegram", kinds=("api_id",), owner_user_id=user_id, allow_env=False)
+    api_hash = await resolve_token("telegram", kinds=("api_hash",), owner_user_id=user_id, allow_env=False)
+    session = await resolve_token("telegram", kinds=("session",), owner_user_id=user_id, allow_env=False)
 
     if not (api_id and api_hash and session):
         return None

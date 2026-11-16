@@ -12,10 +12,11 @@ from __future__ import annotations
 import pytest
 
 from app.core.tenant_context import TenantContextError, tenant_scope
-from app.models.agent_memory import AgentMemory
-from app.models.agent_session import AgentSession
+from app.models.agent.agent_memory import AgentMemory
+from app.models.agent.agent_session import AgentSession
 from app.models.managers.agent_session_manager import agent_sessions
-from app.models.tenant import Tenant, TenantChannel
+from app.models.tenancy.tenant import Tenant
+from app.models.tenancy.tenant_channel import TenantChannel
 
 # ═══════════════════════════════════════════════════════════════════════════
 # helpers

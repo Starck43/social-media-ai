@@ -1,0 +1,5 @@
+# Compiler/build tooling, separate from runtime and the P11-T03 tool-only lane.
+uv==0.6.17
+build==1.2.2.post1
+setuptools==75.8.2
+wheel==0.45.1

@@ -9,6 +9,7 @@ import pytest
 from app.core.database import async_session_maker
 from app.core.permissions import _current_user, set_current_user
 from app.core.personal_catalog_context import catalog_execution_scope
+from app.core.tenant_context import tenant_scope
 from app.models import AgentScenario, AIAnalytics, LLMModel, LLMProvider, Source, Tenant
 from app.models.managers.llm_model_manager import LLMModelManager
 from app.types import SourceType
@@ -385,13 +386,17 @@ class TestLLMModelManager:
         tenant = await Tenant.objects.create(
             name="Delete agent model", slug=f"delete-agent-model-{secrets.token_hex(6)}", plan="business"
         )
-        await Tenant.objects.update_by_id(tenant.id, agent_model_id=model.id)
+        try:
+            await Tenant.objects.update_by_id(tenant.id, agent_model_id=model.id)
 
-        result = await LLMModelManager().delete_with_default_reassignment(model.id)
+            result = await LLMModelManager().delete_with_default_reassignment(model.id)
 
-        assert result["scenarios_reset"] == 0
-        assert any("workspace(s) lost their agent model" in w for w in result["warnings"])
-        assert any(w.startswith("1 workspace(s) lost their agent model") for w in result["warnings"])
+            assert result["scenarios_reset"] == 0
+            assert any("workspace(s) lost their agent model" in w for w in result["warnings"])
+            assert any(w.startswith("1 workspace(s) lost their agent model") for w in result["warnings"])
+        finally:
+            with tenant_scope(bypass=True):
+                assert await Tenant.objects.delete_by_id(tenant.id)
 
     async def test_delete_with_replacement_and_no_references_reports_nothing(self, monkeypatch):
         """The ordinary path stays quiet: a replacement exists and nothing referenced the model."""

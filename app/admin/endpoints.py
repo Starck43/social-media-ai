@@ -12,12 +12,12 @@ from starlette import status
 from starlette.templating import Jinja2Templates
 
 from app.admin.authorization import require_admin_perm
-from app.admin.csrf import get_csrf_manager
+from app.admin.csrf import issue_token, verify_request_token
+from app.admin.identity import resolve_operator_identity
 from app.core.config import settings
-from app.core.hashing import generate_temporary_password, get_password_hash, verify_password
+from app.core.hashing import get_password_hash, verify_password
 from app.models import Tenant, User
 from app.models.managers.user_manager import UserManager
-from app.services.user.auth import get_authenticated_user
 from app.types import ActionType
 
 # Configure logger
@@ -52,63 +52,15 @@ async def llm_model_test_real(
     csrf_token: str = Form(""),
 ):
     """Retire the old paid route without silently translating or replaying it."""
-    if not get_csrf_manager(request).verify_token(csrf_token):
+    if not verify_request_token(request, csrf_token):
         raise HTTPException(status_code=403, detail="Недействительный CSRF токен")
     token = request.session.get("token")
     if not token:
         raise HTTPException(status_code=401, detail="Требуется вход в панель")
-    user = await get_authenticated_user(token=token, token_type="access")
-    if user is not None:
-        user = await User.objects.prefetch_related("role.permissions").get(id=user.id)
+    user = await resolve_operator_identity(token, token_type="access")
     if user is None or not user.is_active or not user.is_platform_admin:
         raise HTTPException(status_code=403, detail="Нужны активные права администратора платформы")
     raise HTTPException(status_code=410, detail="Open the model test page and confirm a new probe explicitly")
-
-
-@router.get("/admin/reset-password", name="reset_password_page")
-async def reset_password_page(request: Request):
-    csrf_manager = get_csrf_manager(request)
-    csrf_token = csrf_manager.generate_token()
-
-    # Store the token in the session
-    request.session["csrf_token"] = csrf_token
-    request.session.setdefault("_session_modified", True)
-
-    # Get any error message from query params
-    error = request.query_params.get("error")
-    message = None
-    if error == "user_not_found":
-        message = "Пользователь не найден или недостаточно прав"
-    elif error == "invalid_csrf":
-        message = "Срок действия токена безопасности истёк. Попробуйте ещё раз."
-    elif error == "email_required":
-        message = "Необходимо указать электронную почту"
-
-    # Get the admin instance from the request
-    admin = request.app.state.admin
-    admin.title = "Сброс пароля"
-
-    return templates.TemplateResponse(
-        request,
-        "sqladmin/user/reset_password.html",
-        {
-            "csrf_token": csrf_token,
-            "admin": admin,
-            "message": message,
-            "error": error,
-        },
-    )
-
-
-@router.post("/admin/reset-password", name="reset_password")
-@limiter.limit(settings.RESET_PASSWORD_RATE_LIMIT)
-async def reset_password(request: Request, email: str = Form(None), csrf_token: str = Form(None)):
-    """
-    Handle password reset with rate limiting (disabled in development) and CSRF protection.
-    """
-    # There is no verified delivery flow for generated credentials. Keep the
-    # old public recovery URL inert; operators use the authenticated password form.
-    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Use authenticated password administration")
 
 
 @router.get("/admin/user/change-password/{user_id}", response_class=HTMLResponse)
@@ -128,9 +80,7 @@ async def change_password_form_path(
             url=f"/admin/login?next=/admin/user/change-password/{user_id}", status_code=status.HTTP_303_SEE_OTHER
         )
 
-    current_user = await get_authenticated_user(token)
-    if current_user is not None:
-        current_user = await User.objects.prefetch_related("role.permissions").get(id=current_user.id)
+    current_user = await resolve_operator_identity(token)
     if not current_user:
         # Redirect to log in with next parameter to return here after login
         return RedirectResponse(
@@ -166,13 +116,12 @@ async def change_password_form_path(
         # Try to get from a session or use default
         return_url = request.session.get(f"return_url_{user_id}", f"/admin/user/details/{user_id}")
 
-    csrf_manager = get_csrf_manager(request)
-    csrf_token = csrf_manager.generate_token()
-    request.session["csrf_token"] = csrf_token
+    csrf_token = issue_token(request)
 
-    # Get the admin instance from the request
+    # Get the admin instance from the request. Never mutate it per request:
+    # the instance is shared by every operator, and the template sets its own
+    # title block.
     admin = request.app.state.admin
-    admin.title = "Смена пароля"
 
     messages = request.session.pop("_messages", None)
 
@@ -212,9 +161,7 @@ async def change_password_submit_path(
 
     # Check if user is authenticated
     token = request.session.get("token")
-    current_user = await get_authenticated_user(token)
-    if current_user is not None:
-        current_user = await User.objects.prefetch_related("role.permissions").get(id=current_user.id)
+    current_user = await resolve_operator_identity(token)
 
     if not token or not current_user:
         return RedirectResponse(
@@ -231,8 +178,7 @@ async def change_password_submit_path(
         request.session["_messages"] = []
 
     # CSRF check
-    csrf_manager = get_csrf_manager(request)
-    if not csrf_token or not csrf_manager.verify_token(csrf_token):
+    if not verify_request_token(request, csrf_token):
         request.session["_messages"].append(
             "Отсутствующий или недействительный токен безопасности. Попробуйте ещё раз."
         )
@@ -330,18 +276,18 @@ async def change_password_submit_path(
 
 
 @router.post("/admin/verify-current-password")
+@limiter.limit(settings.CHANGE_PASSWORD_RATE_LIMIT)
 async def verify_current_password(request: Request, data: dict = Body(...)):
-    """AJAX endpoint to verify current password"""
+    """AJAX endpoint to verify the current password.
+
+    Rate-limited like the password change itself: without a budget this would
+    be an online password oracle. The CSRF middleware guards the POST.
+    """
     token = request.session.get("token")
     if not token:
         return {"valid": False}
 
-    authenticated = await get_authenticated_user(token)
-    current_user = (
-        await User.objects.prefetch_related("role.permissions").get(id=authenticated.id)
-        if authenticated is not None
-        else None
-    )
+    current_user = await resolve_operator_identity(token)
     if not current_user:
         return {"valid": False}
     if not current_user.has_admin_access():
@@ -391,7 +337,7 @@ async def analytics_dashboard(request: Request):
 
     try:
         # Get user from session token
-        current_user = await get_authenticated_user(token=token, token_type="access")
+        current_user = await resolve_operator_identity(token, token_type="access")
 
         if not current_user or not current_user.is_active:
             request.session.clear()
@@ -432,7 +378,7 @@ async def topic_chains_dashboard(request: Request):
     await require_admin_perm(request, "aianalytics", ActionType.VIEW)
 
     try:
-        current_user = await get_authenticated_user(token=token, token_type="access")
+        current_user = await resolve_operator_identity(token, token_type="access")
 
         if not current_user or not current_user.is_active:
             request.session.clear()
@@ -456,7 +402,7 @@ async def submit_llm_model_test(request: Request):
     user = await require_admin_perm(request, "llmmodel", ActionType.CONFIGURE)
     form = await request.form()
     token = form.get("csrf_token")
-    if not isinstance(token, str) or not get_csrf_manager(request).verify_token(token):
+    if not isinstance(token, str) or not verify_request_token(request, token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
     from app.admin.actions import LLMModelActions
 

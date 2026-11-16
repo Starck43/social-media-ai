@@ -1,0 +1,83 @@
+{% extends "web/base.html" %}
+{% block title %}Задачи из сервисов — AI Assistant{% endblock %}
+{% block page_heading %}Задачи{% endblock %}
+{% block content %}
+<div class="max-w-4xl space-y-6">
+  {% include "web/_task_tabs.html" %}
+  <section class="ui-card space-y-4" aria-labelledby="task-sources-title">
+    <div>
+      <h2 id="task-sources-title" class="text-lg font-semibold">Подключённые задачи</h2>
+      <p class="ui-muted">Bitrix24 показывает назначенные вам задачи и задачи, где вы наблюдатель. Данные читаются из портала при открытии; изменения выполняются в самом Bitrix24.</p>
+      <p class="ui-muted">Для доступа к задачам подключение портала должно разрешать чтение задач. Согласие на чтение включается отдельно для каждого подключения.</p>
+      <p class="ui-muted">Если задача совпадает с делом в планировщике, проверьте обе записи. Они не объединяются автоматически.</p>
+    </div>
+
+    {% if sources.get('items') %}
+      {% for source in sources['items'] %}
+      {% set source_id = source.get('connection_id', source.get('id')) %}
+      <article class="space-y-3 rounded border p-4">
+        <div>
+          <h3 class="font-semibold">Bitrix24 · {{ source.get('label', source.get('account_key', 'Подключённый портал')) }}</h3>
+          {% if source.get('state') in ('reauth_required', 'reauth', 'task_scope_required') %}
+          <p class="ui-muted" role="status">Порталу нужно повторное подключение с разрешением на чтение задач.</p>
+          {% elif source.get('state') not in ('verified', 'available', 'ok') %}
+          <p class="ui-muted" role="status">Подключение портала сейчас недоступно.</p>
+          {% endif %}
+        </div>
+        {% if source.get('selected') and source.get('enabled') %}<p class="ui-muted">Этот источник выбран; чтение разрешено.</p>
+        {% elif source.get('enabled') %}<p class="ui-muted">Чтение разрешено; сейчас выбран другой источник.</p>
+        {% else %}<p class="ui-muted">Чтение задач пока выключено.</p>{% endif %}
+        {% if can_configure %}<div class="flex flex-wrap gap-3">
+          {% if not source.get('selected') or not source.get('enabled') %}
+          <form method="post" action="/app/task-hub/sources/{{ source_id }}">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="hidden" name="enabled" value="yes">
+            <button class="ui-control min-h-[44px]" type="submit">{% if source.get('enabled') %}Использовать этот источник{% else %}Разрешить чтение и выбрать источник{% endif %}</button>
+          </form>
+          {% endif %}
+          {% if source.get('enabled') %}
+          <form method="post" action="/app/task-hub/sources/{{ source_id }}">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="hidden" name="enabled" value="no">
+            <button class="ui-control min-h-[44px]" type="submit">Отключить чтение</button>
+          </form>
+          {% endif %}
+          {% if not source.get('enabled') and source.get('selected') %}
+          <span class="ui-muted">Источник выбран.</span>
+          {% endif %}
+        </div>{% endif %}
+      </article>
+      {% endfor %}
+    {% else %}
+      <p class="ui-muted">Подключений Bitrix24 пока нет.</p>
+      {% if perms and perms.can('source', 'create') %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/settings?tab=connections">Открыть подключение Bitrix24</a>{% endif %}
+    {% endif %}
+
+    {% if projection['state'] in ('reauth_required', 'reauth', 'task_scope_required') %}
+      <p class="rounded border p-3" role="status">Нужно повторно подключить Bitrix24 и разрешить доступ к задачам.</p>
+    {% elif projection['state'] == 'rate_limited' %}
+      <p class="rounded border p-3" role="status">Bitrix24 ограничил частоту запросов. Повторите просмотр позже.</p>
+    {% elif projection['state'] in ('source_unavailable', 'unavailable', 'error') %}
+      <p class="rounded border p-3" role="status">Источник задач временно недоступен. Его записи не считаются пустыми.</p>
+    {% elif projection['state'] in ('not_configured', 'consent_required', 'not_enabled') %}
+      <p class="rounded border p-3" role="status">Выберите подключение и отдельно разрешите чтение задач.</p>
+    {% elif projection['items'] %}
+      <ul class="space-y-2" aria-label="Задачи Bitrix24">
+        {% for item in projection['items'] %}
+        <li class="flex flex-wrap items-start justify-between gap-3 rounded border p-3">
+          <div><a class="underline" href="{{ item['url'] }}" target="_blank" rel="noopener noreferrer">{{ item['title'] }}</a>
+            <p class="ui-muted">{{ item['status_label'] }}{% if item['due_at'] %} · срок {{ item['due_at'] }}{% endif %}{% if item.get('assigned') %} · назначена вам{% elif item.get('watched') %} · вы наблюдатель{% endif %}</p>
+          </div>
+          <span class="ui-muted">Bitrix24</span>
+        </li>
+        {% endfor %}
+      </ul>
+    {% elif projection['state'] in ('available', 'ok', 'synced') %}
+      {% if projection.get('next_cursor') %}<p class="ui-muted">На этой странице нет задач; доступны следующие страницы.</p>
+      {% else %}<p class="ui-muted">В подключении нет доступных вам задач.</p>{% endif %}
+    {% endif %}
+    {% if projection.get('next_cursor') %}<a class="ui-control inline-flex min-h-[44px] items-center" href="?cursor={{ projection['next_cursor']|urlencode }}">Показать ещё</a>{% endif %}
+    <p class="ui-muted">Сейчас доступно только чтение. Комментарии, смена статуса и исполнителя пока не поддерживаются.</p>
+  </section>
+</div>
+{% endblock %}

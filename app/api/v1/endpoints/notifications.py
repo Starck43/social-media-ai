@@ -1,227 +1,134 @@
-"""Notification API endpoints for managing user notifications."""
+"""Authenticated User inbox, independent of the API's selected workspace.
 
-import logging
-from typing import Optional, List
-from datetime import datetime, timedelta, UTC
+Canonical routes live directly under /api/v1/notifications. The old doubled
+prefix stays as a hidden compatibility alias. Mutations affect only receipts.
+"""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.api.deps import require_model_perm
-from app.models import User, Notification
+from app.models import NotificationReceipt, User
+from app.schemas.notification import NotificationCreate, NotificationResponse, NotificationStats
+from app.services.notifications.inbox import PersonalInbox
+from app.services.notifications.links import open_link
 from app.services.notifications.service import notify
-from app.types import NotificationType, ActionType
-from app.schemas.notification import (
-    NotificationResponse,
-    NotificationCreate,
-    NotificationStats,
-)
-
-router = APIRouter(tags=["notifications"])
-logger = logging.getLogger(__name__)
+from app.services.user.auth import get_authenticated_user
+from app.types import ActionType, NotificationType
 
 
-@router.get("/notifications", response_model=list[NotificationResponse])
+def _private_response(response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+
+
+router = APIRouter(tags=["notifications"], dependencies=[Depends(_private_response)])
+
+
+def _response(entry):
+    event, receipt = entry.event, entry.receipt
+    return NotificationResponse(
+        id=event.id,
+        title=event.title,
+        message=event.message,
+        notification_type=event.notification_type,
+        is_read=receipt.read_at is not None,
+        related_entity_type=event.related_entity_type,
+        related_entity_id=event.related_entity_id,
+        created_at=event.created_at.isoformat(),
+        origin_workspace_id=event.tenant_id,
+        severity=event.severity,
+        destination=open_link(event.id, receipt.user_id),
+    )
+
+
+@router.get("", response_model=list[NotificationResponse])
+@router.get("/notifications", response_model=list[NotificationResponse], include_in_schema=False)
 async def list_notifications(
-    is_read: Optional[bool] = None,
-    notification_type: Optional[NotificationType] = None,
-    since: Optional[datetime] = Query(None, description="Show notifications since this date"),
+    is_read: bool | None = None,
+    notification_type: str | None = None,
+    since: datetime | None = None,
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    current_user: User = Depends(require_model_perm("notification", ActionType.VIEW)),
+    current_user: User = Depends(get_authenticated_user),
 ):
-    """List notifications with optional filters."""
-    logger.info(
-        f"User {current_user.username} listing notifications "
-        f"(is_read={is_read}, type={notification_type}, since={since})"
-    )
-
-    query = Notification.objects.filter()
-
-    if is_read is not None:
-        query = query.filter(is_read=is_read)
-
-    if notification_type:
-        query = query.filter(notification_type=notification_type.value)
-
-    if since:
-        query = query.filter(created_at__gte=since)
-
-    notifications = await (
-        query.order_by(Notification.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-    )
-
-    return [
-        NotificationResponse(
-            id=n.id,
-            title=n.title,
-            message=n.message,
-            notification_type=n.notification_type,
-            is_read=n.is_read,
-            related_entity_type=n.related_entity_type,
-            related_entity_id=n.related_entity_id,
-            created_at=n.created_at.isoformat() if n.created_at else "",
+    if notification_type is not None:
+        notification_type = NotificationType.get_by_name(notification_type.upper()) or NotificationType.get_by_value(
+            notification_type.lower()
         )
-        for n in notifications
+        if notification_type is None:
+            raise HTTPException(422, "Unknown notification type")
+    return [
+        _response(e)
+        for e in await PersonalInbox(current_user).entries(
+            is_read=is_read, notification_type=notification_type, since=since, limit=limit, offset=offset
+        )
     ]
 
 
-@router.get("/notifications/stats", response_model=NotificationStats)
-async def get_notification_stats(
-    since: Optional[datetime] = Query(None, description="Stats since this date"),
-    current_user: User = Depends(require_model_perm("notification", ActionType.VIEW)),
-):
-    """Get notification statistics."""
-    logger.info(f"User {current_user.username} requesting notification stats")
-
-    query = Notification.objects.filter()
-    if since:
-        query = query.filter(created_at__gte=since)
-
-    all_notifications = await query
-
-    total = len(all_notifications)
-    unread = len([n for n in all_notifications if not n.is_read])
-
-    by_type = {}
-    for n in all_notifications:
-        ntype = str(n.notification_type) if n.notification_type else "unknown"
-        by_type[ntype] = by_type.get(ntype, 0) + 1
+@router.get("/stats", response_model=NotificationStats)
+@router.get("/notifications/stats", response_model=NotificationStats, include_in_schema=False)
+async def get_notification_stats(since: datetime | None = None, current_user: User = Depends(get_authenticated_user)):
+    return await NotificationReceipt.objects.stats_for_user(current_user.id, since)
 
 
-@router.get("/notifications/{notification_id}", response_model=NotificationResponse)
-async def get_notification(
-    notification_id: int,
-    current_user: User = Depends(require_model_perm("notification", ActionType.VIEW)),
-):
-    """Get a specific notification by ID."""
-    notification = await Notification.objects.get(id=notification_id)
-
-    if not notification:
-        logger.warning(f"Notification {notification_id} not found")
-        raise HTTPException(status_code=404, detail="Notification not found")
-
-    logger.info(f"User {current_user.username} viewing notification {notification_id}")
-
-    return NotificationResponse(
-        id=notification.id,
-        title=notification.title,
-        message=notification.message,
-        notification_type=notification.notification_type,
-        is_read=notification.is_read,
-        related_entity_type=notification.related_entity_type,
-        related_entity_id=notification.related_entity_id,
-        created_at=notification.created_at.isoformat() if notification.created_at else "",
-    )
-
-
-@router.post("/notifications", response_model=NotificationResponse)
+@router.post("", response_model=NotificationResponse)
+@router.post("/notifications", response_model=NotificationResponse, include_in_schema=False)
 async def create_notification(
-    request: NotificationCreate,
-    current_user: User = Depends(require_model_perm("notification", ActionType.CREATE)),
+    request: NotificationCreate, current_user: User = Depends(require_model_perm("notification", ActionType.CREATE))
 ):
-    """Create a new notification."""
-    logger.info(
-        f"User {current_user.username} creating notification: {request.title} "
-        f"(type={request.notification_type})"
-    )
-
-    notification = await notify.create(
+    event = await notify.create(
         title=request.title,
         message=request.message,
         ntype=request.notification_type,
         entity_type=request.related_entity_type,
         entity_id=request.related_entity_id,
+        recipient_user_ids=[current_user.id],
+        severity=request.severity,
     )
-
-    return NotificationResponse(
-        id=notification.id,
-        title=notification.title,
-        message=notification.message,
-        notification_type=notification.notification_type,
-        is_read=notification.is_read,
-        related_entity_type=notification.related_entity_type,
-        related_entity_id=notification.related_entity_id,
-        created_at=notification.created_at.isoformat() if notification.created_at else "",
-    )
+    entries = await PersonalInbox(current_user).entries(notification_id=event.id)
+    if not entries:
+        raise HTTPException(404, "Notification target unavailable")
+    return _response(entries[0])
 
 
-@router.post("/notifications/{notification_id}/mark-read")
-async def mark_notification_as_read(
-    notification_id: int,
-    current_user: User = Depends(require_model_perm("notification", ActionType.UPDATE)),
+@router.post("/mark-all-read")
+@router.post("/notifications/mark-all-read", include_in_schema=False)
+async def mark_all_as_read(current_user: User = Depends(get_authenticated_user)):
+    return {"status": "success", "marked_count": await PersonalInbox(current_user).read_window(), "windowed": True}
+
+
+@router.post("/cleanup")
+@router.post("/notifications/cleanup", include_in_schema=False)
+async def cleanup_old_notifications(
+    days: int = Query(30, ge=1, le=365), current_user: User = Depends(get_authenticated_user)
 ):
-    """Mark a notification as read."""
-    notification = await Notification.objects.get(id=notification_id)
+    count = await NotificationReceipt.objects.cleanup_for_user(current_user.id, days)
+    return {"status": "cleaned", "deleted_count": count, "older_than_days": days}
 
-    if not notification:
-        logger.warning(f"Notification {notification_id} not found")
-        raise HTTPException(status_code=404, detail="Notification not found")
 
-    if not notification.is_read:
-        await Notification.objects.update_by_id(notification_id, is_read=True)
-        logger.info(
-            f"User {current_user.username} marked notification {notification_id} as read"
-        )
-
+@router.post("/{notification_id}/mark-read")
+@router.post("/notifications/{notification_id}/mark-read", include_in_schema=False)
+async def mark_notification_as_read(notification_id: int, current_user: User = Depends(get_authenticated_user)):
+    if not await PersonalInbox(current_user).read(notification_id):
+        raise HTTPException(404, "Notification not found")
     return {"status": "marked_as_read", "notification_id": notification_id}
 
 
-@router.post("/notifications/mark-all-read")
-async def mark_all_as_read(
-    current_user: User = Depends(require_model_perm("notification", ActionType.UPDATE)),
-):
-    """Mark all unread notifications as read."""
-    unread = await Notification.objects.filter(is_read=False)
-
-    count = 0
-    for notification in unread:
-        await Notification.objects.update_by_id(notification.id, is_read=True)
-        count += 1
-
-    logger.info(f"User {current_user.username} marked {count} notifications as read")
-
-    return {"status": "success", "marked_count": count}
+@router.get("/{notification_id}", response_model=NotificationResponse)
+@router.get("/notifications/{notification_id}", response_model=NotificationResponse, include_in_schema=False)
+async def get_notification(notification_id: int, current_user: User = Depends(get_authenticated_user)):
+    entries = await PersonalInbox(current_user).entries(notification_id=notification_id)
+    if not entries:
+        raise HTTPException(404, "Notification not found")
+    return _response(entries[0])
 
 
-@router.delete("/notifications/{notification_id}")
-async def delete_notification(
-    notification_id: int,
-    current_user: User = Depends(require_model_perm("notification", ActionType.DELETE)),
-):
-    """Delete a notification."""
-    notification = await Notification.objects.get(id=notification_id)
-
-    if not notification:
-        logger.warning(f"Notification {notification_id} not found")
-        raise HTTPException(status_code=404, detail="Notification not found")
-
-    await Notification.objects.delete(notification_id)
-    logger.info(f"User {current_user.username} deleted notification {notification_id}")
-
+@router.delete("/{notification_id}")
+@router.delete("/notifications/{notification_id}", include_in_schema=False)
+async def delete_notification(notification_id: int, current_user: User = Depends(get_authenticated_user)):
+    if not await PersonalInbox(current_user).entries(notification_id=notification_id):
+        raise HTTPException(404, "Notification not found")
+    await NotificationReceipt.objects.dismiss(current_user.id, [notification_id])
     return {"status": "deleted", "notification_id": notification_id}
-
-
-@router.post("/notifications/cleanup")
-async def cleanup_old_notifications(
-    days: int = Query(30, ge=1, le=365, description="Delete notifications older than X days"),
-    current_user: User = Depends(require_model_perm("notification", ActionType.DELETE)),
-):
-    """Delete old read notifications older than specified days."""
-    cutoff_date = datetime.now(UTC) - timedelta(days=days)
-
-    old_notifications = await Notification.objects.filter(
-        is_read=True, created_at__lt=cutoff_date
-    )
-
-    count = 0
-    for notification in old_notifications:
-        await Notification.objects.delete(notification.id)
-        count += 1
-
-    logger.info(
-        f"User {current_user.username} cleaned up {count} notifications older than {days} days"
-    )
-
-    return {"status": "cleaned", "deleted_count": count, "older_than_days": days}

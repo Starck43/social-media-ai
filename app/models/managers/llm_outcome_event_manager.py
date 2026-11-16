@@ -31,7 +31,7 @@ GUARDS = {
 
 class LLMOutcomeEventManager(BaseManager):
     def __init__(self):
-        from ..analysis.llm_outcome_event import LLMOutcomeEvent
+        from ..llm.llm_outcome_event import LLMOutcomeEvent
 
         super().__init__(LLMOutcomeEvent)
 
@@ -51,7 +51,7 @@ class LLMOutcomeEventManager(BaseManager):
         from app.services.ai.dispatch_receipts import RECEIPT_FIELDS
         from app.services.ai.outcome_events import EVENT_FIELDS, validate_outcome_event
 
-        from ..analysis.llm_dispatch_receipt import LLMDispatchReceipt
+        from ..llm.llm_dispatch_receipt import LLMDispatchReceipt
 
         async with self._get_owned_session() as session:
             guards = (

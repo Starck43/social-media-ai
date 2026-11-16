@@ -1,60 +1,73 @@
-# AI Assistant documentation index
+# Documentation router
 
-This index lists the canonical project documentation. Git history and pull requests
-own historical reviews, implementation narratives and full test transcripts.
+First session: [README](../README.md), [DESIGN](product/DESIGN.md), [AGENTS](../AGENTS.md).
+Then one [ROADMAP](../ROADMAP.md) row → its card. This index is optional and is
+not a reading checklist. Follow AGENTS' lazy rule; load only the section needed
+for the operation, not all parents/related/history links.
 
-## Development reading path
+| Need | Canonical document |
+| --- | --- |
+| Product directions / phase plans | [PRODUCT_PLAN](product/PRODUCT_PLAN.md) → [phases](phases/README.md) |
+| Business modules P13–P19 (owner TZ, review, decisions) | [BUSINESS_MODULES](product/BUSINESS_MODULES.md) |
+| Workspace entry points, navigation, chat layout, surface parity | [WORKSPACE_UX](product/WORKSPACE_UX.md) |
+| Future deployment modes, model routing, access clients | [PLATFORM_TOPOLOGY](product/PLATFORM_TOPOLOGY.md) |
+| Role / short task prompts | [PROMPT_EXAMPLES](process/PROMPT_EXAMPLES.md) → selected shared skill |
+| Claim, READY, audit, synchronization, cleanup | [COLLABORATION](process/COLLABORATION.md), selected section |
+| Chat tools / sessions / memory | [AGENT](agent/AGENT.md) |
+| Jobs / schedules / typed task plans | [AGENT_TASKS_PLAN](agent/AGENT_TASKS_PLAN.md) |
+| Collection / selection / VK authorization | [COLLECTION](connectors/COLLECTION.md), [VK application](connectors/VK_STANDALONE_APP.md) |
+| Structured analysis / LLM contracts | [AI pipeline](agent/AI_PIPELINE_AND_PROMPTS.md) |
+| Analytics / reports / delivery | [Analytics](business/ANALYTICS_AGGREGATION_SYSTEM.md), [DIGEST](business/DIGEST.md), [CHANNELS](connectors/CHANNELS.md), [NOTIFICATIONS](business/NOTIFICATIONS.md) |
+| Identity / ownership / permissions / cutover | [TENANCY](platform/TENANCY.md), [ACCESS_MIGRATION](platform/ACCESS_MIGRATION.md) |
+| Tariffs / module entitlements / subscriptions | [SERVICE_PLANS](platform/SERVICE_PLANS.md) (accepted dormant holder/policy contract), [ENTITLEMENTS](platform/ENTITLEMENTS.md), [SUBSCRIPTIONS](platform/SUBSCRIPTIONS.md); evidence: [P2-T17](audit/p2/p2-t17.md) |
+| Contacts, identities, consent and contact privacy | [CONTACTS](business/CONTACTS.md) |
+| ORM / deletion | [MODELS](agent/MODELS.md), [MODEL_DELETION](agent/MODEL_DELETION.md) |
+| Local file connector / private file workspace contracts | [FILE_WORKSPACE_ROADMAP](file-workspace/FILE_WORKSPACE_ROADMAP.md) |
+| Interfaces | [API](platform/API.md), [CLI](platform/CLI.md), [ADMIN](platform/ADMIN.md) |
+| Environment / deployment | [CONFIGURATION](platform/CONFIGURATION.md), [DEPLOYMENT](platform/DEPLOYMENT.md) |
+| Read-only operator inventories (membership, source ownership) | [OPERATOR_INVENTORIES](platform/OPERATOR_INVENTORIES.md) |
+| Test procedures / reusable fixtures | [tests/AGENTS](../tests/AGENTS.md), [shared test presets](../tests/shared/README.md) |
+| Release criteria | [BUSINESS_PRODUCTION_READINESS](product/BUSINESS_PRODUCTION_READINESS.md) |
+| Earlier deliveries / scaling decisions | [IMPLEMENTATION_STATUS](archive/IMPLEMENTATION_STATUS.md) → phase/audit/PR evidence |
 
-1. [Product plan](PRODUCT_PLAN.md) — product outcomes and delivery phases.
-2. [Business readiness](BUSINESS_PRODUCTION_READINESS.md) — stable engineering and release gates.
-3. [Open tasks](../ROADMAP.md) and [phases](phases/README.md) — the live registry and phase board.
-4. Open one subsystem document relevant to the selected task.
+## Folders
 
-Use [implementation status](IMPLEMENTATION_STATUS.md) only to identify delivered
-foundations and their PRs. Verify current behavior in code, migrations and tests.
+Top-level `docs/` holds only this router; current contracts are grouped by subject:
 
-## Product and architecture
+| Folder | Contents |
+| --- | --- |
+| `product/` | What the product is meant to do: [PRODUCT_PLAN](product/PRODUCT_PLAN.md), [BUSINESS_MODULES](product/BUSINESS_MODULES.md), [WORKSPACE_UX](product/WORKSPACE_UX.md), [PLATFORM_TOPOLOGY](product/PLATFORM_TOPOLOGY.md), [DESIGN](product/DESIGN.md), [BUSINESS_PRODUCTION_READINESS](product/BUSINESS_PRODUCTION_READINESS.md), [PACKAGE_BOUNDARIES](product/PACKAGE_BOUNDARIES.md). |
+| `platform/` | Core runtime, identity and interfaces: tenancy/access/entitlements/subscriptions, privacy, config, deployment, API/CLI/admin, capacity and operator inventories, workspace offboarding. |
+| `agent/` | Chat agent, tasks and queue, prompts/LLM contracts, ORM and deletion behavior. |
+| `connectors/` | External sources and authorization: collection, channels, VK application, connector accounts/config/seams, Telegram session isolation, local connector protocol. |
+| `file-workspace/` | Private file workspace and local file connector contracts (entry point: [FILE_WORKSPACE_ROADMAP](file-workspace/FILE_WORKSPACE_ROADMAP.md)). |
+| `business/` | Communication and business modules: contacts, notifications, digest, analytics, action activation/audit. |
+| `process/` | How agents and owners work: [COLLABORATION](process/COLLABORATION.md), [PROMPT_EXAMPLES](process/PROMPT_EXAMPLES.md). |
+| `phases/`, `tasks/`, `audit/`, `checks/`, `archive/` | Plans, active detail, accepted evidence, one-off check packages and closed history — see below. |
 
-- [Project map](PROJECT_MAP.md) — current runtime, repository boundaries and data flow.
-- [Product plan](PRODUCT_PLAN.md) — intended capabilities and delivery order.
-- [Target architecture](ASSISTANT_ARCHITECTURE.md) — proposed extension contracts.
-- [Business readiness](BUSINESS_PRODUCTION_READINESS.md) — acceptance and release gates.
+## File ownership
 
-## Runtime subsystems
+- `docs/phases/`: active phase plans and compact completed summaries; each links
+  its product parent, active tasks and accepted audits. No task-status copies.
+- `docs/tasks/`: active task/question detail, parent/related links, documents read,
+  checks and PR handoff. ROADMAP alone owns open status/owner/dialogue. A card
+  leaves this folder once its row closes (see below).
+- `docs/audit/`: accepted task summaries, blocked diagnostics and lazy historical
+  evidence, grouped by phase (`pN/`), questions (`q/`), `history/` and `shared/`;
+  see its [index](audit/README.md). Accepted orphan tasks leave only an audit here.
+- `docs/archive/`: history that current work no longer needs — superseded routers,
+  closed one-off reviews/validations and completed task cards
+  (`archive/tasks/<id>.md`) whose audit already carries the result. Nothing here
+  is a current contract.
+- Technical contracts live in the subject folders above; shared test JSON is in
+  `tests/shared/fixtures/`. There is no `docs/design` or `docs/validation` folder.
 
-- [Agent](AGENT.md) — interactive sessions, tools and permission boundaries.
-- [Agent tasks](AGENT_TASKS.md) — PostgreSQL schedules and jobs.
-- [Collection](COLLECTION.md) — sources, credentials and collection limits.
-- [VK Standalone application](VK_STANDALONE_APP.md) — why the global search family answers 1051 and what unlocks it.
-- [Collection plan](design/collection-plan.md) — target task-owned collection contract: lanes, typed content, limits, comments and candidates (P5-T14, stage A delivered).
-- [Collection plan — stage B](design/collection-plan-stage-b.md) — VK/Telegram adapters, `Page[T]` and planner implementation (P5-T14, implemented; runtime pending).
-- [Task selection](design/task-selection.md) — which items a task analyses: sources, tracked users, text scope.
-- [AI pipeline](AI_PIPELINE_AND_PROMPTS.md) — scenarios, prompts, typed outputs and media coverage.
-- [Analytics](ANALYTICS_AGGREGATION_SYSTEM.md) — aggregation, chains and drill-down behavior.
-- [Digest](DIGEST.md) — report generation and delivery state.
-- [Channels](CHANNELS.md) — Telegram and MAX runtime boundaries.
-- [Notifications](NOTIFICATIONS.md) — tenant recipients and operator alerts.
-- [Tenancy](TENANCY.md) — workspaces, membership and isolation.
+Link to the owner of a fact instead of duplicating it. Phase history records
+what changed/why, date and source SHA; use Git/PRs for full retrospective diffs.
 
-## Interfaces and operation
+## Mechanical reference and test resources
 
-- [Models](MODELS.md) — ORM and migration-backed schema reference.
-- [Deletion rules](MODEL_DELETION.md) — source FK/ORM inventory and destructive-operation limits.
-- [API](API.md), [CLI](CLI.md) and [Admin](ADMIN.md) — supported interfaces.
-- [Configuration](CONFIGURATION.md) and [Deployment](DEPLOYMENT.md) — setup and operation.
-- [Collaboration](COLLABORATION.md) — local and remote development handoff.
-- [Agent workflow](../AGENTS.md), [rules](RULES.md) and [collaboration](COLLABORATION.md) — instructions, environment constraints, delegation lifecycle.
-- [Phases](phases/README.md) and [implementation status](IMPLEMENTATION_STATUS.md) — allocation and delivery index.
-
-## Pending source-audit follow-ups
-
-- [PR #196](https://github.com/Starck43/social-media-ai/pull/196) — ten source-verified TODO contracts and evidence; runtime
-  implementation remains open. Persistent allocation is in [phases/P10](phases/p10-audit-hardening.md).
-
-## Maintenance rule
-
-Each fact has one owner: product direction in `PRODUCT_PLAN.md`, target boundaries
-in `ASSISTANT_ARCHITECTURE.md`, readiness criteria in
-`BUSINESS_PRODUCTION_READINESS.md`, current allocation in `ROADMAP.md` / `phases/`, and
-subsystem behavior in its subsystem document. Link to the owner instead of copying
-its text. Keep detailed evidence in Git and PRs.
+- [Generated OpenAPI/Typer tables](generated/README.md) — reproducible metadata,
+  not policy or execution permission.
+- [Test resources and relocation map](../tests/README.md) — explicit offline,
+  core-template, browser and DB/external boundaries; audit history remains intact.

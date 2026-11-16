@@ -1,0 +1,81 @@
+# Register each delivered business package with focused tests. Example:
+# [[package]]
+# path = "app/services/example"
+# tests = ["tests/unit_services/test_example.py"]
+# Empty until a business package is delivered; no legacy package is opted in.
+
+[[package]]
+path = "app/services/contacts"
+tests = [
+    "tests/contacts/test_p13_t07_unit.py",
+    "tests/contacts/test_p15_t03_reconcile_unit.py",
+    "tests/communications/test_p15_t07_stats_unit.py",
+]
+
+[[package]]
+path = "app/models/contacts"
+tests = ["tests/contacts/test_p13_t07_unit.py"]
+
+[[package]]
+path = "app/api/v1/conventions.py"
+tests = ["tests/api/test_p13_t05_contracts.py"]
+
+[[package]]
+path = "app/schemas/business.py"
+tests = ["tests/api/test_p13_t05_contracts.py"]
+
+[[package]]
+path = "app/services/local_connector"
+tests = [
+    "tests/integrations/test_p18_t02_pairing_bounds.py",
+    "tests/integrations/test_p18_t02_lifecycle.py",
+    "tests/integrations/test_p18_t02_protocol.py",
+    "tests/integrations/test_p18_t02_release_fence.py",
+    "tests/integrations/test_p18_t02_websocket_size.py",
+    "tests/integrations/test_p18_t06_fetch.py",
+    "tests/integrations/test_p18_t06_protocol.py",
+    "tests/web/test_p18_t02_chat_references.py",
+]
+
+[[package]]
+path = "app/services/communications"
+tests = [
+    "tests/communications/test_p15_t02_ingest_unit.py",
+    "tests/communications/test_p15_t04_inbox_unit.py",
+    "tests/communications/test_p15_t05_unit.py",
+    "tests/communications/test_p15_t05_migration.py",
+    "tests/communications/test_p15_t07_rank_unit.py",
+    "tests/communications/test_p15_t07_service_unit.py",
+    "tests/communications/test_p15_t07_api_unit.py",
+    "tests/communications/test_p15_t07_stats_unit.py",
+    "tests/communications/test_p15_t07_migration_unit.py",
+]
+
+[[package]]
+path = "app/services/knowledge"
+tests = ["tests/knowledge"]
+
+[[package]]
+path = "app/services/attachments"
+tests = ["tests/attachments", "tests/knowledge/test_p19_t05_export_spool_unit.py"]
+
+[[package]]
+path = "app/services/onec"
+tests = [
+    "tests/integrations/test_p17_t02_metadata.py",
+    "tests/integrations/test_p17_t02_query_builder.py",
+    "tests/integrations/test_p17_t02_service.py",
+    "tests/integrations/test_p17_t03_nl_query.py",
+    "tests/integrations/test_p17_t03_export.py",
+    "tests/integrations/test_p17_t04_commands.py",
+    "tests/integrations/test_p17_t04_api.py",
+    "tests/integrations/test_p17_t06_continuation.py",
+    "tests/integrations/test_p17_t07_export_marking.py",
+    "tests/integrations/test_p17_t08_catalog_cache.py",
+    "tests/integrations/test_p17_t08_history_status.py",
+    "tests/integrations/test_p17_t09_cache_lifecycle.py",
+]
+
+[[package]]
+path = "app/services/ai/rate_limits.py"
+tests = ["tests/ai/test_p21_t14_rate_limits.py", "tests/ai/test_p21_t14_rate_limits_pg.py"]

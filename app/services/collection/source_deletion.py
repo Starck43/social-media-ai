@@ -106,8 +106,8 @@ async def delete_source(
         raise ValueError("source_scope_invalid")
 
     from app.models import AgentTask, Source
-    from app.models.agent_task import agent_task_sources
     from app.models.managers.job_manager import JobManager
+    from app.models.scheduling.agent_task import agent_task_sources
 
     # Serialize with source-job admission: a collect/analyze occurrence admitted
     # for this source must be on one side of the delete, not in the middle of it.

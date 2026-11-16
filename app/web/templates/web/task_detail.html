@@ -61,6 +61,11 @@
     </div>
 {% else %}
 <div>
+    {% include "web/_task_tabs.html" %}
+    {% if planner_link is defined and planner_link %}
+      {% if planner_link['status'] == 'available' %}<p class="ui-muted">Связанное дело: <a class="underline" href="/app/planner/{{ planner_link['task'].id }}/edit">{{ planner_link['task'].title }}</a></p>
+      {% else %}<p class="ui-muted">Связанное дело удалено или недоступно.</p>{% endif %}
+    {% endif %}
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="min-w-0">
             {# `?from=jobs` — the queue links here per task, so when the reader
@@ -112,6 +117,10 @@
             </form>
             {% endif %}
         </div></div></template>
+    </div>
+
+    <div class="mt-6">
+        {% include "web/_task_plan_summary.html" %}
     </div>
 
     <div class="mt-6 grid items-start gap-4 lg:grid-cols-3">
@@ -166,7 +175,9 @@
                     <dd class="mt-1 text-slate-700 dark:text-slate-300">{{ scenario.name }}</dd>
                 </div>
                 {% endif %}
-                {% include "web/_task_collection_summary.html" %}
+                {% if not task_definition or task_definition.plan_status != 'available' %}
+                    {% include "web/_task_collection_summary.html" %}
+                {% endif %}
                 <div id="task-run-sources">
                     {% with source_inventory=latest_run.source_inventory, can_view_sources=latest_run.can_view_sources %}{% include "web/_task_run_sources.html" %}{% endwith %}
                 </div>
@@ -227,6 +238,7 @@
                         </td>
                         <td class="py-2.5 pr-4">
                             {% if job.status == 'done' %}
+                                {% if planner_link is defined and planner_link and planner_link['status'] == 'available' and perms and perms.can('plannertask', 'update') and perms.can('job', 'view') %}<a class="ml-2 underline" href="/app/task-hub/assignments/{{ task.id }}/result?job_id={{ job.id }}">Передать результат в дело</a>{% endif %}
                                 {# The badge carries the outcome, not just the status:
                                    the modal says «Выполнено частично» for the same
                                    run, and a green «готово» here would contradict it. #}
@@ -251,6 +263,33 @@
                                 {% set r = job.result if job.result is mapping else {} %}
                                 {% set items = r.get('items', r.get('new_items', '—')) %}
                                 {{ items }}
+                                {% set pipeline = pipeline_outcomes.get(job.id) %}
+                                {% if pipeline %}
+                                    <div class="mt-2 space-y-1 text-xs">
+                                        {% for stage_name, title in [('collect', 'Сбор'), ('analyze', 'Анализ'), ('digest', 'Дайджест')] %}
+                                            {% set stage = pipeline.stages.get(stage_name) %}
+                                            {% if stage %}
+                                                <div>{{ title }}: {{ {'complete': 'готово', 'started': 'выполняется', 'failed': 'ошибка', 'skipped': 'пропущено', 'unknown': 'статус неизвестен'}.get(stage.status, stage.status) }}
+                                                    {% if stage.counts %}· {{ stage.counts }}{% endif %}
+                                                    {% if stage.status == 'review_required' %}· требуется проверка{% endif %}
+                                                    {% if stage_name == 'digest' and stage.generated %}· создан без отправки{% endif %}
+                                                    {% if stage_name == 'digest' and stage.report_start %}· {{ stage.report_start }} — {{ stage.report_end }}{% endif %}
+                                                    {% if stage.delivery %}· доставка: {{ stage.delivery.status }} ({{ stage.delivery.sent_parts|default(0) }}/{{ stage.delivery.total_parts|default(0) }} частей){% endif %}
+                                                </div>
+                                                {% if stage.preview_text %}<details class="mt-1"><summary class="cursor-pointer">Предпросмотр дайджеста</summary><pre class="mt-1 whitespace-pre-wrap font-sans">{{ stage.preview_text }}</pre></details>{% endif %}
+                                                {% if stage_name == 'digest' and stage.generated and stage.preview_text and perms_can(request, 'digestrun', 'create') %}
+                                                    <form method="post" action="/app/tasks/{{ task.id }}/digest/{{ job.id }}/send"
+                                                          data-confirm="Отправить сохранённый дайджест адресатам этого workspace?"
+                                                          data-confirm-title="Подтвердить отправку" data-confirm-label="Отправить дайджест">
+                                                        <input type="hidden" name="_csrf" value="{{ csrf }}">
+                                                        <input type="hidden" name="confirmed" value="true">
+                                                        <button type="submit" class="mt-1 rounded border border-cyan-500 px-2 py-1 text-cyan-700 dark:text-cyan-300">Отправить дайджест…</button>
+                                                    </form>
+                                                {% endif %}
+                                            {% endif %}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
                             {% else %}
                                 —
                             {% endif %}

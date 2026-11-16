@@ -6,8 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
+__source_only__ = True
+
 from app.core.access_catalog import RESOURCES, resolve_permission_key, resource_for, workspace_grants
-from app.core.permissions import has_permission, has_permission_by_codename, has_role, permission_scope
+from app.core.permissions import has_permission, has_permission_by_codename, has_role, member_decision, permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models import ModelType, Permission, PlatformRole, User, WorkspaceRole
 from app.types import ActionType, PlatformRoleType, WorkspaceRoleType
@@ -41,12 +43,13 @@ def test_web_and_core_agree_without_platform_elevation(platform, role, model, ac
     membership = member(role.value)
     grants = workspace_grants(role.value)
     perms = WebPerms(actor, [membership], 11, grants)
-    # The platform owner reaches every console model by design; the other
-    # platform levels never gain personal-provider configuration from a workspace.
-    owner = platform is PlatformRoleType.SUPERUSER
+    # The personal LLM catalog (`e14c395`) follows the acting user: `configure`
+    # on one's own provider never asks a role, and never reaches the web
+    # console's workspace predicate — which answers workspace models only.
+    personal_catalog = True
     with tenant_scope(11), permission_scope(actor, is_owner=membership.is_owner, member_grants=grants):
         assert has_permission(actor, model, action) == perms.can(model, action)
-        assert has_permission(actor, "llmprovider", "configure") is owner
+        assert has_permission(actor, "llmprovider", "configure") is personal_catalog
         assert not perms.can("llmprovider", "configure")
     if role == WorkspaceRoleType.VIEWER and action == "delete":
         assert not perms.can(model, action)
@@ -82,6 +85,31 @@ def test_operator_global_data_context_does_not_bypass_action_permissions():
         assert not has_permission(actor, "source", "delete")
         assert not has_role(actor, PlatformRoleType.ADMIN)
         assert has_role(actor, PlatformRoleType.OPERATOR)
+
+
+def test_offboarding_journal_is_platform_superuser_only_even_with_stale_admin_grants():
+    journal = resource_for("WorkspaceOffboardingEvent")
+    assert journal is not None
+    assert journal.key == "audit.workspace_offboarding"
+    assert journal.workspace is False
+    assert journal.actions == frozenset({ActionType.VIEW, ActionType.EXPORT})
+    permissions = [
+        Permission(
+            action_type=action,
+            name=f"Stale grant {action.db_value}",
+            model_type=ModelType(
+                resource_key=journal.key,
+                model_name=journal.model_name,
+                table_name=journal.table_name,
+            ),
+        )
+        for action in (ActionType.VIEW, ActionType.EXPORT)
+    ]
+    admin = user("admin", permissions)
+    owner = user("superuser")
+    for action in (ActionType.VIEW, ActionType.EXPORT):
+        assert not admin.has_perm_for("WorkspaceOffboardingEvent", action)
+        assert owner.has_perm_for("WorkspaceOffboardingEvent", action)
 
 
 @pytest.mark.parametrize("role,ai,allowed", [("viewer", False, False), ("viewer", True, True), ("owner", False, True)])
@@ -123,7 +151,10 @@ def test_codename_is_derived_and_old_explicit_alias_resolves_same_right():
 
 
 def test_migration_catalog_and_presets_match_runtime_without_database():
-    path = Path(__file__).resolve().parents[2] / "migrations/versions/0096_split_access_roles_and_resources.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/migrations/legacy_definitions/0096_split_access_roles_and_resources.py"
+    )
     spec = importlib.util.spec_from_file_location("access_migration", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -134,16 +165,178 @@ def test_migration_catalog_and_presets_match_runtime_without_database():
     actual = {
         table: (row[0], row[1], set(row[2].split()), row[3], row[4]) for table, row in migration.RESOURCES.items()
     }
+    # P11-T12 added action-audit, P11-T28 added one workspace action, and
+    # P11-T29 added the platform offboarding journal after the 0096 snapshot.
+    # Keep that migration immutable and make each post-baseline resource explicit;
+    # every other resource identity and scope flag must still match.
+    actual["action_audit_events"] = ("audit.action_audit", "actionauditevent", {"view", "export"}, True, False)
+    actual["workspace_offboarding_events"] = (
+        "audit.workspace_offboarding",
+        "workspaceoffboardingevent",
+        {"view", "export"},
+        False,
+        False,
+    )
+    # Frozen post-0096 declarations: 0133 local connectors, 0130 contact core,
+    # and 0139 unified messages. P15-T09's outbox is catalog-only until its
+    # storage task; its metadata actions were approved in PR #417.
+    post_0096_resources = {
+        # P17-T05 capability-only catalog identities; no ORM tables are created.
+        "onec_data": ("onec.data", "onecdata", {"view", "export"}, True, False),
+        "onec_command": ("onec.command", "oneccommand", {"create", "configure"}, True, False),
+        # 0148 declares this resource and configure for owner/admin/manager.
+        "document_approvals": ("documents.approval", "documentapproval", {"configure"}, True, False),
+        "local_connectors": (
+            "integrations.local_connector",
+            "localconnector",
+            {"view", "create", "delete", "configure"},
+            True,
+            False,
+        ),
+        "contacts": (
+            "contacts.contact",
+            "contact",
+            {"view", "create", "update", "delete", "export"},
+            True,
+            False,
+        ),
+        "unified_messages": (
+            "comms.message",
+            "unifiedmessage",
+            {"view", "create", "update", "delete"},
+            True,
+            False,
+        ),
+        "outbox_messages": (
+            "comms.outbox",
+            "outboxmessage",
+            {"view", "update", "configure"},
+            True,
+            False,
+        ),
+        "planner_tasks": (
+            "planner.task",
+            "plannertask",
+            {"view", "create", "update", "delete"},
+            True,
+            False,
+        ),
+    }
+    assert post_0096_resources.keys().isdisjoint(actual)
+    actual.update(post_0096_resources)
+    key, model, actions, is_workspace, is_personal = actual["tenants"]
+    actual["tenants"] = (key, model, actions | {"delete"}, is_workspace, is_personal)
     assert expected == actual
+    # 0140 grants the planner matrix role by role (owner/admin/manager all four
+    # actions, analyst view/create/update, viewer view), matching the catalog.
+    # 0139 declares the message role matrix; P15-T09 approves the outbox matrix.
+    # Local connectors and contacts have only implicit owner/admin workspace
+    # grants in the current preset policy, with no grants for other roles.
+    post_0096_grants = {
+        "owner": {("integrations.local_connector", action) for action in ("view", "create", "delete", "configure")}
+        | {("contacts.contact", action) for action in ("view", "create", "update", "delete", "export")}
+        | {("comms.message", action) for action in ("view", "create", "update", "delete")}
+        | {("comms.outbox", action) for action in ("view", "update", "configure")}
+        | {("planner.task", action) for action in ("view", "create", "update", "delete")},
+        "admin": {("integrations.local_connector", action) for action in ("view", "create", "delete", "configure")}
+        | {("contacts.contact", action) for action in ("view", "create", "update", "delete", "export")}
+        | {("comms.message", action) for action in ("view", "create", "update", "delete")}
+        | {("comms.outbox", action) for action in ("view", "update", "configure")}
+        | {("planner.task", action) for action in ("view", "create", "update", "delete")},
+        "manager": {("comms.message", action) for action in ("view", "create", "update")}
+        | {("comms.outbox", action) for action in ("view", "update")}
+        | {("planner.task", action) for action in ("view", "create", "update", "delete")},
+        "analyst": {("comms.message", "view"), ("comms.outbox", "view"), ("planner.task", "view")}
+        | {("planner.task", action) for action in ("create", "update")},
+        "viewer": {("comms.message", "view"), ("comms.outbox", "view"), ("planner.task", "view")},
+    }
+    onec_grants = {
+        "owner": {
+            ("onec.data", "view"),
+            ("onec.data", "export"),
+            ("onec.command", "create"),
+            ("onec.command", "configure"),
+        },
+        "admin": {
+            ("onec.data", "view"),
+            ("onec.data", "export"),
+            ("onec.command", "create"),
+            ("onec.command", "configure"),
+        },
+        "manager": {("onec.data", "view"), ("onec.command", "create")},
+        "analyst": {("onec.data", "view")},
+        "viewer": set(),
+    }
     for role, pairs in migration._workspace_grant_pairs().items():
         canonical = {(resource_for(model).key, action.db_value) for model, action in workspace_grants(role)}
-        assert canonical == pairs
+        baseline_pairs = (
+            pairs
+            | (
+                {("audit.action_audit", "view"), ("audit.action_audit", "export")}
+                if role in ("owner", "admin")
+                else set()
+            )
+            | post_0096_grants[role]
+            | onec_grants[role]
+            | ({("documents.approval", "configure")} if role in ("owner", "admin", "manager") else set())
+        )
+        assert canonical == baseline_pairs
+
+
+def test_p15_t09_comms_outbox_preset_is_metadata_only():
+    resource = resource_for("comms.outbox")
+    assert resource is not None
+    assert (resource.model_name, resource.table_name, resource.workspace) == (
+        "outboxmessage",
+        "outbox_messages",
+        True,
+    )
+    assert resource.actions == {ActionType.VIEW, ActionType.UPDATE, ActionType.CONFIGURE}
+    for action in resource.actions:
+        assert resolve_permission_key(f"comms.outbox.{action.db_value}") == (resource, action)
+
+    expected_by_role = {
+        "owner": {ActionType.VIEW, ActionType.UPDATE, ActionType.CONFIGURE},
+        "admin": {ActionType.VIEW, ActionType.UPDATE, ActionType.CONFIGURE},
+        "manager": {ActionType.VIEW, ActionType.UPDATE},
+        "analyst": {ActionType.VIEW},
+        "viewer": {ActionType.VIEW},
+    }
+    for role, expected in expected_by_role.items():
+        grants = {action for model, action in workspace_grants(role) if model == resource.model_name}
+        assert grants == expected
+
+    # UPDATE is metadata editing only. D14 APPROVE remains unsupported and
+    # must fail closed; this catalog grants no send/approval authorization.
+    for action in ("create", "delete", "approve"):
+        assert resolve_permission_key(f"comms.outbox.{action}") is None
+
+
+def test_p15_t09_manager_update_is_metadata_not_approval():
+    actor = user("user")
+    membership = member("manager")
+    grants = workspace_grants("manager")
+    web_perms = WebPerms(actor, [membership], 11, grants)
+
+    with tenant_scope(11), permission_scope(actor, member_grants=grants):
+        assert member_decision(actor, "outboxmessage", ActionType.UPDATE) is True
+        assert has_permission(actor, "comms.outbox", ActionType.UPDATE)
+        assert has_permission_by_codename(actor, "comms.outbox.update")
+        assert not has_permission(actor, "comms.outbox", "approve")
+        assert not has_permission_by_codename(actor, "comms.outbox.approve")
+        assert member_decision(actor, "outboxmessage", "approve") is False
+
+    assert web_perms.can("comms.outbox", ActionType.UPDATE)
+    assert not web_perms.can("comms.outbox", "approve")
 
 
 def test_migration_permission_map_keeps_canonical_model_without_permissions(monkeypatch):
     import sqlite3
 
-    path = Path(__file__).resolve().parents[2] / "migrations/versions/0096_split_access_roles_and_resources.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/migrations/legacy_definitions/0096_split_access_roles_and_resources.py"
+    )
     spec = importlib.util.spec_from_file_location("access_migration_permission_map", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -204,7 +397,10 @@ def test_migration_retires_only_allowlisted_model_metadata_and_keeps_physical_da
 
     from sqlalchemy import create_engine, text
 
-    path = Path(__file__).resolve().parents[2] / "migrations/versions/0096_split_access_roles_and_resources.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/migrations/legacy_definitions/0096_split_access_roles_and_resources.py"
+    )
     spec = importlib.util.spec_from_file_location("access_migration_retirement", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -252,7 +448,10 @@ def test_migration_seeds_missing_resource_catalog_rows_idempotently():
 
     from sqlalchemy import create_engine, event, text
 
-    path = Path(__file__).resolve().parents[2] / "migrations/versions/0096_split_access_roles_and_resources.py"
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "scripts/migrations/legacy_definitions/0096_split_access_roles_and_resources.py"
+    )
     spec = importlib.util.spec_from_file_location("access_migration_model_type_seed", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -339,9 +538,12 @@ def test_migration_seeds_missing_resource_catalog_rows_idempotently():
 def test_operator_http_identity_loss_fails_closed_even_with_data_bypass():
     from app.core.permissions import platform_request_scope
 
+    # The bypass is data access, never a grant: the console answers with the
+    # operator's own `role_permission` rows (`docs/platform/ADMIN.md`), and only the
+    # platform owner holds the wildcard. Identity loss refuses either way.
     actor = user("admin")
     with tenant_scope(bypass=True), platform_request_scope(), permission_scope(actor):
-        assert has_permission(actor, "source", "delete")
+        assert not has_permission(actor, "source", "delete")
         with permission_scope(None):
             assert not has_permission(None, "source", "delete")
             assert not has_permission(actor, "source", "delete")

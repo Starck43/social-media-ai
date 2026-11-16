@@ -4,10 +4,12 @@ Owner command from the repository root:
     python tests/test_agent_runtime_log_privacy.py
 
 Reads app/agent/runtime.py from cwd, extracts selected function definitions only.
-No app imports, SQL, migrations, providers or messaging. Existing runtime gates
-are replaced only inside this test namespace. These are NOT full runtime or
-authorization acceptance tests. Synthetic markers only.
+Only the pure message-boundary module is imported; no runtime/model imports, SQL,
+migrations, providers or messaging. Existing runtime gates are replaced only
+inside this test namespace. These are NOT full runtime or authorization
+acceptance tests. Synthetic markers only.
 """
+
 from __future__ import annotations
 
 import ast
@@ -22,16 +24,32 @@ from types import ModuleType, SimpleNamespace
 from typing import Any, Optional
 from unittest.mock import AsyncMock, patch
 
+from app.core.presentation import MessageId, PresentationMessage, render_message
+
 PRIVATE = "synthetic-private-marker"
 SELECTED = {
-    "_runtime_error_code", "_log_runtime_failure", "_check_prompt_injection",
+    "_runtime_error_code",
+    "_log_runtime_failure",
+    "_check_prompt_injection",
     # The consent/cancel predicates the confirmation path now calls by name.
-    "_CONFIRM_VERDICTS", "_CANCEL_VERDICTS", "is_confirmation_verdict",
+    "_CONFIRM_VERDICTS",
+    "_CANCEL_VERDICTS",
+    "is_confirmation_verdict",
     # The budget probe runs before every model call; it must not need a DB.
-    "_spend_remaining", "_usage_ceiling", "tenant_daily_cost_limit", "_cost_today",
-    "_dispatch_or_stage", "_run_tool_loop", "_llm_error_reply", "_join_replies",
+    "_spend_remaining",
+    "_usage_ceiling",
+    "tenant_daily_cost_limit",
+    "_cost_today",
+    "_dispatch_or_stage",
+    "_run_tool_loop",
+    "_llm_error_reply",
+    "_join_replies",
     "tool_specs_for",
-    "_format_tool_result", "_handle_authorized_turn", "_pending_confirmation", "_clear_pending", "_patch_session_state",
+    "_format_tool_result",
+    "_handle_authorized_turn",
+    "_pending_confirmation",
+    "_clear_pending",
+    "_patch_session_state",
     # The confirmation path resolves a tool's declared right through the catalog.
     "_canonical_permission_key",
 }
@@ -79,9 +97,9 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         source = Path("app/agent/runtime.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         definitions = [
-            node for node in tree.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Assign))
-            and _selected(node)
+            node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Assign)) and _selected(node)
         ]
         self.capture = Capture()
         logger = logging.Logger("isolated-runtime-review", level=logging.DEBUG)
@@ -89,18 +107,32 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         # `_run_tool_loop` re-checks the fresh identity each iteration, including
         # whether the member may use AI chat at all.
         self.identity = SimpleNamespace(
-            user=object(), user_id=1, is_owner=False, member_grants=None, ai_chat_enabled=True,
-            actor_binding=lambda: {}, approval_binding=lambda: {},
+            user=object(),
+            user_id=1,
+            is_owner=False,
+            member_grants=None,
+            ai_chat_enabled=True,
+            actor_binding=lambda: {},
+            approval_binding=lambda: {},
         )
         self.ns = {
-            "Any": Any, "Optional": Optional, "RuntimeIdentity": Any,
-            "logger": logger, "logging": logging, "json": json, "re": re,
+            "Any": Any,
+            "Optional": Optional,
+            "RuntimeIdentity": Any,
+            "MessageId": MessageId,
+            "PresentationMessage": PresentationMessage,
+            "render_message": render_message,
+            "logger": logger,
+            "logging": logging,
+            "json": json,
+            "re": re,
             "settings": SimpleNamespace(AGENT_MAX_ITERATIONS=1),
             "refresh_runtime_identity": AsyncMock(return_value=self.identity),
             "session_matches_identity": lambda session, identity: True,
             "permission_scope": lambda *args, **kwargs: nullcontext(),
             "has_permission_by_codename": lambda *args: True,
-            "TOOL_REGISTRY": {}, "_record_usage": AsyncMock(),
+            "TOOL_REGISTRY": {},
+            "_record_usage": AsyncMock(),
             # The tool loop and the confirmation path run inside a memory actor
             # scope; the isolated module must be given one, like the real import.
             "memory_actor_scope": lambda *args, **kwargs: nullcontext(),
@@ -132,7 +164,11 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         call = AsyncMock(side_effect=RuntimeError(PRIVATE))
         self.ns["call_tool"] = call
         result, stopped = await self.ns["_dispatch_or_stage"](
-            Session(), "example_tool", {}, "synthetic-call-id", self.identity,
+            Session(),
+            "example_tool",
+            {},
+            "synthetic-call-id",
+            self.identity,
         )
         self.assertEqual(result, "Tool error: " + PRIVATE)  # Existing return contract, separate redaction scope.
         self.assertFalse(stopped)
@@ -142,6 +178,7 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
     async def test_llm_failure_retains_safe_reply_without_logging_body_or_traceback(self):
         chat = AsyncMock(side_effect=RuntimeError(PRIVATE))
         self.ns["_chat"] = chat
+        self.ns["_spend_remaining"] = AsyncMock(return_value=None)
         session = Session()
         result = await self.ns["_run_tool_loop"](session, [], [], None, self.identity)
         self.assertEqual(result, "Не удалось обратиться к языковой модели. Подробности в логах.")
@@ -149,7 +186,6 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(session.touches, 1)
         chat.assert_awaited_once_with([], [], budget=None)
         self.assert_logs_private()
-
 
     async def test_confirmed_tool_failure_keeps_flow_without_logging_private_error(self):
         session = Session()
@@ -173,6 +209,7 @@ class RuntimeLogPrivacyTests(unittest.IsolatedAsyncioTestCase):
         resume = AsyncMock(return_value=expected)
         self.ns["_run_tool_loop"] = resume
         manager = ModuleType("app.models.managers.agent_session_manager")
+
         async def patch_state(session_id, updates):
             self.assertEqual(session_id, session.id)
             state = dict(session.state)

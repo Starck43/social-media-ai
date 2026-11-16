@@ -1,0 +1,20 @@
+{# Icons are local, reviewed assets; never inline provider supplied SVG. #}
+{% macro provider_icon(provider) -%}
+{% if provider and provider.icon_asset %}<img src="{{ static_v(provider.icon_asset) }}" width="32" height="32" alt="" aria-hidden="true" class="inline-block align-middle shrink-0">{% endif %}
+{%- endmacro %}
+{% macro provider_header(provider, title, description, heading_id) -%}
+<div class="flex min-w-0 items-start gap-3">
+    {{ provider_icon(provider) }}
+    <div class="min-w-0">
+        <h2 id="{{ heading_id }}" class="text-sm font-semibold text-slate-900 dark:text-slate-100">{{ title }}</h2>
+        <p class="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{{ description }}</p>
+    </div>
+</div>
+{%- endmacro %}
+{% macro provider_fields(method, prefix, account_login=none) -%}
+{% for field in method.fields %}
+<label class="block text-sm" for="{{ prefix }}-{{ field.name }}">{{ field.label }}</label>
+<input class="ui-control w-full" id="{{ prefix }}-{{ field.name }}" name="{{ field.name }}" type="{{ 'password' if field.kind == 'secret' else field.kind }}" {% if field.required %}required{% endif %} maxlength="{{ 254 if field.kind == 'email' else 8192 }}" autocomplete="{{ 'new-password' if field.kind == 'secret' else 'off' }}" {% if account_login is not none and field.name == 'account_login' %}value="{{ account_login }}"{% elif field.example %}placeholder="{{ field.example }}"{% endif %}>
+{% if field.hint %}<p class="text-xs ui-muted">{{ field.hint }}</p>{% endif %}
+{% endfor %}
+{%- endmacro %}

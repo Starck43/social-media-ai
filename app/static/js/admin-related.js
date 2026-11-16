@@ -63,8 +63,10 @@
   };
   controls.forEach((control) => {
     const select = document.getElementById(control.field);
-    if (!select || select.tagName !== "SELECT" || select.disabled || select.hidden || select.hasAttribute("readonly") ||
-        select.dataset.permissionTransfer || select.closest("[hidden]")) return;
+    const transfer = select?.nextElementSibling?.matches('[data-filtered-select-ui="plain"]')
+      ? select.nextElementSibling : null;
+    if (!select || select.tagName !== "SELECT" || select.disabled || (select.hidden && !transfer) ||
+        select.hasAttribute("readonly") || select.dataset.permissionTransfer || select.parentElement.closest("[hidden]")) return;
     const bar = document.createElement("div");
     bar.className = "admin-related-actions";
     bar.setAttribute("role", "group");
@@ -124,6 +126,7 @@
       select.before(row);
       input.append(select);
       if (select2) input.append(select2);
+      if (transfer) input.append(transfer);
       row.append(input, bar);
       row.after(status);
     }

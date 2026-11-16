@@ -1,0 +1,56 @@
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="col-12">
+    <p class="text-secondary">Только ваши подключения. Изменение настроек доступно в настройках рабочего пространства.</p>
+    <div class="card">
+        <div class="card-header"><h2 class="card-title">Личные авторизации</h2></div>
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <thead><tr><th>Идентификатор</th><th>Сервис</th><th>Статус</th></tr></thead>
+                <tbody>
+                {% for row in accounts %}
+                <tr><td>{{ row.id }}</td><td>{{ row.service }}</td><td>{{ row.status }}</td></tr>
+                {% else %}
+                <tr><td colspan="3">Личных авторизаций нет.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card mt-3">
+        <div class="card-header"><h2 class="card-title">Подключения рабочего пространства</h2></div>
+        {% if workspace_available %}
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <thead><tr><th>Идентификатор</th><th>Название</th><th>Сервис</th><th>Статус</th></tr></thead>
+                <tbody>
+                {% for row in connections %}
+                <tr><td>{{ row.id }}</td><td>{{ row.label }}</td><td>{{ row.service }}</td><td>{{ row.status }}</td></tr>
+                {% else %}
+                <tr><td colspan="4">Подключений нет.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="card-body">Выберите доступное рабочее пространство в приложении.</div>
+        {% endif %}
+    </div>
+    {% if workspace_available %}
+    <div class="card mt-3">
+        <div class="card-header"><h2 class="card-title">Разрешения для пространства</h2></div>
+        <div class="table-responsive"><table class="table table-vcenter card-table">
+            <thead><tr><th>Идентификатор</th><th>Идентификатор авторизации</th><th>Действует</th></tr></thead>
+            <tbody>
+            {% for row in grants %}
+            <tr><td>{{ row.id }}</td><td>{{ row.authorization_id }}</td><td>{{ 'Да' if row.active else 'Нет' }}</td></tr>
+            {% else %}
+            <tr><td colspan="3">Разрешений нет или просмотр недоступен.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table></div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

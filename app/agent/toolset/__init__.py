@@ -2,4 +2,22 @@
 
 from __future__ import annotations
 
-from . import actions, collect, llm, reports, scenarios, sources, system, tasks  # noqa: F401
+from . import (  # noqa: F401
+    actions,
+    collect,
+    communications,
+    documents,
+    llm,
+    onec,
+    planner,
+    reports,
+    scenarios,
+    social_brief,
+    sources,
+    system,
+    tasks,
+    web_research,
+)
+
+planner.register_planner_tools()
+communications.register_communications_tools()

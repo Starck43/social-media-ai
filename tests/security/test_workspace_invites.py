@@ -130,7 +130,7 @@ async def test_owner_issues_a_link_that_binds_the_chosen_level() -> None:
 
 
 async def test_owner_level_and_unlisted_days_are_refused() -> None:
-    from app.models.tenant import TenantInvite
+    from app.models.tenancy.tenant import TenantInvite
 
     owner: User | None = None
     tenant_id = None
@@ -148,7 +148,7 @@ async def test_owner_level_and_unlisted_days_are_refused() -> None:
 
 
 async def test_a_member_who_does_not_manage_the_workspace_cannot_invite() -> None:
-    from app.models.tenant import TenantInvite
+    from app.models.tenancy.tenant import TenantInvite
 
     owner: User | None = None
     viewer: User | None = None
@@ -189,7 +189,14 @@ async def test_team_tab_shows_and_changes_the_member_level() -> None:
             resp = await c.post(f"/app/settings/members/{row.id}/role", data={"role": "manager", "_csrf": token})
             assert "Роль изменена" in resp.text
             assert member_roles.key_of(await tenant_users.get(id=row.id)) == "manager"
-            assert re.search(r'<option value="manager"\s+selected', resp.text)
+            # The role control is a popover select (`popover_select`): the chosen
+            # key sits in the hidden input and the matching option is marked.
+            assert re.search(rf'name="role" value="manager"[^>]*data-popover-value', resp.text) or re.search(
+                r'data-popover-value[^>]*value="manager"', resp.text
+            ), "the member's role control shows the new level"
+            assert re.search(r'data-popover-option="manager"[^>]*aria-selected="true"', resp.text) or re.search(
+                r'aria-selected="true"[^>]*data-popover-option="manager"', resp.text
+            ), "the manager option is the selected one"
     finally:
         await _cleanup(owner, member)
         await _drop_workspaces(tenant_id)

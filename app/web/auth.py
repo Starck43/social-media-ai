@@ -22,6 +22,13 @@ from app.models.managers.tenant_manager import (
     tenants,
 )
 from app.services.user.auth import authenticate
+from app.services.user.login_protection import (
+    LoginLocked,
+    clear_login_failures,
+    client_address,
+    guard_login,
+    record_login_failure,
+)
 from app.types import PlatformRoleType
 from app.utils.token import create_tokens_pair
 
@@ -44,18 +51,14 @@ async def _unique_slug(base: str) -> str:
     return slug
 
 
-async def _create_workspace(user: User, name: str) -> int:
+async def _create_workspace(user: User, name: str, *, session=None) -> int:
     """New tenant owned by `user` (web membership, role=owner). Returns tenant_id."""
-    from app.models import WorkspaceRole
-
-    owner_role = await WorkspaceRole.objects.get(codename="owner")
-    if owner_role is None:
-        raise RuntimeError("Workspace roles are not configured")
-    tenant = await tenants.create(
+    tenant = await tenants.create_owned_workspace(
+        user_id=user.id,
         name=name.strip()[:100] or f"{user.username}'s workspace",
         slug=await _unique_slug(_slugify(name or user.username)),
+        session=session,
     )
-    await TenantUserManager().add_web_member(tenant_id=tenant.id, user_id=user.id, role_id=owner_role.id)
     return tenant.id
 
 
@@ -83,12 +86,21 @@ async def login_submit(
 ):
     if not ensure_csrf(request, token):
         return render(request, "web/login.html", status_code=403, error="Сессия истекла, попробуйте ещё раз")
+    # The budget is shared with the console and the API and stored in the
+    # database: a new cookie does not hand the visitor another attempt.
+    address = client_address(request)
+    try:
+        await guard_login(username, address)
+    except LoginLocked:
+        return render(request, "web/login.html", status_code=400, error="Неверный логин или пароль")
     try:
         user = await authenticate(username, password, verify_password)
     except Exception:
-        # `authenticate` answers 400 for both wrong credentials and inactive users;
-        # the page only needs one generic message.
+        # `authenticate` answers 400 for wrong credentials, inactive users and the
+        # same generic message for both; the page only needs one generic message too.
+        await record_login_failure(username, address)
         return render(request, "web/login.html", status_code=400, error="Неверный логин или пароль")
+    await clear_login_failures(username)
     tokens = create_tokens_pair(subject=str(user.id))
     request.session["token"] = tokens["access_token"]
     return RedirectResponse(safe_next(next) or "/app/", status_code=302)
@@ -144,8 +156,17 @@ async def register_submit(
     viewer = await Role.objects.get(codename=PlatformRoleType.USER.value)
     if viewer is None:
         return render(request, "web/register.html", status_code=500, error="Не настроены роли — обратитесь к оператору")
-    user = await User.objects.create_user(username=username, email=email, password=password, role_id=viewer.id)
-    tenant_id = await _create_workspace(user, workspace or username)
+    from app.core.database import async_session_maker
+    from app.models.managers.tenant_manager import PlanLimitError
+
+    try:
+        async with async_session_maker() as session, session.begin():
+            user = await User.objects.create_user(
+                username=username, email=email, password=password, role_id=viewer.id, session=session
+            )
+            tenant_id = await _create_workspace(user, workspace or username, session=session)
+    except PlanLimitError as error:
+        return render(request, "web/register.html", status_code=409, error=str(error))
     tokens = create_tokens_pair(subject=str(user.id))
     request.session["token"] = tokens["access_token"]
     request.session["app_tenant_id"] = tenant_id
@@ -201,7 +222,13 @@ async def new_workspace(request: Request, name: str = Form(""), token: str = For
     if not ensure_csrf(request, token):
         add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
         return RedirectResponse("/app/invite", status_code=302)
-    tenant_id = await _create_workspace(request.state.web_user, name)
+    from app.models.managers.tenant_manager import PlanLimitError
+
+    try:
+        tenant_id = await _create_workspace(request.state.web_user, name)
+    except PlanLimitError as error:
+        add_flash(request, "error", str(error))
+        return RedirectResponse("/app/invite", status_code=302)
     request.session["app_tenant_id"] = tenant_id
     add_flash(request, "success", "Workspace создан.")
     return RedirectResponse("/app/", status_code=302)

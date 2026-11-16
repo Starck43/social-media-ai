@@ -1,0 +1,85 @@
+{% extends "web/base.html" %}
+
+{% block title %}Закупки и сравнение предложений — AI Assistant{% endblock %}
+{% block page_heading %}Сравнение предложений{% endblock %}
+
+{% block page_actions %}
+<a href="/app/documents" class="ui-control">← К документам</a>
+<a href="/app/settings?tab=connections" class="ui-control">Подключения</a>
+{% endblock %}
+
+{% block right_panel %}
+<div class="space-y-3 text-sm">
+    <h2 class="font-semibold">О записях</h2>
+    <p class="text-xs ui-muted">
+        Здесь показаны доступные сохранённые записи о предложениях. Проверяйте исходные данные перед принятием решения.
+    </p>
+    <p class="text-xs ui-muted">
+        Наличие записи не означает, что сравнение или согласование выполнено.
+    </p>
+</div>
+    {% include "web/_evidence_details.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6" data-p12-cases="cases-comparison">
+    {% include "web/_evidence_rows.html" %}
+
+    <details class="ui-card">
+        <summary class="cursor-pointer text-sm font-semibold">Подробнее о настройках подключений</summary>
+        <div class="mt-4">
+        <div class="space-y-1 mb-3">
+            <h3 class="text-sm font-semibold">Откуда поступают прайс-листы и как защищены настройки подключений (P12-T08)</h3>
+            <p class="text-xs ui-muted">
+                Чтобы настройка почты, облачных дисков и учётных систем была понятной и безопасной, параметры разделены на четыре независимых уровня (вместо смешивания всего в одном поле <code>Platform.params</code>):
+            </p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs border-collapse">
+                <thead>
+                    <tr class="border-b border-slate-200 dark:border-slate-800 ui-muted">
+                        <th class="py-2 pr-4">Что настраивается</th>
+                        <th class="py-2 px-4">Где хранится</th>
+                        <th class="py-2 pl-4">Кто отвечает за настройку</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
+                    <tr>
+                        <td class="py-2.5 pr-4">
+                            <div class="font-medium">1. Общие параметры платформы</div>
+                            <div class="ui-muted text-[11px]">Адрес API, версия протокола, адреса OAuth</div>
+                        </td>
+                        <td class="py-2.5 px-4">Существующий справочник <code>Platform.params</code>, без секретов и паролей</td>
+                        <td class="py-2.5 pl-4">Администратор системы</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2.5 pr-4">
+                            <div class="font-medium">2. Предустановки сервисов и описание формы</div>
+                            <div class="ui-muted text-[11px]">Mail.ru, Яндекс Почта, способы входа, необходимые поля, подсказки и правила проверки</div>
+                        </td>
+                        <td class="py-2.5 px-4">Версионируемый реестр в коде — <code>app/integrations/catalog/</code></td>
+                        <td class="py-2.5 pl-4">Разработчик вместе с адаптером</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2.5 pr-4">
+                            <div class="font-medium">3. Конкретное подключение компании</div>
+                            <div class="ui-muted text-[11px]">Понятное название, сервис, почтовый адрес, выбранный способ входа, разрешения и папки</div>
+                        </td>
+                        <td class="py-2.5 px-4">Отдельная сущность <code>Connection</code> в БД, привязанная к рабочему пространству и владельцу</td>
+                        <td class="py-2.5 pl-4">Пользователь с соответствующими правами</td>
+                    </tr>
+                    <tr>
+                        <td class="py-2.5 pr-4">
+                            <div class="font-medium">4. Пароли, токены доступа и секреты</div>
+                            <div class="ui-muted text-[11px]">Пароли приложений, access/refresh tokens и ключи</div>
+                        </td>
+                        <td class="py-2.5 px-4">Зашифрованное хранилище секретов, по ссылке из <code>Connection</code></td>
+                        <td class="py-2.5 pl-4">Владелец доступа; интерфейс никогда не раскрывает сохранённые значения</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    </details>
+</div>
+{% endblock %}

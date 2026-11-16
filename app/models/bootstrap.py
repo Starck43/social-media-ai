@@ -7,9 +7,20 @@ def bind_managers(models):
     from .managers.base_manager import BaseManager
     from .managers.role_manager import RoleManager
 
+    knowledge = import_module("app.models.managers.knowledge_manager")
+    models.KnowledgeSnippet.objects = knowledge.EvidenceManager(models.KnowledgeSnippet)
+    models.KnowledgeDocument.objects = knowledge.EvidenceManager(models.KnowledgeDocument)
+    models.DocumentRevision.objects = knowledge.DocumentRevisionManager(models.DocumentRevision)
     models.PlatformRole.objects = RoleManager(models.PlatformRole)
+    models.ActionAuditEvent.objects = import_module(
+        "app.models.managers.action_audit_event_manager"
+    ).ActionAuditEventManager()
+    models.WorkspaceOffboardingEvent.objects = import_module(
+        "app.models.managers.workspace_offboarding_manager"
+    ).WorkspaceOffboardingManager()
     models.WorkspaceRole.objects = BaseManager(models.WorkspaceRole)
     models.ModelType.objects = BaseManager(models.ModelType)
+    models.LoginAttempt.objects = BaseManager(models.LoginAttempt)
     models.LLMOutcomeEvent.objects = import_module(
         "app.models.managers.llm_outcome_event_manager"
     ).LLMOutcomeEventManager()
@@ -17,6 +28,7 @@ def bind_managers(models):
     models.AgentFeedback.objects = import_module("app.models.managers.agent_feedback_manager").AgentFeedbackManager()
     models.AgentSession.objects = import_module("app.models.managers.agent_session_manager").AgentSessionManager()
     models.AgentMessage.objects = import_module("app.models.managers.agent_message_manager").AgentMessageManager()
+    models.EntitlementUsage.objects = import_module("app.models.managers.entitlement_manager").EntitlementManager()
     models.Tenant.objects = import_module("app.models.managers.tenant_manager").TenantManager()
     models.TenantUser.objects = import_module("app.models.managers.tenant_manager").TenantUserManager()
     models.TenantInvite.objects = import_module("app.models.managers.tenant_manager").TenantInviteManager()
@@ -26,15 +38,16 @@ def bind_managers(models):
         "app.models.managers.llm_dispatch_receipt_manager"
     ).LLMDispatchReceiptManager()
     models.DigestRun.objects = import_module("app.models.managers.digest_run_manager").DigestRunManager()
+    models.NotificationReceipt.objects = import_module(
+        "app.models.managers.notification_receipt_manager"
+    ).NotificationReceiptManager()
     models.Notification.objects = import_module("app.models.managers.notification_manager").NotificationManager()
     models.NotificationPreference.objects = import_module(
         "app.models.managers.notification_preference_manager"
     ).NotificationPreferenceManager()
     models.Job.objects = import_module("app.models.managers.job_manager").JobManager()
     models.CollectedItem.objects = import_module("app.models.managers.collected_item_manager").CollectedItemManager()
-    models.CollectionSeen.objects = import_module(
-        "app.models.managers.collection_seen_manager"
-    ).CollectionSeenManager()
+    models.CollectionSeen.objects = import_module("app.models.managers.collection_seen_manager").CollectionSeenManager()
     models.CollectionCandidate.objects = import_module(
         "app.models.managers.collection_candidate_manager"
     ).CollectionCandidateManager()
@@ -44,6 +57,32 @@ def bind_managers(models):
     models.AgentMemory.objects = import_module("app.models.managers.agent_memory_manager").AgentMemoryManager()
     models.Platform.objects = import_module("app.models.managers.platform_manager").PlatformManager()
     models.LLMModel.objects = import_module("app.models.managers.llm_model_manager").LLMModelManager()
+    llm_catalog = import_module("app.models.managers.llm_catalog_manager")
+    models.LLMCatalog.objects = llm_catalog.LLMCatalogManager()
+    models.PlanModelGrant.objects = llm_catalog.PlanModelGrantManager()
+    models.Contact.objects = import_module("app.models.managers.contact_manager").ContactManager()
+    models.ContactIdentity.objects = BaseManager(models.ContactIdentity)
+    models.ContactConsent.objects = BaseManager(models.ContactConsent)
+    models.ContactMergeJournal.objects = BaseManager(models.ContactMergeJournal)
+    models.PlannerTask.objects = import_module("app.models.planner.manager").PlannerManager()
+    models.LocalConnector.objects = BaseManager(models.LocalConnector)
+    models.LocalConnectorPairing.objects = BaseManager(models.LocalConnectorPairing)
+    models.LocalConnectorRequest.objects = BaseManager(models.LocalConnectorRequest)
+    crm_managers = import_module("app.models.managers.crm_entity_manager")
+    models.CrmEntity.objects = crm_managers.CrmEntityManager()
+    models.GreetingHistory.objects = crm_managers.GreetingHistoryManager()
+    comms_managers = import_module("app.models.managers.unified_message_manager")
+    models.UnifiedMessage.objects = comms_managers.UnifiedMessageManager()
+    models.MessageThread.objects = comms_managers.MessageThreadManager()
+    models.ContactChannelStat.objects = comms_managers.ContactChannelStatManager()
+    models.ThreadTriageDecision.objects = BaseManager(models.ThreadTriageDecision)
+    models.OutboxMessage.objects = BaseManager(models.OutboxMessage)
+    models.OutboxTarget.objects = BaseManager(models.OutboxTarget)
+    models.TrustedOutboundHost.objects = import_module(
+        "app.models.managers.trusted_outbound_host_manager"
+    ).TrustedOutboundHostManager()
+    models.WorkspaceConnection.objects = BaseManager(models.WorkspaceConnection)
+    models.WorkspaceConnectionSecret.objects = BaseManager(models.WorkspaceConnectionSecret)
     models.UserCredential.objects = import_module("app.models.managers.user_credential_manager").UserCredentialManager()
     models.LLMAttempt.objects = import_module("app.models.managers.llm_attempt_manager").LLMAttemptManager()
     models.AIAnalytics.objects = import_module("app.models.managers.ai_analytics_manager").AIAnalyticsManager()
@@ -69,6 +108,8 @@ def bind_managers(models):
     models.PersonalLLMBillingIncident.objects = BaseManager(models.PersonalLLMBillingIncident)
     models.LLMProvider.objects = import_module("app.models.managers.llm_provider_manager").LLMProviderManager()
     models.BotAction.objects = import_module("app.models.managers.bot_action_manager").BotActionManager()
+    models.BusinessCommand.objects = BaseManager(models.BusinessCommand)
+    models.BusinessCommandTarget.objects = BaseManager(models.BusinessCommandTarget)
     models.Source.objects = import_module("app.models.managers.source_manager").SourceManager()
     models.AgentTask.objects = import_module("app.models.managers.agent_task_manager").AgentTaskManager()
     models.AgentScenario.objects = import_module("app.models.managers.agent_scenario_manager").AgentScenarioManager()

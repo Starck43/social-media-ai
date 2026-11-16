@@ -25,7 +25,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, CheckConstraint, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped
 
 from ...core.config import settings
@@ -45,6 +45,13 @@ class UserCredential(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_user_credentials_user_id", "user_id"),
         Index("ix_user_credentials_user_platform", "user_id", "platform"),
+        CheckConstraint(
+            "platform <> 'vk' OR kind <> 'user_token' OR ("
+            "(meta IS NULL OR NOT (CAST(meta AS jsonb) ? 'refresh_token')) AND "
+            "((COALESCE(CAST(meta AS jsonb) -> 'refresh_available', 'false'::jsonb) = 'true'::jsonb) "
+            "= (refresh_secret_encrypted IS NOT NULL)))",
+            name="ck_user_credentials_vk_refresh_secret",
+        ),
         {"schema": settings.DB_SCHEMA},
     )
 
@@ -56,6 +63,7 @@ class UserCredential(Base, TimestampMixin):
     kind: Mapped[str] = Column(String(30), nullable=False)  # 'user_token' | 'session' | ...
     label: Mapped[str | None] = Column(String(100), nullable=True)
     secret_encrypted: Mapped[str] = Column(Text, nullable=False)
+    refresh_secret_encrypted: Mapped[str | None] = Column(Text, nullable=True)
     expires_at: Mapped[datetime | None] = Column(DateTime(timezone=True), nullable=True)
     meta: Mapped[dict[str, Any] | None] = Column(JSON, nullable=True)
     is_active: Mapped[bool] = Column(Boolean, nullable=False, default=True, server_default="true")

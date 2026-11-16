@@ -51,12 +51,19 @@ async def connection_authorize(request: Request, platform: str, next: str = ""):
         return RedirectResponse(BACK, status_code=302)
 
     if platform == "vk":
+        from app.services.social.platform_config import PlatformConfigurationError
         from app.services.social.vk_oauth import build_authorize_url
 
         try:
             url = await build_authorize_url(tenant_id, user_id=user_id)
-        except RuntimeError as e:
-            add_flash(request, "error", f"{e}. Задайте VK_APP_ID / VK_CLIENT_ACCESS_KEY в конфигурации")
+        except (PlatformConfigurationError, RuntimeError):
+            # Exception text may contain sensitive values; never echo it to the browser.
+            add_flash(
+                request,
+                "error",
+                "Не удалось начать авторизацию VK. Обратитесь к оператору для проверки "
+                "VK_APP_ID и общей конфигурации платформы.",
+            )
             return RedirectResponse(BACK, status_code=302)
         return RedirectResponse(url, status_code=302)
 

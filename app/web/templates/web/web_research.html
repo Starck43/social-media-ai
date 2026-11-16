@@ -1,0 +1,187 @@
+{% extends "web/base.html" %}
+{% from "web/_macros.html" import control %}
+
+{% block title %}Веб-ресёрч и разбор сайтов — AI Assistant{% endblock %}
+{% block page_heading %}Веб-ресёрч и чтение публичных страниц{% endblock %}
+{% block page_actions %}
+<a href="/app/knowledge" class="ui-control">← К базе знаний</a>
+<a href="/app/documents" class="ui-control">Документы и черновики</a>
+<a href="/app/chat" class="ui-control">Чат с агентом</a>
+{% endblock %}
+
+{% block right_panel %}
+<div class="space-y-4 text-sm" data-p20-web-research-panel="status">
+    <div class="ui-card space-y-2">
+        <h2 class="font-semibold">Движок и безопасность</h2>
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-cyan-950/80 text-cyan-300 border border-cyan-700/50">
+                {{ status.label }}
+            </span>
+            {% if status.chromium_default_active %}
+            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">
+                Chromium default под капотом
+            </span>
+            {% endif %}
+        </div>
+        <p class="text-xs ui-muted">{{ status.note }}</p>
+        <div class="pt-2 border-t border-slate-800 text-xs space-y-1">
+            <div>Лимит запросов сегодня: <strong>{{ status.budget.daily_remaining }}</strong> из {{ status.budget.daily_quota }}</div>
+            <div>Макс. страниц за запуск: <strong>{{ status.budget.max_fetches_per_run }}</strong></div>
+        </div>
+    </div>
+
+    <div class="ui-card space-y-2">
+        <h3 class="font-semibold text-xs uppercase tracking-wider ui-muted">Защита чтения (P14-T09 / P20-T12)</h3>
+        <ul class="text-xs ui-muted space-y-1 list-disc pl-4">
+            <li>Блокировка локальных, приватных и metadata IP (SSRF + DNS rebinding).</li>
+            <li>Соблюдение <code>robots.txt</code>, лимит размера (500 КБ) и времени (10 с).</li>
+            <li>Без авторизации, отправки форм и решения CAPTCHA.</li>
+            <li>Текст страниц маркируется как недоверенный (защита от prompt injection).</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6" data-p20-web-research="workspace">
+    <section class="ui-card space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <h2 class="text-sm font-semibold">Сценарии применения в приложении</h2>
+                <p class="text-xs ui-muted">Выберите задачу: быстрый поиск, разбор сайта контрагента для CRM/Базы знаний, проверка фактов для документа или шаг поручения агенту.</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3" data-p20-web-research="presets">
+            {% for item in presets %}
+            <a href="/app/knowledge/research?preset={{ item.key }}&q={{ query|urlencode }}&url={{ target_url|urlencode }}"
+               class="p-3 rounded border text-left transition {{ 'border-cyan-500 bg-cyan-950/30' if active_preset == item.key else 'border-slate-800 hover:border-slate-700' }}">
+                <div class="text-xs font-semibold">{{ item.title }}</div>
+                <div class="mt-1 text-xs ui-muted">{{ item.description }}</div>
+            </a>
+            {% endfor %}
+        </div>
+
+        <form method="post" action="/app/knowledge/research" class="space-y-3 pt-2 border-t border-slate-800">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <input type="hidden" name="preset" value="{{ active_preset }}">
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label for="wr-query" class="block text-xs font-medium mb-1">Поисковый запрос или тема («найди в интернете»)</label>
+                    <input id="wr-query" name="query" value="{{ query }}" maxlength="400"
+                           placeholder="Например: условия поставки и реквизиты ООО Вектор"
+                           class="{{ control('w-full') }}">
+                </div>
+                <div>
+                    <label for="wr-url" class="block text-xs font-medium mb-1">Публичный URL страницы («разбери сайт», необязательно)</label>
+                    <input id="wr-url" name="target_url" value="{{ target_url }}" maxlength="2000"
+                           placeholder="https://example.com/about"
+                           class="{{ control('w-full') }}">
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                {% if can_save_evidence %}
+                <label class="inline-flex items-center gap-2 text-xs">
+                    <input type="checkbox" name="save_evidence" value="true">
+                    <span>Сохранить проверенные живые снимки страниц в Базу знаний (SHA-256)</span>
+                </label>
+                {% else %}
+                <span class="text-xs ui-muted">Режим чтения (без сохранения в каталог)</span>
+                {% endif %}
+                <button type="submit" class="ui-control font-medium">Выполнить исследование</button>
+            </div>
+        </form>
+    </section>
+
+    {% if run_result %}
+    <section class="ui-card space-y-4" data-p20-web-research="result">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="text-sm font-semibold">Результат: {{ run_result.preset_title }}</h2>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span class="px-2 py-0.5 rounded bg-slate-800 text-slate-200">
+                    Провайдер: {{ run_result.provider_used }}
+                </span>
+                {% if run_result.is_stub %}
+                <span class="px-2 py-0.5 rounded bg-amber-950/90 text-amber-300 border border-amber-700/60" data-p20-stub-badge="true">
+                    ТЕСТОВАЯ ЗАГЛУШКА O-5 — НЕ ЖИВОЙ ИСТОЧНИК
+                </span>
+                {% else %}
+                <span class="px-2 py-0.5 rounded bg-emerald-950/90 text-emerald-300 border border-emerald-700/60">
+                    Покрытие цитатами: {{ (run_result.citation_coverage * 100)|round(0)|int }}%
+                </span>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if run_result.is_stub and run_result.stub_warning %}
+        <div class="p-3 rounded border border-amber-700/60 bg-amber-950/40 text-xs text-amber-200" role="alert">
+            {{ run_result.stub_warning }}
+        </div>
+        {% endif %}
+
+        <div class="p-3 rounded bg-slate-900/70 border border-slate-800 text-xs whitespace-pre-wrap">{{ run_result.summary_text }}</div>
+
+        {% if run_result.pages %}
+        <div class="space-y-3">
+            <h3 class="text-xs font-semibold uppercase tracking-wider ui-muted">Проверенные снимки публичных страниц</h3>
+            {% for page in run_result.pages %}
+            <article class="p-3 rounded border border-slate-800 space-y-2">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="font-medium text-sm">{{ page.title }}</div>
+                    <code class="text-xs ui-muted">{{ page.content_hash[:24] }}…</code>
+                </div>
+                <div class="text-xs ui-muted break-all">
+                    URL: {{ page.canonical_url }} · Статус: {{ page.status_code }} · Размер: {{ page.byte_length }} байт
+                </div>
+                {% if page.prompt_injection_detected %}
+                <div class="text-xs text-amber-300">
+                    ⚠️ Обнаружены и нейтрализованы подозрительные инструкции во внешнем тексте: {{ page.injection_markers|join(", ") }}
+                </div>
+                {% endif %}
+                <p class="text-xs">{{ page.excerpt }}</p>
+            </article>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if run_result.refusals %}
+        <div class="space-y-2">
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-rose-300">Отклонённые адреса</h3>
+            {% for ref in run_result.refusals %}
+            <div class="p-2 rounded border border-rose-800/60 bg-rose-950/30 text-xs text-rose-200">
+                <strong>{{ ref.url }}</strong> — {{ ref.message }} (<code>{{ ref.code }}</code>)
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="pt-3 border-t border-slate-800 flex flex-wrap gap-2">
+            {% for act in run_result.recommended_actions %}
+            <a href="{{ act.href }}" class="ui-control text-xs">{{ act.label }}</a>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if saved_snapshots %}
+    <section class="ui-card space-y-3" data-p20-web-research="saved-snapshots">
+        <h2 class="text-sm font-semibold">Сохранённые снимки страниц текущего пространства</h2>
+        <div class="space-y-2">
+            {% for snap in saved_snapshots %}
+            <div class="p-3 rounded border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div>
+                    <div class="font-medium">{{ snap.title }}</div>
+                    <div class="ui-muted">{{ snap.source_ref }} · <code>{{ snap.revision_hash[:24] }}…</code></div>
+                </div>
+                <a href="/app/chat?context_type=knowledge&context_id={{ snap.id }}&boundary={{ snap.data_boundary }}" class="ui-control">
+                    Передать в чат
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

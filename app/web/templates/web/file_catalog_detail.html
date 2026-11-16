@@ -1,0 +1,41 @@
+{% extends "web/base.html" %}
+{% block title %}{{ file.name }} — Файлы{% endblock %}
+{% block page_heading %}Карточка файла{% endblock %}
+{% block page_actions %}<a href="/app/knowledge/files?connection_id={{ connection_id }}" class="ui-control">← К файлам папки</a>{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ static_v('css/file_catalog.css') }}">{% endblock %}
+{% block content %}
+<div class="file-catalog" data-file-catalog-detail>
+    <section class="ui-card file-catalog-intro">
+        <div>
+            <h2 class="file-catalog-detail-name">{{ file.name }}</h2>
+            <p>{{ 'Папка' if file.kind == 'dir' else 'Файл' }} на Яндекс.Диске · Облачный каталог</p>
+        </div>
+        <span class="file-catalog-tag">Только метаданные</span>
+    </section>
+    <section class="ui-card" aria-labelledby="file-original-heading">
+        <h2 id="file-original-heading">Оригинал</h2>
+        {% if workspace_actions|default(false) %}<p><a class="ui-control" href="/app/knowledge/files/{{ file.id }}/workspace?connection_id={{ connection_id }}">Чтение и приватные результаты</a></p>{% endif %}
+        <p class="file-catalog-path">{{ file.path }}</p>
+        <p class="file-catalog-note">Сведения получены {{ file.observed_at|human_dt(tz=_tz) }}. Существование и содержимое текущего оригинала не проверены.</p>
+        <p>{% if workspace_actions|default(false) %}Файл можно запросить отдельно в разделе чтения. Здесь сохранены только метаданные, а не копия файла.{% else %}Открытие оригинала пока недоступно. Здесь сохранены только название и тип, а не копия файла. Ссылка не создаётся из сохранённого пути.{% endif %}</p>
+    </section>
+    <section class="ui-card" aria-labelledby="file-insights-heading">
+        <h2 id="file-insights-heading">Выводы агента</h2>
+        <p>Выводы для этого файла в каталоге не сохранены. Анализ из карточки пока недоступен.</p>
+    </section>
+    <section class="ui-card" aria-labelledby="file-history-heading">
+        <h2 id="file-history-heading">История сведений</h2>
+        <p class="file-catalog-note">Наблюдения названия и типа, не версии содержимого и не резервные копии.</p>
+        <ol class="file-catalog-history">
+            {% for item in file.observations %}
+            <li><span>{{ item.observed_at|human_dt(tz=_tz) }}</span><span>{{ item.name }} · {{ 'Папка' if item.kind == 'dir' else 'Файл' }}</span></li>
+            {% endfor %}
+        </ol>
+    </section>
+    <section class="ui-card" aria-labelledby="file-access-heading">
+        <h2 id="file-access-heading">Доступ и хранение</h2>
+        <p>Личное подключение: сведения доступны только его владельцу с действующим доступом к папке. Права проверяются при каждом просмотре.</p>
+        <p class="file-catalog-note">Байты оригинала не хранятся. Локальная обработка, общий доступ, изменение и удаление оригинала здесь недоступны.</p>
+    </section>
+</div>
+{% endblock %}

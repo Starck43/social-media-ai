@@ -116,6 +116,24 @@ def _unknown_variables(draft: Any) -> list[str]:
     return unknown
 
 
+def _prompt_warnings(draft: Any) -> list[str]:
+    """Explain task-bound prompt placeholders and targets that callers must supply."""
+    warnings: list[str] = []
+    if "{payload_instruction}" not in (draft.base_prompt or ""):
+        warnings.append(
+            "Промпт не содержит {payload_instruction}; сценарий не получит конкретные цели и условия из задачи."
+        )
+    from app.services.ai.param_registry import missing_target_params
+
+    missing = missing_target_params(draft.analysis_types, {})
+    if missing:
+        warnings.append("При создании задачи укажите цели для сценария: " + ", ".join(missing))
+    unknown = _unknown_variables(draft)
+    if unknown:
+        warnings.append("Неизвестные переменные промпта останутся незаполненными: " + ", ".join(unknown))
+    return warnings
+
+
 async def _save_preferences(draft: Any) -> dict[str, Any]:
     """Remember the choices this scenario was created with.
 
@@ -251,6 +269,11 @@ async def scenario_suggest_prompt(description: str) -> dict[str, Any]:
         "ok": True,
         "unknown_variables": ScenarioBuilder.unknown_variables(prompt),
         "preview": prompt if len(prompt) <= 400 else prompt[:400] + "…",
+        "warnings": (
+            []
+            if "{payload_instruction}" in prompt
+            else ["Промпт не содержит {payload_instruction}; добавьте его, чтобы использовать цели из задачи."]
+        ),
     }
 
 
@@ -275,6 +298,11 @@ async def scenario_validate_prompt(prompt: str) -> dict[str, Any]:
         "ok": not unknown,
         "unknown_variables": unknown,
         "available_variables": sorted(ScenarioBuilder.base_variables()),
+        "warnings": (
+            []
+            if "{payload_instruction}" in (prompt or "")
+            else ["Промпт не содержит {payload_instruction}; цели из задачи не попадут в этот текст явно."]
+        ),
     }
 
 
@@ -299,7 +327,10 @@ async def scenario_validate_prompt(prompt: str) -> dict[str, Any]:
             "content_types": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "Какие форматы умеет анализировать: text, image, video, audio (legacy posts/comments/videos тоже принимаются)",
+                "description": (
+                    "Какие форматы умеет анализировать: text, image, video, audio "
+                    "(legacy posts/comments/videos тоже принимаются)"
+                ),
             },
             "analysis_types": {
                 "type": "array",
@@ -389,6 +420,7 @@ async def scenario_create(
         "status": "created",
         "scenario": _brief(scenario),
         "unknown_variables": _unknown_variables(draft),
+        "warnings": _prompt_warnings(draft),
     }
 
 
@@ -481,7 +513,12 @@ async def scenario_update(id: int, changes: dict[str, Any]) -> dict[str, Any]:
 
     await _save_preferences(draft)
     stored = await AgentScenario.objects.get(id=scenario.id)
-    return {"status": "updated", "scenario": _full(stored), "unknown_variables": unknown_vars}
+    return {
+        "status": "updated",
+        "scenario": _full(stored),
+        "unknown_variables": unknown_vars,
+        "warnings": _prompt_warnings(draft),
+    }
 
 
 @tool(
@@ -556,6 +593,7 @@ async def scenario_clone(source_id: int, new_name: str, changes: Optional[dict[s
         "source_id": source.id,
         "scenario": _full(clone),
         "unknown_variables": _unknown_variables(draft),
+        "warnings": _prompt_warnings(draft),
     }
 
 

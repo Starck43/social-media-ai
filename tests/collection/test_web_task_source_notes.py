@@ -1,4 +1,4 @@
-"""Source-isolated checks for run-now modal per-source chips; no app imports.
+"""Source-isolated checks for run-now modal per-source chips; no runtime imports.
 
 Run directly: python tests/test_web_task_source_notes.py
 Covers the two row shapes `_source_links` renders: `collect` per-source rows
@@ -14,11 +14,13 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from app.core.presentation import MessageId, PresentationMessage, render_message
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_source_note_functions():
-    path = ROOT / "app/web/tasks.py"
+    path = ROOT / "app/web/task_presenters.py"
     tree = ast.parse(path.read_text())
     functions = {"_plural", "_source_note", "_source_links"}
     selected = []
@@ -42,7 +44,12 @@ def load_source_note_functions():
             return few
         return many
 
-    namespace: dict = {"plural": plural}
+    namespace: dict = {
+        "plural": plural,
+        "MessageId": MessageId,
+        "PresentationMessage": PresentationMessage,
+        "render_message": render_message,
+    }
     exec(compile(ast.fix_missing_locations(module), str(path), "exec"), namespace)
     return namespace["_source_note"], namespace["_source_links"]
 
@@ -73,7 +80,7 @@ class WebTaskSourceChipTests(unittest.TestCase):
 
     def test_failed_analysis_does_not_read_as_no_new_data(self):
         # The exact shape recorded by the run that surfaced the defect.
-        self.assertEqual(self.note(self.analyze_row()), "ошибка")
+        self.assertEqual(self.note(self.analyze_row()), "ошибка · failed_output")
 
     def test_failed_analysis_chip_is_marked_as_error(self):
         links = self.links_for(self.analyze_row())
@@ -82,7 +89,7 @@ class WebTaskSourceChipTests(unittest.TestCase):
     def test_collection_error_folded_into_row_is_error_too(self):
         # The handler folds a failed collect stage into the row's error flag.
         row = self.analyze_row(collection={"outcome": "error", "error": True})
-        self.assertEqual(self.note(row), "ошибка")
+        self.assertEqual(self.note(row), "ошибка · failed_output")
         self.assertTrue(self.links_for(row)[0]["error"])
 
     def test_successful_analysis_result_count_wins(self):

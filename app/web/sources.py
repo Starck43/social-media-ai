@@ -1,4 +1,4 @@
-"""Sources CRUD for `/app/sources` (docs/API.md).
+"""Sources CRUD for `/app/sources` (docs/platform/API.md).
 
 List + add + edit + toggle + delete + a per-source detail page. Sources are
 scoped to the current workspace.
@@ -26,8 +26,8 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func
 
-from app.models.collected_item import CollectedItem
-from app.models.source import Source
+from app.models.collection.collected_item import CollectedItem
+from app.models.collection.source import Source
 from app.services.social.connections import source_connection_status, source_connection_statuses
 from app.types import SourceType
 
@@ -64,7 +64,7 @@ def _clean_params(base: dict | None = None) -> dict:
     """A copy of the source's collection params for editing.
 
     Whose items are analysed is a task property (`tracked_users`), never a source
-    property (`docs/design/task-selection.md`), so nothing author-related is
+    property (`docs/connectors/COLLECTION.md#task-selection-contract`), so nothing author-related is
     written here.
     """
     return dict(base or {})
@@ -72,8 +72,8 @@ def _clean_params(base: dict | None = None) -> dict:
 
 async def _workspace_members(tenant_id: int) -> list:
     """Web members of a workspace — the only valid `token_owner` choices."""
+    from app.models.identity.user import User
     from app.models.managers.tenant_manager import tenant_users
-    from app.models.user import User
 
     memberships = await tenant_users.web_memberships_for_tenant(tenant_id)
     if not memberships:
@@ -87,9 +87,10 @@ async def _workspace_members(tenant_id: int) -> list:
 def _validate_token_owner(form_value: str, member_ids: set[int]) -> tuple[int | None, str | None]:
     """Resolve the posted `token_owner` to a member id, or report why not.
 
-    Empty means "no explicit owner" — collection then falls back to the
-    workspace owner (`owner.resolve_source_owner`). A value that is not an
-    active member is an error, not something to persist and drop later.
+    Empty means "no explicit pin" — collection then uses the credential of the
+    member who added the source (`Source.owner_user_id`), never the workspace
+    owner's. A value that is not an active member is an error, not something to
+    persist and drop later.
     """
     raw = (form_value or "").strip()
     if not raw:
@@ -103,13 +104,13 @@ def _validate_token_owner(form_value: str, member_ids: set[int]) -> tuple[int | 
 
 
 async def _platforms():
-    from app.models.platform import Platform
+    from app.models.collection.platform import Platform
 
     return await Platform.objects.order_by(Platform.id)
 
 
 async def _resolve_platform(form_value: str):
-    from app.models.platform import Platform
+    from app.models.collection.platform import Platform
     from app.types import PlatformType
 
     pt = PlatformType.get_by_value(form_value)
@@ -246,6 +247,12 @@ async def sources_list(request: Request):
     # One pass, one set of queries: `_connection_banners` reads the same mapping.
     source_connections = await source_connection_statuses(sources)
     connection_banners = _connection_banners(sources, source_connections)
+    # A source with no personal owner collects through the deployment
+    # credential only. That is not an error, but it must not read as healthy
+    # either: the row says so, so nobody wonders why the view is narrower.
+    from app.services.social.connections import is_service_only
+
+    service_only_source_ids = {source.id for source in sources if is_service_only(source_connections.get(source.id))}
     stale_sources = await _stale_sources_summary(request, sources)
 
     # A lane row (`owner_task_id`) names its owning task: the marker on the row
@@ -289,6 +296,7 @@ async def sources_list(request: Request):
         members=await _workspace_members(request.state.tenant_id) if request.state.tenant_id else [],
         user_sources_json=user_sources_data,
         source_connections=source_connections,
+        service_only_source_ids=service_only_source_ids,
         connection_banners=connection_banners,
         lane_tasks=lane_tasks,
         delete_blockers=delete_blockers,
@@ -325,6 +333,11 @@ async def source_add(
     denied = guard_web(request, "source", "create", back=back)
     if denied is not None:
         return denied
+
+    # The authenticated member who adds the source owns its personal credential.
+    actor = getattr(request.state, "web_user", None)
+    actor_id = getattr(actor, "id", None)
+    user_id = actor_id if isinstance(actor_id, int) and actor_id > 0 else None
 
     if mode not in dict(COLLECTION_MODES):
         # Never write an unknown mode: the collector would accept the row and
@@ -388,6 +401,8 @@ async def source_add(
             source_type=st,
             is_active=True,
             params=params,
+            # The member who added the source collects with their own credential.
+            owner_user_id=user_id,
         )
 
     add_flash(request, "success", f"Источник '{clean_name}' добавлен")
@@ -483,15 +498,23 @@ async def source_edit(
             else:
                 params["token_owner"] = owner_id
 
-        await Source.objects.update_by_id(
-            source.id,
-            name=name.strip()[:100] or source.name,
-            platform_id=platform_row.id,
-            external_id=new_external_id,
-            source_type=st,
-            is_active=is_active == "on",
-            params=params,
-        )
+        try:
+            await Source.objects.update_by_id(
+                source.id,
+                name=name.strip()[:100] or source.name,
+                platform_id=platform_row.id,
+                external_id=new_external_id,
+                source_type=st,
+                is_active=is_active == "on",
+                params=params,
+            )
+        except PermissionError:
+            add_flash(
+                request,
+                "error",
+                "Сначала уберите выбор Telegram-аккаунта в настройках источника, затем измените цель и выберите аккаунт заново.",
+            )
+            return RedirectResponse(f"/app/sources/{source_id}", status_code=303)
 
     add_flash(request, "success", "Источник обновлён")
     return RedirectResponse(f"/app/sources/{source_id}", status_code=302)
@@ -532,7 +555,7 @@ async def source_toggle(
 async def source_detail(request: Request, source_id: int):
     """Show source settings, source-level statistics, and linked tasks."""
     from app.core.tenant_context import tenant_scope
-    from app.models.ai_analytics import AIAnalytics
+    from app.models.analysis.ai_analytics import AIAnalytics
     from app.web.tasks import _diagnostics_admin
 
     is_superuser = False
@@ -590,6 +613,10 @@ async def source_detail(request: Request, source_id: int):
     )
 
     mode_key = (source.params or {}).get("mode", "pull")
+    from app.services.social.telegram_modes import is_bot_push
+
+    if getattr(source.platform.platform_type, "db_value", None) == "telegram" and is_bot_push(source.params):
+        mode_key = "push"
     if mode_key not in dict(COLLECTION_MODES):
         mode_key = "pull"
     recent = [_analysis_row(analysis) for analysis in analytics]
@@ -654,6 +681,7 @@ async def source_detail(request: Request, source_id: int):
 async def source_analysis_progress(request: Request, source_id: int):
     """Small polling fragment for the existing recent-analyses table."""
     from fastapi.responses import HTMLResponse
+
     from app.core.tenant_context import tenant_scope
     from app.models.managers.job_manager import JobManager
 
@@ -918,7 +946,7 @@ async def _recent_collections(source_id: int) -> list[dict]:
     `collection` entry; standalone analysis jobs are ignored. Jobs written
     before the breakdown existed are skipped rather than shown as zero.
     """
-    from app.models.job import Job
+    from app.models.scheduling.job import Job
 
     rows = (
         await Job.objects.filter(job_type__in=("collect", "analyze"))
@@ -1028,11 +1056,18 @@ async def _readiness(source, schedules, effective_schedules=None) -> tuple[bool,
         return False, "Ни одна задача не ссылается на этот источник — сбор не запускается."
     elif not any(s.is_active for s in schedules):
         return False, "Все задачи по этому источнику на паузе."
-    if schedules is not None and effective_schedules is not None and not any(
-        effective_schedules.get(task.id, False) for task in schedules
+    if (
+        schedules is not None
+        and effective_schedules is not None
+        and not any(effective_schedules.get(task.id, False) for task in schedules)
     ):
         return False, "Задачи не выполняются: проверьте, что назначенный сценарий активен."
-    if (source.params or {}).get("mode", "pull") == "push":
+    from app.services.social.connections import _platform_key
+    from app.services.social.telegram_modes import is_bot_push
+
+    if (source.params or {}).get("mode", "pull") == "push" or (
+        _platform_key(source) == "telegram" and is_bot_push(source.params)
+    ):
         # Nothing to schedule: pushes arrive on the channel listener's own.
         return False, "Push-источник наполняет канал Telegram — проверьте, что бот подключён."
 
@@ -1092,7 +1127,8 @@ async def source_collect_now(
 
         try:
             outcome = await run_job_inline(
-                "collect", {"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})}
+                "collect",
+                {"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})},
             )
         except SourceJobBusy:
             add_flash(request, "info", "По источнику уже есть задача сбора или анализа в очереди либо в работе")
@@ -1175,7 +1211,10 @@ async def source_analyze_now(
                 reset_count = await CollectedItem.objects.reset_attempts(session, source_id, **bounds)
                 job = await JobManager().admit_source_job(
                     job_type="analyze",
-                    payload={"source_ids": [source.id], **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {})},
+                    payload={
+                        "source_ids": [source.id],
+                        **({"cli_dates": window["cli_dates"]} if window.get("cli_dates") else {}),
+                    },
                     tenant_id=tenant_id,
                     session=session,
                 )
@@ -1243,7 +1282,9 @@ async def source_delete_unprocessed(
                     return RedirectResponse("/app/sources", status_code=302)
                 running = await _source_has_running_job(source_id)
                 if running["collect"] or running["analyze"]:
-                    add_flash(request, "info", "Нельзя удалить контент, пока сбор или анализ ожидает запуска или выполняется")
+                    add_flash(
+                        request, "info", "Нельзя удалить контент, пока сбор или анализ ожидает запуска или выполняется"
+                    )
                     return RedirectResponse(back, status_code=302)
                 deleted = await CollectedItem.objects.delete_unprocessed_for_source(
                     session, source_id, active_tenant_id

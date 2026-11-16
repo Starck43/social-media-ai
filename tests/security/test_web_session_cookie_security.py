@@ -11,7 +11,6 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -21,6 +20,10 @@ class ApplicationDouble:
         self.state = SimpleNamespace()
         self.routers = []
         self.middleware = []
+        self.exception_handlers = {}
+
+    def add_exception_handler(self, exception, handler):
+        self.exception_handlers[exception] = handler
 
     def include_router(self, router, **options):
         self.routers.append((router, options))
@@ -36,17 +39,39 @@ def application_for(environment, *, debug=False, cors=False):
     if len(selected) != 1:
         raise RuntimeError("Expected one application factory")
     settings = SimpleNamespace(
-        ENVIRONMENT=environment, DEBUG=debug, SECRET_KEY="synthetic-secret",
-        BACKEND_CORS_ORIGINS=["http://localhost:8000"] if cors else [], ADMIN_ENABLED=False,
+        ENVIRONMENT=environment,
+        DEBUG=debug,
+        SECRET_KEY="synthetic-secret",
+        BACKEND_CORS_ORIGINS=["http://localhost:8000"] if cors else [],
+        ADMIN_ENABLED=False,
+        API_DOCS_ENABLED=False,
     )
-    tokens = {name: object() for name in (
-        "SessionMiddleware", "TenantUIMiddleware", "ApiScopeMiddleware", "PlatformScopeMiddleware",
-        "CORSMiddleware", "health_router", "web_router", "lifespan",
-    )}
+    tokens = {
+        name: object()
+        for name in (
+            "SessionMiddleware",
+            "TenantUIMiddleware",
+            "ApiScopeMiddleware",
+            "PlatformScopeMiddleware",
+            "AdminScopeMiddleware",
+            "AdminCSRFMiddleware",
+            "RequestContextMiddleware",
+            "CORSMiddleware",
+            "health_router",
+            "web_router",
+            "lifespan",
+        )
+    }
     namespace = {
-        **tokens, "FastAPI": ApplicationDouble, "settings": settings,
-        "entry": SimpleNamespace(router=object()), "add_pagination": lambda app: None,
+        **tokens,
+        "__version__": "test-version",
+        "FastAPI": ApplicationDouble,
+        "settings": settings,
+        "entry": SimpleNamespace(router=object()),
+        "add_pagination": lambda app: None,
         "CSRFTokenManager": lambda **options: options,
+        "BUSINESS_TAGS": {},
+        "openapi_options": lambda *_args, **_kwargs: {},
     }
     module = ast.Module(body=selected, type_ignores=[])
     exec(compile(ast.fix_missing_locations(module), str(path), "exec"), namespace)
@@ -87,9 +112,22 @@ class WebSessionCookieSecurityTests(unittest.TestCase):
 
     def test_middleware_registration_order_is_preserved(self):
         application, tokens, _ = application_for("production", cors=True)
-        self.assertEqual([kind for kind, _ in application.middleware], [tokens[name] for name in (
-            "TenantUIMiddleware", "ApiScopeMiddleware", "PlatformScopeMiddleware", "SessionMiddleware", "CORSMiddleware",
-        )])
+        self.assertEqual(
+            [kind for kind, _ in application.middleware],
+            [
+                tokens[name]
+                for name in (
+                    "TenantUIMiddleware",
+                    "ApiScopeMiddleware",
+                    "RequestContextMiddleware",
+                    "PlatformScopeMiddleware",
+                    "AdminScopeMiddleware",
+                    "AdminCSRFMiddleware",
+                    "SessionMiddleware",
+                    "CORSMiddleware",
+                )
+            ],
+        )
 
     def test_existing_health_router_remains_registered_once(self):
         application, tokens, _ = application_for("production")

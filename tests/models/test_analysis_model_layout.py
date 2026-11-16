@@ -22,8 +22,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 # name -> (leaf module, table, manager, app label, tenant scoped, owning package)
-# The LLM models moved to their own package (`app.models.llm`); the analysis
-# package keeps them as legacy aliases, so both paths still resolve to one class.
+# LLM models belong to `app.models.llm`; analysis owns only scenarios and analytics.
 MODELS = {
     "AgentScenario": ("agent_scenario", "agent_scenarios", "AgentScenarioManager", "analysis", True, "analysis"),
     "AIAnalytics": ("ai_analytics", "ai_analytics", "AIAnalyticsManager", "analysis", True, "analysis"),
@@ -35,10 +34,12 @@ MODELS = {
 # 0be47bbf. The LLMModel and LLMProvider classes changed after that snapshot:
 # cache tariff fields and the pricing token unit (afe30b6), then personal
 # ownership with per-owner constraints and the get_api_key owner guard (e14c395).
-CLASS_FINGERPRINTS = {'AIAnalytics': '5d5f4e40a0f1e71cd52a25b89c20fc426ab0935d42b7c27a3f337ec5c9733aa1',
- 'AgentScenario': 'b3510e7960b9329f3f3ee8b040d8d83dd085efa978946e0c4acb65bccb02877b',
- 'LLMModel': 'c4ba75818e22dcb147bbac9ac531be0f938dd1c9d96f5533cb6e9bfa37d1a3a1',
- 'LLMProvider': '8c3c27ae91d7f42eb9a20bdd1c5d42985b8d9e6a42a4ac06675f48ecc8c2a0b4'}
+CLASS_FINGERPRINTS = {
+    "AIAnalytics": "5d5f4e40a0f1e71cd52a25b89c20fc426ab0935d42b7c27a3f337ec5c9733aa1",
+    "AgentScenario": "b3510e7960b9329f3f3ee8b040d8d83dd085efa978946e0c4acb65bccb02877b",
+    "LLMModel": "c4ba75818e22dcb147bbac9ac531be0f938dd1c9d96f5533cb6e9bfa37d1a3a1",
+    "LLMProvider": "8c3c27ae91d7f42eb9a20bdd1c5d42985b8d9e6a42a4ac06675f48ecc8c2a0b4",
+}
 
 
 def _canonical_ast(node):
@@ -51,15 +52,14 @@ def _canonical_ast(node):
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_public_legacy_domain_leaf_identity_and_manager_binding(name):
+def test_public_domain_leaf_identity_and_manager_binding(name):
     module, table, manager, label, scoped, package = MODELS[name]
     public = importlib.import_module("app.models")
-    legacy = importlib.import_module(f"app.models.{module}")
     domain = importlib.import_module(f"app.models.{package}")
     leaf = importlib.import_module(f"app.models.{package}.{module}")
     manager_module = importlib.import_module(f"app.models.managers.{module}_manager")
     cls = getattr(public, name)
-    assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
+    assert cls is getattr(domain, name) is getattr(leaf, name)
     assert name in public.__all__ and name in domain.__all__
     assert domain.__dict__[name] is cls
     assert cls.__module__ == f"app.models.{package}.{module}"
@@ -68,7 +68,6 @@ def test_public_legacy_domain_leaf_identity_and_manager_binding(name):
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1
     assert isinstance(cls.objects, getattr(manager_module, manager))
     assert cls.objects.model is cls
-    assert getattr(legacy, manager) is getattr(manager_module, manager)
     assert bool(getattr(cls, "__tenant_scoped__", False)) is scoped
     assert ("tenant_id" in cls.__table__.c) is scoped
 
@@ -81,38 +80,40 @@ def test_entire_class_contract_unchanged_except_relative_import_depth(name):
     cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == name)
     for node in ast.walk(cls):
         if isinstance(node, ast.ImportFrom) and node.level:
-            node.module = importlib.util.resolve_name(
-                "." * node.level + (node.module or ""), f"app.models.{package}"
-            )
+            node.module = importlib.util.resolve_name("." * node.level + (node.module or ""), f"app.models.{package}")
             node.level = 0
     payload = json.dumps(_canonical_ast(cls), ensure_ascii=True, separators=(",", ":")).encode("utf-8")
     assert hashlib.sha256(payload).hexdigest() == CLASS_FINGERPRINTS[name]
 
 
-@pytest.mark.parametrize("module,symbol", [
-    ("agent_scenario", "LLMStrategyType"), ("ai_analytics", "PeriodType"),
-    ("ai_analytics", "Decimal"), ("llm_provider", "Base"),
-    ("llm_model", "TimestampMixin"), ("agent_scenario", "TenantScopedMixin"),
-    ("llm_model", "_model_type_to_capabilities"),
-])
-def test_legacy_imported_symbols_and_capability_helper_preserved(module, symbol):
-    legacy = importlib.import_module(f"app.models.{module}")
-    leaf = importlib.import_module(f"app.models.analysis.{module}")
-    assert getattr(legacy, symbol) is getattr(leaf, symbol)
+@pytest.mark.parametrize(
+    "package,module,symbol",
+    [
+        ("analysis", "agent_scenario", "LLMStrategyType"),
+        ("analysis", "agent_scenario", "TenantScopedMixin"),
+        ("analysis", "ai_analytics", "Decimal"),
+        ("analysis", "ai_analytics", "PeriodType"),
+        ("llm", "llm_provider", "Base"),
+        ("llm", "llm_model", "TimestampMixin"),
+        ("llm", "llm_model", "_model_type_to_capabilities"),
+    ],
+)
+def test_canonical_leaf_exports_shared_symbols(package, module, symbol):
+    leaf = importlib.import_module(f"app.models.{package}.{module}")
+    assert hasattr(leaf, symbol)
 
 
 @pytest.mark.parametrize("name", MODELS)
-def test_legacy_and_new_serialized_class_references_resolve(name):
-    module = MODELS[name][0]
-    cls = getattr(importlib.import_module(f"app.models.{module}"), name)
-    # Trusted locally constructed class reference, never external pickle input.
-    assert pickle.loads(f"capp.models.{module}\n{name}\n.".encode("ascii")) is cls
+def test_canonical_serialized_class_reference_resolves(name):
+    module, _, _, _, _, package = MODELS[name]
+    cls = getattr(importlib.import_module(f"app.models.{package}.{module}"), name)
     assert pickle.loads(pickle.dumps(cls)) is cls
 
 
 def test_relationships_across_domain_boundaries_are_unchanged():
     from sqlalchemy.orm import configure_mappers
-    from app.models import AIAnalytics, AgentScenario, AgentTask, LLMModel, LLMProvider, Source
+
+    from app.models import AgentScenario, AgentTask, AIAnalytics, LLMModel, LLMProvider, Source
 
     configure_mappers()
     assert LLMProvider.__mapper__.relationships["models"].mapper.class_ is LLMModel
@@ -129,7 +130,9 @@ def test_relationships_across_domain_boundaries_are_unchanged():
 
 def test_cost_types_and_period_enum_are_not_unified_by_layout_change():
     from sqlalchemy import Float, Numeric
-    from app.models.analysis import AIAnalytics, LLMModel
+
+    from app.models.analysis import AIAnalytics
+    from app.models.llm import LLMModel
     from app.types import PeriodType
 
     cost = AIAnalytics.__table__.c.estimated_cost
@@ -146,23 +149,30 @@ def test_cost_types_and_period_enum_are_not_unified_by_layout_change():
     assert LLMModel.__table__.c.last_request_cost.nullable
 
 
-@pytest.mark.parametrize("value,expected", [
-    ("", []), ("text", ["text"]), ("text, image,video", ["text", "image", "video"]),
-])
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("", []),
+        ("text", ["text"]),
+        ("text, image,video", ["text", "image", "video"]),
+    ],
+)
 def test_capabilities_and_legacy_helper_preserved(value, expected):
-    from app.models.analysis import LLMModel
-    from app.models.llm_model import _model_type_to_capabilities
+    from app.models.llm import LLMModel
+    from app.models.llm.llm_model import _model_type_to_capabilities
 
     assert _model_type_to_capabilities(value) == expected
     assert LLMModel.capabilities.fget(SimpleNamespace(model_type=value)) == expected
 
 
 def test_model_tariff_conversion_and_scenario_legacy_prompt_alias_preserved():
-    from app.models.analysis import AgentScenario, LLMModel
+    from app.models.analysis import AgentScenario
+    from app.models.llm import LLMModel
 
-    assert LLMModel.get_cost_per_million(
-        SimpleNamespace(input_cost_per_1k=0.001, output_cost_per_1k=0.002)
-    ) == (1.0, 2.0)
+    assert LLMModel.get_cost_per_million(SimpleNamespace(input_cost_per_1k=0.001, output_cost_per_1k=0.002)) == (
+        1.0,
+        2.0,
+    )
     scenario = SimpleNamespace(base_prompt="original")
     assert AgentScenario.ai_prompt.fget(scenario) == "original"
     AgentScenario.ai_prompt.fset(scenario, "updated")
@@ -172,7 +182,7 @@ def test_model_tariff_conversion_and_scenario_legacy_prompt_alias_preserved():
 @pytest.mark.parametrize("stored", [None, "", "synthetic-ciphertext"])
 def test_provider_crypto_import_still_targets_app_utils(monkeypatch, stored):
     from app.core.personal_catalog_context import catalog_execution_scope
-    from app.models.analysis import LLMProvider
+    from app.models.llm import LLMProvider
     from app.utils import crypto
 
     calls = []
@@ -191,7 +201,7 @@ def test_provider_crypto_import_still_targets_app_utils(monkeypatch, stored):
 @pytest.mark.parametrize("stored", [None, "", "synthetic-ciphertext"])
 def test_provider_api_key_denied_for_another_catalog_owner(monkeypatch, stored):
     from app.core.personal_catalog_context import catalog_execution_scope
-    from app.models.analysis import LLMProvider
+    from app.models.llm import LLMProvider
     from app.utils import crypto
 
     calls = []
@@ -202,11 +212,16 @@ def test_provider_api_key_denied_for_another_catalog_owner(monkeypatch, stored):
     assert calls == []
 
 
-@pytest.mark.parametrize("key,expected", [
-    ("", ""), ("short", "***"), ("synthetic-long-token", "synt…oken"),
-])
+@pytest.mark.parametrize(
+    "key,expected",
+    [
+        ("", ""),
+        ("short", "***"),
+        ("synthetic-long-token", "synt…oken"),
+    ],
+)
 def test_provider_key_masking_unchanged_without_real_secrets(key, expected):
-    from app.models.analysis import LLMProvider
+    from app.models.llm import LLMProvider
 
     assert LLMProvider.decrypted_key_masked(SimpleNamespace(get_api_key=lambda: key)) == expected
 
@@ -217,14 +232,20 @@ def test_unknown_domain_export_raises_attribute_error():
         getattr(domain, "UnknownAnalysisModel")
 
 
-@pytest.mark.parametrize("first", [
-    "app.models.analysis",
-    "app.models.agent_scenario", "app.models.ai_analytics", "app.models.llm_model", "app.models.llm_provider",
-    "app.models.analysis.agent_scenario", "app.models.analysis.ai_analytics",
-    "app.models.analysis.llm_model", "app.models.analysis.llm_provider",
-    "app.models.managers.agent_scenario_manager", "app.models.managers.ai_analytics_manager",
-    "app.models.managers.llm_model_manager", "app.models.managers.llm_provider_manager",
-])
+@pytest.mark.parametrize(
+    "first",
+    [
+        "app.models.analysis",
+        "app.models.analysis.agent_scenario",
+        "app.models.analysis.ai_analytics",
+        "app.models.llm.llm_model",
+        "app.models.llm.llm_provider",
+        "app.models.managers.agent_scenario_manager",
+        "app.models.managers.ai_analytics_manager",
+        "app.models.managers.llm_model_manager",
+        "app.models.managers.llm_provider_manager",
+    ],
+)
 def test_fresh_process_import_entry_points_complete_without_partial_binding(first):
     # Owner execution inherits conftest's redirected env; child performs no SQL.
     code = """
@@ -236,14 +257,24 @@ public = importlib.import_module('app.models')
 domain = importlib.import_module('app.models.analysis')
 for name, module in json.loads(sys.argv[2]).items():
     cls = getattr(public, name)
-    legacy = importlib.import_module(f'app.models.{module}')
-    leaf = importlib.import_module(f'app.models.analysis.{module}')
-    assert cls is getattr(legacy, name) is getattr(domain, name) is getattr(leaf, name)
+    leaf = importlib.import_module(f'app.models.{module}')
+    package = importlib.import_module('app.models.' + module.rpartition('.')[0])
+    assert cls is getattr(package, name) is getattr(leaf, name)
     assert cls.objects.model is cls
     assert sum(mapper.class_.__name__ == name for mapper in public.Base.registry.mappers) == 1
 """
     result = subprocess.run(
-        [sys.executable, "-c", code, first, json.dumps({name: data[0] for name, data in MODELS.items()})],
-        cwd=ROOT, text=True, capture_output=True, timeout=60, check=False,
+        [
+            sys.executable,
+            "-c",
+            code,
+            first,
+            json.dumps({name: f"{data[5]}.{data[0]}" for name, data in MODELS.items()}),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
     )
     assert result.returncode == 0, result.stderr

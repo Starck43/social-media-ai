@@ -1,0 +1,29 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="col-12">
+    <p class="text-secondary">Только доступные материалы выбранного рабочего пространства. Содержимое и изменения версий здесь недоступны.</p>
+    <form method="get" action="/admin/knowledge-registry" class="card card-body mb-3">
+        <label for="kind">Раздел</label>
+        <select id="kind" name="kind" class="form-select">
+            <option value="snippets" {% if kind == 'snippets' %}selected{% endif %}>Материалы</option>
+            <option value="documents" {% if kind == 'documents' %}selected{% endif %}>Документы</option>
+            <option value="revisions" {% if kind == 'revisions' %}selected{% endif %}>Версии документов</option>
+        </select>
+        <label for="boundary" class="mt-2">Граница обработки</label>
+        <select id="boundary" name="boundary" class="form-select">
+            <option value="cloud" {% if boundary == 'cloud' %}selected{% endif %}>Облако</option>
+            <option value="company" {% if boundary == 'company' %}selected{% endif %}>Компания</option>
+            <option value="local_only" {% if boundary == 'local_only' %}selected{% endif %}>Только локально</option>
+        </select>
+        <button type="submit" class="btn btn-primary mt-2">Показать</button>
+    </form>
+    <div class="card"><div class="table-responsive"><table class="table table-vcenter card-table">
+        {% if kind == 'snippets' %}<thead><tr><th>Название</th><th>Тип</th><th>Граница данных</th></tr></thead>
+        <tbody>{% for row in rows %}<tr><td>{{ row.title }}</td><td>{{ row.type }}</td><td>{{ row.boundary }}</td></tr>{% else %}<tr><td colspan="3">Нет доступных записей на этой странице.</td></tr>{% endfor %}</tbody>
+        {% elif kind == 'documents' %}<thead><tr><th>Название</th><th>Контрагент</th><th>Граница данных</th></tr></thead>
+        <tbody>{% for row in rows %}<tr><td>{{ row.title }}</td><td>{{ row.counterparty }}</td><td>{{ row.boundary }}</td></tr>{% else %}<tr><td colspan="3">Нет доступных записей на этой странице.</td></tr>{% endfor %}</tbody>
+        {% else %}<thead><tr><th>Идентификатор документа</th><th>Версия</th><th>Статус</th></tr></thead>
+        <tbody>{% for row in rows %}<tr><td>{{ row.document_id }}</td><td>{{ row.version }}</td><td>{{ row.status }}</td></tr>{% else %}<tr><td colspan="3">Нет доступных записей на этой странице.</td></tr>{% endfor %}</tbody>{% endif %}
+    </table></div>{% if next_url %}<div class="card-body"><a href="{{ next_url }}" rel="next">Следующая страница →</a></div>{% endif %}</div>
+</div>
+{% endblock %}

@@ -1,0 +1,10 @@
+{
+  "description": "Synthetic test examples only; not recorded provider responses or API conformance evidence.",
+  "http": {
+    "bitrix24": {"method": "GET", "url": "https://bitrix.example.invalid/contacts", "status": 200, "body": {"items": []}},
+    "google_calendar": {"method": "GET", "url": "https://calendar.example.invalid/events", "status": 200, "body": {"items": []}},
+    "caldav": {"method": "PROPFIND", "url": "https://caldav.example.invalid/calendars/", "status": 207, "body": {"items": []}},
+    "onec_odata": {"method": "GET", "url": "https://onec.example.invalid/odata/", "status": 200, "body": {"items": []}}
+  },
+  "mail": {"imap": {"NOOP": ["OK", "synthetic"]}, "smtp": {"NOOP": [250, "synthetic"]}}
+}

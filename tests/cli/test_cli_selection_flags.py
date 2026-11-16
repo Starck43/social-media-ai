@@ -3,7 +3,7 @@
 Owner command:
 `.venv/bin/python -m pytest tests/test_cli_selection_flags.py -q --noconftest -o addopts=`
 
-Контракт из `docs/design/task-selection.md`: автор выбирается ключом задачи
+Контракт из `docs/connectors/COLLECTION.md#task-selection-contract`: автор выбирается ключом задачи
 `tracked_users` (`platform:external_id`), текстовый скоуп — `keywords_list`, а
 payload пишет единственный писатель `AgentTaskManager.build_selection_payload`.
 `--monitored` удаляется без совместимого флага.
@@ -19,9 +19,9 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-MAIN = ROOT / "cli" / "main.py"
+MAIN = ROOT / "cli" / "commands" / "tasks.py"
 COLLECT = ROOT / "cli" / "commands" / "collect.py"
-WRITER_MODULE = ROOT / "app" / "models" / "managers" / "agent_task_manager.py"
+WRITER_MODULE = ROOT / "app" / "models" / "managers" / "task_inputs.py"
 
 
 def _tree(path):
@@ -169,11 +169,7 @@ class TestDryRunFlagPresent:
         cmd = _functions(direct)["cmd_analyze"]
         flags = _option_flags(cmd)
         assert "--dry-on" in flags, f"analyze: {sorted(flags)}"
-        guards = [
-            node
-            for node in ast.walk(cmd)
-            if isinstance(node, ast.If) and "dry_on" in ast.unparse(node.test)
-        ]
+        guards = [node for node in ast.walk(cmd) if isinstance(node, ast.If) and "dry_on" in ast.unparse(node.test)]
         assert any("payload['dry_run'] = True" in ast.unparse(guard.body[0]) for guard in guards)
 
 

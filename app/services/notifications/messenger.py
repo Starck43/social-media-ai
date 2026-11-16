@@ -13,6 +13,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.tenant_context import current_tenant_id, is_bypass
+from app.services.social.platform_config import load_platform_config
 from app.types import NotificationType
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ class MessengerService:
         if len(formatted) > 4096:
             return {"success": False, "error": "Notification exceeds transport limit"}
         try:
-            url = f"{settings.TELEGRAM_API_BASE_URL.rstrip('/')}/bot{token}/sendMessage"
+            url = f"{(await load_platform_config('telegram'))['api_base_url'].rstrip('/')}/bot{token}/sendMessage"
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     url,

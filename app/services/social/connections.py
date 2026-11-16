@@ -1,10 +1,11 @@
 """Personal platform connections: is this user authorized, and does it matter?
 
 A source may collect through the platform API (L1, a shared token) or through a
-**personal** secret (L2) — a VK user token, a Telegram MTProto session. L2 lives
-in the personal vault keyed by `users.id`, so "is it authorized?" is a question
-about a *person*, and the person who can fix it is exactly the one whose row it
-is.
+**personal** secret (L2) — a VK user token, a Telegram MTProto session, or a
+workspace-scoped connector credential (IMAP/SMTP, Bitrix24, 1C OData, Yandex.Disk,
+Mail.ru Cloud, Paired Local Gateway). L2 lives in the personal vault keyed by
+`users.id`, so "is it authorized?" is a question about a *person*, and the person
+who can fix it is exactly the one whose row it is.
 
 This module is the single answer to that question. Everything that shows a
 status — the navbar, the settings page, the sources list and its banner, the
@@ -20,7 +21,7 @@ clock run out":
 | State | Meaning | Button |
 | --- | --- | --- |
 | `connected` | secret present and not expired | «Выйти» only |
-| `renewable` | access expired, but a `refresh_token` renews it silently | none |
+| `renewal_unverified` | access expired; refresh metadata exists, but key and provider are unverified | none |
 | `reauth` | renewal is impossible — refresh token dead/absent, or revoked | «Войти заново» |
 | `missing` | never connected | «Подключить» |
 | `unconfigured` | the deployment has no app credentials for this platform | none |
@@ -32,19 +33,34 @@ it is safe to render on every page. A new platform is one `ConnectionSpec` row.
 from __future__ import annotations
 
 import logging
+import posixpath
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional
 
 from app.core.config import settings
+from app.integrations.catalog import PROVIDERS
+from app.services.social.platform_config import _BOOTSTRAP
+from app.services.social.refresh_status import REFRESH_FAILURE_COOLDOWN, refresh_failure_blocks
 
 logger = logging.getLogger(__name__)
 
-# A refresh token whose renewal failed this recently is treated as dead until a
-# human looks at it. Without this, every collection run would re-post the same
-# broken refresh token — and VK ID invalidates the whole session when a spent
-# refresh token is replayed, so retrying silently costs the user their login.
-REFRESH_FAILURE_COOLDOWN = timedelta(hours=6)
+_SECRET_META_KEYS = frozenset(
+    {
+        "secret",
+        "token",
+        "access_token",
+        "refresh_token",
+        "password",
+        "app_password",
+        "webdav_password",
+        "client_secret",
+        "private_key",
+        "webhook_secret",
+    }
+)
+
+_DEFAULT_ALLOWED_DRIVE_EXTENSIONS: tuple[str, ...] = (".pdf", ".docx", ".xlsx", ".txt", ".md")
 
 
 @dataclass(frozen=True)
@@ -59,30 +75,53 @@ class ConnectionSpec:
     # `manual` — the user pastes a secret; there is nothing to redirect to.
     mode: str
     manual_hint: str = ""
+    category_label: str = "Социальная платформа"
+    auth_protocol: str = "OAuth 2.0 / Personal Token"
+    data_boundary: str = "cloud"
+    default_watermark: str = "Ожидание первой синхронизации"
+    default_mounted_folders: tuple[str, ...] = ()
 
     @property
     def is_oauth(self) -> bool:
         return self.mode == "oauth"
 
 
-# The registry. Adding a platform is a row here, not a new page.
+# Platform status/auth behavior remains distinct from provider form contracts:
+# email is one platform with two provider-specific workspace forms.
+def _provider_spec(provider_id: str, kind: str, mode: str, boundary: str) -> ConnectionSpec:
+    provider = PROVIDERS[provider_id]
+    return ConnectionSpec(
+        platform=provider.platform,
+        kind=kind,
+        title=provider.label,
+        purpose=provider.description,
+        mode=mode,
+        manual_hint=provider.setup_hint,
+        category_label=provider.category,
+        auth_protocol=provider.auth_protocol,
+        data_boundary=boundary,
+    )
+
+
 CONNECTIONS: tuple[ConnectionSpec, ...] = (
+    _provider_spec("vk", "user_token", "oauth", "cloud"),
+    _provider_spec("telegram", "session", "manual", "cloud"),
     ConnectionSpec(
-        platform="vk",
-        kind="user_token",
-        title="ВКонтакте",
-        purpose="Сбор закрытых сообществ и личной стены, где токен сообщества бессилен",
-        mode="oauth",
-        manual_hint="Можно вставить личный токен вручную, но он не продлевается — OAuth надёжнее.",
-    ),
-    ConnectionSpec(
-        platform="telegram",
-        kind="session",
-        title="Telegram",
-        purpose="Чтение закрытых чатов и истории, куда бот не добавлен",
+        platform="email",
+        kind="app_password",
+        title="Почта IMAP/SMTP",
+        purpose="Настройка почтовых аккаунтов пространства и проверка входа по IMAP; отправка выключена",
         mode="manual",
-        manual_hint="Нужен api_id и api_hash с my.telegram.org и файл сессии.",
+        manual_hint="Выберите сервис, укажите адрес ящика и отдельный пароль приложения.",
+        category_label="Почтовый коннектор",
+        auth_protocol="IMAP4rev1 / SMTP TLS",
+        data_boundary="company",
     ),
+    _provider_spec("bitrix24", "webhook_secret", "manual", "company"),
+    _provider_spec("onec", "odata_credentials", "manual", "company"),
+    _provider_spec("yandex_disk", "oauth_token", "manual", "cloud"),
+    _provider_spec("mailru_cloud", "webdav_password", "manual", "cloud"),
+    _provider_spec("local_gateway", "mtls_fingerprint", "manual", "local_only"),
 )
 
 CONNECTIONS_BY_PLATFORM: dict[str, ConnectionSpec] = {spec.platform: spec for spec in CONNECTIONS}
@@ -102,16 +141,21 @@ class ConnectionStatus:
     # Whether a "connect" affordance can work at all (the deployment may lack
     # `VK_APP_ID`, in which case a button would only produce an error).
     can_connect: bool = True
+    # Action is administrative, not a personal reauthorization.
+    operator_attention: bool = False
 
     @property
     def tone(self) -> str:
         """Badge tone for the templates: ok | warn | bad | idle."""
         return {
             "connected": "ok",
-            "renewable": "ok",
+            "renewable": "warn",  # compatibility with older callers
+            "renewal_unverified": "warn",
             "reauth": "bad",
             "missing": "warn",
             "unconfigured": "idle",
+            "runtime_disabled": "warn",
+            "unavailable": "bad",
         }.get(self.state, "idle")
 
     @property
@@ -138,6 +182,8 @@ class ConnectionStatus:
         """
         if not self.needs_action or not self.can_connect:
             return ""
+        if self.platform == "telegram":
+            return "/app/settings/telegram-accounts/workspace"
         return (
             f"/app/connections/{self.platform}/authorize?next=/app/sources"
             if self.is_oauth
@@ -180,56 +226,84 @@ async def connection_status(platform: str, user_id: Optional[int]) -> Connection
     Reads vault metadata only — never `reveal()` — so callers may use this on
     any page, including the shared navbar.
     """
+    if platform == "telegram":
+        # Old vault metadata can no longer claim that new-store collection is ready.
+        return ConnectionStatus(
+            "telegram",
+            "runtime_disabled" if not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED else "missing",
+            "Личный сбор выключен" if not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED else "Нужен явный выбор источника",
+            "Используйте личные авторизации и разрешения пространства. Старая сессия не используется; здоровье провайдера не проверено.",
+            settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED,
+            True,
+            operator_attention=not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED,
+        )
     spec = CONNECTIONS_BY_PLATFORM.get(platform)
     if spec is None:
         return ConnectionStatus(platform, "unconfigured", "Неизвестная платформа", "", False, False)
 
     row = await _vault_row(user_id, platform, spec.kind)
     if row is None:
-        if not spec.is_oauth or not settings.VK_APP_ID:
-            # Nothing the user could do about it: the deployment has no app.
+        if spec.is_oauth and settings.VK_APP_ID:
             return ConnectionStatus(
                 platform,
-                "unconfigured",
-                "Не настроено оператором",
-                "Развертывание не зарегистрировано в VK ID — подключение недоступно",
-                False,
-                False,
+                "missing",
+                "Не подключено",
+                f"Нужен личный доступ: {spec.purpose.lower()}",
+                True,
+                True,
             )
+        # Nothing the user could do about it: the deployment has no app to
+        # redirect to. That is the operator's problem, and the reason differs
+        # per platform, so say it once rather than blaming every card on VK.
         return ConnectionStatus(
             platform,
-            "missing",
-            "Не подключено",
-            f"Нужен личный доступ: {spec.purpose.lower()}",
-            True,
-            True,
+            "unconfigured",
+            "Не настроено оператором",
+            (
+                "Развертывание не зарегистрировано в VK ID — подключение недоступно"
+                if spec.is_oauth
+                else "Оператор не включил этот коннектор — можно добавить ключ вручную"
+            ),
+            False,
+            False,
         )
 
     meta = row.meta or {}
     expires_at = _utc(row.expires_at)
     now = datetime.now(timezone.utc)
 
+    attempt = meta.get("refresh_attempt")
+    if isinstance(attempt, dict) and attempt.get("state") == "unreadable":
+        return ConnectionStatus(
+            platform,
+            "reauth",
+            "Доступ к секрету недоступен",
+            "Не удалось прочитать сохранённые данные. Обратитесь к администратору; повторный вход может не помочь",
+            True,
+            False,
+            operator_attention=True,
+        )
+
     # A failed renewal is remembered rather than retried silently — see the note
     # on REFRESH_FAILURE_COOLDOWN about VK invalidating a session on replay.
-    failed_at = meta.get("refresh_failed_at")
-    if failed_at:
-        try:
-            moment = _utc(datetime.fromisoformat(str(failed_at)))
-        except ValueError:
-            moment = None
-        if moment is not None and now - moment < REFRESH_FAILURE_COOLDOWN:
-            return ConnectionStatus(
-                platform,
-                "reauth",
-                "Нужно войти заново",
-                "Автоматическое продление не удалось — войдите ещё раз",
-                True,
-                True,
-            )
+    if refresh_failure_blocks(meta.get("refresh_failed_at"), now=now):
+        return ConnectionStatus(
+            platform,
+            "reauth",
+            "Нужно войти заново",
+            "Автоматическое продление не удалось или статус повреждён — обратитесь к администратору",
+            True,
+            True,
+        )
 
     if expires_at is None or expires_at > now:
         account = meta.get("user_id")
         who = f" · VK ID {account}" if account else ""
+        # These business connector records do not prove a remote verification.
+        if platform not in ("vk", "telegram"):
+            return ConnectionStatus(
+                platform, "connected", "Сохранено", "Данные сохранены; подключение не проверено", False, True
+            )
         return ConnectionStatus(
             platform,
             "connected",
@@ -239,14 +313,22 @@ async def connection_status(platform: str, user_id: Optional[int]) -> Connection
             True,
         )
 
-    # Expired. Whether that is the user's problem depends entirely on whether a
-    # refresh token can renew it — the single distinction this module exists for.
-    if meta.get("refresh_token"):
+    # Expired: stored metadata is only an unverified renewal possibility.
+    if attempt:
         return ConnectionStatus(
             platform,
-            "renewable",
-            "Авторизован",
-            f"{spec.title} · {_human_expiry(expires_at)}, продление без повторного входа",
+            "reauth",
+            "Нужно войти заново",
+            "Предыдущее продление не завершено — войдите ещё раз",
+            True,
+            True,
+        )
+    if meta.get("refresh_available") is True:
+        return ConnectionStatus(
+            platform,
+            "renewal_unverified",
+            "Продление не проверено",
+            f"{spec.title} · {_human_expiry(expires_at)}. Ключ и продление проверятся при попытке",
             False,
             True,
         )
@@ -302,12 +384,19 @@ def source_connection_spec(source: Any) -> Optional[ConnectionSpec]:
 def source_uses_personal_token(source: Any) -> bool:
     """True when this source's collection layer can require the owner's L2 secret.
 
-    `pull`/`user` both consult it (as L1 then, where allowed, L2); `push` never
-    does. `owner.resolve_source_owner` decides *whose* token, this decides
-    whether the question is asked at all.
+    Every mode except `push` may fall back from the deployment credential to a
+    personal one, including a missing mode and `auto` — an imported lane stores
+    `auto`, and treating it as "no personal credential" is what made those
+    sources invisible to both the banner and the preflight. `push` collects
+    through a bot and never asks. `owner.resolve_source_owner` decides *whose*
+    token; this decides whether the question is asked at all.
     """
     mode = (getattr(source, "params", None) or {}).get("mode", "pull")
-    return mode in ("pull", "user")
+    if _platform_key(source) == "telegram":
+        from app.services.social.telegram_modes import is_bot_push
+
+        return not is_bot_push(getattr(source, "params", None))
+    return mode != "push"
 
 
 async def source_connection_status(source: Any) -> Optional[ConnectionStatus]:
@@ -315,14 +404,49 @@ async def source_connection_status(source: Any) -> Optional[ConnectionStatus]:
 
     A source may collect with a teammate's token (`Source.params["token_owner"]`),
     so the caller's own connection says nothing about it. Returns None for a
-    push source or an ownerless workspace.
+    push source.
     """
     status = await source_connection_statuses([source])
     return status.get(getattr(source, "id", None))
 
 
-async def source_connection_statuses(sources: Iterable[Any]) -> dict[Any, ConnectionStatus]:
+def is_service_only(status: Optional[ConnectionStatus]) -> bool:
+    """True when the source has no usable personal credential and runs on L1.
+
+    `unconfigured` is the status of an owner-less source (nobody to resolve) and
+    of a deployment without the platform's app. Both mean the same thing for the
+    run: collection keeps working through the deployment credential, and the
+    person must be told that the view may be narrower.
+    """
+    return status is not None and status.state == "unconfigured"
+
+
+def blocks_collection(status: Optional[ConnectionStatus]) -> bool:
+    """True when the owner's personal credential is missing or must be re-made.
+
+    `renewal_unverified` is not blocked before a renewal attempt; metadata alone
+    does not establish that the key or provider will permit renewal.
+    """
+    return status is not None and status.state in ("missing", "reauth", "runtime_disabled", "unavailable")
+
+
+def authorisation_target(platform: str) -> str:
+    """Where a person goes to grant personal access for `platform`."""
+    if platform == "telegram":
+        return "/app/settings/telegram-accounts/workspace"
+    spec = CONNECTIONS_BY_PLATFORM.get(platform)
+    if spec is not None and spec.is_oauth:
+        return f"/app/connections/{platform}/authorize?next=/app/sources"
+    return "/app/settings?tab=connections"
+
+
+async def source_connection_statuses(
+    sources: Iterable[Any], *, owner_overrides: dict[Any, Optional[int]] | None = None
+) -> dict[Any, ConnectionStatus]:
     """`{source.id: ConnectionStatus}` for a whole page of sources.
+
+    `owner_overrides` lets a caller that already resolved owners (a list page, a
+    preflight) pass them in, so the same answer is not recomputed per source.
 
     A list page asks about every row, and each answer costs two queries: one to
     resolve the owner, one to read the vault. Twenty sources would pay forty, and
@@ -335,6 +459,7 @@ async def source_connection_statuses(sources: Iterable[Any]) -> dict[Any, Connec
     """
     from app.services.social.owner import resolve_source_owner
 
+    _UNSET = object()
     owners: dict[tuple, Optional[int]] = {}
     statuses: dict[tuple, ConnectionStatus] = {}
     result: dict[Any, ConnectionStatus] = {}
@@ -343,12 +468,217 @@ async def source_connection_statuses(sources: Iterable[Any]) -> dict[Any, Connec
         spec = source_connection_spec(source)
         if spec is None:
             continue
-        owner_key = (getattr(source, "tenant_id", None), (getattr(source, "params", None) or {}).get("token_owner"))
+        if spec.platform == "telegram":
+            result[getattr(source, "id", None)] = await _telegram_source_status(source)
+            continue
+        owner_key = (
+            getattr(source, "tenant_id", None),
+            (getattr(source, "params", None) or {}).get("token_owner"),
+            getattr(source, "owner_user_id", None),
+        )
         if owner_key not in owners:
-            owners[owner_key] = await resolve_source_owner(source)
+            override = (owner_overrides or {}).get(getattr(source, "id", None), _UNSET)
+            owners[owner_key] = override if override is not _UNSET else await resolve_source_owner(source)
         owner_id = owners[owner_key]
         status_key = (spec.platform, owner_id)
         if status_key not in statuses:
             statuses[status_key] = await connection_status(spec.platform, owner_id)
         result[getattr(source, "id", None)] = statuses[status_key]
     return result
+
+
+def sanitize_connector_meta(meta: dict[str, Any] | None) -> dict[str, Any]:
+    """Strip secret-bearing keys from connector metadata before UI/diagnostic projection."""
+    if not isinstance(meta, dict):
+        return {}
+    safe: dict[str, Any] = {}
+    for key, value in meta.items():
+        lowered = str(key).lower()
+        if lowered in _SECRET_META_KEYS or any(token in lowered for token in ("secret", "password", "token", "key")):
+            continue
+        safe[str(key)] = value
+    return safe
+
+
+def credential_matches_workspace(meta: dict[str, Any] | None, tenant_id: Optional[int]) -> bool:
+    """True when a personal credential row applies to `tenant_id` (or has no tenant restriction)."""
+    if not isinstance(meta, dict):
+        return True
+    scoped_tenant = meta.get("tenant_id")
+    if scoped_tenant is None:
+        return True
+    return type(tenant_id) is int and scoped_tenant == tenant_id
+
+
+def normalize_drive_folder_path(folder_path: str) -> str:
+    """Validate and normalize a cloud drive or canonical local gateway folder path."""
+    if not isinstance(folder_path, str) or not folder_path.strip():
+        raise ValueError("drive_folder_path_empty")
+    raw = folder_path.strip()
+    if any(ord(ch) < 32 for ch in raw) or "\\" in raw:
+        raise ValueError("drive_folder_path_invalid")
+    prefix = ""
+    path_part = raw
+    for candidate in ("disk:", "cloud:", "bitrix:"):
+        if raw.lower().startswith(candidate):
+            prefix = raw[: len(candidate)]
+            path_part = raw[len(candidate) :]
+            break
+    segments = [seg for seg in path_part.split("/") if seg]
+    if not segments or any(seg in (".", "..") for seg in segments):
+        raise ValueError("drive_folder_path_traversal_forbidden")
+    normalized = "/" + "/".join(segments)
+    if posixpath.normpath(normalized) != normalized:
+        raise ValueError("drive_folder_path_not_canonical")
+    return f"{prefix}{normalized}"
+
+
+def build_drive_folder_source_params(
+    *,
+    platform_type: str,
+    folder_path: str,
+    credential_id: int,
+    tenant_id: int,
+    allowed_extensions: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    """Build a canonical Source descriptor for a mounted cloud drive or gateway folder."""
+    from app.types.enums.platform_types import PlatformType, SourceType
+
+    resolved_platform = PlatformType.get_by_value(platform_type)
+    if resolved_platform not in (
+        PlatformType.YANDEX_DISK,
+        PlatformType.MAILRU_CLOUD,
+        PlatformType.BITRIX24,
+        PlatformType.LOCAL_GATEWAY,
+    ):
+        raise ValueError("drive_folder_platform_unsupported")
+    if type(credential_id) is not int or credential_id <= 0:
+        raise ValueError("drive_folder_credential_invalid")
+    if type(tenant_id) is not int or tenant_id <= 0:
+        raise ValueError("drive_folder_tenant_invalid")
+
+    canonical_path = normalize_drive_folder_path(folder_path)
+    exts = tuple(
+        ext if ext.startswith(".") else f".{ext}"
+        for ext in (allowed_extensions or _DEFAULT_ALLOWED_DRIVE_EXTENSIONS)
+        if isinstance(ext, str) and ext.strip()
+    )
+    return {
+        "source_type": SourceType.DRIVE_FOLDER.db_value,
+        "platform_type": resolved_platform.db_value,
+        "external_id": canonical_path,
+        "params": {
+            "credential_id": credential_id,
+            "tenant_id": tenant_id,
+            "sync_mode": "watch_folder",
+            "allowed_extensions": list(exts),
+        },
+    }
+
+
+def build_workspace_connectors(
+    *,
+    credentials: Iterable[Any] = (),
+    statuses: dict[str, Any] | None = None,
+    tenant_id: Optional[int] = None,
+    username: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    """Build `workspace_connectors` cards for `GET /app/settings?tab=connections`."""
+    cred_list = list(credentials or ())
+    status_map = dict(statuses or {})
+    owner_label = f"{username} (текущее пространство)" if username else "Участник текущего пространства"
+    cards: list[dict[str, Any]] = []
+
+    for spec in CONNECTIONS:
+        bootstrap = _BOOTSTRAP.get(spec.platform, {})
+        matching_rows = []
+        for row in cred_list:
+            if getattr(row, "platform", None) != spec.platform:
+                continue
+            row_meta = getattr(row, "meta", None)
+            if not credential_matches_workspace(row_meta, tenant_id):
+                continue
+            matching_rows.append(row)
+
+        active_rows = [row for row in matching_rows if getattr(row, "is_active", False)]
+        status = status_map.get(spec.platform)
+        raw_state = getattr(status, "state", None)
+        if active_rows or raw_state in ("connected", "renewable", "renewal_unverified"):
+            health_status = "connected"
+            health_diagnostic = (
+                f"Сохранено активных записей: {len(active_rows)} · подключение не проверено"
+                if active_rows
+                else (getattr(status, "detail", "") or "Данные сохранены; подключение не проверено")
+            )
+        elif raw_state == "reauth":
+            health_status = "degraded"
+            health_diagnostic = getattr(status, "detail", "") or "Требуется повторная авторизация участника"
+        elif matching_rows:
+            health_status = "paused"
+            health_diagnostic = "Ключ сохранён, но отключён участником в этом пространстве"
+        else:
+            health_status = "unconfigured"
+            health_diagnostic = "Ключ в текущем пространстве ещё не добавлен — используйте форму ручного ввода выше"
+
+        latest_meta = sanitize_connector_meta(getattr(active_rows[0], "meta", None)) if active_rows else {}
+        mounted = list(latest_meta.get("mounted_folders") or ())
+        watermark = str(latest_meta.get("watermark") or "Нет данных о синхронизации")
+        boundary = str(latest_meta.get("data_boundary") or bootstrap.get("data_boundary") or spec.data_boundary)
+
+        cards.append(
+            {
+                "id": f"ws-conn-{spec.platform}",
+                "name": spec.title,
+                "platform_type": spec.platform,
+                "category_label": spec.category_label,
+                "auth_protocol": spec.auth_protocol,
+                "credential_owner": owner_label if active_rows else "Не привязан к участнику",
+                "data_boundary": boundary,
+                "capabilities": list(bootstrap.get("capabilities", ())),
+                "write_capabilities": list(bootstrap.get("write_capabilities", ())),
+                "mounted_folders": mounted,
+                "watermark": watermark,
+                "health_status": health_status,
+                "health_diagnostic": health_diagnostic,
+            }
+        )
+    return cards
+
+
+async def _telegram_source_status(source):
+    """New-store metadata only; never decrypt or consult an old personal vault."""
+    if not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED:
+        return await connection_status("telegram", None)
+    from app.core.database import async_session_maker
+    from app.services.social.connector_authorizations import AuthorizationUnavailable
+    from app.services.social.telegram_grant_access import _inspect_source_grant, source_grant_selection
+
+    try:
+        selected = source_grant_selection(source)
+        async with async_session_maker() as session, session.begin():
+            await _inspect_source_grant(session, selected)
+    except AuthorizationUnavailable:
+        return ConnectionStatus(
+            "telegram",
+            "missing",
+            "Нужен явный выбор",
+            "Проверьте личную авторизацию, разрешение пространства и ревизию выбора источника.",
+            True,
+        )
+    except Exception:
+        return ConnectionStatus(
+            "telegram",
+            "unavailable",
+            "Статус недоступен",
+            "Локальные права не удалось подтвердить. Доступ провайдера не проверялся.",
+            True,
+            False,
+            operator_attention=True,
+        )
+    return ConnectionStatus(
+        "telegram",
+        "connected",
+        "Выбор сохранён локально",
+        "Проверены только метаданные разрешения. Ключ, сессия и права выполнения проверяются заново при запуске.",
+        False,
+    )

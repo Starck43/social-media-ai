@@ -31,11 +31,3 @@
   </div>
 </div>
 {% endblock %}
-{% block head_css %}
-{{ super() }}
-<link rel="stylesheet" href="{{ url_for('static', path='css/permission-transfer.css') }}">
-{% endblock %}
-{% block tail_js %}
-{{ super() }}
-<script src="{{ url_for('static', path='js/permission-transfer.js') }}" defer></script>
-{% endblock %}

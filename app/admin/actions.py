@@ -1,4 +1,4 @@
-"""Operator LLM testing: GET renders only; explicit CSRF-protected POST executes."""
+"""Operator actions: GET renders only; explicit CSRF-protected POST executes."""
 
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -18,6 +18,57 @@ from app.services.ai.model_probe import (
     probe_status,
     request_parameters,
 )
+
+
+async def render_action_confirmation(
+    admin_view,
+    request: Request,
+    *,
+    title: str,
+    message: str,
+    fields: list[dict[str, Any]] | None = None,
+    submit_label: str = "Подтвердить",
+    cancel_url: str | None = None,
+):
+    """The confirmation step of a two-step operator action.
+
+    A mutating or paid custom action never runs on GET: the action URL renders
+    this page, and only its form — a CSRF-checked POST to the same path —
+    executes. `fields` are extra named inputs rendered above the submit button
+    (for example a recipient the operator types in); their values travel in the
+    POST body, never in the query string.
+    """
+    return await admin_view.templates.TemplateResponse(
+        request,
+        "sqladmin/action_confirm.html",
+        {
+            "title": title,
+            "message": message,
+            # The form posts to the action path only: `pks` is a hidden field, so
+            # a bookmarkable GET URL cannot carry the selection into the write.
+            "action_url": request.url.path,
+            "pks": request.query_params.get("pks", ""),
+            "fields": fields or [],
+            "submit_label": submit_label,
+            "cancel_url": cancel_url,
+        },
+    )
+
+
+async def verified_action_form(request: Request):
+    """Parse an action POST body and enforce the session-bound CSRF token.
+
+    `AdminCSRFMiddleware` already refuses tokenless mutating console requests;
+    this second check keeps the action closed if the middleware order or the
+    route registration ever changes.
+    """
+    from app.admin.csrf import verify_request_token
+
+    form = await request.form()
+    token = form.get("csrf_token")
+    if not isinstance(token, str) or not verify_request_token(request, token):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
+    return form
 
 
 class LLMModelActions:

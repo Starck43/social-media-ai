@@ -43,7 +43,6 @@ if (
 # isort: split
 from sqlalchemy import func, select
 
-from app.core.config import settings
 from app.core.database import async_session_maker
 from app.core.permissions import operator_permission_scope, permission_scope
 from app.core.tenant_context import tenant_scope
@@ -57,6 +56,7 @@ from app.models import (
 )
 from app.services.ai import model_probe
 from app.services.ai.personal_catalog import save_provider_bundle
+from tests.support.schema_guard import require_isolated_schema
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 
@@ -332,4 +332,4 @@ async def test_no_actor_commands_fail_before_any_backend(monkeypatch, tables, ca
 
 
 async def test_acceptance_environment_is_the_approved_schema():
-    assert settings.DB_SCHEMA == "test_schema", "STOP: schema redirect changed"
+    require_isolated_schema()

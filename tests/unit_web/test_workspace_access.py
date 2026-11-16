@@ -1,7 +1,8 @@
 """Isolated access contracts: AST handlers, pure policy, fake ORM and offline SQL only.
 
-No application import, engine, root conftest, ASGI startup or provider call.
-These checks are not real role/tenant/database acceptance.
+No application runtime/model initialization, database engine, root conftest,
+ASGI startup or provider call. These checks are not real role/tenant/database
+acceptance.
 """
 
 from __future__ import annotations
@@ -127,6 +128,7 @@ def chat_namespace():
             ensure_csrf=lambda *a: True,
             render_section_denied=lambda *a: HTMLResponse("Denied", status_code=403),
             section_of=nav["section_of"],
+            _company_connector_search_options=AsyncMock(return_value={"enabled": False, "devices": []}),
         ),
     )
 
@@ -191,7 +193,9 @@ async def test_messenger_member_requires_ai_chat_grant():
             WEB_CHANNEL="web",
             current_tenant_id=lambda: 7,
             resolve_runtime_identity=AsyncMock(
-                return_value=NS(user_id=101, is_owner=False, ai_chat_enabled=True, user=user(), member_grants=frozenset())
+                return_value=NS(
+                    user_id=101, is_owner=False, ai_chat_enabled=True, user=user(), member_grants=frozenset()
+                )
             ),
             memory_actor_scope=lambda *args: nullcontext(),
             permission_scope=lambda *a, **kw: nullcontext(),
@@ -207,7 +211,7 @@ async def test_messenger_member_requires_ai_chat_grant():
 @pytest.mark.parametrize("active", [True, False])
 @pytest.mark.parametrize("codename,expected", [("admin", True), ("operator", True), ("user", False)])
 def test_admin_entry_requires_active_platform_operator_or_admin(active, codename, expected):
-    enum = NS(ADMIN="admin", OPERATOR="operator")
+    enum = NS(ADMIN="admin", OPERATOR="operator", SUPERUSER="superuser")
     cls = load_nodes(
         "app/models/identity/user.py",
         {"User"},
@@ -225,19 +229,22 @@ async def test_admin_auth_binds_verified_token_identity_not_stale_session(monkey
     loaded = NS(id=101, username="verified", is_active=True, has_admin_access=lambda: True)
     get = AsyncMock(return_value=loaded)
     auth = AsyncMock(return_value=NS(id=101, is_active=True))
+    resolve = AsyncMock(return_value=loaded)
     cls = load_nodes(
         "app/admin/auth.py",
         {"AdminAuthBackend"},
         methods={"authenticate"},
         namespace=dict(
-            User=NS(objects=NS(prefetch_related=lambda *a: NS(get=get))),
-            get_authenticated_user=auth,
+            resolve_operator_identity=resolve,
             HTTPException=RuntimeError,
+            SESSION_ID_KEY="sid",
+            ensure_session_id=lambda request: request.session.update({"sid": "fixture"}),
         ),
     )["AdminAuthBackend"]
     req = NS(session={"token": "mock-token", "user_id": "999", "app_tenant_id": 7}, state=NS())
     assert await cls().authenticate(req)
-    get.assert_awaited_once_with(id=101)
+    # The stale session user_id is never trusted: the token is re-resolved.
+    resolve.assert_awaited_once_with("mock-token", require_admin_access=True)
     assert req.state.admin_user is loaded
     assert req.session["user_id"] == "101"
     assert req.session["app_tenant_id"] == 7
@@ -247,16 +254,14 @@ async def test_admin_auth_binds_verified_token_identity_not_stale_session(monkey
 @pytest.mark.parametrize("token", [None, "mock-token"])
 async def test_external_admin_guard_requires_token_not_user_id(monkeypatch, token):
     loaded = NS(id=101, is_active=True)
-    get = AsyncMock(return_value=loaded)
-    authenticate = AsyncMock(return_value=NS(id=101, is_active=True))
-    module(monkeypatch, "app.services.user.auth", get_authenticated_user=authenticate)
+    resolve = AsyncMock(return_value=loaded)
     cls = load_nodes(
         "app/admin/authorization.py",
         {"AdminAuthorizationBackend"},
         methods={"resolve_user"},
         namespace=dict(
             _MISSING=object(),
-            User=NS(objects=NS(prefetch_related=lambda *a: NS(get=get))),
+            resolve_operator_identity=resolve,
             logger=NS(warning=lambda *a, **k: None),
         ),
     )["AdminAuthorizationBackend"]
@@ -264,20 +269,28 @@ async def test_external_admin_guard_requires_token_not_user_id(monkeypatch, toke
     result = await cls().resolve_user(req)
     assert result is (loaded if token else None)
     if token:
-        get.assert_awaited_once_with(id=101)
+        resolve.assert_awaited_once_with(token, require_admin_access=True)
     else:
-        get.assert_not_awaited()
+        resolve.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("grants", [set(), {"view"}, {"create"}, {"update"}, {"delete"}, {"export"}, {"configure"}])
 async def test_admin_model_action_grants_remain_separate(grants):
+    # Exercise the current resource registry: workspace scoping for `source`
+    # must remain distinct from the global `user` model.
+    from app.core.access_catalog import resource_for
+
     cls = load_nodes(
         "app/admin/authorization.py",
         {"AdminAuthorizationBackend"},
         methods={"get_grants"},
         namespace=dict(
             WILDCARD="*",
+            resource_for=resource_for,
+            # A platform-console request without a workspace exercises the
+            # operator's platform grants against the actual resource registry.
+            current_tenant_id=lambda: None,
             Action=NS(LIST="list", DETAILS="details"),
             ActionType=NS(VIEW="view"),
             BUILTIN_ACTION_TYPES={
@@ -296,6 +309,7 @@ async def test_admin_model_action_grants_remain_separate(grants):
     backend.resolve_user = AsyncMock(
         return_value=NS(
             has_admin_access=lambda: True,
+            is_superuser=False,
             is_platform_admin=False,
             model_permissions=lambda name: grants if name == "source" else set(),
         )
@@ -395,10 +409,10 @@ async def test_team_change_locks_workspace_and_updates_only_authorized_target(mo
     module(monkeypatch, "app", __path__=[])
     module(monkeypatch, "app.models", __path__=[])
     module(monkeypatch, "app.models.managers", __path__=[])
-    module(monkeypatch, "app.models.tenancy", __path__=[])
+    module(monkeypatch, "app.models.tenancy", __path__=[], Tenant=Tenant)
     module(monkeypatch, "app.models.tenancy.workspace_role", WorkspaceRole=WorkspaceRole)
-    module(monkeypatch, "app.models.tenant", Tenant=Tenant)
-    module(monkeypatch, "app.models.user", User=User)
+    module(monkeypatch, "app.models.tenancy.tenant", Tenant=Tenant)
+    module(monkeypatch, "app.models.identity.user", User=User)
     cls = load_nodes(
         "app/models/managers/tenant_manager.py",
         {"TenantUserManager"},
@@ -469,10 +483,17 @@ def test_shell_context_labels_admin_entry_and_member_disable_markup():
     assert "m_key != 'owner'" in template
 
 
-def test_chat_has_no_additional_unprotected_attachment_route():
+def test_every_chat_route_carries_the_deny_guard():
+    """A new attachment/context route must prove its guard, not just exist."""
     tree = ast.parse((ROOT / "app/web/chat.py").read_text())
-    routes = [n.name for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.decorator_list]
-    assert set(routes) == {"chat_page", "chat_send", "chat_message_delete"}
+    routes = {n.name: n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.decorator_list}
+    assert {"chat_page", "chat_send", "chat_message_delete"} <= set(routes)
+    unguarded = sorted(
+        name
+        for name, node in routes.items()
+        if not any(isinstance(call, ast.Call) and "_chat_denied" in ast.unparse(call.func) for call in ast.walk(node))
+    )
+    assert unguarded == [], f"chat routes without _chat_denied: {unguarded}"
     runtime = (ROOT / "app/agent/runtime.py").read_text()
     assert "Reload membership instead of trusting" not in runtime  # No changes to messenger turn.
 
@@ -508,6 +529,9 @@ def test_middleware_denies_direct_guest_chat_reads(method):
             "section_of": nav["section_of"],
             "allows": nav["allows"],
             "PERSONAL_ACCOUNT_PATHS": PERSONAL_ACCOUNT_PATHS,
+            "_is_personal_connector_path": lambda path, method: (
+                method == "GET" and path == "/app/settings/telegram-accounts"
+            ),
         },
     )["TenantUIMiddleware"]
     request = NS(method=method, state=NS(web_user=user(), web_perms=NS(can_open_chat=False)))

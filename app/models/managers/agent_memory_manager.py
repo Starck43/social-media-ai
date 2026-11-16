@@ -13,14 +13,14 @@ from .base_manager import BaseManager
 if TYPE_CHECKING:
     from app.services.ai.output_contracts import LearnedFacts
 
-    from ..agent_memory import AgentMemory
+    from ..agent.agent_memory import AgentMemory
 
 
 class AgentMemoryManager(BaseManager["AgentMemory"]):
     """Personal agent facts with a separate owner-only legacy bucket."""
 
     def __init__(self):
-        from ..agent_memory import AgentMemory
+        from ..agent.agent_memory import AgentMemory
 
         super().__init__(AgentMemory)
 
@@ -54,7 +54,7 @@ class AgentMemoryManager(BaseManager["AgentMemory"]):
 
     async def read(self, key: str, scope: str = "global") -> Optional[str]:
         """Read this actor's value; owners may fall back to old legacy facts."""
-        from ..agent_memory import AgentMemory
+        from ..agent.agent_memory import AgentMemory
 
         user_id, is_owner, tenant_id = self._actor()
         row = await self.filter(
@@ -83,7 +83,7 @@ class AgentMemoryManager(BaseManager["AgentMemory"]):
         evidence_message_id: Optional[int] = None,
     ) -> None:
         """Upsert this actor's fact; writes never mutate legacy/shared rows."""
-        from ..agent_memory import AgentMemory
+        from ..agent.agent_memory import AgentMemory
 
         user_id, _, tenant_id = self._actor()
         row = await self.filter(
@@ -124,7 +124,7 @@ class AgentMemoryManager(BaseManager["AgentMemory"]):
         authorized_session_ids: set[int],
     ) -> bool:
         """Atomically commit one actor's validated facts and learning cursor."""
-        from ..agent_message import AgentMessage
+        from ..agent.agent_message import AgentMessage
 
         user_id, _, tenant_id = self._actor()
         if not authorized_session_ids or any(type(value) is not int or value <= 0 for value in authorized_session_ids):
@@ -237,7 +237,7 @@ class AgentMemoryManager(BaseManager["AgentMemory"]):
         include_legacy: bool = True,
     ) -> list["AgentMemory"]:
         """Bounded actor snapshot; legacy NULL rows are visible only to owners."""
-        from ..agent_memory import AgentMemory
+        from ..agent.agent_memory import AgentMemory
 
         user_id, is_owner, tenant_id = self._actor()
         clauses = [
@@ -267,7 +267,7 @@ class AgentMemoryManager(BaseManager["AgentMemory"]):
 
     async def legacy_snapshot(self, limit: int = 20, *, scope: str | None = None) -> list["AgentMemory"]:
         """Read legacy shared facts only for the current workspace owner."""
-        from ..agent_memory import AgentMemory
+        from ..agent.agent_memory import AgentMemory
 
         _, is_owner, tenant_id = self._actor()
         if not is_owner:
@@ -284,7 +284,7 @@ class AgentMemoryManager(BaseManager["AgentMemory"]):
 
     async def delete_fact_by_id(self, row_id: int) -> bool:
         """Delete only a fact visible to this actor, including owner's legacy."""
-        from ..agent_memory import AgentMemory
+        from ..agent.agent_memory import AgentMemory
 
         user_id, is_owner, tenant_id = self._actor()
         criteria = [AgentMemory.id == row_id, AgentMemory.tenant_id == tenant_id]
@@ -301,7 +301,7 @@ class AgentMemoryManager(BaseManager["AgentMemory"]):
 
     async def update_fact_by_id(self, row_id: int, **values) -> bool:
         """Update only a fact visible to this actor."""
-        from ..agent_memory import AgentMemory
+        from ..agent.agent_memory import AgentMemory
 
         user_id, is_owner, tenant_id = self._actor()
         criteria = [AgentMemory.id == row_id, AgentMemory.tenant_id == tenant_id]
@@ -318,7 +318,7 @@ class AgentMemoryManager(BaseManager["AgentMemory"]):
 
     async def clear_facts(self) -> int:
         """Clear this actor's facts; only owners may clear the legacy bucket."""
-        from ..agent_memory import AgentMemory
+        from ..agent.agent_memory import AgentMemory
 
         user_id, is_owner, tenant_id = self._actor()
         criteria = [

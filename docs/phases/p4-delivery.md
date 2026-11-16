@@ -1,21 +1,22 @@
-# P4 — Tenant-safe delivery (gate: delivery stays tenant-safe)
+# P4 — Tenant-safe delivery
 
-Goal: successful recipients are not resent; ambiguous sends stop for review;
-recipients and credentials belong to the owning workspace.
-Delivered: legacy partial-delivery stop, zero-success terminal outcome,
-scheduled/forced publisher fences and lease-loss evidence (PRs #106, #112,
-#113, #115, #120).
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p4) · [full historical notes](../audit/history/phase-p4-history.md)
 
-## Tasks
+**Goal:** Delivery is tenant-safe, retry-safe and truthful about uncertain outcomes.
 
-- [ ] P4-T01 — staging operator-recovery evidence; accept: documented staging
-  run proving operator recovery of an ambiguous/stopped delivery without
-  resending to successful recipients; depends: staging availability;
-  owns: docs/evidence lane; owner: unassigned; status: BLOCKED — no staging
-  environment is available, so it cannot be claimed as written; it completes
-  only after the deployment stage that P6-T01 and P7-T01 wait for, or it
-  should be DROPPED together with them.
+**Plan — active task cards:**
 
-## Phase approval
+- [P4-T01](../tasks/p4-t01.md) — staging operator-recovery evidence
+- [P4-T02](../audit/p4/p4-t02.md) — notification recipients, per-user read state and lifecycle; accepted 2026-10-27, integrated in PR #246 (merge `4e74318c`)
 
-- [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —
+P4-T02 shipped the recipient-specific inbox semantics decided in the PR #246
+coordination: `notification_receipts` per user, `severity`, addressed
+delivery and per-recipient read state. The former retention-purging contract
+item (legacy P6-T02 scope) was explicitly descoped by the owner on
+2026-10-27.
+
+**Accepted history:**
+
+- No recorded task history.
+
+**Phase status:** Active phase; close only after every plan item is accepted.

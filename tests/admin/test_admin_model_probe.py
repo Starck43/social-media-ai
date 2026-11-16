@@ -1,8 +1,9 @@
 """Isolated source/mocked handlers and real template rendering; no app, DB or provider."""
 
+# Source-only: every app boundary is isolated or a pure context helper; tests use doubles, not storage.
+__source_only__ = True
+
 import ast
-import inspect
-import json
 from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, Mock
@@ -18,8 +19,16 @@ COST_EVIDENCE = load_isolated_source("_probe_cost_evidence", ROOT / "app/service
 
 
 def model(**changes):
+    """A personal-catalogue model with an owner, like every 0109+ row.
+
+    `LLMClient.__init__` refuses a model whose owner (or whose provider's owner)
+    is not the bound catalogue owner, so the fixture carries the same owner on
+    both sides instead of relying on the guard being off.
+    """
+    owner_id = changes.pop("owner_user_id", 2)
     values = dict(
         id=7,
+        owner_user_id=owner_id,
         name="Example <script>bad()</script>",
         model_id="example/model",
         model_type="text,image",
@@ -30,7 +39,13 @@ def model(**changes):
         output_cost_per_1k=0.002,
         last_success_at=None,
         last_error_at=None,
-        provider=NS(name="Provider", api_format="openai", is_active=True, get_api_key=lambda: "fake-test-key"),
+        provider=NS(
+            name="Provider",
+            owner_user_id=owner_id,
+            api_format="openai",
+            is_active=True,
+            get_api_key=lambda: "fake-test-key",
+        ),
     )
     values.update(changes)
     return NS(**values)
@@ -86,6 +101,24 @@ def test_short_fails_closed_without_provider_traffic(state):
     module, post = probe_module()
     assert module.probe_short(state)["ok"] is False
     post.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failed_real_probe_journals_the_provider_attempt_identity():
+    module, _ = probe_module()
+    llm_boundary = module.__isolated_imports__["app.services.ai.llm_client"]
+    client = llm_boundary.LLMClientFactory.create(model())
+    failure = httpx.ReadTimeout("synthetic timeout")
+    failure.dispatch_id = "e" * 32
+
+    async def failed_chat(*_args, **_kwargs):
+        client._probe_diagnostics.update(stage="transport", dispatch_state="possible")
+        raise failure
+
+    client.chat = AsyncMock(side_effect=failed_chat)
+    result = await module.probe_real_capped(model())
+    assert not result["ok"]
+    llm_boundary.journal_chat_attempt.assert_awaited_once_with(client, "admin_probe", None, dispatch_id="e" * 32)
 
 
 def test_short_is_prompt_free_and_never_escalates():
@@ -280,7 +313,7 @@ async def test_post_requires_fresh_configure_csrf_but_no_checkbox(allowed, csrf,
             "ActionType": NS(CONFIGURE="configure"),
             "HTMLResponse": object,
             "HTTPException": HTTPException,
-            "get_csrf_manager": lambda request: NS(verify_token=lambda token: csrf),
+            "verify_request_token": lambda request, token: bool(csrf and token),
             "settings": NS(PERSONAL_BILLING_ENABLED=True),
             "Tenant": NS(objects=NS(get=AsyncMock(return_value=NS(id=3, is_active=True)))),
         },
@@ -365,7 +398,7 @@ def test_actual_template_renders_partial_states_and_escapes(result):
 
 
 def test_model_view_display_and_telemetry_are_not_editable():
-    source = ast.parse((ROOT / "app/admin/views.py").read_text())
+    source = ast.parse((ROOT / "app/admin/view_modules/llm_catalog.py").read_text())
     view = next(c for c in source.body if isinstance(c, ast.ClassDef) and c.name == "LLMModelAdmin")
     form = next(
         ast.literal_eval(n.value)
@@ -387,12 +420,15 @@ def test_model_view_display_and_telemetry_are_not_editable():
 @pytest.mark.asyncio
 async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_without_db():
     """Exercise SQLAdmin's actual view/form API with canonical ORM metadata only."""
+    from contextlib import nullcontext
+
     from sqladmin import ModelView, action
     from sqladmin.fields import SelectField
     from sqlalchemy import Column, ForeignKey, Integer
     from sqlalchemy.orm import relationship
     from wtforms import FloatField, widgets
 
+    price_fields = load_isolated_source("_exact_model_price_field_fixture", ROOT / "app/admin/price_fields.py")
     settings = NS(DB_SCHEMA="fixture_schema")
     config = NS(settings=settings)
     decorators = NS(app_label=lambda label: lambda cls: cls)
@@ -437,9 +473,14 @@ async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_witho
         form_args = {}
         form_overrides = {"is_active": SelectField, "is_default": SelectField}
 
+        def _catalog_scope(self, request=None):
+            # This canonical-metadata scaffold has no request or DB actor; other
+            # tests cover the real per-actor catalogue scope behavior.
+            return nullcontext()
+
     node = next(
         n
-        for n in ast.parse((ROOT / "app/admin/views.py").read_text()).body
+        for n in ast.parse((ROOT / "app/admin/view_modules/llm_catalog.py").read_text()).body
         if isinstance(n, ast.ClassDef) and n.name == "LLMModelAdmin"
     )
     ns = dict(
@@ -450,6 +491,8 @@ async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_witho
         CommaSeparatedSelectMultipleField=widget.CommaSeparatedSelectMultipleField,
         widgets=widgets,
         FloatField=FloatField,
+        SelectField=SelectField,
+        ExactModelPriceField=price_fields.ExactModelPriceField,
         model_price=lambda value: "$" + format(Decimal(str(value)), "f"),
         action=action,
     )
@@ -491,11 +534,14 @@ async def test_real_sqladmin_llm_view_scaffolds_against_canonical_metadata_witho
 async def test_web_handler_preserves_guards_and_calls_same_short_service(allowed, csrf, exists):
     from starlette.responses import RedirectResponse
 
-    probe, post = probe_module()
-    probe.probe_short = Mock(wraps=probe.probe_short)
     selected = model()
     manager = NS(select_related=lambda *a: manager, filter=lambda **kw: manager, first=AsyncMock(return_value=selected))
     tenant_manager = NS(get=AsyncMock(return_value=NS(id=3) if exists else None))
+    run_probe = AsyncMock(return_value=NS(headers={}))
+    personal_catalog = NS(
+        validate_chat_model=AsyncMock(return_value=selected),
+        chat_model_options=AsyncMock(return_value=[]),
+    )
     handler = extracted_handler(
         "app/web/settings.py",
         "agent_model_probe",
@@ -508,27 +554,37 @@ async def test_web_handler_preserves_guards_and_calls_same_short_service(allowed
             "BACK": "/app/settings",
             "LLMModel": NS(objects=manager),
             "RedirectResponse": RedirectResponse,
+            "__package__": "app.web",
         },
         {
             "app.models.managers.tenant_manager": NS(tenants=tenant_manager),
-            "app.services.ai.model_probe": probe,
+            "app.services.ai.personal_catalog": personal_catalog,
+            "settings_llm": NS(_run_probe=run_probe),
         },
     )
-    request = NS(session={})
-    await handler(request, agent_model="7", token="fake-csrf", tenant_id=3)
+    request = NS(session={}, state=NS(web_user=NS(id=selected.owner_user_id)))
+    await handler(request, agent_model_id="7", token="fake-csrf", tenant_id=3, probe_mode="local", consent="")
     if allowed and csrf and exists:
-        probe.probe_short.assert_called_once_with(selected)
-        assert request.session["agent_model_probe_result"]["ok"]
+        personal_catalog.validate_chat_model.assert_awaited_once_with(
+            user_id=selected.owner_user_id, tenant_id=3, model_id=7
+        )
+        run_probe.assert_awaited_once_with(request, model_id="7", mode="local", tenant_id=3, consent="")
     else:
-        probe.probe_short.assert_not_called()
+        run_probe.assert_not_awaited()
         assert not request.session
-    post.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_known_real_estimate_and_failed_save_do_not_retry_paid_request():
     probe, post = probe_module(
-        {"choices": [{"message": {"content": "да"}}], "usage": {"prompt_tokens": 2, "completion_tokens": 3}}
+        {
+            "choices": [{"message": {"content": "да"}}],
+            "usage": {
+                "prompt_tokens": 2,
+                "completion_tokens": 3,
+                "prompt_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+            },
+        }
     )
     actions, manager, view = action_module(probe)
     manager.update_by_id.side_effect = RuntimeError("PRIVATE_SENTINEL")

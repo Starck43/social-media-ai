@@ -32,6 +32,8 @@ db.sqlite3*
 # Environment
 .env*
 !.env.example
+!.env.staging.example
+!.env.production.example
 .venv/
 venv/
 ENV/
@@ -47,19 +49,26 @@ ENV/
 logs/
 *.log
 
-# Agent workspaces: local-only artifacts. Shared config is tracked:
-# AGENTS.md, docs/RULES.md, .agents/skills/, .codex/, .kilo/agents/.
+# Shared rules/skills are tracked in AGENTS.md and .agents/skills/.
+# Provider adapters and runtime state are local to each installation.
 .agent/
 .agents/tmp/
 .gigacode/
-# Kilo: allow traversal so agent config can be tracked; ignore runtime state.
-!.kilo/
-.kilo/*
-!.kilo/agents/
-!.kilo/.gitignore
+.opencode/
+.codex/
+.kilo/
+.perch/
 
 # Backup artifacts
 *.backup
 backups/
+# local git worktrees placed inside the checkout
+/worktrees/
 *.dump
 
+
+# Private last-successful image digest for VPS operator commands.
+.deployed-image.*
+
+# Owner private working plan (local only, never commit)
+/tasks_plan.md

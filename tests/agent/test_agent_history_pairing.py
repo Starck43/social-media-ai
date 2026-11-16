@@ -52,7 +52,8 @@ class HistoryPairingTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.manager = SimpleNamespace(recent=AsyncMock())
         self.ns = {"json": json, "agent_messages": self.manager, "settings": SimpleNamespace(AGENT_HISTORY_LIMIT=20)}
-        extract("app/agent/tools.py", {"to_openai_call"}, self.ns)
+        extract("app/services/llm_tool_serialization.py", {"tool_call"}, self.ns)
+        self.ns["to_openai_call"] = self.ns["tool_call"]
         extract("app/agent/session.py", {"_call_id", "load_history"}, self.ns)
 
     def assistant(self, content, calls=()):

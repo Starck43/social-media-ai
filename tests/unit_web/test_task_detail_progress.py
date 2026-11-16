@@ -14,7 +14,8 @@ from app.models.managers.agent_task_manager import (
     _RetryAdmissionBusy,
     _RetryAdmissionTransaction,
 )
-from app.web import tasks
+from app.web import task_presenters
+from app.web import task_routes as tasks
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -102,6 +103,7 @@ async def test_latest_progress_endpoint_looks_up_task_and_job_in_same_tenant(mon
         lambda *_args, **_kwargs: {"job": job_row, "summary": {}, "sources": [], "can_view_sources": False},
     )
     monkeypatch.setattr(tasks, "_task_run_scope", lambda *_args, **_kwargs: _async_value(None))
+    monkeypatch.setattr(task_presenters, "_lane_run_rows", lambda _job: _async_value([]))
     monkeypatch.setattr(tasks, "render", lambda _request, name, **context: (name, context))
     request = SimpleNamespace(state=SimpleNamespace(tenant_id=7))
 
@@ -194,12 +196,15 @@ def test_task_run_panel_hides_admin_diagnostics_for_regular_operator(monkeypatch
     request = SimpleNamespace()
     task = SimpleNamespace(name="Scoped task")
     job = SimpleNamespace(id=44, job_type="analyze", status="done", result={})
-    monkeypatch.setattr(tasks, "_job_summary", lambda *_args: {"status": "done", "stats": [{"value": 2}]})
-    monkeypatch.setattr(tasks, "_source_links", lambda _job: [{"source_id": 8, "name": "Source"}])
-    monkeypatch.setattr(tasks, "_raw_coverage", lambda _job: [{"source_id": 8, "percent": 50}])
-    monkeypatch.setattr(tasks, "_diagnostics_view", lambda _job: {"job_id": 44, "error_code": "timeout"})
-    monkeypatch.setattr(tasks, "perms_can", lambda _request, resource, action: (resource, action) == ("source", "view"))
-    monkeypatch.setattr(tasks, "_diagnostics_admin", lambda _request: False)
+    monkeypatch.setattr(task_presenters, "_job_summary", lambda *_args: {"status": "done", "stats": [{"value": 2}]})
+    monkeypatch.setattr(task_presenters, "_source_links", lambda _job: [{"source_id": 8, "name": "Source"}])
+    monkeypatch.setattr(task_presenters, "_raw_coverage", lambda _job: [{"source_id": 8, "percent": 50}])
+    monkeypatch.setattr(task_presenters, "_lane_run_rows", lambda _job: _async_value([]))
+    monkeypatch.setattr(task_presenters, "_diagnostics_view", lambda _job: {"job_id": 44, "error_code": "timeout"})
+    monkeypatch.setattr(
+        task_presenters, "perms_can", lambda _request, resource, action: (resource, action) == ("source", "view")
+    )
+    monkeypatch.setattr(task_presenters, "_diagnostics_admin", lambda _request: False)
 
     panel = tasks._task_run_panel_data(request, task, job)
 
@@ -212,7 +217,7 @@ def test_task_run_panel_hides_admin_diagnostics_for_regular_operator(monkeypatch
 def test_task_run_panel_keeps_legacy_status_and_scope_when_task_has_no_job(monkeypatch):
     request = SimpleNamespace(state=SimpleNamespace(web_user=None))
     task = SimpleNamespace(name="Scoped task", last_status="queued", last_run_at=datetime.now(timezone.utc))
-    monkeypatch.setattr(tasks, "perms_can", lambda *_args: False)
+    monkeypatch.setattr(task_presenters, "perms_can", lambda *_args: False)
 
     panel = tasks._task_run_panel_data(request, task, None, run_scope={"total": 4, "active": 3, "platforms": 2})
 
@@ -228,13 +233,14 @@ def test_task_run_panel_includes_allowlisted_diagnostics_only_for_admin(monkeypa
     task = SimpleNamespace(name="Scoped task")
     job = SimpleNamespace(id=44, job_type="analyze", status="failed", result={})
     monkeypatch.setattr(
-        tasks, "_job_summary", lambda *_args: {"status": "failed", "error": "secret raw provider exception"}
+        task_presenters, "_job_summary", lambda *_args: {"status": "failed", "error": "secret raw provider exception"}
     )
-    monkeypatch.setattr(tasks, "_source_links", lambda _job: [])
-    monkeypatch.setattr(tasks, "_raw_coverage", lambda _job: [])
-    monkeypatch.setattr(tasks, "_diagnostics_view", lambda _job: {"job_id": 44, "error_code": "timeout"})
-    monkeypatch.setattr(tasks, "perms_can", lambda *_args: False)
-    monkeypatch.setattr(tasks, "_diagnostics_admin", lambda _request: True)
+    monkeypatch.setattr(task_presenters, "_source_links", lambda _job: [])
+    monkeypatch.setattr(task_presenters, "_raw_coverage", lambda _job: [])
+    monkeypatch.setattr(task_presenters, "_lane_run_rows", lambda _job: _async_value([]))
+    monkeypatch.setattr(task_presenters, "_diagnostics_view", lambda _job: {"job_id": 44, "error_code": "timeout"})
+    monkeypatch.setattr(task_presenters, "perms_can", lambda *_args: False)
+    monkeypatch.setattr(task_presenters, "_diagnostics_admin", lambda _request: True)
 
     panel = tasks._task_run_panel_data(request, task, job)
 
@@ -267,7 +273,20 @@ def test_task_detail_template_renders_task_run_actions_and_progress_counters():
         summary=summary,
         sources=[],
         can_view_sources=True,
-        run_progress={"state": "running", "phases": [{"key": "analysis", "label": "Анализ данных", "processed": 3, "total": 10, "percent": 30, "segments": [], "note": "Успешно обработано"}]},
+        run_progress={
+            "state": "running",
+            "phases": [
+                {
+                    "key": "analysis",
+                    "label": "Анализ данных",
+                    "processed": 3,
+                    "total": 10,
+                    "percent": 30,
+                    "segments": [],
+                    "note": "Успешно обработано",
+                }
+            ],
+        },
         _tz="UTC",
     )
     assert 'role="progressbar"' in output
@@ -363,7 +382,9 @@ def test_task_list_row_reports_queue_state_only_from_a_live_job():
     # below the table need the full request context this row contract excludes.
     row_template = source[start + opening : end].rstrip() + "\n"
 
-    env = Environment(autoescape=select_autoescape(("html",)))
+    # The content block pulls shared partials/macros, so the environment needs
+    # the real template loader; the shell chrome and data stay out of scope.
+    env = Environment(loader=FileSystemLoader(ROOT / "app/web/templates"), autoescape=select_autoescape(("html",)))
     template = env.from_string("{% block content %}" + row_template + "{% endblock %}")
     template.environment.filters["human_dt"] = lambda value, **_kwargs: "сегодня"
 
@@ -424,9 +445,9 @@ def test_task_list_row_reports_queue_state_only_from_a_live_job():
 
 @pytest.mark.asyncio
 async def test_task_run_scope_reads_windowed_backlog_only_with_source_view(monkeypatch):
-    from app.models.collected_item import CollectedItem
+    from app.models.collection.collected_item import CollectedItem
+    from app.models.collection.source import Source
     from app.models.managers.collected_item_manager import CollectedItemManager
-    from app.models.source import Source
 
     sources = [
         SimpleNamespace(
@@ -445,7 +466,7 @@ async def test_task_run_scope_reads_windowed_backlog_only_with_source_view(monke
         ),
     ]
     monkeypatch.setattr(Source, "objects", SimpleNamespace(filter=lambda **_kwargs: _Query(sources)))
-    monkeypatch.setattr(tasks, "_task_source_ids", lambda _task_id: _async_value([8, 9]))
+    monkeypatch.setattr(task_presenters, "_task_source_ids", lambda _task_id: _async_value([8, 9]))
     captured = {}
 
     async def aggregate(windows):
@@ -503,7 +524,7 @@ async def test_task_llm_diagnostics_are_loaded_only_for_admin_and_exact_task_job
         return {"model": "model-a", "provider": "provider-a", "succeeded": 2, "failed": 1}
 
     monkeypatch.setattr(LLMAttemptManager, "task_run_summary", summary)
-    monkeypatch.setattr(tasks, "_diagnostics_admin", lambda _request: True)
+    monkeypatch.setattr(task_presenters, "_diagnostics_admin", lambda _request: True)
     request = SimpleNamespace()
     task = SimpleNamespace(id=21)
     job = SimpleNamespace(id=31)

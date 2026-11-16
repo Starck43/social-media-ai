@@ -21,6 +21,8 @@ class JobClaim:
     agent_task_id: int | None
     attempts: int
     started_at: datetime
+    # Captured from the acquired row, never from handler payload/ambient actor.
+    initiated_by_user_id: int | None = None
 
     def __post_init__(self) -> None:
         for value in (self.job_id, self.tenant_id, self.attempts):
@@ -28,6 +30,10 @@ class JobClaim:
                 raise ValueError("Job claim requires positive persisted IDs and generation")
         if self.agent_task_id is not None and (type(self.agent_task_id) is not int or self.agent_task_id <= 0):
             raise ValueError("Job claim requires a persisted task ID or None")
+        if self.initiated_by_user_id is not None and (
+            type(self.initiated_by_user_id) is not int or self.initiated_by_user_id <= 0
+        ):
+            raise ValueError("Job claim requires a persisted initiating User ID or None")
         if type(self.job_type) is not str or not self.job_type:
             raise ValueError("Job claim requires a persisted job type")
         if not isinstance(self.started_at, datetime) or self.started_at.utcoffset() is None:
@@ -41,7 +47,15 @@ class JobClaim:
     def capture(cls, job: Any) -> JobClaim:
         if job.status != "running":
             raise ValueError("Job claim requires a running acquired row")
-        return cls(job.id, job.tenant_id, job.job_type, job.agent_task_id, job.attempts, job.started_at)
+        return cls(
+            job.id,
+            job.tenant_id,
+            job.job_type,
+            job.agent_task_id,
+            job.attempts,
+            job.started_at,
+            initiated_by_user_id=getattr(job, "initiated_by_user_id", None),
+        )
 
 
 class OutcomeAck(str, Enum):

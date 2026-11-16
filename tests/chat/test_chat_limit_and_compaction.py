@@ -103,15 +103,21 @@ def test_template_renders_a_failed_state(widget):
     assert "chat-bubble-failed" in html
     assert "chat-notice-error" in html
 
+
 class TestStagedConfirmationIsVisible:
     """A staged confirmation must read as a question, not a missing answer."""
 
     def test_same_intent_is_compared_by_canonical_digest(self):
+        from datetime import datetime, timedelta, timezone
+
         from app.agent.confirmation import arguments_digest
         from app.agent.runtime import _same_pending_intent
 
         args = {"platform": "vk", "source_type": "user", "external_id": "kaban828"}
-        pending = {"name": "source_add", "arguments_digest": arguments_digest(args)}
+        # A real pending intent always carries `expires_at` (make_pending_intent
+        # sets it), and dedup only applies while the question is still answerable.
+        live = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        pending = {"name": "source_add", "arguments_digest": arguments_digest(args), "expires_at": live}
         assert _same_pending_intent(pending, "source_add", dict(args))
         # Key order is not identity: the digest is canonical.
         reordered = {"external_id": "kaban828", "source_type": "user", "platform": "vk"}
@@ -119,6 +125,15 @@ class TestStagedConfirmationIsVisible:
         assert not _same_pending_intent(pending, "source_add", {**args, "external_id": "other"})
         assert not _same_pending_intent(pending, "task_add", dict(args))
         assert not _same_pending_intent(None, "source_add", args)
+        # An expired or untimed intent is never reported as "already waiting":
+        # its «да» would be rejected afterwards, which is the dead end this
+        # dedup exists to remove.
+        expired = {**pending, "expires_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()}
+        assert not _same_pending_intent(expired, "source_add", dict(args))
+        assert not _same_pending_intent(
+            {"name": "source_add", "arguments_digest": arguments_digest(args)}, "source_add", args
+        )
+        assert not _same_pending_intent({**pending, "expires_at": "not-a-date"}, "source_add", args)
 
     def test_runtime_answers_the_existing_question_instead_of_twinning(self):
         import inspect

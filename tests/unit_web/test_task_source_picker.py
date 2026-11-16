@@ -57,7 +57,13 @@ def env(monkeypatch):
     )
     environment = eval(
         compile(ast.Expression(assignment.value), "web Jinja constructor", "eval"),
-        {"Environment": Environment, "FileSystemLoader": FileSystemLoader, "select_autoescape": select_autoescape},
+        {
+            "Environment": Environment,
+            "FileSystemLoader": FileSystemLoader,
+            "select_autoescape": select_autoescape,
+            "Path": Path,
+            "__file__": str(ROOT / "app/web/deps.py"),
+        },
     )
     environment.filters["ui_label"] = str
     environment.filters["human_dt"] = lambda value, **kwargs: str(value or "")
@@ -84,6 +90,13 @@ def page_env(env):
             ]
         )
     )
+
+
+def _source_groups(sources):
+    groups: dict[str, list[dict]] = {}
+    for source in sources:
+        groups.setdefault(source["source_type"]["display_name"], []).append(source)
+    return [{"label": label, "sources": items} for label, items in groups.items()]
 
 
 def render_edit(page_env, names):
@@ -115,6 +128,10 @@ def render_edit(page_env, names):
             "created_at": None,
         },
         "sources": sources,
+        # The picker renders the no-JS fallback from the grouped catalogue the
+        # route builds with `_group_sources`, not from the flat list.
+        "source_groups": _source_groups(sources),
+        "task_sources": [],
         "scenarios": [],
         "edit": {"id": 5, "name": "task", "source_ids": [7], "cron_expr": "0 9 * * *"},
         "scenario_analysis": {},
@@ -137,6 +154,9 @@ def render_edit(page_env, names):
         "cron_to_human": lambda value: value,
         "trigger_types": [],
         "action_types": [],
+        # JS-only catalog of target-field definitions; the picker test drives
+        # sources, not targets, so an empty declared list is enough.
+        "target_fields": [],
     }
     return page_env.get_template("web/task_edit.html").render(**ctx), sources
 
@@ -151,7 +171,7 @@ def test_picker_chips_remove_and_searchable_add(page_env, payload):
     assert not parsed.elements("img")
     assert payload in "".join(parsed.text)
     # Chip remove control and add button with search field.
-    assert "@click=\"removeSource(src.id)\"" in rendered
+    assert '@click="removeSource(src.id)"' in rendered
     assert "Добавить" in rendered
     assert 'aria-label="Поиск источника по названию"' in rendered
     assert 'role="listbox"' in rendered
@@ -159,9 +179,11 @@ def test_picker_chips_remove_and_searchable_add(page_env, payload):
     assert "Все активные источники" in rendered
     # The catalog reaches Alpine as data, round-tripping without breakout.
     data = re.search(r"const SOURCES = (\[.*?\]);", rendered, re.S).group(1)
+    # `group` is the source-type label and `scoped` marks query lanes; the
+    # fixture sets both source types to the same label.
     assert json.loads(data) == [
-        {"id": 7, "name": "alpha"},
-        {"id": 8, "name": payload},
+        {"id": 7, "name": "alpha", "group": "alpha", "scoped": False},
+        {"id": 8, "name": payload, "group": payload, "scoped": False},
     ]
 
 

@@ -6,14 +6,25 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .login_attempt import LoginAttempt
     from .model_type import ModelType
     from .permission import Permission
     from .role import PlatformRole, Role, role_permission
     from .user import User
     from .user_credential import UserCredential
 
-__all__ = ["User", "PlatformRole", "Role", "Permission", "ModelType", "UserCredential", "role_permission"]
+__all__ = [
+    "User",
+    "PlatformRole",
+    "Role",
+    "Permission",
+    "ModelType",
+    "UserCredential",
+    "LoginAttempt",
+    "role_permission",
+]
 _MODULES = {
+    "LoginAttempt": "login_attempt",
     "User": "user",
     "Role": "role",
     "PlatformRole": "role",

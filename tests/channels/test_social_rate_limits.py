@@ -2,16 +2,20 @@
 
 No network, database or Telegram server: the request boundary, session seams
 and job lookups are stubbed. Run with
-`.venv/bin/python -m pytest -o addopts='' --noconftest tests/test_social_rate_limits.py -q`.
+`.venv/bin/python -m pytest -o addopts='' --noconftest tests/channels/test_social_rate_limits.py -q`.
 """
 
+import ast
+import inspect
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
 import app.services.social.base as base_module
-import app.services.social.tg_session as tg_session_module
 from app.core.config import settings
 from app.services.social.base import BaseClient
 from app.services.social.rate_limit import SourceRateLimited, next_pause, response_rate_limit
@@ -188,29 +192,42 @@ def test_policy_bounds(monkeypatch):
 # Telegram L2: FloodWaitError beyond Telethon's own bounded sleep
 
 
-class FloodWaitError(Exception):
-    """Name-compatible stand-in for telethon.errors.FloodWaitError."""
+class _FloodError(Exception):
+    """Minimal shared base, matching Telethon's sibling exception types."""
 
     def __init__(self, seconds):
         super().__init__(f"A wait of {seconds} seconds is required")
         self.seconds = seconds
 
 
-class FloodPremiumWaitError(FloodWaitError):
+class FloodWaitError(_FloodError):
     pass
+
+
+class FloodPremiumWaitError(_FloodError):
+    pass
+
+
+def test_telegram_flood_doubles_are_sibling_types():
+    assert not issubclass(FloodPremiumWaitError, FloodWaitError)
+    assert not issubclass(FloodWaitError, FloodPremiumWaitError)
 
 
 class _FloodingTelethon:
     def __init__(self, error):
         self.error = error
         self.disconnected = False
-        self.flood_sleep_threshold = 60
+        self.yielded = 0
+        self.fence = None
+
+    async def send(self, request, ordered=False):
+        raise self.error
 
     async def connect(self):
         pass
 
-    async def is_user_authorized(self):
-        return True
+    async def get_me(self):
+        return SimpleNamespace(id=123, bot=False)
 
     async def get_entity(self, ref):
         return ref
@@ -219,37 +236,64 @@ class _FloodingTelethon:
         self.disconnected = True
 
     def iter_messages(self, entity, **kwargs):
-        error = self.error
-
         async def gen():
-            yield SimpleNamespace(id=1)
-            raise error
+            self.yielded += 1
+            yield SimpleNamespace(id=1, date=datetime(2026, 1, 1, tzinfo=timezone.utc), text="synthetic")
+            if self.fence is None:
+                raise self.error  # Direct _history double sanity test.
+            from app.services.social.telegram_runtime import _send_guarded
+
+            await _send_guarded(self, self.fence, object(), False, history_request=True)
 
         return gen()
 
 
 @pytest.fixture
 def flooding_session(monkeypatch):
-    holder = {}
+    """Exercise the guarded runtime and its real history loop without I/O."""
+    from app.services.social import telegram_runtime as runtime
+    from app.services.social.tg_client import TelegramClient
 
-    async def fake_load(user_id=None):
-        return tg_session_module.TelegramSession(api_id=1, api_hash="h" * 32, session="s" * 20)
+    holder = {}
+    selection = SimpleNamespace(external_id="-100123")
+
+    @asynccontextmanager
+    async def material():
+        yield object()
+
+    @asynccontextmanager
+    async def request():
+        yield
+
+    fence = SimpleNamespace(
+        _request=request,
+        _pin=SimpleNamespace(selection=selection),
+        _subject_key="123",
+        _guard=SimpleNamespace(_setup_material=material),
+        _inspect=AsyncMock(),
+    )
+
+    @asynccontextmanager
+    async def locked(*args):
+        yield fence
+
+    async def disconnect(client):
+        await client.disconnect()
 
     def install(error):
-        def fake_build(session):
-            holder["client"] = _FloodingTelethon(error)
-            return holder["client"]
-
-        monkeypatch.setattr(tg_session_module, "build_client", fake_build)
+        holder.update(client=_FloodingTelethon(error), fence=fence, selection=selection)
         return holder
 
-    async def fake_owner(source):
-        return None
+    monkeypatch.setattr(runtime, "_locked_runtime", locked)
 
-    import app.services.social.owner as owner_module
+    def build(material, fence):
+        holder["client"].fence = fence
+        return holder["client"]
 
-    monkeypatch.setattr(tg_session_module, "load_session", fake_load)
-    monkeypatch.setattr(owner_module, "resolve_source_owner", fake_owner)
+    monkeypatch.setattr(runtime, "_build_client", build)
+    monkeypatch.setattr(runtime, "_disconnect", disconnect)
+    monkeypatch.setattr(runtime, "source_grant_selection", lambda source: selection)
+    monkeypatch.setattr(TelegramClient, "_entity_ref", staticmethod(lambda ref: ref))
     monkeypatch.setattr(settings, "SOCIAL_RATE_LIMIT_MAX_WAIT", 10.0)
     return install
 
@@ -268,28 +312,71 @@ def _tg_source():
     )
 
 
-@pytest.mark.parametrize("error", [FloodWaitError(120), FloodPremiumWaitError(45)])
-async def test_telegram_flood_wait_defers_instead_of_reading_as_empty(flooding_session, error):
-    from app.services.social.tg_client import TelegramClient
+def test_telegram_runtime_has_no_automatic_flood_sleep_or_retry():
+    """Keep the old bounded-sleep safety check for the new no-sleep adapter."""
+    from app.services.social import telegram_runtime as runtime
+
+    tree = ast.parse(inspect.getsource(runtime._build_client))
+    call = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_ReadOnlyClient"
+    )
+    arguments = {
+        kw.arg: ast.literal_eval(kw.value)
+        for kw in call.keywords
+        if kw.arg in {"flood_sleep_threshold", "request_retries", "connection_retries", "auto_reconnect"}
+    }
+    assert arguments == {
+        "flood_sleep_threshold": 0,
+        "request_retries": 0,
+        "connection_retries": 0,
+        "auto_reconnect": False,
+    }
+
+
+@pytest.mark.parametrize("error", [FloodWaitError(120), FloodPremiumWaitError(45), ConnectionError("network down")])
+async def test_telegram_history_double_reaches_the_injected_error(flooding_session, error):
+    """A bad fake must not conceal the provider error behind a prior guard failure."""
+    from app.services.social.telegram_runtime import _history
 
     holder = flooding_session(error)
-    with pytest.raises(SourceRateLimited) as info:
-        await TelegramClient(platform=SimpleNamespace(params={}, platform_type=None))._collect_mtproto(_tg_source())
-    assert info.value.platform == "telegram"
-    assert info.value.retry_after == float(error.seconds)
-    # Telethon's own automatic sleep is capped by the same bound.
-    assert holder["client"].flood_sleep_threshold == 10
-    assert holder["client"].disconnected is True
+    with pytest.raises(type(error)) as info:
+        await _history(holder["client"], holder["fence"], _tg_source(), 100)
+    assert info.value is error
+    assert holder["client"].yielded == 1
+
+
+@pytest.mark.parametrize("error", [FloodWaitError(120), FloodPremiumWaitError(45)])
+async def test_telegram_flood_wait_defers_instead_of_reading_as_empty(flooding_session, error):
+    from app.services.social.telegram_runtime import _telegram_history_batch
+
+    holder = flooding_session(error)
+    # The fake raises at the gated provider-send seam, as Telethon does.
+    try:
+        with pytest.raises(SourceRateLimited) as info:
+            async with _telegram_history_batch(holder["selection"], object(), _tg_source(), limit=100):
+                pytest.fail("a partial batch must not escape after FloodWait")
+        assert info.value.platform == "telegram"
+        assert info.value.retry_after == float(error.seconds)
+    finally:
+        assert holder["client"].yielded == 1
+        assert holder["client"].disconnected is True
 
 
 async def test_other_telegram_errors_keep_the_empty_pull(flooding_session):
-    from app.services.social.tg_client import TelegramClient
+    from app.services.social.telegram_runtime import _telegram_history_batch
 
-    flooding_session(ConnectionError("network down"))
-    result = await TelegramClient(platform=SimpleNamespace(params={}, platform_type=None))._collect_mtproto(
-        _tg_source()
-    )
-    assert result == []
+    holder = flooding_session(ConnectionError("network down"))
+    # The pre-guard runtime read a provider failure as an empty pull. The guarded
+    # runtime fails closed instead, and nothing fetched is staged or acknowledged.
+    from app.services.social.connector_authorizations import AuthorizationUnavailable
+
+    with pytest.raises(AuthorizationUnavailable):
+        async with _telegram_history_batch(holder["selection"], object(), _tg_source(), limit=100):
+            pass
+    assert holder["client"].yielded == 1
+    assert holder["client"].disconnected is True
 
 
 # --------------------------------------------------------------------------- #
@@ -304,12 +391,23 @@ def stub_collect_job(monkeypatch):
         return None
 
     def install(sources, behaviour):
-        async def fake_resolve(task, payload=None):
+        from unittest.mock import AsyncMock
+
+        # This statistics contract doubles execution admission; entitlement
+        # authorization has its own real-scope tests and is not bypassed here.
+        monkeypatch.setattr("app.models.managers.entitlement_manager.EntitlementManager.admit_execution", AsyncMock())
+
+        async def fake_resolve(task, payload=None, *, discovered_source_ids=None):
             return sources
 
-        async def fake_collect(self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, **kwargs):
+        async def fake_collect(
+            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, **kwargs
+        ):
             return await behaviour(source)
 
+        # Lane evidence is a persistence side effect, outside this doubled
+        # outcome-summary contract; never leave synthetic lane rows behind.
+        monkeypatch.setattr(handlers, "_record_lane_evidence", AsyncMock())
         monkeypatch.setattr(handlers, "_load_task", fake_load_task)
         monkeypatch.setattr(handlers, "_resolve_sources", fake_resolve)
         monkeypatch.setattr("app.services.monitoring.collector.ContentCollector.__init__", lambda self: None)
@@ -319,7 +417,18 @@ def stub_collect_job(monkeypatch):
 
 
 def _job_source(source_id, name):
-    return SimpleNamespace(id=source_id, name=name, external_id=name, params={})
+    return SimpleNamespace(
+        id=source_id,
+        tenant_id=1,
+        name=name,
+        external_id=name,
+        params={},
+        source_type="GROUP",
+        platform_id=1,
+        platform=SimpleNamespace(platform_type="vk"),
+        last_checked=None,
+        last_item_id=None,
+    )
 
 
 async def test_collect_job_records_a_deferred_source_apart_from_errors(stub_collect_job):

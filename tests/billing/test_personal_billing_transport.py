@@ -44,6 +44,7 @@ def model(model_id: int = 1):
         auth_header=None,
         get_api_key=lambda: "test-key",
         owner_user_id=CATALOG_OWNER_ID,
+        credential_version=1,
     )
     return SimpleNamespace(
         id=model_id,
@@ -70,6 +71,7 @@ def custom_model(model_id: int = 1):
         auth_header=None,
         get_api_key=lambda: "test-key",
         owner_user_id=CATALOG_OWNER_ID,
+        credential_version=1,
     )
     return SimpleNamespace(
         id=model_id,
@@ -100,8 +102,8 @@ async def test_custom_chat_success_records_response_received_and_preserves_shape
     transport = httpx.MockTransport(lambda request: httpx.Response(200, json=provider_payload))
     real_client = httpx.AsyncClient
     monkeypatch.setattr(
-        llm_client.httpx,
-        "AsyncClient",
+        llm_client,
+        "provider_http_client",
         lambda **kwargs: _CountingAsyncClient(real_client, posts, transport=transport, **kwargs),
     )
     receipt = {"dispatch_id": "a" * 32, "utc_day": datetime.now(timezone.utc).date()}
@@ -160,8 +162,8 @@ async def test_custom_chat_transport_failure_records_possible_unknown_and_rerais
     transport = httpx.MockTransport(raise_transport)
     real_client = httpx.AsyncClient
     monkeypatch.setattr(
-        llm_client.httpx,
-        "AsyncClient",
+        llm_client,
+        "provider_http_client",
         lambda **kwargs: _CountingAsyncClient(real_client, posts, transport=transport, **kwargs),
     )
     receipt = {"dispatch_id": "a" * 32, "utc_day": datetime.now(timezone.utc).date()}
@@ -188,8 +190,8 @@ async def test_denied_admission_sends_no_provider_request(monkeypatch):
     posts = AsyncMock()
     real_client = httpx.AsyncClient
     monkeypatch.setattr(
-        llm_client.httpx,
-        "AsyncClient",
+        llm_client,
+        "provider_http_client",
         lambda **kwargs: _CountingAsyncClient(real_client, posts, **kwargs),
     )
 
@@ -219,8 +221,8 @@ async def test_outcome_write_failure_after_response_does_not_repeat_http(monkeyp
     )
     real_client = httpx.AsyncClient
     monkeypatch.setattr(
-        llm_client.httpx,
-        "AsyncClient",
+        llm_client,
+        "provider_http_client",
         lambda **kwargs: _CountingAsyncClient(real_client, posts, transport=transport, **kwargs),
     )
     receipt = {"dispatch_id": "a" * 32, "utc_day": datetime.now(timezone.utc).date()}
@@ -246,8 +248,8 @@ async def test_prior_day_reservation_records_not_dispatched_and_sends_no_http(mo
     posts = AsyncMock()
     real_client = httpx.AsyncClient
     monkeypatch.setattr(
-        llm_client.httpx,
-        "AsyncClient",
+        llm_client,
+        "provider_http_client",
         lambda **kwargs: _CountingAsyncClient(real_client, posts, **kwargs),
     )
     prior_day = datetime.now(timezone.utc).date() - timedelta(days=1)
@@ -269,11 +271,11 @@ async def test_credential_revoked_after_admission_releases_reservation_without_h
     posts = AsyncMock()
     real_client = httpx.AsyncClient
     monkeypatch.setattr(
-        llm_client.httpx,
-        "AsyncClient",
+        llm_client,
+        "provider_http_client",
         lambda **kwargs: _CountingAsyncClient(real_client, posts, **kwargs),
     )
-    receipt = {"dispatch_id": "b" * 32, "utc_day": datetime.now(timezone.utc).date()}
+    receipt = {"dispatch_id": "b" * 32, "utc_day": datetime.now(timezone.utc).date(), "__credential_version": 1}
     monkeypatch.setattr(llm_client, "_personal_admission", AsyncMock(return_value=(receipt, receipt["dispatch_id"])))
     release = AsyncMock(return_value=None)
     monkeypatch.setattr(llm_client, "_observe_personal_failure", release)
@@ -308,8 +310,8 @@ async def test_fallback_does_not_try_next_model_after_billing_denial(monkeypatch
     monkeypatch.setattr(llm_client.LLMClientFactory, "create", lambda selected: client)
     real_client = httpx.AsyncClient
     monkeypatch.setattr(
-        llm_client.httpx,
-        "AsyncClient",
+        llm_client,
+        "provider_http_client",
         lambda **kwargs: _CountingAsyncClient(real_client, posts, **kwargs),
     )
     with pytest.raises(BudgetAdmissionDenied):
@@ -340,22 +342,22 @@ async def test_admin_probe_post_requires_csrf_before_any_authenticated_probe(mon
     }
     request = Request(scope)
     posts = AsyncMock()
-    monkeypatch.setattr(endpoints, "get_authenticated_user", AsyncMock())
+    monkeypatch.setattr(endpoints, "resolve_operator_identity", AsyncMock())
     monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", True)
     with pytest.raises(HTTPException) as error:
         await endpoints.llm_model_test_real(request, "1", "hello", 7, "invalid")
     assert error.value.status_code == 403
-    endpoints.get_authenticated_user.assert_not_awaited()
+    endpoints.resolve_operator_identity.assert_not_awaited()
     posts.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_admin_probe_post_rejects_non_admin_before_probe(monkeypatch):
     from app.admin import endpoints
-    from app.models import User
+    from app.admin.csrf import CSRFTokenManager, issue_token
 
     app = Starlette()
-    app.state.csrf_manager = SimpleNamespace(verify_token=lambda _token: True)
+    app.state.csrf_manager = CSRFTokenManager("synthetic-test-only")
     scope = {
         "type": "http",
         "asgi": {"version": "3.0"},
@@ -373,15 +375,13 @@ async def test_admin_probe_post_rejects_non_admin_before_probe(monkeypatch):
     }
     request = Request(scope)
     actor = SimpleNamespace(id=31, is_active=True, is_platform_admin=False)
-    query = SimpleNamespace(get=AsyncMock(return_value=actor))
-    objects = SimpleNamespace(prefetch_related=lambda *_args: query)
-    monkeypatch.setattr(User, "objects", objects)
-    monkeypatch.setattr(endpoints, "get_authenticated_user", AsyncMock(return_value=actor))
+    monkeypatch.setattr(endpoints, "resolve_operator_identity", AsyncMock(return_value=actor))
     monkeypatch.setattr(settings, "PERSONAL_BILLING_ENABLED", True)
     posts = AsyncMock()
     with pytest.raises(HTTPException) as error:
-        await endpoints.llm_model_test_real(request, "1", "hello", 7, "valid")
+        await endpoints.llm_model_test_real(request, "1", "hello", 7, issue_token(request))
     assert error.value.status_code == 403
+    endpoints.resolve_operator_identity.assert_awaited_once_with("valid", token_type="access")
     posts.assert_not_awaited()
 
 

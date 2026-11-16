@@ -533,8 +533,8 @@ class BudgetPackage:
             self.context = importlib.import_module("app.core.tenant_context")
         from sqlalchemy import text
 
-        from app.models.analysis.llm_budget import LLMBudgetDay, LLMBudgetReservation
-        from app.models.analysis.llm_dispatch_receipt import LLMDispatchReceipt
+        from app.models.llm.llm_budget import LLMBudgetDay, LLMBudgetReservation
+        from app.models.llm.llm_dispatch_receipt import LLMDispatchReceipt
         from app.models.tenancy.tenant import Tenant
 
         self.text, self.Day, self.Reservation, self.Receipt, self.Tenant = (

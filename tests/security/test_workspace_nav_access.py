@@ -15,12 +15,20 @@ from app.web.nav import NAV_ITEMS, allows, section_of
 from tests.web.test_web_settings import _cleanup, _client, _drop_workspaces, _invitee, _login, _register
 
 
-def _sidebar_link(key_href: str) -> re.Pattern[str]:
-    # The sidebar entry, not a content link that happens to share the href.
-    return re.compile(rf'<a href="{re.escape(key_href)}"\s+class="block rounded-lg px-3 py-2')
+def _sidebar_links(html: str) -> set[str]:
+    """Section hrefs offered by the desktop navigation, not content links.
+
+    A settings tab or a content link can share a section's href, so the answer
+    comes from inside `nav#nav-desktop`, where every entry carries a label.
+    """
+    daily_nav = re.findall(r'<nav id="nav-desktop".*?</nav>', html, re.S)
+    assert daily_nav, "the page renders the desktop navigation"
+    return set(re.findall(r'<a href="(/app/[^"]*)" aria-label="[^"]*" data-tooltip="[^"]*"', daily_nav[0]))
 
 
 class _Perms:
+    """A `WebPerms` double keyed by catalog resource keys."""
+
     def __init__(self, rights: set[tuple[str, str]]):
         self._rights = rights
 
@@ -72,7 +80,7 @@ async def test_viewer_sees_only_viewable_sections_and_a_reason_on_direct_access(
             owner, tenant_id = await _register(c, "NavOwn")
             page = await c.get("/app/settings")
             for href in ("/app/sources", "/app/scenarios", "/app/tasks", "/app/analytics", "/app/digests"):
-                assert _sidebar_link(href).search(page.text), f"owner misses {href}"
+                assert href in _sidebar_links(page.text), f"owner misses {href}"
             assert (await c.get("/app/scenarios")).status_code == 200
             viewer = await _invitee("NavViewer", WorkspaceRoleType.VIEWER, tenant_id)
 
@@ -80,9 +88,9 @@ async def test_viewer_sees_only_viewable_sections_and_a_reason_on_direct_access(
             await _login(c, viewer.username)
             page = await c.get("/app/settings")
             for href in ("/app/sources", "/app/analytics", "/app/digests"):
-                assert _sidebar_link(href).search(page.text), f"viewer misses {href}"
+                assert href in _sidebar_links(page.text), f"viewer misses {href}"
             for href in ("/app/scenarios", "/app/tasks"):
-                assert not _sidebar_link(href).search(page.text), f"viewer is offered {href}"
+                assert href not in _sidebar_links(page.text), f"viewer is offered {href}"
 
             for path in ("/app/scenarios", "/app/tasks", "/app/tasks/999999"):
                 resp = await c.get(path)
@@ -115,7 +123,7 @@ async def test_a_role_change_opens_the_section() -> None:
             await tenant_users.update_by_id(row.id, role_id=admin.id)
             resp = await c.get("/app/tasks")
             assert resp.status_code == 200
-            assert _sidebar_link("/app/tasks").search(resp.text)
+            assert "/app/tasks" in _sidebar_links(resp.text)
     finally:
         await _cleanup(owner, member)
         await _drop_workspaces(tenant_id)

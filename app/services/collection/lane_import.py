@@ -107,6 +107,9 @@ class LaneImportPlan:
     # The sources already linked to the task plus the reused ones; the new
     # lanes join them at apply time.
     linked_source_ids: list[int] = field(default_factory=list)
+    # The member whose credential a newly created lane collects with; None means
+    # the lane is service-credential only. Never inferred from the workspace owner.
+    owner_user_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -151,9 +154,9 @@ def parse_lane_entry(raw: str, kind: str | None = None) -> ParsedEntry:
     prefix_kind: str | None = None
     lowered = value.lower()
     for prefix in _PERSON_PREFIXES + _COMMUNITY_PREFIXES:
-        if lowered.startswith(prefix) and value[len(prefix):].isdigit():
-            literal_id = int(value[len(prefix):])
-            value = value[len(prefix):]
+        if lowered.startswith(prefix) and value[len(prefix) :].isdigit():
+            literal_id = int(value[len(prefix) :])
+            value = value[len(prefix) :]
             prefix_kind = KIND_PERSON if prefix in _PERSON_PREFIXES else KIND_COMMUNITY
             break
     if prefix_kind is not None:
@@ -298,7 +301,9 @@ def plan_lane_import(
             # once in each task. The import reports and moves on.
             decisions.append(
                 LaneImportDecision(
-                    **common, action=SKIP, source_id=source_id,
+                    **common,
+                    action=SKIP,
+                    source_id=source_id,
                     reason=f"source {source_id} belongs to task {owner}",
                 )
             )
@@ -356,9 +361,7 @@ async def apply_lane_import(plan: LaneImportPlan) -> LaneImportResult:
             by_external = {row.external_id: row for row in rows}
         by_id: dict[int, Any] = {}
         reuse_ids = [
-            decision.source_id
-            for decision in plan.decisions
-            if decision.action == REUSE and decision.source_id
+            decision.source_id for decision in plan.decisions if decision.action == REUSE and decision.source_id
         ]
         if reuse_ids:
             rows = await Source.objects.filter(id__in=reuse_ids, tenant_id=plan.tenant_id)
@@ -396,6 +399,9 @@ async def apply_lane_import(plan: LaneImportPlan) -> LaneImportResult:
                 params=dict(LANE_PARAMS),
                 owner_task_id=plan.task_id,
                 is_active=True,
+                # A lane created for a task collects with the credential of the
+                # member who started it, not with the workspace owner's.
+                owner_user_id=plan.owner_user_id,
             )
             created.append(row.id)
             lane_ids.append(row.id)
@@ -478,8 +484,8 @@ def _numeric_identity(ref: SourceRef) -> int | None:
     text = str(ref.external_id or "").strip()
     negative: bool | None = None
     for prefix in _PERSON_PREFIXES + _COMMUNITY_PREFIXES:
-        if text.lower().startswith(prefix) and text[len(prefix):].isdigit():
-            text = text[len(prefix):]
+        if text.lower().startswith(prefix) and text[len(prefix) :].isdigit():
+            text = text[len(prefix) :]
             negative = prefix != "id"
             break
     if not re.fullmatch(r"-?\d+", text):

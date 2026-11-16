@@ -171,14 +171,14 @@
         <legend class="px-1 text-sm font-medium text-slate-700 dark:text-slate-300">Период сбора</legend>
         <div class="grid grid-cols-2 gap-3">
             <div>
-                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата начала *</label>
-                <input type="date" name="start_date" x-model="{{ m }}.start_date" value="{{ start }}"
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400" x-show="{{ m }}.window_type !== 'rolling'">Дата начала *</label>
+                <input type="date" name="start_date" x-show="{{ m }}.window_type !== 'rolling'" x-model="{{ m }}.start_date" value="{{ start }}"
                        class="{{ control() }}">
-                <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">С этой даты собирается контент; без неё первый запуск вытянет всё с первого поста.</p>
+                <p x-show="{{ m }}.window_type !== 'rolling'" class="mt-1 text-xs text-slate-600 dark:text-slate-400">С этой даты собирается контент.</p>
             </div>
             <div>
-                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400">Дата окончания</label>
-                <input type="date" name="end_date" x-model="{{ m }}.end_date" value="{{ end }}" class="{{ control() }}">
+                <label class="mb-1 block text-xs text-slate-600 dark:text-slate-400" x-show="{{ m }}.window_type !== 'rolling'">Дата окончания</label>
+                <input type="date" name="end_date" x-show="{{ m }}.window_type !== 'rolling'" x-model="{{ m }}.end_date" value="{{ end }}" class="{{ control() }}">
                 <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Необязательно.</p>
             </div>
         </div>

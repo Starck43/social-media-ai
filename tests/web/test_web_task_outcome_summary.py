@@ -14,23 +14,38 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[2]
 ERROR_LABEL = "источников с ошибками"
 STAGED_LABEL = "ошибок обработки накопленных данных"
 
 
 def load_summary_functions():
-    path = ROOT / "app/web/tasks.py"
+    path = ROOT / "app/web/task_presenters.py"
     tree = ast.parse(path.read_text())
     functions = {
-        "_plural", "_stat", "_as_int", "_run_outcome", "_job_summary", "_cancel_info",
-        "_progress_view", "_cancelled_summary", "_snapshot_coverage_rows", "_raw_coverage",
+        "_plural",
+        "_stat",
+        "_as_int",
+        "_run_outcome",
+        "_job_summary",
+        "_cancel_info",
+        "_progress_view",
+        "_cancelled_summary",
+        "_snapshot_coverage_rows",
+        "_raw_coverage",
     }
     constants = {
-        "JOB_TYPE_TITLES", "OUTCOME_HEADLINES", "_OUTCOME_LABELS", "_OUTCOME_NOTES",
-        "_ACTIVITY", "_PENDING_ACTIVITY", "_CANCEL_STOP_NOTE", "_CANCEL_UNCONFIRMED_NOTE",
-        "_CANCEL_TYPE_NOTES", "_CONTENT_CHOICES", "_STEP_NOTES",
+        "JOB_TYPE_TITLES",
+        "OUTCOME_HEADLINES",
+        "_OUTCOME_LABELS",
+        "_OUTCOME_NOTES",
+        "_ACTIVITY",
+        "_PENDING_ACTIVITY",
+        "_CANCEL_STOP_NOTE",
+        "_CANCEL_UNCONFIRMED_NOTE",
+        "_CANCEL_TYPE_NOTES",
+        "_CONTENT_CHOICES",
+        "_STEP_NOTES",
     }
     selected = []
     for node in tree.body:
@@ -60,7 +75,10 @@ def load_summary_functions():
         type_ignores=[],
     )
     namespace = {
-        "Any": Any, "datetime": datetime, "timedelta": timedelta, "timezone": timezone,
+        "Any": Any,
+        "datetime": datetime,
+        "timedelta": timedelta,
+        "timezone": timezone,
         "plural": lambda number, one, few, many: one if number == 1 else many,
         "CANCELLED_BEFORE_START_ERROR": "Cancelled before start",
         "OPERATOR_CANCELLED_ERROR": "Cancelled by operator",
@@ -84,8 +102,12 @@ class WebTaskOutcomeSummaryTests(unittest.TestCase):
 
     def job(self, result=None, *, status="done", job_type="analyze"):
         return SimpleNamespace(
-            status=status, job_type=job_type, result=result,
-            error="safe persisted failure", created_at=None, started_at=None,
+            status=status,
+            job_type=job_type,
+            result=result,
+            error="safe persisted failure",
+            created_at=None,
+            started_at=None,
         )
 
     def test_reported_source_error_overrides_success(self):
@@ -118,8 +140,10 @@ class WebTaskOutcomeSummaryTests(unittest.TestCase):
                     self.assertFalse(any(tile["label"] in {ERROR_LABEL, STAGED_LABEL} for tile in summary["stats"]))
 
     def test_one_valid_error_counter_is_not_hidden_by_malformed_other(self):
-        for result in ({"analyzed": 2, "error": "bad", "staged_errors": 1},
-                       {"analyzed": 2, "error": 1, "staged_errors": True}):
+        for result in (
+            {"analyzed": 2, "error": "bad", "staged_errors": 1},
+            {"analyzed": 2, "error": 1, "staged_errors": True},
+        ):
             with self.subTest(result=result):
                 self.assertEqual(self.outcome("analyze", result), "partial")
 
@@ -149,8 +173,13 @@ class WebTaskOutcomeSummaryTests(unittest.TestCase):
 
     def test_raw_results_and_exception_text_are_not_added_to_summary(self):
         secret = "synthetic-password-and-private-content"
-        result = {"analyzed": 2, "error": 1, "error_messages": [secret],
-                  "error_sources": [secret], "per_source": [{"exception": secret}]}
+        result = {
+            "analyzed": 2,
+            "error": 1,
+            "error_messages": [secret],
+            "error_sources": [secret],
+            "per_source": [{"exception": secret}],
+        }
         summary = self.summary(self.job(result))
         self.assertNotIn(secret, repr(summary))
         self.assertNotIn("result", summary)
@@ -163,9 +192,13 @@ class WebTaskOutcomeSummaryTests(unittest.TestCase):
         self.assertEqual(vars(job), before)
 
     def test_other_job_type_classification_is_unchanged(self):
-        cases = (("collect", {"error": 1}, "partial"), ("collect", {"new_items": 0}, "no_data"),
-                 ("collect", {"items": 2}, "ok"), ("prune", {"deleted": 0}, "no_data"),
-                 ("digest", {"error": 1, "staged_errors": 1}, "ok"))
+        cases = (
+            ("collect", {"error": 1}, "partial"),
+            ("collect", {"new_items": 0}, "no_data"),
+            ("collect", {"items": 2}, "ok"),
+            ("prune", {"deleted": 0}, "no_data"),
+            ("digest", {"error": 1, "staged_errors": 1}, "ok"),
+        )
         for kind, result, expected in cases:
             with self.subTest(kind=kind, result=result):
                 self.assertEqual(self.outcome(kind, result), expected)

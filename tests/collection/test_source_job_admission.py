@@ -17,11 +17,12 @@ from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock
 
 import pytest
-from source_import_isolation import load_isolated_source
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Table
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import operators
+
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
 activity = load_isolated_source("isolated_source_activity", ROOT / "app/jobs/source_activity.py")
@@ -36,11 +37,20 @@ class Tenant(Base):
     id = Column(Integer, primary_key=True)
 
 
+class Platform(Base):
+    __tablename__ = "fixture_platforms"
+    id = Column(Integer, primary_key=True)
+    platform_type = Column(String)
+
+
 class Source(Base):
     __tablename__ = "fixture_sources"
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer)
     is_active = Column(Boolean, default=True)
+    owner_task_id = Column(Integer)
+    platform_id = Column(ForeignKey("fixture_platforms.id"))
+    platform = relationship(Platform)
 
 
 links = Table(
@@ -96,6 +106,14 @@ class ContextError(RuntimeError):
     pass
 
 
+class TaskPlanError(ValueError):
+    pass
+
+
+class EntitlementDenied(RuntimeError):
+    pass
+
+
 @contextmanager
 def tenant_scope(tenant_id):
     token = TENANT.set(tenant_id)
@@ -141,6 +159,7 @@ class Session:
         self.locked = None
         self.saved_jobs = None
         self.saved_tasks = None
+        self.saved_audit = None
 
     async def __aenter__(self):
         return self
@@ -163,6 +182,9 @@ class Session:
             try:
                 if s.locked is not None and (kind or s.f.commit_error):
                     s.f.jobs[:] = [job for job in s.f.jobs if job.tenant_id != s.locked] + s.saved_jobs
+                    s.f.audit_events[:] = [
+                        event for event in s.f.audit_events if event["tenant_id"] != s.locked
+                    ] + s.saved_audit
                     for task_id, attrs in s.saved_tasks.items():
                         task = s.f.tasks[task_id]
                         for key, value in attrs.items():
@@ -188,6 +210,7 @@ class Session:
                 await self.f.locks.setdefault(tid, asyncio.Lock()).acquire()
                 self.locked = tid
                 self.saved_jobs = [job for job in self.f.jobs if job.tenant_id == tid]
+                self.saved_audit = [event for event in self.f.audit_events if event["tenant_id"] == tid]
                 self.saved_tasks = {
                     key: {
                         name: getattr(task, name)
@@ -251,6 +274,7 @@ def with_db_session_double(session_factory):
 class Fixture:
     def __init__(self):
         self.jobs, self.tasks, self.sources, self.queries, self.events = [], {}, {}, [], []
+        self.audit_events = []
         self.tenants, self.locks = {7, 8}, {}
         self.commit_error = self.create_error = None
         self.isolation = "READ COMMITTED"
@@ -298,12 +322,51 @@ class Fixture:
                 return job
 
         config = NS(settings=NS(JOB_MAX_ATTEMPTS=3, SCHEDULER_TIMEZONE="UTC"))
+
+        async def required_capabilities(_session, _payload, *, sources=None):
+            tenant_id = TENANT.get()
+            assert type(tenant_id) is int and tenant_id > 0
+            assert all(source.tenant_id == tenant_id for source in (sources or []))
+            return frozenset()
+
+        class EntitlementManager:
+            async def evaluate(self, session, required):
+                assert session.locked == TENANT.get()
+                assert required == frozenset()
+                return NS(allowed=True)
+
+        task_plans = NS(
+            TaskPlanError=TaskPlanError,
+            apply_parsed_task_plan=lambda *_args, **_kwargs: {},
+            read_saved_task_plan=lambda _payload: None,
+            task_plan_timezone=lambda _payload, fallback: fallback,
+            validate_vk_access_retained=lambda *_args, **_kwargs: None,
+        )
         context = NS(
             current_tenant_id=TENANT.get,
             is_bypass=BYPASS.get,
             TenantContextError=ContextError,
             tenant_scope=tenant_scope,
         )
+
+        async def record_success(*, session, actor_kind, actor_id, action, resource_kind, resource_id, job_id):
+            tenant_id = TENANT.get()
+            assert session.f is fixture and session.locked == tenant_id
+            assert action == "scheduling.task_admit" and resource_kind == "agent_task"
+            assert fixture.tasks[resource_id].tenant_id == tenant_id
+            assert any(job.id == job_id and job.tenant_id == tenant_id for job in fixture.jobs)
+            event = dict(
+                tenant_id=tenant_id,
+                actor_kind=actor_kind,
+                actor_id=actor_id,
+                action=action,
+                resource_kind=resource_kind,
+                resource_id=resource_id,
+                job_id=job_id,
+            )
+            fixture.audit_events.append(event)
+            return NS(**event)
+
         self.imports = {
             "app.core.config": config,
             "app.core.tenant_context": context,
@@ -312,10 +375,22 @@ class Fixture:
                 with_db_session=with_db_session_double(lambda: Session(self)),
             ),
             "app.models.managers.base_manager": NS(BaseManager=ManagerBase),
-            "app.models.job": NS(Job=Job),
-            "app.models.tenant": NS(Tenant=Tenant),
-            "app.models.agent_task": NS(AgentTask=Task),
-            "app.models.source": NS(Source=Source),
+            "app.models.managers.entitlement_manager": NS(EntitlementManager=EntitlementManager),
+            "app.services.collection.entitlement_policy": NS(required_capabilities=required_capabilities),
+            "app.services.task_plans": task_plans,
+            "app.services.tenancy.entitlements": NS(EntitlementDenied=EntitlementDenied),
+            "app.models.audit.action_audit_event": NS(ActionAuditEvent=NS(objects=NS(record_success=record_success))),
+            "app.services": NS(
+                action_audit=NS(
+                    log_unknown=lambda **_: None,
+                    log_rolled_back=lambda **_: None,
+                    log_denied=lambda **_: None,
+                )
+            ),
+            **dict.fromkeys(("app.models.scheduling.job",), NS(Job=Job)),
+            **dict.fromkeys(("app.models.tenancy.tenant",), NS(Tenant=Tenant)),
+            **dict.fromkeys(("app.models.scheduling.agent_task",), NS(AgentTask=Task)),
+            **dict.fromkeys(("app.models.collection.source",), NS(Source=Source)),
             "app.jobs.source_activity": activity,
         }
         self.module = load_isolated_source(
@@ -498,6 +573,10 @@ async def test_new_task_admission_updates_only_after_unique_job_insert():
     assert task.last_status == "queued" and task.last_run_at == NOW
     assert not task.is_active and task.next_run_at is None
     assert len(f.jobs) == 1 and f.jobs[0].agent_task_id == task.id
+    assert len(f.audit_events) == 1
+    assert f.audit_events[0]["job_id"] == receipt["job"].id
+    assert f.audit_events[0]["tenant_id"] == task.tenant_id
+    assert f.audit_events[0]["actor_kind"] == "scheduler"
 
 
 @pytest.mark.asyncio
@@ -512,6 +591,7 @@ async def test_failed_admission_rolls_back_job_and_task_updates(failure):
     with pytest.raises(RuntimeError):
         await f.admit_task(task)
     assert not f.jobs
+    assert not f.audit_events
     assert task.is_active and task.next_run_at == NOW and task.last_status == "old"
     assert not f.locks[7].locked()
 
@@ -585,7 +665,7 @@ async def test_web_queue_reports_existing_job_without_claiming_it():
     # at application boundaries are replaced; execute/claim is not invoked.
     import ast
 
-    tree = ast.parse((ROOT / "app/web/tasks.py").read_text())
+    tree = ast.parse((ROOT / "app/web/task_use_cases.py").read_text())
     function = next(
         node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "queue_task_now"
     )
@@ -595,12 +675,17 @@ async def test_web_queue_reports_existing_job_without_claiming_it():
         "enqueue_task_run": AsyncMock(side_effect=activity.SourceJobBusy(NS(id=9, status="running"))),
         "SourceJobBusy": activity.SourceJobBusy,
         "launch_job_background": lambda job_id, **kw: None,  # busy path returns early; never called
+        "AgentTaskManager": lambda: NS(get_sources=AsyncMock(return_value=[1])),
+        "_can_activate": AsyncMock(return_value=None),
     }
     exec(
         compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])), "isolated_web_queue", "exec"),
         scope,
     )
-    assert await scope["queue_task_now"](NS(id=10)) == {"job_id": 9, "status": "running", "already_running": True}
+    assert await scope["queue_task_now"](
+        NS(id=10, tenant_id=7, job_type="collect", payload={}, agent_scenario_id=None),
+        initiated_by_user_id=12,
+    ) == {"job_id": 9, "status": "running", "already_running": True}
 
 
 def test_active_membership_is_conservative_and_distinct_from_terminal_jobs():
@@ -610,6 +695,22 @@ def test_active_membership_is_conservative_and_distinct_from_terminal_jobs():
     assert activity.job_source_ids({"source_ids": ["malformed"]}, None, {}, {2}) == {2}
     ignored = [NS(job_type="digest", status="running"), NS(job_type="analyze", status="failed")]
     assert activity.source_conflict({"source_ids": [1]}, None, ignored, {}, {1}) is None
+
+
+def test_task_plan_admission_uses_scoped_snapshot_and_discovery_reserves_unknown_sources():
+    linked = {4, 5, 6}
+    active = {1, 2, 3, 4, 5, 6}
+
+    selected = {
+        "task_plan": {"source_scope": "selected", "source_ids": [4]},
+        "source_ids": [4, 5],
+    }
+    all_authorized = {"task_plan": {"source_scope": "all"}, "source_ids": [1, 2, 5]}
+    discovery = {"task_plan": {"source_scope": "discovery"}, "source_ids": [5]}
+
+    assert activity.job_source_ids(selected, 10, {10: linked}, active) == {4, 5}
+    assert activity.job_source_ids(all_authorized, 10, {10: linked}, active) == {1, 2, 5}
+    assert activity.job_source_ids(discovery, 10, {10: linked}, active) == active
 
 
 @pytest.mark.asyncio

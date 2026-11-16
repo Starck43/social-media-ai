@@ -14,7 +14,8 @@ from app.services.monitoring.selection import CollectionSelection
 logger = logging.getLogger(__name__)
 
 
-async def record_collection_selection(
+async def _write_collection_selection(
+    session,
     source: Any,
     content: list[dict],
     selection: CollectionSelection,
@@ -24,12 +25,9 @@ async def record_collection_selection(
     limit_count: int | None = None,
     limit_reached: bool = False,
 ) -> None:
-    """Write the seen ledger and one per-source lane run.
-
-    Best-effort: a ledger failure must not fail a collection whose raw rows are
-    already safely staged. The caller can report the collection counts; the
-    failure is bounded in logs, never the content itself.
-    """
+    """Write on the caller's active transaction, without owning its commit."""
+    if not session.in_transaction() or not session.is_active:
+        raise ValueError("selection_transaction_required")
     outcomes = []
     for decision in selection.decisions:
         item = decision.item
@@ -47,31 +45,52 @@ async def record_collection_selection(
         )
 
     limit = source_limit(source)
+    await CollectionSeen.objects.record_outcomes(
+        session,
+        source.id,
+        outcomes,
+        tenant_id=source.tenant_id,
+    )
+    await CollectionLaneRun.objects.record(
+        session,
+        tenant_id=source.tenant_id,
+        job_id=run_id,
+        task_id=task_id,
+        lane_id=f"source:{source.id}",
+        lane_type="source_stage",
+        query=_source_query(source),
+        fetched=sum(1 for item in content if str(item.get("content_type") or "post").lower() != "comment"),
+        selected=len(selection.selected),
+        needs_review=len(selection.needs_review),
+        rejected=len(selection.rejected),
+        limit_count=limit_count if limit_count is not None else limit,
+        limit_reached=limit_reached,
+    )
+    await session.flush()
+
+
+async def record_collection_selection(
+    source: Any,
+    content: list[dict],
+    selection: CollectionSelection,
+    *,
+    run_id: int | None,
+    task_id: int | None,
+    limit_count: int | None = None,
+    limit_reached: bool = False,
+) -> None:
+    """Best-effort owning wrapper for non-runtime collection paths."""
     session = new_session()
     try:
         async with session.begin():
-            await CollectionSeen.objects.record_outcomes(
+            await _write_collection_selection(
                 session,
-                source.id,
-                outcomes,
-                tenant_id=source.tenant_id,
-            )
-            await CollectionLaneRun.objects.record(
-                session,
-                tenant_id=source.tenant_id,
-                job_id=run_id,
+                source,
+                content,
+                selection,
+                run_id=run_id,
                 task_id=task_id,
-                lane_id=f"source:{source.id}",
-                lane_type="source_stage",
-                query=_source_query(source),
-                fetched=sum(
-                    1 for item in content
-                    if str(item.get("content_type") or "post").lower() != "comment"
-                ),
-                selected=len(selection.selected),
-                needs_review=len(selection.needs_review),
-                rejected=len(selection.rejected),
-                limit_count=limit_count if limit_count is not None else limit,
+                limit_count=limit_count,
                 limit_reached=limit_reached,
             )
     except Exception:  # noqa: BLE001 - evidence failure is not a collection failure

@@ -321,3 +321,12 @@ class TestDigestBroadcast:
 
         result = await registry_module.broadcast_digest("hi")
         assert result["telegram:@my_channel"] == {"success": False, "error": "channel not configured"}
+
+
+@pytest.fixture(autouse=True)
+def shared_telegram_configuration(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(
+        tg_module, "load_platform_config", AsyncMock(return_value={"api_base_url": "https://api.telegram.org"})
+    )

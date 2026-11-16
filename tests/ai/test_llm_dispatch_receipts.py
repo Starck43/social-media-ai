@@ -271,7 +271,7 @@ def capture_cache_tariff_additions(schema="receipts_review"):
     )
     migration = load_isolated_source(
         "_cache_tariff_receipt_migration",
-        ROOT / "migrations/versions/0107_add_cache_tariff_evidence.py",
+        ROOT / "scripts/migrations/legacy_definitions/0107_add_cache_tariff_evidence.py",
         imports={
             "alembic": SimpleNamespace(op=operations),
             "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA=schema)),
@@ -313,7 +313,7 @@ MANAGER = load_isolated_source(
         "app.core.tenant_context": TENANT,
         "app.services.ai.dispatch_receipts": HELPERS,
         "app.models.managers.base_manager": SimpleNamespace(BaseManager=BaseManagerDouble),
-        "app.models.analysis.llm_dispatch_receipt": LEAF,
+        "app.models.llm.llm_dispatch_receipt": LEAF,
     },
 )
 
@@ -428,7 +428,7 @@ class DefinitionTests(unittest.TestCase):
         )
         migration = load_isolated_source(
             "_receipt_migration_definition",
-            ROOT / "migrations/versions/0093_add_llm_dispatch_receipts.py",
+            ROOT / "scripts/migrations/legacy_definitions/0093_add_llm_dispatch_receipts.py",
             imports={
                 "alembic": SimpleNamespace(op=operations),
                 "app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA=schema)),
@@ -495,9 +495,9 @@ def deny(*args, **kwargs):
 socket.socket.connect = deny
 from sqlalchemy.orm import configure_mappers
 from app.models import Base, LLMDispatchReceipt
-from app.models.analysis import LLMDispatchReceipt as domain
-from app.models.llm_dispatch_receipt import LLMDispatchReceipt as public
-from app.models.analysis.llm_dispatch_receipt import LLMDispatchReceipt as leaf
+from app.models.llm import LLMDispatchReceipt as domain
+from app.models.llm.llm_dispatch_receipt import LLMDispatchReceipt as public
+from app.models.llm.llm_dispatch_receipt import LLMDispatchReceipt as leaf
 assert LLMDispatchReceipt is domain is public is leaf
 configure_mappers()
 assert LLMDispatchReceipt.objects.model is LLMDispatchReceipt

@@ -96,15 +96,20 @@ async def test_deactivated_workspace_blocks_web_and_api_access() -> None:
         owner, tenant_id = await _register(c, "InactOwner")
         try:
             headers = await _bearer(c, owner.username)
-            assert (await c.get("/api/v1/users/me", headers=headers)).status_code == 200
+            assert (await c.get("/api/v1/sources", headers=headers)).status_code == 200
 
             await tenants.update_by_id(tenant_id, is_active=False)
 
             page = await c.get("/app/sources")
             assert page.url.path == "/app/invite"
-            resp = await c.get("/api/v1/users/me", headers=headers)
+            # Workspace data is the denial surface: no active membership, no API.
+            resp = await c.get("/api/v1/sources", headers=headers)
             assert resp.status_code == 403
             assert resp.json()["detail"] == "User has no workspace membership"
+            # The account itself stays self-service: the profile route reads no
+            # workspace data, so a suspended workspace does not lock the caller
+            # out of their own record (same contract as password change).
+            assert (await c.get("/api/v1/users/me", headers=headers)).status_code == 200
         finally:
             await _drop([owner], [tenant_id])
 
@@ -121,10 +126,15 @@ async def test_api_tenant_header_cannot_select_a_deactivated_workspace() -> None
 
         async with await _client() as c:
             headers = await _bearer(c, member.username)
-            refused = await c.get("/api/v1/users/me", headers={**headers, "X-Tenant-Id": str(host_tenant)})
+            refused = await c.get("/api/v1/sources", headers={**headers, "X-Tenant-Id": str(host_tenant)})
             assert refused.status_code == 403
             assert refused.json()["detail"] == "User is not a member of this workspace"
-            own = await c.get("/api/v1/users/me", headers={**headers, "X-Tenant-Id": str(own_tenant)})
+            own = await c.get("/api/v1/sources", headers={**headers, "X-Tenant-Id": str(own_tenant)})
             assert own.status_code == 200
+            # A workspace header cannot refuse an account-level route either: the
+            # profile route never selects a workspace, so it cannot select a
+            # deactivated one.
+            account = await c.get("/api/v1/users/me", headers={**headers, "X-Tenant-Id": str(host_tenant)})
+            assert account.status_code == 200
     finally:
         await _drop([member, host], [own_tenant, host_tenant])

@@ -17,18 +17,13 @@ import pytest
 from app.models import AIAnalytics, Platform, Source
 from app.services.ai.analyzer import AIAnalyzer
 from app.types import PeriodType, PlatformType, SourceType
+from tests.shared.platform_catalog import shared_platform
 
 
 @pytest.fixture
 async def platform():
-    p = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type=PlatformType.VK.db_value,
-        base_url="https://vk.com",
-        params={},
-    )
+    p = await shared_platform(PlatformType.VK.db_value)
     yield p
-    await Platform.objects.delete_by_id(p.id)
 
 
 @pytest.fixture
@@ -124,15 +119,14 @@ async def test_period_rollups_keep_analysis_contexts_separate(source):
         )
 
     written = await AIAnalyticsManager().build_period_rollups(PeriodType.WEEK, day, date(2026, 2, 7))
-    rollups = await AIAnalytics.objects.filter(
-        source_id=source.id, analysis_date=day, period_type=PeriodType.WEEK
-    )
+    rollups = await AIAnalytics.objects.filter(source_id=source.id, analysis_date=day, period_type=PeriodType.WEEK)
 
     assert written == 2
     assert {row.analysis_fingerprint for row in rollups} == {"a" * 64, "b" * 64}
-    assert {
-        row.analysis_fingerprint: row.summary_data["content_statistics"]["total_posts"] for row in rollups
-    } == {"a" * 64: 2, "b" * 64: 7}
+    assert {row.analysis_fingerprint: row.summary_data["content_statistics"]["total_posts"] for row in rollups} == {
+        "a" * 64: 2,
+        "b" * 64: 7,
+    }
     await AIAnalytics.objects.filter(source_id=source.id).delete()
 
 

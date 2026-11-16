@@ -6,10 +6,12 @@ from __future__ import annotations
 from .base import Base, TenantScopedMixin, TimestampMixin
 
 # isort: split
+from .actions import AgentAction, BotAction, BusinessCommand, BusinessCommandTarget
 from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
 from .analysis.agent_scenario import AgentScenario
-from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
 from .analysis.ai_analytics import AIAnalytics
+from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
+from .audit import ActionAuditEvent, WorkspaceOffboardingEvent
 from .billing import (
     PersonalBillingAccount,
     PersonalBillingCutover,
@@ -24,6 +26,7 @@ from .billing import (
     PersonalLLMReservationState,
     TaskBillingPayer,
 )
+from .calendar import CalendarChoice, CalendarEvent, SourceObject
 from .collection import (
     CollectedItem,
     CollectionCandidate,
@@ -32,21 +35,105 @@ from .collection import (
     Platform,
     Source,
 )
-from .identity import ModelType, Permission, PlatformRole, Role, User, UserCredential
+from .communications import (
+    ContactChannelStat,
+    MessageThread,
+    OutboxMessage,
+    OutboxReplyEvidence,
+    OutboxTarget,
+    ThreadTriageDecision,
+    UnifiedMessage,
+)
+from .contacts import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
+from .crm import CrmEntity, GreetingHistory
+from .file_workspace import FileCatalogObject, FileCatalogObservation, FileCatalogScan
+from .file_workspace.private_insights import (
+    FileInsightAttempt,
+    FileInsightMount,
+    FileInsightObjectState,
+    FilePrivateInsight,
+)
+from .identity import LoginAttempt, ModelType, Permission, PlatformRole, Role, User, UserCredential
+from .integrations import (
+    LocalConnector,
+    LocalConnectorPairing,
+    LocalConnectorRequest,
+    PersonalConnectorAuthorization,
+    TelegramLoginAttempt,
+    TelegramLoginRequestKey,
+    TrustedOutboundHost,
+    TrustedOutboundHostEvent,
+    WorkspaceAuthorizationGrant,
+    WorkspaceConnection,
+    WorkspaceConnectionSecret,
+    WorkspaceOutboundHost,
+)
+from .knowledge import DocumentApproval, DocumentRevision, KnowledgeDocument, KnowledgeSnippet
 from .llm import (
     LLMAttempt,
     LLMBudgetDay,
     LLMBudgetReservation,
+    LLMCatalog,
+    LLMDispatchLease,
     LLMDispatchReceipt,
     LLMModel,
     LLMOutcomeEvent,
     LLMProvider,
+    LLMRateBucket,
+    PlanModelGrant,
 )
-from .notifications import DigestRun, Notification, NotificationPreference
-from .scheduling import AgentTask, BotAction, Job
-from .tenancy import Tenant, TenantChannel, TenantInvite, TenantUser, WorkspaceRole
+from .notifications import DigestRun, Notification, NotificationDelivery, NotificationPreference, NotificationReceipt
+from .onec import OneCQueryHistory
+from .planner import PlannerEventRun, PlannerEventSettings, PlannerReminder, PlannerTask
+from .scheduling import AgentTask, Job
+from .tenancy import (
+    EntitlementUsage,
+    ServicePlanBackfillResolution,
+    ServicePlanPolicy,
+    Tenant,
+    TenantChannel,
+    TenantInvite,
+    TenantUser,
+    UserServicePlan,
+    WorkspaceRole,
+)
 
 __all__ = [
+    "LocalConnector",
+    "LocalConnectorPairing",
+    "LocalConnectorRequest",
+    "Contact",
+    "ContactIdentity",
+    "ContactConsent",
+    "ContactMergeJournal",
+    "MessageThread",
+    "ThreadTriageDecision",
+    "UnifiedMessage",
+    "ContactChannelStat",
+    "PlannerTask",
+    "CalendarChoice",
+    "CalendarEvent",
+    "SourceObject",
+    "PlannerEventRun",
+    "PlannerEventSettings",
+    "PlannerReminder",
+    "NotificationDelivery",
+    "OutboxMessage",
+    "OutboxReplyEvidence",
+    "OutboxTarget",
+    "CrmEntity",
+    "GreetingHistory",
+    "FileCatalogObject",
+    "FileCatalogObservation",
+    "FileCatalogScan",
+    "FileInsightMount",
+    "FileInsightObjectState",
+    "FileInsightAttempt",
+    "FilePrivateInsight",
+    "KnowledgeSnippet",
+    "KnowledgeDocument",
+    "DocumentRevision",
+    "DocumentApproval",
     # Base classes
     "Base",
     "TimestampMixin",
@@ -58,12 +145,26 @@ __all__ = [
     "PlatformRole",
     "WorkspaceRole",
     "User",
+    "LoginAttempt",
     # Multi-tenant
     "Tenant",
+    "EntitlementUsage",
+    "ServicePlanPolicy",
+    "UserServicePlan",
+    "ServicePlanBackfillResolution",
     "TenantUser",
     "TenantInvite",
     "TenantChannel",
     "UserCredential",
+    "WorkspaceConnection",
+    "WorkspaceConnectionSecret",
+    "WorkspaceOutboundHost",
+    "PersonalConnectorAuthorization",
+    "TelegramLoginAttempt",
+    "TelegramLoginRequestKey",
+    "TrustedOutboundHost",
+    "TrustedOutboundHostEvent",
+    "WorkspaceAuthorizationGrant",
     "PersonalBillingAccount",
     "TaskBillingPayer",
     "PersonalLLMDispatch",
@@ -81,17 +182,26 @@ __all__ = [
     "Source",
     "AgentScenario",
     "BotAction",
+    "AgentAction",
+    "BusinessCommand",
+    "BusinessCommandTarget",
+    "ActionAuditEvent",
+    "WorkspaceOffboardingEvent",
     # AI models
     "LLMProvider",
     "LLMModel",
+    "LLMCatalog",
+    "PlanModelGrant",
     # Analytics models
     "AIAnalytics",
     "AnalyzedContentReceipt",
     "LLMAttempt",
     "LLMBudgetDay",
     "LLMBudgetReservation",
+    "LLMDispatchLease",
     "LLMDispatchReceipt",
     "LLMOutcomeEvent",
+    "LLMRateBucket",
     # Task runner / jobs
     "AgentTask",
     "Job",
@@ -104,6 +214,7 @@ __all__ = [
     # Notification models
     "Notification",
     "NotificationPreference",
+    "NotificationReceipt",
     # Raw collected content
     "CollectedItem",
     "CollectionSeen",

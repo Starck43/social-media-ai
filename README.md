@@ -1,139 +1,67 @@
 # AI Assistant
 
 An extensible assistant for evidence-backed research and controlled business
-workflows. The existing social-media monitoring system is the first domain, not
-the product boundary.
+workflows. Social-media monitoring is the first domain: authorized VK/Telegram
+collection, scenario-based analysis, scheduled jobs, digests and Telegram/MAX/web
+chat. Product direction makes the AI chat the primary workspace for clarifying
+requests, previewing and launching work, checking progress/results and following
+up; the permitted social-task journey is accepted in [P8-T39](docs/audit/p8/p8-t39.md).
+Dedicated source, scenario, task, schedule and digest pages remain directly
+accessible for setup and management. The planned workspace ([design](docs/product/WORKSPACE_UX.md))
+adds «Сегодня», an inbox and a universal task surface beside the chat; managed,
+self-hosted and hybrid core/data-node deployments, own models and a desktop client
+are future directions ([topology](docs/product/PLATFORM_TOPOLOGY.md)), not shipped features.
+MAX transport does not imply MAX collection;
+planned integrations are not shipped features. Source integration alone does
+not certify production readiness.
 
-The common process is:
+The application is a Python modular monolith: FastAPI, SQLAlchemy, Alembic and
+PostgreSQL. `python -m app.runtime` owns scheduler, worker and messenger listeners;
+API/admin may run separately. Do not start duplicate runtime owners.
 
-**Goal → authorized sources → collect/search → verify → analyze/calculate →
-propose → approve when required → deliver/execute → audit/follow-up.**
+## Development hierarchy
 
-[Product plan](docs/PRODUCT_PLAN.md) ·
-[Project map](docs/PROJECT_MAP.md) ·
-[Target architecture](docs/ASSISTANT_ARCHITECTURE.md) ·
-[Documentation index](docs/DOCS_INDEX.md)
+[Architecture](docs/product/DESIGN.md) → [product directions](docs/product/PRODUCT_PLAN.md) →
+[numbered phases](docs/phases/README.md) → [ROADMAP](ROADMAP.md) → one active
+`docs/tasks/<id>.md` → accepted `docs/audit/<phase>/<id>.md`.
+This hierarchy defines ownership, not a mandatory reading chain; follow AGENTS'
+lazy task-reading rule rather than loading every ancestor.
 
-## Current capabilities
+**First session:** README, [DESIGN](docs/product/DESIGN.md), [AGENTS](AGENTS.md).
+**Task:** one queue row/card and its selected skill; then only relevant links.
+[Prompt examples](docs/process/PROMPT_EXAMPLES.md) cover local/remote work and PR audit.
+[Subsystem index](docs/DOCS_INDEX.md) routes API, models, setup and release gates.
 
-- Telegram, MAX and web agent chat with persistent sessions, memory and feedback.
-- VK and Telegram collection through explicitly configured API or user access.
-- Reusable analysis scenarios, structured outputs and stored analytics.
-- PostgreSQL-backed schedules, jobs, retries and execution outcomes.
-- Daily/weekly digests to active workspace-owned Telegram/MAX bindings.
-- Shared deployment with isolated workspaces, membership and personal credentials.
-- DB-managed OpenAI-compatible and Anthropic providers/models with encrypted keys,
-  capability-aware selection, fallback and usage projections.
+## Run locally
 
-Important limits:
+Python 3.14+, PostgreSQL 14+, a private `.env` and configured encryption keys are
+required. Use [CONFIGURATION](docs/platform/CONFIGURATION.md) for settings and
+[DEPLOYMENT](docs/platform/DEPLOYMENT.md) for supported setup/migrations/runtime commands.
+Configure providers/models through the supported admin interfaces; external
+publication remains gated. Never infer permission to change a public/production
+schema from a quick-start command; follow [database policy](docs/process/COLLABORATION.md#database).
 
-- [Source audit follow-ups (PR #196)](https://github.com/Starck43/social-media-ai/pull/196) include unsafe legacy password
-  recovery, public profile hashes and conditional profile privilege escalation.
-  Documentation updates do not fix these runtime paths; do not infer production
-  security from the bounded merged packages.
+## Offline verification
 
-- MAX transport does not imply MAX content collection.
-- Raw collected content is staged for analysis, not a permanent archive.
-- Current cost fields do not form a complete concurrency-safe billing ledger.
-- External publication stays disabled or preview-only until its authorization,
-  approval, idempotency and recovery gates are accepted.
-- Production readiness is tracked in
-  [BUSINESS_PRODUCTION_READINESS](docs/BUSINESS_PRODUCTION_READINESS.md), not
-  inferred from this README.
+Python **3.14** is the minimum supported baseline. The [offline CI profile](.ci/README.md)
+installs only hash-locked tools and runs a reviewed no-DB subset, syntax/import
+boundaries, an AST-only Alembic graph check and formatting/secret baselines. It
+does not load project DB fixtures or certify DB/runtime/provider behavior.
 
-## Product direction
+## Package and configuration contract
 
-Planned capability areas include authorized web/video research, local-file and
-email search, unified customer communication, reminders, CRM/ERP connectors,
-deterministic commercial calculations, case history, documents and remote
-approval. These are planned modules. Implement one validated workflow at a time
-after its foundation gates; see [PRODUCT_PLAN](docs/PRODUCT_PLAN.md).
+Use the [generated runtime/optional/dev profiles](requirements/README.md), not
+hand-edited parallel dependency lists. `pyproject.toml` declares direct
+requirements; the compiler produces pinned transitive exports. The package/API
+version comes from `app/version.py`; no repository/DB identifier is renamed.
 
-## Architecture
+Existing flat environment keys/defaults remain supported. `Settings.database`,
+`.security`, `.collection` and `.llm` expose frozen subsystem snapshots from the
+resolved settings object, with no second environment reader. See
+[configuration precedence and safe diagnostics](docs/platform/CONFIGURATION.md#configuration-precedence).
 
-The active system is a modular Python application using FastAPI, SQLAlchemy,
-Alembic and PostgreSQL. `python -m app.runtime` starts the scheduler, worker and
-Telegram/MAX long-poll listeners. PostgreSQL owns schedules, jobs, tenant data,
-analytics, conversation state and delivery bookkeeping.
 
-```mermaid
-flowchart LR
-    Sources[Authorized sources] --> Jobs[PostgreSQL jobs]
-    Scheduler[Scheduler] --> Jobs
-    Jobs --> Worker[Worker]
-    Worker --> Analysis[Structured analysis]
-    Analysis --> Data[Workspace analytics]
-    Data --> Digest[Digest]
-    Digest --> Channels[Owned channels]
-    Chat[Chat / Web / CLI] --> Agent[Agent tools]
-    Agent --> Jobs
-    Agent --> Data
-    Models[DB-managed LLMs] --> Analysis
-    Models --> Agent
-```
-
-- The active runtime does not depend on Celery or Redis; their legacy path is frozen.
-- Scenarios define analysis methodology; tasks define execution, sources and targets.
-- Interactive access fails closed and all external writes retain explicit policy gates.
-- Optional integrations must not prevent startup when they are unconfigured.
-
-See [AGENT](docs/AGENT.md), [AGENT_TASKS](docs/AGENT_TASKS.md),
-[COLLECTION](docs/COLLECTION.md), [DIGEST](docs/DIGEST.md) and
-[TENANCY](docs/TENANCY.md).
-
-## Quick start
-
-Requirements: Python 3.12+, PostgreSQL 14+ and a reviewed local or Compose setup.
-
-```bash
-git clone https://github.com/Starck43/social-media-ai.git
-cd social-media-ai
-git checkout dev
-python -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-cp .env.example .env
-```
-
-Set at least `POSTGRES_URL` and `CREDENTIALS_KEY`. Add messenger credentials only
-for channels you use. Never commit `.env`, API keys, tokens or user sessions.
-
-```bash
-.venv/bin/python -m alembic upgrade head
-.venv/bin/python -m app.runtime
-```
-
-Optional API/admin process:
-
-```bash
-.venv/bin/python -m uvicorn app.main:app
-```
-
-The runtime already includes the scheduler, worker and listeners; do not start a
-second full runtime accidentally. Configure providers/models through `/admin` and
-mark the intended model default. Providers do not carry a default flag. Configure
-sources, scenarios, schedules and active workspace delivery bindings through the
-supported UI/API/CLI paths.
-
-Setup details: [CONFIGURATION](docs/CONFIGURATION.md),
-[DEPLOYMENT](docs/DEPLOYMENT.md), [ADMIN](docs/ADMIN.md), [API](docs/API.md) and
-[CLI](docs/CLI.md).
-
-## Development
-
-Read [AGENTS.md](AGENTS.md), `docs/RULES.md` and `docs/COLLABORATION.md` before
-work. They define test delegation (primary OpenCode route, sequential shared
-test schema, explicit owner instruction for any schema operation) and
-handoff/closeout; see
-[Collaboration](docs/COLLABORATION.md#headless-delegation-launches-from-a-task-worktree)
-for the exact launch commands.
-
-Development reading order:
-
-1. [Product direction](docs/PRODUCT_PLAN.md)
-2. [Engineering and release gates](docs/BUSINESS_PRODUCTION_READINESS.md)
-3. [Open tasks](ROADMAP.md) and [phase board](docs/phases/README.md)
-4. The relevant subsystem document from [DOCS_INDEX](docs/DOCS_INDEX.md)
-
-Delivered foundations are indexed in
-[IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md). Exact implementation and
-test history remains in Git and pull requests.
+VK/Telegram API endpoints, VK API version and VK OAuth URLs are now read exclusively from the
+shared `Platform.params` JSON. Legacy endpoint/version environment keys are
+one-time migration inputs, not runtime overrides; see
+[shared platform configuration](docs/platform/CONFIGURATION.md#shared-platform-configuration).

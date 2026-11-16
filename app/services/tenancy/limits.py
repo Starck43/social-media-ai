@@ -22,7 +22,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from app.models.tenant import Tenant
+from app.core.config import settings
+from app.models.tenancy.tenant import Tenant
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ async def check_source_limit(tenant: Any) -> Optional[str]:
     Deactivated rows still count: the user can bring one back, so ignoring them
     would let a workspace sit over its quota invisibly.
     """
-    from app.models.source import Source
+    from app.models.collection.source import Source
 
     total = await Source.objects.count()
     reason = _over_limit(tenant, "max_sources", total)
@@ -117,7 +118,7 @@ async def check_channel_limit(tenant: Any) -> Optional[str]:
 
 async def check_scenario_limit(tenant: Any) -> Optional[str]:
     """May this workspace create one more agent scenario?"""
-    from app.models.agent_scenario import AgentScenario
+    from app.models.analysis.agent_scenario import AgentScenario
 
     total = await AgentScenario.objects.count()
     reason = _over_limit(tenant, "max_scenarios", total)
@@ -137,10 +138,21 @@ async def check_member_limit(tenant: Any) -> Optional[str]:
     Counts web memberships only: `tenant_users` also holds messenger identities
     bound by invite redemption, and charging a plan for the same person reaching
     the workspace through two surfaces would make the number unreadable.
+
+    Two ceilings apply and the tighter one wins: the deployment-wide
+    `MAX_WORKSPACE_MEMBERS` (a pilot guard the operator sets in the environment)
+    and the workspace's tier limit.
     """
     from app.models.managers.tenant_manager import TenantUserManager
 
     current = len(await TenantUserManager().web_memberships_for_tenant(tenant.id))
+    deployment_ceiling = settings.MAX_WORKSPACE_MEMBERS
+    if deployment_ceiling is not None and current >= deployment_ceiling:
+        logger.info("Member blocked for tenant %s by deployment ceiling %s", tenant.id, deployment_ceiling)
+        return (
+            f"На платформе сейчас не более {int(deployment_ceiling)} "
+            f"{_plural('участник команды', int(deployment_ceiling))} в workspace — уже {current}."
+        )
     reason = _over_limit(tenant, "max_team_members", current)
     if reason is not None:
         logger.info("Member blocked for tenant %s on plan %s", tenant.id, tenant.plan)
@@ -154,7 +166,7 @@ async def check_member_limit(tenant: Any) -> Optional[str]:
 
 async def check_task_limit(tenant: Any) -> Optional[str]:
     """May this workspace create one more scheduled task?"""
-    from app.models.agent_task import AgentTask
+    from app.models.scheduling.agent_task import AgentTask
 
     total = await AgentTask.objects.count()
     reason = _over_limit(tenant, "max_tasks", total)
@@ -172,10 +184,7 @@ def check_feature(tenant: Any, feature: str, *, what: str) -> Optional[str]:
     """A plan boolean rendered as a message, or None when the tier includes it."""
     if tenant.has_feature(feature):
         return None
-    return (
-        f"Функция «{what}» доступна на тарифах Pro и Business. "
-        f"Текущий тариф: «{tenant.plan_label}»."
-    )
+    return f"Функция «{what}» доступна на тарифах Pro и Business. " f"Текущий тариф: «{tenant.plan_label}»."
 
 
 def check_daily_cost(tenant: Any, spent: float) -> Optional[str]:
@@ -190,10 +199,7 @@ def check_model_type(tenant: Any, model_type: str) -> Optional[str]:
     """Whether this tier may route calls to a model of that type."""
     if tenant.allows_model_type(model_type):
         return None
-    return (
-        f"Тип моделей «{model_type}» недоступен на тарифе «{tenant.plan_label}» "
-        f"(только text)."
-    )
+    return f"Тип моделей «{model_type}» недоступен на тарифе «{tenant.plan_label}» " f"(только text)."
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -210,10 +216,10 @@ async def plan_overage(tenant_id: int, plan: str) -> list[str]:
     which the admin shows before saving.
     """
     from app.core.tenant_context import tenant_scope
-    from app.models.agent_scenario import AgentScenario
-    from app.models.agent_task import AgentTask
+    from app.models.analysis.agent_scenario import AgentScenario
+    from app.models.collection.source import Source
     from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager, tenants
-    from app.models.source import Source
+    from app.models.scheduling.agent_task import AgentTask
 
     tenant = await tenants.get(id=tenant_id)
     if tenant is None:

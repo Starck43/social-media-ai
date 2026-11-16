@@ -1,4 +1,4 @@
-"""Scheduling models with lazy exports and the legacy DigestRun alias."""
+"""Scheduling models with lazy exports. Managers bind in app.models.bootstrap."""
 
 from __future__ import annotations
 
@@ -7,16 +7,12 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .agent_task import AgentTask, agent_task_sources
-    from .bot_action import BotAction
-    from .digest_run import DigestRun
     from .job import Job
 
-__all__ = ["AgentTask", "Job", "DigestRun", "BotAction", "agent_task_sources"]
+__all__ = ["AgentTask", "Job", "agent_task_sources"]
 _MODULES = {
     "AgentTask": "agent_task",
     "Job": "job",
-    "DigestRun": "digest_run",
-    "BotAction": "bot_action",
     "agent_task_sources": "agent_task",
 }
 

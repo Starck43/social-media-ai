@@ -18,6 +18,7 @@ from typing import Any, Optional
 from app.models import AIAnalytics
 from app.services.ai.analysis_render import first_analysis_value
 from app.services.ai.chain_resolver import human_chain_label
+from app.services.ai.report_scope import ReportScope, normalize_digest_axis, sentiment_bucket
 from app.types import MediaType, PeriodType
 from app.utils.enum_helpers import get_enum_value
 
@@ -27,27 +28,6 @@ logger = logging.getLogger(__name__)
 SENTIMENT_FILTERS = ("positive", "neutral", "negative")
 MEDIA_FILTERS = ("text", "image", "video")
 REMOVED_GROUPING_AXES = frozenset({"sentiment", "content_type"})
-
-
-def sentiment_bucket(score: Any) -> str | None:
-    """Canonical buckets: >0.6 positive, <0.4 negative, boundaries neutral.
-
-    Missing/non-numeric/non-finite values have no bucket, never fake neutrality.
-    """
-    if score is None or isinstance(score, bool):
-        return None
-    try:
-        score = float(score)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(score):
-        return None
-    return "positive" if score > 0.6 else "negative" if score < 0.4 else "neutral"
-
-
-def normalize_digest_axis(group_by: str | None) -> str:
-    """Compatibility for saved tasks; public grouping APIs reject old axes."""
-    return "themes" if not group_by or group_by in REMOVED_GROUPING_AXES else group_by
 
 
 class ReportAggregator:
@@ -150,11 +130,59 @@ class ReportAggregator:
         # either way.
         return list(await qs.order_by(AIAnalytics.analysis_date.asc()))
 
+    async def scoped_rows(self, scope: ReportScope) -> list:
+        """One bounded read of the scope's base rows (AUD-07).
+
+        Inclusive ``[start, end]`` with an explicit upper bound (future rows
+        never enter), base row kind only (saved WEEK/MONTH rollups never
+        re-enter the sums), the digest's source set, and a narrow-only tenant.
+        The scenario filter stays in Python: ``summary_data`` is
+        ``postgresql.JSON``, not JSONB — see `_analytics_query` for why.
+        """
+        qs = AIAnalytics.objects.filter(
+            analysis_date__gte=scope.start,
+            analysis_date__lte=scope.end,
+            period_type=scope.base_period_type,
+        )
+        if scope.source_ids:
+            qs = qs.filter(source_id__in=sorted(scope.source_ids))
+        if scope.tenant_id is not None:
+            qs = qs.filter(tenant_id=scope.tenant_id)
+        rows = list(await qs.order_by(AIAnalytics.analysis_date.asc()))
+        if scope.scenario_id is not None:
+            wanted = str(scope.scenario_id)
+            rows = [
+                row
+                for row in rows
+                if str(((row.summary_data or {}).get("scenario_metadata") or {}).get("scenario_id", "")) == wanted
+            ]
+        return rows
+
+    async def _section_rows(
+        self,
+        rows: Optional[list],
+        days: Optional[int],
+        source_id: Optional[int] = None,
+        tenant_id: Optional[int] = None,
+        source_ids: Optional[list[int]] = None,
+        scenario_id: Optional[int] = None,
+    ):
+        """Pre-loaded scope rows win; `None` keeps the legacy look-back query."""
+        if rows is not None:
+            return rows
+        return await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+
     async def get_grouped_analytics(
-        self, axis: str = "themes", days: int | None = 7,
-        source_id: int | None = None, tenant_id: int | None = None,
-        chain_id: str | None = None, time_breakdown: bool = False,
-        entity_type: str | None = None, sentiment: str | None = None, media: str | None = None,
+        self,
+        axis: str = "themes",
+        days: int | None = 7,
+        source_id: int | None = None,
+        tenant_id: int | None = None,
+        chain_id: str | None = None,
+        time_breakdown: bool = False,
+        entity_type: str | None = None,
+        sentiment: str | None = None,
+        media: str | None = None,
     ) -> dict[str, Any]:
         """Token-free grouping over the scoped, inclusive reporting window."""
         from app.services.ai.grouping import group_analytics
@@ -164,14 +192,24 @@ class ReportAggregator:
         rows = await self._analytics_query(days=days, source_id=source_id, tenant_id=tenant_id)
         today = date.today()
         lower = today - timedelta(days=days - 1) if days is not None else None
-        rows = [row for row in rows if row.analysis_date is not None and row.analysis_date <= today
-                and (lower is None or row.analysis_date >= lower)
-                and (chain_id is None or row.topic_chain_id == chain_id)]
-        return await group_analytics(rows, axis, time_breakdown=time_breakdown,
-                                     entity_type=entity_type, sentiment=sentiment, media=media)
+        rows = [
+            row
+            for row in rows
+            if row.analysis_date is not None
+            and row.analysis_date <= today
+            and (lower is None or row.analysis_date >= lower)
+            and (chain_id is None or row.topic_chain_id == chain_id)
+        ]
+        return await group_analytics(
+            rows, axis, time_breakdown=time_breakdown, entity_type=entity_type, sentiment=sentiment, media=media
+        )
 
     async def get_sentiment_trends(
-        self, source_id: Optional[int] = None, days: int = 7, group_by: str = "day"
+        self,
+        source_id: Optional[int] = None,
+        days: int = 7,
+        group_by: str = "day",
+        rows: Optional[list] = None,
     ) -> list[dict[str, Any]]:
         """
         Get sentiment trends over time period.
@@ -185,7 +223,7 @@ class ReportAggregator:
                 List of trend points with date, avg sentiment, counts
         """
         try:
-            analytics = await self._analytics_query(days, source_id)
+            analytics = await self._section_rows(rows, days, source_id)
 
             # Aggregate by date
             trends = []
@@ -231,6 +269,7 @@ class ReportAggregator:
         days: int = 7,
         limit: int = 10,
         tenant_id: Optional[int] = None,
+        rows: Optional[list] = None,
     ) -> list[dict[str, Any]]:
         """
         Get top topics/keywords from analyses.
@@ -245,7 +284,7 @@ class ReportAggregator:
                 List of topics with counts, sentiment, example posts
         """
         try:
-            analytics = await self._analytics_query(days, source_id, tenant_id)
+            analytics = await self._section_rows(rows, days, source_id, tenant_id)
 
             # Extract and count topics
             topic_counter = Counter()
@@ -290,7 +329,9 @@ class ReportAggregator:
             logger.error(f"Error getting top topics: {e}", exc_info=True)
             return []
 
-    async def get_llm_provider_stats(self, source_id: Optional[int] = None, days: int = 30) -> dict[str, Any]:
+    async def get_llm_provider_stats(
+        self, source_id: Optional[int] = None, days: int = 30, rows: Optional[list] = None
+    ) -> dict[str, Any]:
         """
         Get LLM provider usage statistics and costs.
 
@@ -302,7 +343,7 @@ class ReportAggregator:
                 Dict with provider stats, costs, token usage
         """
         try:
-            analytics = await self._analytics_query(days, source_id)
+            analytics = await self._section_rows(rows, days, source_id)
 
             # Aggregate by provider
             provider_stats = defaultdict(
@@ -369,6 +410,7 @@ class ReportAggregator:
         source_id: Optional[int] = None,
         days: int = 7,
         tenant_id: Optional[int] = None,
+        rows: Optional[list] = None,
     ) -> dict[str, Any]:
         """
         Get content type distribution (text/image/video).
@@ -382,7 +424,7 @@ class ReportAggregator:
                 Dict with counts and percentages per media type
         """
         try:
-            analytics = await self._analytics_query(days, source_id, tenant_id)
+            analytics = await self._section_rows(rows, days, source_id, tenant_id)
 
             # Count media types
             media_counts = Counter()
@@ -392,7 +434,9 @@ class ReportAggregator:
                 if a.media_types:
                     for media_type in a.media_types:
                         if isinstance(media_type, dict):
-                            media_type = media_type.get("type") or media_type.get("name") or media_type.get("media_type")
+                            media_type = (
+                                media_type.get("type") or media_type.get("name") or media_type.get("media_type")
+                            )
                         if isinstance(media_type, str) and media_type.strip():
                             media_counts[media_type.strip()] += 1
                             total += 1
@@ -409,7 +453,9 @@ class ReportAggregator:
             logger.error(f"Error getting content mix: {e}", exc_info=True)
             return {"media_types": {}, "total_analyses": 0, "total_media_items": 0}
 
-    async def get_engagement_metrics(self, source_id: Optional[int] = None, days: int = 7) -> dict[str, Any]:
+    async def get_engagement_metrics(
+        self, source_id: Optional[int] = None, days: int = 7, rows: Optional[list] = None
+    ) -> dict[str, Any]:
         """
         Get engagement metrics (reactions, comments).
 
@@ -421,7 +467,7 @@ class ReportAggregator:
                 Dict with average engagement rates per post
         """
         try:
-            analytics = await self._analytics_query(days, source_id)
+            analytics = await self._section_rows(rows, days, source_id)
 
             # Extract engagement data
             total_reactions = 0
@@ -504,7 +550,7 @@ class ReportAggregator:
         rows that name an author; rows from other groupings are skipped. This is
         a report over analysed people, not a selection of whose posts were
         analysed (that is the task's `tracked_users`, see
-        `docs/design/task-selection.md`). Each user's analyses are averaged into
+        `docs/connectors/COLLECTION.md#task-selection-contract`). Each user's analyses are averaged into
         one sentiment score, sorted by volume.
         """
         try:
@@ -606,6 +652,7 @@ class ReportAggregator:
         source_ids: Optional[list[int]] = None,
         threshold: float = 0.7,
         scenario_id: Optional[int] = None,
+        rows: Optional[list] = None,
     ) -> dict[str, Any]:
         """Toxicity stats over the period: share, average score, categories.
 
@@ -616,7 +663,7 @@ class ReportAggregator:
         `toxicity_category` words fall back to the category check.
         """
         try:
-            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            analytics = await self._section_rows(rows, days, source_id, tenant_id, source_ids, scenario_id)
             total = 0
             toxic = 0
             scores: list[float] = []
@@ -678,10 +725,11 @@ class ReportAggregator:
         source_ids: Optional[list[int]] = None,
         limit: int = 10,
         scenario_id: Optional[int] = None,
+        rows: Optional[list] = None,
     ) -> list[dict[str, Any]]:
         """Top hashtags by occurrence count over the period."""
         try:
-            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            analytics = await self._section_rows(rows, days, source_id, tenant_id, source_ids, scenario_id)
             counter: Counter = Counter()
             for a in analytics:
                 for tag in self._extract_hashtags(a.summary_data):
@@ -698,6 +746,7 @@ class ReportAggregator:
         tenant_id: Optional[int] = None,
         source_ids: Optional[list[int]] = None,
         scenario_id: Optional[int] = None,
+        rows: Optional[list] = None,
     ) -> dict[str, Any]:
         """Brand mention volume and its sentiment split.
 
@@ -709,7 +758,7 @@ class ReportAggregator:
         one of them.
         """
         try:
-            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            analytics = await self._section_rows(rows, days, source_id, tenant_id, source_ids, scenario_id)
             rows_with_mentions = 0
             total_mentions = 0
             sentiment: Counter = Counter()
@@ -767,10 +816,11 @@ class ReportAggregator:
         source_ids: Optional[list[int]] = None,
         limit: int = 5,
         scenario_id: Optional[int] = None,
+        rows: Optional[list] = None,
     ) -> list[dict[str, Any]]:
         """Rows flagged viral: potential, growth rate, sorted by rank."""
         try:
-            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            analytics = await self._section_rows(rows, days, source_id, tenant_id, source_ids, scenario_id)
             items = []
             for a in analytics:
                 text = self._text_analysis(a.summary_data)
@@ -833,10 +883,11 @@ class ReportAggregator:
         source_ids: Optional[list[int]] = None,
         limit: int = 5,
         scenario_id: Optional[int] = None,
+        rows: Optional[list] = None,
     ) -> list[dict[str, Any]]:
         """Influencer activity captured by the analysis, if the pipeline wrote it."""
         try:
-            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            analytics = await self._section_rows(rows, days, source_id, tenant_id, source_ids, scenario_id)
             items: dict[str, dict[str, Any]] = {}
             for a in analytics:
                 text = self._text_analysis(a.summary_data)
@@ -898,10 +949,11 @@ class ReportAggregator:
         tenant_id: Optional[int] = None,
         source_ids: Optional[list[int]] = None,
         scenario_id: Optional[int] = None,
+        rows: Optional[list] = None,
     ) -> dict[str, Any]:
         """Competitor mentions: names and how often they surfaced."""
         try:
-            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            analytics = await self._section_rows(rows, days, source_id, tenant_id, source_ids, scenario_id)
             counter: Counter = Counter()
             threats: Counter = Counter()
             for a in analytics:
@@ -942,10 +994,11 @@ class ReportAggregator:
         tenant_id: Optional[int] = None,
         source_ids: Optional[list[int]] = None,
         scenario_id: Optional[int] = None,
+        rows: Optional[list] = None,
     ) -> dict[str, Any]:
         """Customer-intent distribution (primary + secondary intents)."""
         try:
-            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            analytics = await self._section_rows(rows, days, source_id, tenant_id, source_ids, scenario_id)
             counter: Counter = Counter()
             confidences: list[float] = []
             for a in analytics:
@@ -986,10 +1039,11 @@ class ReportAggregator:
         tenant_id: Optional[int] = None,
         source_ids: Optional[list[int]] = None,
         scenario_id: Optional[int] = None,
+        rows: Optional[list] = None,
     ) -> dict[str, Any]:
         """Audience demographics the analysis captured (age / locations / interests)."""
         try:
-            analytics = await self._analytics_query(days, source_id, tenant_id, source_ids, scenario_id)
+            analytics = await self._section_rows(rows, days, source_id, tenant_id, source_ids, scenario_id)
             age: Counter = Counter()
             locations: Counter = Counter()
             interests: Counter = Counter()
@@ -1053,6 +1107,8 @@ class ReportAggregator:
         time_breakdown: bool = False,
         entity_type: str | None = None,
         scenario_id: Optional[int] = None,
+        scope: Optional[ReportScope] = None,
+        rows: Optional[list] = None,
     ) -> str:
         """Structured Markdown brief for the digest period — pure algorithm, no LLM.
 
@@ -1080,7 +1136,20 @@ class ReportAggregator:
         end = date.today()
         start = end - timedelta(days=days - 1)
 
-        analytics = await self._analytics_query(days=days, source_ids=source_ids, scenario_id=scenario_id)
+        from app.core.tenant_context import current_tenant_id
+
+        scope = scope or ReportScope(
+            start=start,
+            end=end,
+            source_ids=frozenset(source_ids) if source_ids else None,
+            scenario_id=scenario_id,
+            tenant_id=current_tenant_id(),
+        )
+        start, end, days = scope.start, scope.end, scope.days
+        scenario_id = scope.scenario_id
+        if rows is None:
+            rows = await self.scoped_rows(scope)
+        analytics = rows
         if not analytics:
             return ""
 
@@ -1117,7 +1186,7 @@ class ReportAggregator:
             method = getattr(self, method_name)
             # Same scenario filter as the base group: a row written by another
             # scenario's analysis_types must not leak into this brief's sections.
-            result = await method(days=days, source_ids=source_ids, scenario_id=scenario_id)
+            result = await method(days=days, source_ids=source_ids, scenario_id=scenario_id, rows=rows)
             section = self._format_specialized_section(label, name, result)
             if section:
                 lines.extend(section)
@@ -1125,13 +1194,18 @@ class ReportAggregator:
         # Movement against the preceding window. The sections above each describe
         # the period in isolation — "12 toxic posts" says nothing about whether
         # that is worse than usual, which is the part a reader acts on.
-        dynamics = await self._brief_dynamics(days, source_ids, scenario_id)
+        previous_rows = await self.scoped_rows(scope.previous())
+        dynamics = await self._brief_dynamics(
+            days, source_ids, scenario_id, scope=scope, current_rows=rows, previous_rows=previous_rows
+        )
         if dynamics:
             lines.extend(dynamics)
 
         # Chain movement against the preceding window: which chains are new and
         # which continued with more entries.
-        chain_dynamics = await self._chain_dynamics(days, source_ids, scenario_id)
+        chain_dynamics = await self._chain_dynamics(
+            days, source_ids, scenario_id, scope=scope, current_rows=rows, previous_rows=previous_rows
+        )
         if chain_dynamics:
             lines.extend(chain_dynamics)
 
@@ -1142,6 +1216,9 @@ class ReportAggregator:
         days: int,
         source_ids: Optional[list[int]] = None,
         scenario_id: Optional[int] = None,
+        scope: Optional[ReportScope] = None,
+        current_rows: Optional[list] = None,
+        previous_rows: Optional[list] = None,
     ) -> list[str]:
         """Compare the period against the one before it.
 
@@ -1150,12 +1227,23 @@ class ReportAggregator:
         would compare "the last 7 days" against "the 7 days before now" — an
         overlapping window that dilutes every delta by half and would report no
         change in a period that moved a lot.
-        """
-        end = date.today() - timedelta(days=days)
-        start = end - timedelta(days=days - 1)
 
-        current = await self._window_sentiment_toxicity(date.today() - timedelta(days=days - 1), date.today())
-        previous = await self._window_sentiment_toxicity(start, end)
+        With a `scope` (the digest path, AUD-07) both windows honor the same
+        source/scenario/base-row selection; the legacy window read ignored it.
+        """
+        if scope is not None:
+            if current_rows is None:
+                current_rows = await self.scoped_rows(scope)
+            current = self._sentiment_toxicity_of(current_rows)
+            if previous_rows is None:
+                previous_rows = await self.scoped_rows(scope.previous())
+            previous = self._sentiment_toxicity_of(previous_rows)
+        else:
+            end = date.today() - timedelta(days=days)
+            start = end - timedelta(days=days - 1)
+
+            current = await self._window_sentiment_toxicity(date.today() - timedelta(days=days - 1), date.today())
+            previous = await self._window_sentiment_toxicity(start, end)
         if not current or not previous:
             return []
 
@@ -1171,6 +1259,14 @@ class ReportAggregator:
         try:
             qs = AIAnalytics.objects.filter(analysis_date__gte=start, analysis_date__lte=end)
             analytics = await qs
+        except Exception as e:
+            logger.warning(f"Dynamics window {start}..{end} unavailable: {e}")
+            return None
+        return self._sentiment_toxicity_of(analytics)
+
+    def _sentiment_toxicity_of(self, analytics) -> Optional[dict[str, Any]]:
+        """Pure form of the window aggregate over already-loaded rows (scope reuse)."""
+        try:
             if not analytics:
                 return None
 
@@ -1208,7 +1304,7 @@ class ReportAggregator:
                 "toxic_percent": (toxic / scored * 100) if scored else None,
             }
         except Exception as e:
-            logger.warning(f"Dynamics window {start}..{end} unavailable: {e}")
+            logger.warning(f"Dynamics aggregate unavailable: {e}")
             return None
 
     def _sentiment_delta(self, current: dict, previous: dict) -> list[str]:
@@ -1246,7 +1342,9 @@ class ReportAggregator:
     def _specialized_sections(cls):
         return [(name, label, method) for name, (label, method) in cls.DIGEST_SPECIALIZED.items()]
 
-    async def _brief_base_group(self, analytics, axis: str = "themes", time_breakdown: bool = False, entity_type: str | None = None) -> list[str]:
+    async def _brief_base_group(
+        self, analytics, axis: str = "themes", time_breakdown: bool = False, entity_type: str | None = None
+    ) -> list[str]:
         """Group the period's analytics by axis into markdown lines."""
         from app.services.ai.grouping import group_analytics
         from app.types.enums.bot_types import GroupingAxis
@@ -1255,7 +1353,9 @@ class ReportAggregator:
             result = await group_analytics(analytics, axis, time_breakdown=time_breakdown, entity_type=entity_type)
         except ValueError:
             # Invalid axis — fall back to themes
-            result = await group_analytics(analytics, GroupingAxis.THEMES, time_breakdown=time_breakdown, entity_type=entity_type)
+            result = await group_analytics(
+                analytics, GroupingAxis.THEMES, time_breakdown=time_breakdown, entity_type=entity_type
+            )
 
         return self._render_grouped_result(result)
 
@@ -1346,6 +1446,9 @@ class ReportAggregator:
         days: int,
         source_ids: Optional[list[int]] = None,
         scenario_id: Optional[int] = None,
+        scope: Optional[ReportScope] = None,
+        current_rows: Optional[list] = None,
+        previous_rows: Optional[list] = None,
     ) -> list[str]:
         """New vs continued chains, compared against the preceding window.
 
@@ -1353,16 +1456,25 @@ class ReportAggregator:
         before is "new"; a chain present in both windows whose current count is
         higher is "continued" (with the delta). Mirrors the dynamics section's
         non-overlapping windows.
+
+        With a `scope` (the digest path, AUD-07) both windows come from scoped
+        rows, so the source/scenario/base-row selection applies here too.
         """
-        from datetime import timedelta
+        if scope is not None:
+            if current_rows is None:
+                current_rows = await self.scoped_rows(scope)
+            current = self._chain_stats_of(current_rows)
+            if previous_rows is None:
+                previous_rows = await self.scoped_rows(scope.previous())
+            previous = self._chain_stats_of(previous_rows)
+        else:
+            end = date.today()
+            start = end - timedelta(days=days - 1)
+            prev_end = start - timedelta(days=1)
+            prev_start = prev_end - timedelta(days=days - 1)
 
-        end = date.today()
-        start = end - timedelta(days=days - 1)
-        prev_end = start - timedelta(days=1)
-        prev_start = prev_end - timedelta(days=days - 1)
-
-        current = await self._chain_stats(start, end, source_ids, scenario_id)
-        previous = await self._chain_stats(prev_start, prev_end, source_ids, scenario_id)
+            current = await self._chain_stats(start, end, source_ids, scenario_id)
+            previous = await self._chain_stats(prev_start, prev_end, source_ids, scenario_id)
         if not current:
             return []
 
@@ -1411,8 +1523,15 @@ class ReportAggregator:
         if source_ids:
             qs = qs.filter(source_id__in=source_ids)
         rows = await qs
+        return self._chain_stats_of(rows)
+
+    @staticmethod
+    def _chain_stats_of(rows) -> dict[str, dict[str, Any]]:
+        """Pure form over loaded rows; rows without a chain id are skipped."""
         stats: dict[str, dict[str, Any]] = {}
         for r in rows:
+            if not r.topic_chain_id:
+                continue
             label = r.chain_label or human_chain_label(r.summary_data) or r.topic_chain_id
             entry = stats.setdefault(r.topic_chain_id, {"count": 0, "label": label})
             entry["count"] += 1
@@ -1739,7 +1858,11 @@ class ReportAggregator:
                     # Track the most recent analysis that mentioned this entity,
                     # so the widget can link to it.
                     if a.id is not None:
-                        if key not in latest_analysis_id or (a.analysis_date and latest_analysis_date.get(key) and a.analysis_date >= latest_analysis_date[key]):
+                        if key not in latest_analysis_id or (
+                            a.analysis_date
+                            and latest_analysis_date.get(key)
+                            and a.analysis_date >= latest_analysis_date[key]
+                        ):
                             latest_analysis_id[key] = a.id
                             latest_analysis_date[key] = a.analysis_date
 

@@ -1,0 +1,227 @@
+{% extends "web/base.html" %}
+
+{% block title %}Переписка — AI Assistant{% endblock %}
+{% block page_heading %}Переписка{% endblock %}
+
+{% block page_actions %}
+<a href="/app/chat" class="ui-control">← К чату</a>
+<a href="/app/contacts" class="ui-control">Контакты</a>
+<a href="/app/followups" class="ui-control">Договорённости</a>
+{% endblock %}
+
+{% block right_panel %}
+<div class="space-y-3 text-sm">
+    <h2 class="font-semibold">О переписке</h2>
+
+    <p class="text-xs ui-muted">Единый реестр метаданных переписки (Email, Telegram, MAX, Телефон, Битрикс24). Хранятся только метаданные (тема, участники, даты, канал, направление, хеш и ссылка на оригинал) — тексты сообщений и вложения не сохраняются.</p>
+</div>
+    {% include "web/_evidence_details.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6" data-p12-communications="communications-outbox" data-p15-inbox="unified-inbox">
+    <nav class="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3" aria-label="Разделы переписки" data-inbox-tabs>
+        <a href="/app/communications?tab=inbox&boundary={{ boundary | default('cloud') }}"
+           class="ui-control text-xs {% if (active_tab | default('inbox')) == 'inbox' %}font-semibold{% endif %}"
+           data-tab="inbox">Входящие цепочки</a>
+        <a href="/app/communications?tab=outbox&boundary={{ boundary | default('cloud') }}"
+           class="ui-control text-xs {% if (active_tab | default('inbox')) == 'outbox' %}font-semibold{% endif %}"
+           data-tab="outbox">Сохранённые записи</a>
+        <a href="/app/contacts/merge"
+           class="ui-control text-xs {% if (active_tab | default('inbox')) == 'contacts_merge' %}font-semibold{% endif %}"
+           data-tab="contacts_merge">Сверка контактов</a>
+    </nav>
+
+    <section class="ui-card space-y-4" data-inbox-search-panel>
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <h2 class="text-sm font-semibold">Единый входящий поток и поиск по метаданным</h2>
+                <p class="mt-1 text-xs ui-muted">Поиск выполняется только по метаданным (тема, участники, контакт, канал, направление, период). Каналы доставки настраиваются в <a href="/app/settings?tab=channels" class="underline">настройках</a>.</p>
+            </div>
+            <span class="inline-flex items-center text-xs px-2 py-0.5 rounded font-medium bg-emerald-950/80 text-emerald-300 border border-emerald-700/50">Только метаданные (D3/D11)</span>
+        </div>
+
+        <form method="get" action="/app/communications" class="flex flex-wrap items-end gap-3" data-inbox-filter-form>
+            <input type="hidden" name="tab" value="{{ active_tab | default('inbox') }}">
+            <input type="hidden" name="boundary" value="{{ boundary | default('cloud') }}">
+            <div class="flex-1 min-w-[200px]">
+                <label for="inbox-q" class="block text-xs ui-muted mb-1">Поиск по теме, участникам или контакту</label>
+                <input id="inbox-q" type="search" name="q" value="{{ q | default('') }}" placeholder="Тема, email, телефон, имя..." class="ui-control w-full text-sm">
+            </div>
+            <div>
+                <label for="inbox-triage-category" class="block text-xs ui-muted mb-1">Разбор (P20-T09)</label>
+                <select id="inbox-triage-category" name="triage_category" class="ui-control text-sm" data-triage-filter>
+                    <option value="">Все категории</option>
+                    <option value="needs_reply" {% if triage_category_filter == "needs_reply" %}selected{% endif %}>Нужен ответ</option>
+                    <option value="fyi" {% if triage_category_filter == "fyi" %}selected{% endif %}>К сведению</option>
+                    <option value="can_wait" {% if triage_category_filter == "can_wait" %}selected{% endif %}>Подождёт</option>
+                    <option value="uncertain" {% if triage_category_filter == "uncertain" %}selected{% endif %}>Не уверен</option>
+                </select>
+            </div>
+            <div>
+                <label for="inbox-channel" class="block text-xs ui-muted mb-1">Канал</label>
+                <select id="inbox-channel" name="channel" class="ui-control text-sm">
+                    <option value="">Все каналы</option>
+                    <option value="email" {% if channel_filter == 'email' %}selected{% endif %}>Email</option>
+                    <option value="telegram" {% if channel_filter == 'telegram' %}selected{% endif %}>Telegram</option>
+                    <option value="max" {% if channel_filter == 'max' %}selected{% endif %}>MAX</option>
+                    <option value="phone" {% if channel_filter == 'phone' %}selected{% endif %}>Телефон</option>
+                    <option value="bitrix24" {% if channel_filter == 'bitrix24' %}selected{% endif %}>Битрикс24</option>
+                </select>
+            </div>
+            <button type="submit" class="ui-control text-sm">Найти</button>
+        </form>
+    </section>
+
+    {% if (active_tab | default('inbox')) == 'contacts_merge' %}
+    <section class="ui-card space-y-3" data-contacts-merge-panel>
+        <h2 class="text-sm font-semibold">Кандидаты на объединение контактов</h2>
+        <p class="text-xs ui-muted">Точные совпадения по закрытому индексу email/телефона (высокая уверенность) и совпадения имени с общей цепочкой (низкая уверенность). Объединение выполняется только вручную и полностью обратимо.</p>
+        {% if merge_suggestions %}
+        <div class="space-y-2">
+            {% for item in merge_suggestions %}
+            <div class="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 p-3 text-xs" data-merge-suggestion>
+                <div>
+                    <span class="font-medium">Контакт #{{ item.source_contact_id }} → #{{ item.target_contact_id }}</span>
+                    <span class="ml-2 ui-muted">({{ item.confidence }}, оценка {{ item.score }})</span>
+                    <p class="ui-muted mt-1">Основания: {{ item.reasons | join(', ') }}</p>
+                </div>
+                <span class="px-2 py-0.5 rounded border border-slate-700">Только вручную</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-xs ui-muted" data-merge-suggestions-empty>Дубликатов для объединения не обнаружено.</p>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {% if inbox_threads %}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" data-inbox-workspace>
+        <section class="ui-card space-y-3" data-inbox-thread-list>
+            <h2 class="text-sm font-semibold">Цепочки сообщений</h2>
+            <div class="space-y-2">
+                {% for th in inbox_threads %}
+                <article class="rounded border border-slate-800 p-3 text-xs space-y-1" data-inbox-thread-item="{{ th.id }}">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="px-2 py-0.5 rounded border border-slate-700 font-medium {{ th.channel_badge }}" data-channel-badge="{{ th.channel }}">{{ th.channel_label }}</span>
+                        <span class="ui-muted">{{ th.message_count }} сообщ.{% if th.unread_count %} · непрочитано: {{ th.unread_count }}{% endif %}</span>
+                    </div>
+                    <h3 class="text-sm font-semibold">
+                        <a href="/app/communications?tab=inbox&thread_id={{ th.id }}&boundary={{ boundary | default('cloud') }}" class="underline">{{ th.subject or th.thread_key }}</a>
+                    </h3>
+                    {% if th.contact_display_name %}
+                    <p class="ui-muted">Контакт: {{ th.contact_display_name }}</p>
+                    {% endif %}
+                    {% if th.participants %}
+                    <p class="ui-muted font-mono">{{ th.participants | join(', ') }}</p>
+                    {% endif %}
+                    {% if triage_by_thread and triage_by_thread.get(th.id) %}
+                    {% set tr = triage_by_thread.get(th.id) %}
+                    <div class="pt-1 flex flex-wrap items-center gap-2" data-thread-triage-summary="{{ th.id }}">
+                        <span class="px-2 py-0.5 rounded border border-slate-700 font-medium" data-triage-category="{{ tr.category }}">{{ tr.category_label }}</span>
+                        <span class="ui-muted">{{ tr.reason }}</span>
+                    </div>
+                    {% endif %}
+                </article>
+                {% endfor %}
+            </div>
+
+            {% if selected_thread_triage %}
+            <div class="rounded border border-slate-800 p-3 space-y-3 text-xs" data-thread-triage-panel="{{ selected_thread_triage.thread_id }}">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <span class="font-semibold" data-triage-badge="{{ selected_thread_triage.category }}">{{ selected_thread_triage.category_label }}</span>
+                        <span class="ml-2 ui-muted">Основание: {{ selected_thread_triage.basis }}{% if not selected_thread_triage.is_model_fact %} (не факт модели){% endif %}</span>
+                    </div>
+                    {% if selected_thread_triage.assignee %}
+                    <span class="px-2 py-0.5 rounded border border-slate-700" data-triage-assignee>Ответственный: {{ selected_thread_triage.assignee.name }}</span>
+                    {% endif %}
+                </div>
+                <p class="ui-muted" data-triage-reason>{{ selected_thread_triage.reason }}</p>
+                {% if selected_thread_triage.model_notice %}
+                <p class="text-amber-300" data-triage-model-notice>{{ selected_thread_triage.model_notice }}</p>
+                {% endif %}
+
+                <form method="post" action="/app/communications/threads/{{ selected_thread_triage.thread_id }}/triage" class="flex flex-wrap items-end gap-2 pt-1" data-triage-override-form>
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    <div>
+                        <label for="triage-override-cat" class="block ui-muted mb-1">Исправить классификацию (наше решение)</label>
+                        <select id="triage-override-cat" name="category" class="ui-control text-xs">
+                            <option value="needs_reply" {% if selected_thread_triage.category == "needs_reply" %}selected{% endif %}>Нужен ответ</option>
+                            <option value="fyi" {% if selected_thread_triage.category == "fyi" %}selected{% endif %}>К сведению</option>
+                            <option value="can_wait" {% if selected_thread_triage.category == "can_wait" %}selected{% endif %}>Подождёт</option>
+                            <option value="uncertain" {% if selected_thread_triage.category == "uncertain" %}selected{% endif %}>Не уверен</option>
+                        </select>
+                    </div>
+                    <div class="flex-1 min-w-[160px]">
+                        <label for="triage-override-reason" class="block ui-muted mb-1">Причина</label>
+                        <input id="triage-override-reason" type="text" name="reason" value="" placeholder="Комментарий к решению..." class="ui-control w-full text-xs">
+                    </div>
+                    <button type="submit" class="ui-control text-xs">Сохранить решение</button>
+                </form>
+
+                {% if selected_thread_triage.proposals %}
+                <div class="space-y-2 pt-2 border-t border-slate-800" data-triage-proposals>
+                    <h3 class="font-semibold">Предложения следующего шага (редактируемые, без автоотправки)</h3>
+                    {% for prop in selected_thread_triage.proposals %}
+                    <div class="rounded border border-slate-800 p-2 space-y-2" data-triage-proposal="{{ prop.kind }}">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <span class="font-medium">{{ prop.label }}: {{ prop.title }}</span>
+                            <a href="{{ prop.target_route }}" class="underline">{{ prop.target_route }}</a>
+                        </div>
+                        <p class="ui-muted">{{ prop.summary }}</p>
+                        {% if prop.kind == "reply_draft" and prop.fields.inbound_message_id %}
+                        <form method="post" action="/app/communications/reply" class="space-y-2" data-triage-reply-draft-form>
+                            <input type="hidden" name="_csrf" value="{{ csrf }}">
+                            <input type="hidden" name="thread_id" value="{{ selected_thread_triage.thread_id }}">
+                            <input type="hidden" name="inbound_message_id" value="{{ prop.fields.inbound_message_id }}">
+                            <input type="text" name="subject" value="{{ prop.fields.subject }}" class="ui-control w-full text-xs" aria-label="Тема черновика ответа">
+                            <textarea name="body" rows="3" class="ui-control w-full text-xs" aria-label="Текст черновика ответа">{{ prop.fields.body }}</textarea>
+                            <button type="submit" class="ui-control text-xs">Создать черновик в Outbox (без отправки)</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </section>
+
+        {% if selected_thread_detail %}
+        <section class="ui-card space-y-3" data-inbox-thread-detail="{{ selected_thread_detail.thread.id }}">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-sm font-semibold">{{ selected_thread_detail.thread.subject or selected_thread_detail.thread.thread_key }}</h2>
+                <span class="px-2 py-0.5 rounded border border-slate-700 text-xs {{ selected_thread_detail.thread.channel_badge }}" data-channel-badge="{{ selected_thread_detail.thread.channel }}">{{ selected_thread_detail.thread.channel_label }}</span>
+            </div>
+            <div class="space-y-2" data-thread-messages>
+                {% for msg in selected_thread_detail.messages %}
+                <article class="rounded border border-slate-800 p-3 text-xs space-y-1" data-unified-message="{{ msg.id }}">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="font-medium {{ msg.channel_badge }}" data-channel-badge="{{ msg.channel }}">{{ msg.channel_label }} · {{ msg.direction }}</span>
+                        <span class="ui-muted font-mono">{{ msg.sent_at }}</span>
+                    </div>
+                    {% if msg.subject %}<p class="font-medium">{{ msg.subject }}</p>{% endif %}
+                    <p class="ui-muted">{{ msg.sender or '—' }} → {{ msg.recipient or '—' }}</p>
+                    <div class="flex flex-wrap items-center gap-3 pt-1">
+                        {% if msg.is_unavailable %}
+                        <span class="text-amber-400 font-medium" data-original-unavailable>Оригинал недоступен во внешнем источнике</span>
+                        {% elif msg.original_url %}
+                        <a href="{{ msg.original_url }}" target="_blank" rel="noopener noreferrer" class="underline" data-original-url>Открыть оригинал</a>
+                        {% endif %}
+                        <a href="/app/chat?context_type=communication&context_id={{ msg.id }}&boundary={{ boundary | default('cloud') }}" class="ui-control text-xs" data-inbox-chat-handoff>В чат ({{ boundary | default('cloud') }})</a>
+                        {% if perms and perms.can('plannertask', 'create') and not msg.is_unavailable %}<a class="ui-control text-xs" href="/app/task-hub/new?origin=message&origin_id={{ msg.id }}&thread_id={{ selected_thread_detail.thread.id }}&boundary={{ boundary }}">Подготовить дело</a>{% endif %}
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% include "web/_evidence_rows.html" %}
+
+</div>
+{% endblock %}

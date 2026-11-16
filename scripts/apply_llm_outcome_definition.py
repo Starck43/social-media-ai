@@ -60,7 +60,7 @@ def idle_processes():
 
 def load_revision():
     spec = importlib.util.spec_from_file_location(
-        "_outcome_application_revision", ROOT / "migrations/versions/0094_add_llm_outcome_events.py"
+        "_outcome_application_revision", ROOT / "scripts/migrations/legacy_definitions/0094_add_llm_outcome_events.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

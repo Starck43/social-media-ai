@@ -1,0 +1,1257 @@
+"""P11-T24: the guard DDL module must cover every guard object migration history creates.
+
+Tool-only: migrations are parsed with AST (never imported — they read settings
+and bind Alembic at module scope) and ``scripts/schema_guards.py`` is loaded by
+path, so the offline lane never needs DB settings or a driver.
+
+How a migration's guard SQL is read (nothing is executed):
+
+* Literal constants, the build-schema name (``SCHEMA``/``schema = q(SCHEMA)``)
+  and ``qualified = _q(table)``-style locals resolve first; a helper's
+  parameters resolve through its call sites, positional or keyword.
+* Each interpolation of an f-string stays a marker in the static text plus the
+  source of its expression. An expression built from literals and helper
+  parameters renders symbolically: ``_q('reject_' + stem + '_mutation')`` over
+  the parameter value ``t`` becomes ``x.reject_t_mutation``, the name the
+  migration really creates in the build schema ``x``.
+* A conditional block chosen by a literal argument (0103) renders the branch
+  that argument selects; a local built from parameters resolves at its use.
+* A ``for`` loop over a literal table tuple expands over that tuple, otherwise
+  a helper's table parameters expand over its call sites. A guard trigger left
+  on an unqualified ``ON`` target is a query-built name and is skipped: it is
+  not an object this module can carry.
+* A ``for`` loop over literal tuples binds every interpolation of its body per
+  row (0154's ``for event, level in (("UPDATE OR DELETE", "ROW"), ...)``). An
+  equality of a bound name with a literal (``'service_plan_...' if level == "ROW"
+  else ...``) is a literal boolean, so every row renders its own statement.
+"""
+
+import ast
+import importlib.util
+import re
+import string
+import sys
+from pathlib import Path
+
+import pytest
+
+__source_only__ = True
+ROOT = Path(__file__).resolve().parents[2]
+# Historical revisions live in Git. The initial schema stays frozen, while
+# the active post-baseline revision sources carry any later guard additions.
+MIGRATIONS = ROOT / "migrations/versions"
+# scripts is a package; register the module before exec so dataclasses resolve
+# their own module. Nothing in it imports app, Alembic or a driver.
+SPEC = importlib.util.spec_from_file_location("scripts.schema_guards", ROOT / "scripts/schema_guards.py")
+GUARDS = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = GUARDS
+SPEC.loader.exec_module(GUARDS)
+
+# Bulk-guarded tables and the guard each ``{table}_validate`` trigger executes.
+# Mirrors the module's ``_validate`` triggers one-for-one; the equality test
+# checks both directions. Receipt/action/offboarding journals carry their own
+# immutable/no-truncate guards instead.
+ONE_OFF_TABLES = {
+    "llm_dispatch_receipts",
+    "llm_outcome_events",
+    "llm_budget_reservations",
+    "action_audit_events",
+    "workspace_offboarding_events",
+}
+BULK_TABLES = {
+    "personal_llm_dispatches": "check_personal_llm_dispatch_account",
+    "task_billing_payers": "check_task_billing_payer_consent",
+    "personal_llm_bound_policies": "check_personal_llm_bound_policy",
+    "personal_llm_reservations": "check_personal_llm_reservation",
+    "personal_llm_ledger_entries": "check_personal_llm_ledger_entry",
+    "personal_llm_billing_incidents": "check_personal_llm_billing_incident",
+    "personal_billing_cutovers": "check_personal_billing_cutover",
+    "personal_legacy_attribution_consents": "check_personal_legacy_attribution_consent",
+    "personal_legacy_attributions": "check_personal_legacy_attribution_review",
+}
+
+# Helper parameters that hold a table name; a loop variable is the same kind.
+_TABLE_PARAMS = ("table", "stem")
+_SCHEMA = "x"
+# The schema placeholder must be an identifier character so ``x.name`` (a
+# function in the build schema) and ``x.{name}`` (a built one) stay distinct.
+assert _SCHEMA.isidentifier()
+
+_CREATE_FUNCTION = re.compile(
+    r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>[A-Za-z_][\w.]*)\s*\([^)]*\)\s*RETURNS\s+[A-Za-z_]+",
+    re.IGNORECASE,
+)
+_FUNCTION_DEFINITION = re.compile(
+    r'CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>"?[A-Za-z_][\w$]*"?(?:\."?[A-Za-z_][\w$]*"?)?)\s*\([^)]*\)'
+    r"\s*RETURNS\s+[A-Za-z_][\w]*(?:\s*\([^)]*\))?\b.*?\bAS\s+"
+    r"(?P<tag>\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)(?P<body>.*?)(?P=tag)",
+    re.IGNORECASE | re.DOTALL,
+)
+_CREATE_TRIGGER = re.compile(r"CREATE\s+TRIGGER\s+(?P<name>[A-Za-z_]\w*)\s+(?P<rest>.*)", re.IGNORECASE | re.DOTALL)
+# Identifiers are ``[\w$]``: a bare word would stop at the first underscore.
+_TRIGGER_ON = re.compile(r"\bON\s+(?P<table>[A-Za-z_][\w$.]*)\s+FOR\s+EACH\b", re.IGNORECASE)
+_TRIGGER_EVENTS = re.compile(r"\b(?:BEFORE|AFTER)\s+(.+?)\s+ON\s+(?:[A-Za-z_][\w$.]*)", re.IGNORECASE | re.DOTALL)
+_TRIGGER_LEVEL = re.compile(r"FOR\s+EACH\s+(ROW|STATEMENT)", re.IGNORECASE)
+_TRIGGER_FUNCTION = re.compile(r"EXECUTE\s+(?:FUNCTION|PROCEDURE)\s+([A-Za-z_][\w.]*)\(", re.IGNORECASE)
+# Marks an interpolation the parse cannot render yet; unlike ``{}`` it never
+# occurs inside literal SQL.
+_MARKER = "\u241e"
+# ``match`` anchors at the start: a multi-line string starts with indentation.
+_GUARD_DDL = re.compile(r"\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:TRIGGER|FUNCTION)", re.IGNORECASE)
+
+
+class _Scope:
+    """Names visible inside one migration module, wherever a function defines them.
+
+    ``text``: names with fixed SQL text (constants, the build schema).
+    ``quoted``: names holding a helper parameter as ``schema.<parameter>``.
+    ``expressions``: locals built from other locals, resolved at their use site.
+    ``flags``: literal booleans that select a conditional SQL block.
+    """
+
+    def __init__(self, tree):
+        self.text = {}
+        self.quoted = {}
+        self.flags = {}
+        self.expressions = {}
+        self.placeholders = set()
+        # ``if flag:`` blocks that refine a local before it reaches SQL.
+        # name -> [(flag, node)]; ``node`` replaces the base for ``Assign`` and
+        # appends to it for ``AugAssign``. 0142's ``_revision_guard`` builds the
+        # extended and the base body from one helper this way.
+        self.replaced = {}
+        self.appended = {}
+        # ``SCHEMA = settings.DB_SCHEMA``: the build schema, whatever its name
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Attribute):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        self.placeholders.add(target.id)
+        assignments = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
+        for node in assignments:
+            for target in node.targets:
+                if isinstance(target, ast.Name) and self._is_schema(node.value):
+                    self.text.setdefault(target.id, _SCHEMA)
+        # The build schema reaches SQL quoted too: ``schema = q(SCHEMA)``
+        for node in assignments:
+            for target in node.targets:
+                if isinstance(target, ast.Name) and self._names_schema(node.value):
+                    self.text.setdefault(target.id, _SCHEMA)
+        for node in assignments:
+            value = node.value
+            for target in node.targets:
+                if not isinstance(target, ast.Name) or target.id in self.text:
+                    continue
+                if _is_call(value, "_q", "_qualified") and value.args:
+                    # ``qualified = _q(table)``: a name built from a parameter
+                    self.quoted.setdefault(target.id, value.args[0])
+                elif not isinstance(value, ast.Constant):
+                    # Built from helper parameters: only a use site can resolve it
+                    self.expressions.setdefault(target.id, value)
+                elif isinstance(value.value, str):
+                    self.text.setdefault(target.id, value.value)
+                elif isinstance(value.value, bool):
+                    self.flags.setdefault(target.id, value.value)
+        # Conditional refinements: ``if flag: name = ...`` replaces, ``name += ...`` appends.
+        for condition in ast.walk(tree):
+            if not isinstance(condition, ast.If) or not isinstance(condition.test, ast.Name):
+                continue
+            flag = condition.test.id
+            for node in condition.body:
+                if isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            self.replaced.setdefault(target.id, []).append((flag, node.value))
+                elif (
+                    isinstance(node, ast.AugAssign)
+                    and isinstance(node.op, ast.Add)
+                    and isinstance(node.target, ast.Name)
+                ):
+                    self.appended.setdefault(node.target.id, []).append((flag, node.value))
+
+    def _is_schema(self, node):
+        # Post-baseline revisions also bind `schema = settings.DB_SCHEMA`
+        # directly. Recognize only this known setting, not arbitrary attributes.
+        direct_setting = (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "settings"
+            and node.attr == "DB_SCHEMA"
+        )
+        return direct_setting or (isinstance(node, ast.Name) and node.id in self.placeholders)
+
+    def _names_schema(self, node):
+        """Schema expressions, including the guarded migration ``_schema()`` helper."""
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "_schema":
+            return not node.args
+        if not (isinstance(node, ast.Call) and node.args):
+            return False
+        function = node.func
+        name = function.id if isinstance(function, ast.Name) else getattr(function, "attr", "")
+        if "quote" not in name:
+            return False
+        argument = node.args[0]
+        return isinstance(argument, ast.Name) and (
+            argument.id in self.placeholders or self.text.get(argument.id) == _SCHEMA
+        )
+
+
+class _Binding:
+    """Helper parameters at one call site: rendered text plus literal flags."""
+
+    def __init__(self, values=None, flags=None):
+        self.values = dict(values or {})
+        self.flags = dict(flags or {})
+
+    def __contains__(self, name):
+        return name in self.values
+
+    def __getitem__(self, name):
+        return self.values[name]
+
+    def fill(self, parameter, node, scope):
+        """Bind one argument: a literal text (and its truth), or a rendered name."""
+        if isinstance(node, ast.Constant):
+            self.values[parameter] = str(node.value)
+            if isinstance(node.value, bool):
+                self.flags[parameter] = node.value
+            return
+        rendered = _render(node, scope, self)
+        if rendered is not None:
+            self.values[parameter] = rendered
+
+
+def _is_call(node, *names):
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in names
+
+
+def _condition(node, scope, binding):
+    """Literal truth of a conditional expression's test, or ``None`` when unknown.
+
+    An equality or inequality of rendered names (a ``for`` loop row's bound
+    value, a literal) is just as literal as a boolean flag.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id in binding.flags:
+            return binding.flags[node.id]
+        return scope.flags.get(node.id)
+    if isinstance(node, ast.Compare) and len(node.ops) == 1:
+        left, right = _render(node.left, scope, binding), _render(node.comparators[0], scope, binding)
+        if left is None or right is None:
+            return None
+        if isinstance(node.ops[0], ast.Eq):
+            return left == right
+        if isinstance(node.ops[0], ast.NotEq):
+            return left != right
+    return None
+
+
+def _render(node, scope, binding=None):
+    """Symbolic text of a string expression, or ``None`` when it is run-time only.
+
+    The schema renders as ``x``. A helper parameter renders as its binding, or
+    as the schema-qualified ``x.<parameter>`` when a local quotes it
+    (``qualified = _q(table)``) and no binding is in hand.
+    """
+    binding = binding or _Binding()
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.FormattedValue):
+        return _render(node.value, scope, binding)
+    if isinstance(node, ast.Name):
+        if node.id in binding:
+            rendered = binding[node.id]
+        elif node.id in scope.text:
+            rendered = scope.text[node.id]
+        elif node.id in scope.quoted:
+            aliased = _render(scope.quoted[node.id], scope, binding)
+            if aliased is None:
+                return None
+            rendered = aliased if aliased.startswith(_SCHEMA + ".") else f"{_SCHEMA}.{aliased}"
+        elif node.id in scope.expressions:
+            rendered = _render(scope.expressions[node.id], scope, binding)
+        else:
+            return None
+        # Apply ``if flag:`` refinements the call site resolved.
+        for flag, value in scope.replaced.get(node.id, ()):
+            overridden = _render(value, scope, binding)
+            state = _condition(ast.Name(id=flag), scope, binding)
+            if state is None:
+                return None
+            if state:
+                rendered = overridden
+        for flag, value in scope.appended.get(node.id, ()):
+            extra = _render(value, scope, binding)
+            state = _condition(ast.Name(id=flag), scope, binding)
+            if state is None:
+                return None
+            if state:
+                if rendered is None or extra is None:
+                    return None
+                rendered = rendered + extra
+        return rendered
+    if isinstance(node, ast.JoinedStr):
+        pieces = [_render(part, scope, binding) for part in node.values]
+        return None if any(piece is None for piece in pieces) else "".join(pieces)
+    if _is_call(node, "f"):
+        return _render(node.args[0], scope, binding) if node.args else None
+    if _is_call(node, "_q", "_qualified"):
+        rendered = _render(node.args[0], scope, binding) if node.args else None
+        return None if rendered is None else f"{_SCHEMA}.{rendered}"
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "format"
+        and not node.args
+    ):
+        # Literal guard bodies may substitute only simple named fields. Never
+        # resolve attribute/index access, conversions or format specifications.
+        template = _render(node.func.value, scope, binding)
+        values = {keyword.arg: _render(keyword.value, scope, binding) for keyword in node.keywords}
+        if template is None or None in values or any(value is None for value in values.values()):
+            return None
+        pieces = []
+        try:
+            for literal, field, specification, conversion in string.Formatter().parse(template):
+                pieces.append(literal)
+                if field is not None:
+                    if not field.isidentifier() or field not in values or specification or conversion:
+                        return None
+                    pieces.append(values[field])
+        except ValueError:
+            return None
+        return "".join(pieces)
+    # ``old_fields = fields.replace("NEW.", "OLD.")``: a literal text transform.
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "replace"
+        and len(node.args) == 2
+        and all(isinstance(argument, ast.Constant) and isinstance(argument.value, str) for argument in node.args)
+    ):
+        base = _render(node.func.value, scope, binding)
+        return None if base is None else base.replace(node.args[0].value, node.args[1].value)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _render(node.left, scope, binding), _render(node.right, scope, binding)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.IfExp):
+        # ``body if flag else other``: the flag is a literal at the call site
+        condition = _condition(node.test, scope, binding)
+        if condition is None:
+            return None
+        return _render(node.body if condition else node.orelse, scope, binding)
+    return None
+
+
+def _fragments(node, scope):
+    """``(sql, unresolved)``: static text with each unrenderable interpolation as ``{}``.
+
+    ``{}`` also occurs in literal SQL (``'{}'::jsonb``), so each unresolved
+    interpolation is kept as a marker: the count always matches the list.
+    """
+    if isinstance(node, ast.JoinedStr):
+        sql, unresolved = [], []
+        for part in node.values:
+            rendered = _render(part, scope)
+            if rendered is None:
+                sql.append(f"{_MARKER}{len(unresolved)}{_MARKER}")
+                unresolved.append(part)
+            else:
+                sql.append(rendered)
+        return "".join(sql), unresolved
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _fragments(node.left, scope), _fragments(node.right, scope)
+        return left[0] + right[0], left[1] + right[1]
+    rendered = _render(node, scope)
+    return (f"{_MARKER}0{_MARKER}", [node]) if rendered is None else (rendered, [])
+
+
+def _definition(tree, name):
+    return next((node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == name), None)
+
+
+def _parameters(definition):
+    return [argument.arg for argument in definition.args.args]
+
+
+def _module_literal(tree, name):
+    """Module-level ``NAME = (...,)`` / ``NAME = [...]`` literal, or ``None``."""
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == name for target in node.targets):
+            continue
+        if isinstance(node.value, (ast.Tuple, ast.List)):
+            return node.value
+        return None
+    return None
+
+
+def _reachable_functions(tree, entrypoint="upgrade"):
+    """Functions reachable from a migration entrypoint through direct calls."""
+    reachable = set()
+    pending = [entrypoint]
+    while pending:
+        name = pending.pop()
+        if name in reachable:
+            continue
+        reachable.add(name)
+        definition = _definition(tree, name)
+        if definition is None:
+            continue
+        for node in ast.walk(definition):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if _definition(tree, node.func.id) is not None:
+                    pending.append(node.func.id)
+    return reachable
+
+
+def _call_sites(tree, name, reachable=None):
+    """``{parameter: literal or symbol}`` at reachable calls to ``name``."""
+    definition = _definition(tree, name)
+    if definition is None:
+        return []
+    parameters = _parameters(definition)
+    defaults = dict(zip(parameters[len(parameters) - len(definition.args.defaults) :], definition.args.defaults))
+    scope = _Scope(tree)
+    owners = {}
+    for definition_node in ast.walk(tree):
+        if isinstance(definition_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for child in ast.walk(definition_node):
+                owners.setdefault(child, definition_node.name)
+    sites = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == name):
+            continue
+        arguments = dict(zip(parameters, node.args), **defaults)
+        arguments.update({keyword.arg: keyword.value for keyword in node.keywords if keyword.arg})
+        binding = _Binding()
+        for parameter, value in arguments.items():
+            binding.fill(parameter, value, scope)
+        caller = owners.get(node)
+        if reachable is None or caller in reachable:
+            sites.append(binding)
+    return sites
+
+
+def _loop_values(tree, function, name):
+    """Literal tuple or mapping items a ``for`` loop iterates in ``function``."""
+    definition = _definition(tree, function)
+    if definition is None:
+        return None
+    for node in ast.walk(definition):
+        if not isinstance(node, ast.For):
+            continue
+        if isinstance(node.target, ast.Name) and node.target.id == name:
+            target_names = (name,)
+        elif isinstance(node.target, ast.Tuple) and all(isinstance(item, ast.Name) for item in node.target.elts):
+            target_names = tuple(item.id for item in node.target.elts)
+            if name not in target_names:
+                continue
+        else:
+            continue
+        iterable = node.iter
+        if (
+            isinstance(iterable, ast.Call)
+            and isinstance(iterable.func, ast.Attribute)
+            and iterable.func.attr == "items"
+            and isinstance(iterable.func.value, ast.Name)
+        ):
+            mapping = _Scope(tree).expressions.get(iterable.func.value.id)
+            if isinstance(mapping, ast.Dict) and len(target_names) == 2:
+                pairs = []
+                for key, value in zip(mapping.keys, mapping.values):
+                    if not isinstance(key, ast.Constant) or not isinstance(value, ast.Constant):
+                        break
+                    pairs.append((key.value, value.value))
+                if len(pairs) == len(mapping.keys):
+                    return [(target_names, pair) for pair in pairs]
+        # ``for table in TABLES``: follow a module-level literal tuple or list.
+        # Migrations bind the guarded tables once at module scope and loop over
+        # them, so the loop body has no literal to read without this step.
+        if isinstance(iterable, ast.Name):
+            literal = _module_literal(tree, iterable.id)
+            if literal is None:
+                return None
+            iterable = literal
+        if isinstance(iterable, (ast.Tuple, ast.List)):
+            values = []
+            for element in iterable.elts:
+                if isinstance(element, ast.Constant):
+                    values.append((element.value,))
+                elif isinstance(element, ast.Tuple) and all(isinstance(part, ast.Constant) for part in element.elts):
+                    values.append(tuple(part.value for part in element.elts))
+                else:
+                    break
+            if len(target_names) == 1:
+                values = [(item[0],) for item in values if len(item) == 1]
+            if len(values) == len(iterable.elts):
+                return [(target_names, value) for value in values]
+    return None
+
+
+def _executes(tree):
+    """``(owning function, sql, unresolved interpolations)`` for each static ``op.execute``."""
+    scope = _Scope(tree)
+    owner = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for child in ast.walk(node):
+                owner.setdefault(child, node.name)
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "execute"):
+            continue
+        if not node.args:
+            continue
+        argument = node.args[0]
+        if isinstance(argument, ast.Call):  # sa.text(<text>)
+            argument = argument.args[0] if argument.args else None
+        if argument is not None:
+            yield owner.get(node, ""), *_fragments(argument, scope)
+
+
+def _expand(sql, unresolved, scope, binding):
+    """Fill the unrenderable interpolations of ``sql``; a run-time one becomes ``x``."""
+    rendered = []
+    for piece in re.split(f"({_MARKER}\\d+{_MARKER})", sql):
+        if piece.startswith(_MARKER):
+            index = int(piece[len(_MARKER) : -len(_MARKER)])
+            rendered.append(_render(unresolved[index], scope, binding) or _SCHEMA)
+        else:
+            rendered.append(piece)
+    return "".join(rendered)
+
+
+def _statements(sql, unresolved, function, tree):
+    """Every statement one ``op.execute`` text stands for.
+
+    A helper's ``table``/``stem`` parameter expands over its call sites, a
+    ``for`` loop over its literal tuple; a remaining interpolation is the schema.
+    """
+    if not unresolved:
+        return {sql}
+    scope = _Scope(tree)
+    names = {child.id for node in unresolved for child in ast.walk(node) if isinstance(child, ast.Name)}
+    # A helper-built name (``function = _q('reject_' + stem + '_mutation')``)
+    # or a local alias hides the parameter, so the parameter is only a single
+    # table when every interpolation mentions it directly.
+    table_parameter = None
+    # An alias of a module constant is resolved, not shared.
+    shared = {alias for alias, value in scope.quoted.items() if _render(value, scope) is None}
+    # A local built from helper parameters only resolves with a call-site binding.
+    needs_arguments = names & (shared | set(scope.expressions))
+    direct = not needs_arguments and not names & set(scope.text)
+    if direct:
+        table_parameter = next((name for name in _TABLE_PARAMS if name in names), None)
+    if direct and table_parameter is None:
+        return {_expand(sql, unresolved, scope, _Binding())}
+    loops = _loop_values(tree, function, table_parameter)
+    bindings = [_Binding(dict(zip(targets, values))) for targets, values in loops] if loops else []
+    if bindings and any(_render(node, scope, binding) is None for binding in bindings for node in unresolved):
+        # A single-table loop binding is incomplete when a nested row loop
+        # contributes event/level. Preserve the correlated outer values.
+        bindings = _loop_bindings(tree, function, unresolved, sql) or bindings
+    if not bindings:
+        # A loop over literal rows that binds an interpolation (0154's
+        # event/level pairs, a name chosen by an equality) is the statement's
+        # own control flow, so it resolves without a helper call site.
+        bindings = _loop_bindings(tree, function, unresolved, sql) or []
+    if not bindings:
+        bindings = _call_sites(tree, function, _reachable_functions(tree)) if function else []
+    if not bindings:
+        if _GUARD_DDL.match(sql):
+            raise ValueError(f"Cannot resolve migration call arguments for guard DDL in {function!r}")
+        return set()
+    # Locals of this function that are built from its parameters
+    for binding in bindings:
+        for name in sorted(names):
+            expression = scope.expressions.get(name)
+            if name not in binding and expression is not None and function:
+                rendered = _render(expression, scope, binding)
+                if rendered is not None:
+                    binding.fill(name, ast.Constant(rendered), scope)
+        for name in sorted(names & set(scope.quoted)):
+            _bind_quoted(scope, binding, name)
+    return {_expand(sql, unresolved, scope, binding) for binding in bindings}
+
+
+def _target_names(node):
+    """Names a ``for`` target destructures into, or ``None`` for another pattern."""
+    if isinstance(node, ast.Name):
+        return (node.id,)
+    if isinstance(node, (ast.Tuple, ast.List)) and all(isinstance(item, ast.Name) for item in node.elts):
+        return tuple(item.id for item in node.elts)
+    return None
+
+
+def _names(node):
+    """Names an execute argument mentions; a literal contributes none."""
+    return {child.id for child in ast.walk(node) if isinstance(child, ast.Name)}
+
+
+def _loop_bindings(tree, function, arguments, sql):
+    """One binding per literal ``for`` row that encloses the SQL, or ``None``.
+
+    Only the loops the ``op.execute`` sits inside are the statement's own
+    control: 0154 renders one trigger per ``(event, level)`` pair. A row binds
+    its literal values, then the locals the SQL interpolates that are built from
+    them (``trigger = "..." if level == "ROW" else "..."``). A loop variable the
+    SQL never uses keeps the tuple/call-site expansion, and an unreadable row
+    set fails closed for guard DDL.
+    """
+    definition = _definition(tree, function) if function else None
+    if definition is None:
+        return None
+    scope = _Scope(tree)
+    names = set().union(*(_names(node) for node in arguments))
+    enclosing = [node for node in ast.walk(definition) if isinstance(node, ast.For)]
+    # Keep only loops whose body contains every execute argument: those are the
+    # loops this statement is inside, outermost first by node order.
+    enclosing = [node for node in enclosing if all(_contains(node, argument) for argument in arguments)]
+    enclosing = [node for node in enclosing if _target_names(node.target)]
+    if not enclosing:
+        return None
+    bindings = [_Binding()]
+    for node in enclosing:
+        targets = _target_names(node.target)
+        rows = _iterable_rows(node.iter, targets, tree, scope)
+        if rows is None:
+            if _GUARD_DDL.match(sql):
+                raise ValueError(f"Cannot resolve migration loop rows for guard DDL in {function!r}")
+            return None
+        expanded = []
+        for value in rows:
+            for binding in bindings:
+                row = _Binding({**binding.values, **dict(zip(targets, value))}, binding.flags)
+                for name in sorted(names):
+                    if name in row or name not in scope.expressions:
+                        continue
+                    rendered = _render(scope.expressions[name], scope, row)
+                    if rendered is not None:
+                        row.fill(name, ast.Constant(rendered), scope)
+                expanded.append(row)
+        bindings = expanded
+    return bindings
+
+
+def _contains(node, child):
+    """Whether ``child`` is ``node`` or sits inside it."""
+    return any(candidate is child for candidate in ast.walk(node))
+
+
+def _iterable_rows(iterable, targets, tree, scope):
+    """Literal rows a loop iterable yields for ``targets``, or ``None`` when not static."""
+    width = len(targets)
+    if isinstance(iterable, ast.Name):
+        iterable = _module_literal(tree, iterable.id) or scope.expressions.get(iterable.id)
+    if isinstance(iterable, ast.Call):
+        # ``enumerate(TABLES)``: the index column is the row position, the rest stays literal.
+        if _is_call(iterable, "enumerate") and len(iterable.args) == 1 and not iterable.keywords and width == 2:
+            rows = _iterable_rows(iterable.args[0], targets[1:], tree, scope)
+            if rows is not None:
+                return [(str(index), *row) for index, row in enumerate(rows)]
+        return None
+    if not isinstance(iterable, (ast.Tuple, ast.List)):
+        return None
+    rows = []
+    for element in iterable.elts:
+        if isinstance(element, (ast.Tuple, ast.List)):
+            if len(element.elts) != width or not all(isinstance(part, ast.Constant) for part in element.elts):
+                return None
+            rows.append(tuple(str(part.value) for part in element.elts))
+        elif isinstance(element, ast.Constant) and width == 1:
+            rows.append((str(element.value),))
+        else:
+            return None
+    return rows
+
+
+def _bind_quoted(scope, binding, name):
+    """Resolve ``qualified = _q(table)`` into ``binding`` once its parameter is bound."""
+    parameter = scope.quoted[name]
+    argument = parameter.id if isinstance(parameter, ast.Name) else None
+    resolved = binding[argument] if argument in binding else None
+    if resolved is None:
+        return
+    binding.fill(name, ast.Constant(f"{_SCHEMA}.{resolved}"), scope)
+
+
+def _query_target(statement):
+    """Queried SQL text a guard statement targets; ``None`` for a guard object.
+
+    A ``CREATE TRIGGER``/``FUNCTION`` names the schema it targets in place; any
+    other statement qualifies only the schema and leaves tables to the query.
+    """
+    if _GUARD_DDL.match(statement):
+        return None
+    return statement
+
+
+def _run_time_only(statement):
+    """Guard DDL whose identifiers only come from a queried loop; not reproducible here."""
+    if _CREATE_TRIGGER.search(statement):
+        return _table_of(statement) is None
+    return _function_name(statement) == _SCHEMA
+
+
+def _table_of(statement):
+    """Bare table a ``CREATE TRIGGER`` targets; ``None`` when it is not the placeholder schema."""
+    match = _TRIGGER_ON.search(statement.replace('"', ""))
+    if match is None:
+        return None
+    table = match.group("table")
+    if not table.startswith(_SCHEMA + "."):
+        return None
+    return table[len(_SCHEMA) + 1 :]
+
+
+def _bare(statement):
+    """``statement`` with the schema placeholder stripped from qualified names."""
+    return re.sub(re.escape(f"{_SCHEMA}."), "", statement)
+
+
+def _function_name(statement):
+    match = _CREATE_FUNCTION.search(statement.replace('"', ""))
+    return match.group("name").rsplit(".", 1)[-1] if match else None
+
+
+def migration_statements():
+    """``(path, statement)`` for every upgrade-path guard statement in migration history."""
+    for path in sorted(MIGRATIONS.glob("*.py")):
+        tree = ast.parse(path.read_text())
+        for function, sql, unresolved in _executes(tree):
+            if function.startswith("downgrade"):
+                continue
+            for statement in _statements(sql, unresolved, function, tree):
+                if _GUARD_DDL.match(statement):
+                    yield path, statement
+
+
+_CREATE_TRIGGER_SPLIT = re.compile(r"(?=CREATE\s+TRIGGER\s+)", re.IGNORECASE)
+
+
+def _trigger_blocks(statement):
+    """Each ``CREATE TRIGGER`` block of one migration text.
+
+    A single ``op.execute`` may create several triggers (0142 detaches a deleted
+    contact and a deleted case snippet in one text), and ``_CREATE_TRIGGER.search``
+    sees only the first. Splitting keeps one block per trigger so the drift
+    comparison is complete.
+    """
+    parts = [part for part in _CREATE_TRIGGER_SPLIT.split(statement) if _CREATE_TRIGGER.match(part)]
+    return parts or [statement]
+
+
+def migration_trigger_pairs():
+    """``(trigger name, table)`` for every reproducible ``CREATE TRIGGER``."""
+    return {
+        (match.group("name"), _table_of(block))
+        for _path, statement in migration_statements()
+        for block in _trigger_blocks(statement)
+        for match in [_CREATE_TRIGGER.match(block)]
+        if match
+    }
+
+
+def migration_function_names():
+    names = set()
+    for _path, statement in migration_statements():
+        names.update(
+            match.group("name").replace('"', "").rsplit(".", 1)[-1]
+            for match in _FUNCTION_DEFINITION.finditer(statement)
+        )
+    return names
+
+
+def migration_function_bodies():
+    """Last statically complete body per function, with the migration that wrote it.
+
+    The body keeps the build schema the migration interpolated; callers strip
+    schema qualification before comparing.
+    """
+    bodies = {}
+    for path, statement in migration_statements():
+        for match in _FUNCTION_DEFINITION.finditer(statement):
+            name = match.group("name").replace('"', "").rsplit(".", 1)[-1]
+            bodies[name] = (path.name, match.group("body"))
+    return bodies
+
+
+def migration_trigger_statements():
+    """``(trigger name, table) -> statement`` for the last ``CREATE TRIGGER`` per pair."""
+    statements = {}
+    for _path, statement in migration_statements():
+        for block in _trigger_blocks(statement):
+            match = _CREATE_TRIGGER.match(block)
+            if match:
+                statements[(match.group("name"), _table_of(block))] = block
+    return statements
+
+
+def normalized(sql):
+    """Lower-case; collapse whitespace, identifier quotes and schema refs away."""
+    text = re.sub(r'"(\w+)"', r"\1", sql.lower())
+    text = re.sub(r"\b" + _SCHEMA + r"\.", "", text)
+    text = re.sub(r"[^a-z0-9_]+", " ", text)
+    return " ".join(text.split())
+
+
+def _module_pairs():
+    return {(trigger.name, trigger.table) for trigger in GUARDS.GUARD_TRIGGERS}
+
+
+def _baseline_renderer():
+    """Extract only the stdlib renderer; the offline lane must not import Alembic."""
+    path = ROOT / "migrations/versions/baseline_0118.py"
+    tree = ast.parse(path.read_text())
+    nodes = [
+        node
+        for node in tree.body
+        if (isinstance(node, ast.FunctionDef) and node.name == "render_baseline_sql")
+        or (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id in {"_SCHEMA_IDENTIFIER", "_SQL_PATH"}
+                for target in node.targets
+            )
+        )
+    ]
+    namespace = {"Path": Path, "re": re, "__file__": str(path)}
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec"), namespace)
+    return namespace["render_baseline_sql"]
+
+
+def _baseline_sql():
+    """Render the frozen initial schema without importing settings or a DB driver."""
+    # SQL is emitted against quoted schema identifiers; the historical parser
+    # uses an unquoted symbolic schema token.
+    return _baseline_renderer()(_SCHEMA).replace(f'"{_SCHEMA}".', f"{_SCHEMA}.")
+
+
+def _baseline_trigger_statements():
+    return {
+        (match.group("name"), _table_of(statement)): statement
+        for statement in re.findall(r"CREATE TRIGGER .*?;", _baseline_sql(), flags=re.IGNORECASE | re.DOTALL)
+        for match in [_CREATE_TRIGGER.search(statement)]
+        if match and _table_of(statement)
+    }
+
+
+def _baseline_function_bodies():
+    """Parse frozen pg_dump function bodies by their immutable object names."""
+    sql = _baseline_sql()
+    pattern = re.compile(
+        r"CREATE FUNCTION (?P<name>[\w.]+)\([^)]*\) RETURNS trigger\s+" r"LANGUAGE plpgsql\s+AS \$\$(?P<body>.*?)\$\$;",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    return {match.group("name").rsplit(".", 1)[-1]: match.group("body") for match in pattern.finditer(sql)}
+
+
+def test_the_bulk_table_map_covers_every_bulk_guarded_table():
+    triples = {trigger.table for trigger in GUARDS.GUARD_TRIGGERS if trigger.name == f"{trigger.table}_immutable"}
+    assert set(BULK_TABLES) == triples - ONE_OFF_TABLES, (
+        "scripts/schema_guards.py and the migration-parsing BULK_TABLES map disagree: "
+        f"guarded in the module only {sorted(triples - ONE_OFF_TABLES - set(BULK_TABLES))}, "
+        f"in the map only {sorted(set(BULK_TABLES) - triples)}."
+    )
+    assert ONE_OFF_TABLES <= triples, f"One-off guards lost from the module: {sorted(ONE_OFF_TABLES - triples)}"
+    validators = {trigger.function for trigger in GUARDS.GUARD_TRIGGERS if trigger.name == f"{trigger.table}_validate"}
+    assert set(BULK_TABLES.values()) == validators
+
+
+def test_frozen_baseline_and_post_baseline_migrations_match_guard_module():
+    baseline = _baseline_trigger_statements()
+    revisions = migration_trigger_statements()
+    expected = _module_pairs()
+    migration_pairs = migration_trigger_pairs()
+    assert set(baseline) | migration_pairs == expected, (
+        "Frozen baseline and later migration guards differ from scripts/schema_guards.py: "
+        f"baseline-only={sorted(set(baseline) - expected)}, "
+        f"migration-only={sorted(migration_pairs - expected)}, "
+        f"module-only={sorted(expected - set(baseline) - migration_pairs)}"
+    )
+    statements = {**baseline, **revisions}
+    for trigger in GUARDS.GUARD_TRIGGERS:
+        statement = statements[(trigger.name, trigger.table)]
+        actual = _TRIGGER_EVENTS.search(statement.replace('"', ""))
+        function = _TRIGGER_FUNCTION.search(statement.replace('"', ""))
+        expected_events = re.search(r"(?:BEFORE|AFTER) (.+?) ON ", trigger.definition(_SCHEMA)).group(1)
+        assert actual and set(normalized(actual.group(1)).split(" or ")) == set(
+            normalized(expected_events).split(" or ")
+        ), trigger.name
+        assert re.search(r"FOR EACH (ROW|STATEMENT)", statement).group(1) == re.search(
+            r"FOR EACH (ROW|STATEMENT)", trigger.definition(_SCHEMA)
+        ).group(1), trigger.name
+        assert function and function.group(1).rsplit(".", 1)[-1] == trigger.function, trigger.name
+
+
+def test_guard_trigger_functions_exist():
+    for trigger in GUARDS.GUARD_TRIGGERS:
+        assert trigger.function in GUARDS.GUARD_FUNCTIONS, f"{trigger.name} executes unknown {trigger.function}"
+
+
+def test_frozen_baseline_and_later_migration_function_bodies_match_guard_module():
+    bodies = _baseline_function_bodies()
+    bodies.update({name: body for name, (_path, body) in migration_function_bodies().items()})
+    assert set(bodies) == set(GUARDS.GUARD_FUNCTIONS)
+    diverged = []
+    for name, body in bodies.items():
+        expected = GUARDS.GUARD_FUNCTIONS[name].replace("{s}", _SCHEMA)
+        if normalized(_bare(body)) != normalized(_bare(expected)):
+            diverged.append(name)
+    assert not diverged, f"Frozen baseline guard function bodies differ from scripts/schema_guards.py: {diverged}"
+
+
+def test_baseline_renders_a_requested_schema_without_public_leakage():
+    sql = _baseline_renderer()("probe_schema")
+    assert "{{schema}}" not in sql
+    assert '"probe_schema".' in sql
+    assert "public." not in sql
+    assert '"public".' not in sql
+
+
+def test_unresolved_dml_without_call_bindings_is_not_guard_ddl():
+    tree = ast.parse("body = dynamic_value\ndef upgrade():\n    pass\n")
+    unresolved = [ast.Name(id="body", ctx=ast.Load())]
+    statements = _statements("UPDATE example SET tenant_id = ", unresolved, "upgrade", tree)
+    assert statements == set()
+
+
+def test_unresolved_guard_ddl_without_call_bindings_fails_closed():
+    tree = ast.parse("body = dynamic_value\ndef upgrade():\n    pass\n")
+    unresolved = [ast.Name(id="body", ctx=ast.Load())]
+    try:
+        _statements("CREATE FUNCTION x.guard() RETURNS trigger AS ", unresolved, "upgrade", tree)
+    except ValueError as error:
+        assert "guard DDL" in str(error)
+    else:
+        raise AssertionError("Unresolved guard function body was silently ignored")
+
+
+def test_guard_inventory_resolves_literal_mapping_items_loop():
+    tree = ast.parse("""
+hooks = {
+    "workspace_connections": "AFTER UPDATE OF tenant_id",
+    "workspace_roles": "AFTER UPDATE OR DELETE",
+}
+def upgrade():
+    s = settings.DB_SCHEMA
+    for table, events in hooks.items():
+        op.execute(
+            f'CREATE TRIGGER file_insight_revoke {events} ON "{s}"."{table}" '
+            'FOR EACH ROW EXECUTE FUNCTION "x".file_insight_revoke_hook()'
+        )
+""")
+    statements = set()
+    for function, sql, unresolved in _executes(tree):
+        statements.update(_statements(sql, unresolved, function, tree))
+    assert len([statement for statement in statements if statement.startswith("CREATE TRIGGER")]) == 2
+    assert any(
+        "workspace_connections" in statement and "AFTER UPDATE OF tenant_id" in statement for statement in statements
+    )
+    assert any("workspace_roles" in statement and "AFTER UPDATE OR DELETE" in statement for statement in statements)
+
+
+# 0154 builds one trigger per literal ``(event, level)`` pair and names it with a
+# conditional expression over the pair, so the parser must bind both row
+# variables and read ``level == "ROW"`` as a literal comparison.
+_LOOP_PAIR_MIGRATION = """
+import sqlalchemy as sa
+from alembic import op
+from app.core.config import settings
+
+
+def upgrade():
+    schema = settings.DB_SCHEMA
+    quoted = op.get_context().dialect.identifier_preparer.quote_schema(schema)
+    for event, level in (("UPDATE OR DELETE", "ROW"), ("TRUNCATE", "STATEMENT")):
+        trigger = "service_plan_backfill_immutable" if level == "ROW" else "service_plan_backfill_no_truncate"
+        op.execute(sa.text(f\"\"\"
+            CREATE TRIGGER {trigger} BEFORE {event}
+            ON {quoted}.service_plan_backfill_resolutions FOR EACH {level}
+            EXECUTE FUNCTION {quoted}.service_plan_policy_immutable()
+        \"\"\"))
+"""
+
+
+def _pair_loop_statements():
+    tree = ast.parse(_LOOP_PAIR_MIGRATION)
+    statements = set()
+    for function, sql, unresolved in _executes(tree):
+        statements.update(_statements(sql, unresolved, function, tree))
+    return {statement.strip() for statement in statements}
+
+
+def test_guard_inventory_binds_literal_pair_loop_rows():
+    statements = _pair_loop_statements()
+    assert len(statements) == 2, statements
+    for statement in statements:
+        match = _CREATE_TRIGGER.match(statement)
+        assert match, statement
+        events = _TRIGGER_EVENTS.search(statement.replace('"', ""))
+        level = _TRIGGER_LEVEL.search(statement)
+        assert events and level, statement
+        assert _TRIGGER_ON.search(statement.replace('"', "")).group("table") == "x.service_plan_backfill_resolutions"
+
+
+def test_guard_inventory_maps_each_pair_row_to_its_own_trigger_and_event():
+    by_trigger = {}
+    for statement in _pair_loop_statements():
+        name = _CREATE_TRIGGER.match(statement).group("name")
+        by_trigger[name] = (
+            normalized(_TRIGGER_EVENTS.search(statement).group(1)),
+            _TRIGGER_LEVEL.search(statement).group(1).upper(),
+        )
+    assert by_trigger == {
+        "service_plan_backfill_immutable": ("update or delete", "ROW"),
+        "service_plan_backfill_no_truncate": ("truncate", "STATEMENT"),
+    }
+
+
+def test_guard_inventory_reads_equality_but_not_unknown_comparisons():
+    tree = ast.parse("""
+def upgrade():
+    for level in ("ROW", "STATEMENT"):
+        trigger = "row_name" if level == "ROW" else "other_name"
+        op.execute(f"CREATE TRIGGER {trigger} ON x.t FOR EACH {level}")
+""")
+    statements = set()
+    for function, sql, unresolved in _executes(tree):
+        statements.update(statement.strip() for statement in _statements(sql, unresolved, function, tree))
+    assert statements == {
+        "CREATE TRIGGER row_name ON x.t FOR EACH ROW",
+        "CREATE TRIGGER other_name ON x.t FOR EACH STATEMENT",
+    }
+    # An unknown comparison must not be guessed into a branch.
+    scope = _Scope(tree)
+    binding = _Binding({"value": "ROW"})
+    unknown = ast.parse('left if other == "ROW" else right', mode="eval").body
+    assert _condition(unknown.test, scope, binding) is None
+
+
+def test_guard_inventory_refuses_unreadable_pair_rows():
+    tree = ast.parse("""
+def upgrade():
+    for event, level in PAIRS:
+        trigger = "a" if level == "ROW" else "b"
+        op.execute(f"CREATE TRIGGER {trigger} BEFORE {event} ON x.t FOR EACH {level}")
+""")
+    for function, sql, unresolved in _executes(tree):
+        try:
+            _statements(sql, unresolved, function, tree)
+        except ValueError as error:
+            assert "guard DDL" in str(error)
+        else:
+            raise AssertionError("Unreadable loop rows were silently dropped from guard DDL")
+
+
+def test_guard_inventory_resolves_tuple_loop_with_equality_conditional():
+    """P11-T37's regression, kept here so one parser copy owns both lanes' cases."""
+    tree = ast.parse("""
+def upgrade():
+    schema = settings.DB_SCHEMA
+    quoted = op.get_context().dialect.identifier_preparer.quote_schema(schema)
+    for event, level in (("UPDATE OR DELETE", "ROW"), ("TRUNCATE", "STATEMENT")):
+        trigger = "service_plan_backfill_immutable" if level == "ROW" else "service_plan_backfill_no_truncate"
+        op.execute(sa.text(f\"\"\"
+            CREATE TRIGGER {trigger} BEFORE {event}
+            ON {quoted}.service_plan_backfill_resolutions FOR EACH {level}
+            EXECUTE FUNCTION {quoted}.service_plan_policy_immutable()
+        \"\"\"))
+""")
+    statements = set()
+    for function, sql, unresolved in _executes(tree):
+        statements.update(_statements(sql, unresolved, function, tree))
+    assert len(statements) == 2
+    assert any(
+        "service_plan_backfill_immutable BEFORE UPDATE OR DELETE" in s and "FOR EACH ROW" in s for s in statements
+    )
+    assert any(
+        "service_plan_backfill_no_truncate BEFORE TRUNCATE" in s and "FOR EACH STATEMENT" in s for s in statements
+    )
+
+
+def test_p21_t13_nested_loop_binding_preserves_correlated_outer_values():
+    tree = ast.parse("""
+def upgrade():
+    for table in ("a", "b"):
+        for event, level in (("UPDATE", "ROW"), ("TRUNCATE", "STATEMENT")):
+            op.execute(f"CREATE TRIGGER guard_{table}_{level} BEFORE {event} ON x.{table} FOR EACH {level}")
+""")
+    statements = set()
+    for function, sql, unresolved in _executes(tree):
+        statements.update(statement.strip() for statement in _statements(sql, unresolved, function, tree))
+    assert statements == {
+        "CREATE TRIGGER guard_a_ROW BEFORE UPDATE ON x.a FOR EACH ROW",
+        "CREATE TRIGGER guard_a_STATEMENT BEFORE TRUNCATE ON x.a FOR EACH STATEMENT",
+        "CREATE TRIGGER guard_b_ROW BEFORE UPDATE ON x.b FOR EACH ROW",
+        "CREATE TRIGGER guard_b_STATEMENT BEFORE TRUNCATE ON x.b FOR EACH STATEMENT",
+    }
+
+
+def test_p21_t13_enumerate_start_is_not_silently_treated_as_zero():
+    scope = _Scope(ast.parse("TABLES = ('a', 'b')"))
+    tree = ast.parse("TABLES = ('a', 'b')")
+    assert _iterable_rows(ast.parse("enumerate(TABLES, 4)", mode="eval").body, ("index", "table"), tree, scope) is None
+
+
+def test_p21_t13_named_guard_body_format_preserves_literal_sql():
+    tree = ast.parse("""
+GUARDS = (("guard_a", "BEGIN SELECT id FROM {s}.a; RETURN NEW; END"),)
+def upgrade():
+    s = settings.DB_SCHEMA
+    for name, body in GUARDS:
+        rendered = body.format(s=s)
+        op.execute(f"CREATE FUNCTION {s}.{name}() RETURNS trigger AS $$ {rendered} $$ LANGUAGE plpgsql")
+""")
+    statements = set()
+    for function, sql, unresolved in _executes(tree):
+        statements.update(_statements(sql, unresolved, function, tree))
+    assert statements == {
+        "CREATE FUNCTION x.guard_a() RETURNS trigger AS $$ BEGIN SELECT id FROM x.a; RETURN NEW; END $$ LANGUAGE plpgsql"
+    }
+    scope = _Scope(ast.parse("pass"))
+    for template in ("{s.attribute}", "{s[0]}", "{s!r}", "{s:>10}", "{}", "{missing}"):
+        expression = ast.parse(f"{template!r}.format(s='x')", mode="eval").body
+        assert _render(expression, scope) is None
+
+
+def test_guard_inventory_collects_each_function_from_one_execute_block():
+    statement = """
+CREATE FUNCTION x.invalidate_file_insights(t integer, o integer, c integer)
+RETURNS void LANGUAGE plpgsql AS $$ BEGIN PERFORM 1; END; $$;
+CREATE FUNCTION x.file_insight_revoke_hook() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN PERFORM x.invalidate_file_insights(NULL,NULL,NULL); RETURN NULL; END; $$;
+CREATE FUNCTION x.file_insight_object_hook() RETURNS trigger LANGUAGE plpgsql AS $body$
+BEGIN UPDATE x.file_insight_object_states SET epoch='next'; RETURN NULL; END; $body$;
+"""
+    matches = list(_FUNCTION_DEFINITION.finditer(statement))
+    assert [match.group("name") for match in matches] == [
+        "x.invalidate_file_insights",
+        "x.file_insight_revoke_hook",
+        "x.file_insight_object_hook",
+    ]
+    assert ["PERFORM 1;" in match.group("body") for match in matches] == [True, False, False]
+    assert "PERFORM x.invalidate_file_insights(NULL,NULL,NULL);" in matches[1].group("body")
+    assert "UPDATE x.file_insight_object_states" in matches[2].group("body")
+
+
+def test_rendered_ddl_is_schema_qualified_and_idempotent():
+    statements = GUARDS.ddl("draft_schema")
+    functions = [s for s in statements if s.startswith("CREATE OR REPLACE FUNCTION")]
+    triggers = [s for s in statements if s.startswith("CREATE TRIGGER")]
+    drops = [s for s in statements if s.startswith("DROP TRIGGER IF EXISTS")]
+    assert len(statements) == 2 * len(GUARDS.GUARD_TRIGGERS) + len(GUARDS.GUARD_FUNCTIONS)
+    assert len(functions) == len(GUARDS.GUARD_FUNCTIONS)
+    assert len(triggers) == len(GUARDS.GUARD_TRIGGERS) == len(drops)
+    for statement in [*functions, *triggers, *drops]:
+        assert "public." not in statement and '"public"' not in statement
+    for statement in functions:
+        assert statement.startswith('CREATE OR REPLACE FUNCTION "draft_schema"."')
+    for statement in triggers:
+        assert ' ON "draft_schema"."' in statement
+        function = statement.rsplit('"', 2)[1]
+        assert function in GUARDS.GUARD_FUNCTIONS, f"{statement} executes unknown function {function}"
+        assert statement.endswith(f'EXECUTE FUNCTION "draft_schema"."{function}"()')
+
+
+def test_unsafe_schema_names_are_refused():
+    for name in ("public; drop schema x", 'quote"d', "", "../x"):
+        try:
+            GUARDS.ddl(name)
+        except ValueError:
+            continue
+        raise AssertionError(f"Guard DDL accepted unsafe schema name {name!r}")
+
+
+def test_trigger_events_keep_migration_order():
+    """PostgreSQL renders DELETE OR UPDATE for UPDATE OR DELETE; both must work."""
+    immutable = next(t for t in GUARDS.GUARD_TRIGGERS if t.name == "llm_dispatch_receipts_immutable")
+    assert immutable.definition("s").startswith(
+        'CREATE TRIGGER "llm_dispatch_receipts_immutable" BEFORE UPDATE OR DELETE'
+    )
+    truncate = next(t for t in GUARDS.GUARD_TRIGGERS if t.name == "llm_dispatch_receipts_no_truncate")
+    assert truncate.definition("s").endswith('FOR EACH STATEMENT EXECUTE FUNCTION "s"."reject_llm_receipt_mutation"()')
+    column_scoped = next(t for t in GUARDS.GUARD_TRIGGERS if t.table == "sources")
+    assert 'UPDATE OF "tenant_id", "owner_task_id" ON' in column_scoped.definition("s")
+
+
+def test_apply_schema_guards_skips_later_revision_triggers_when_table_is_absent():
+    statements = []
+
+    class Dialect:
+        def get_table_names(self, _conn, schema):
+            assert schema == "main"
+            return []
+
+    class Connection:
+        dialect = Dialect()
+
+        def execute(self, statement):
+            statements.append(statement)
+
+    GUARDS.apply_schema_guards(Connection(), "main", lambda statement: statement)
+
+    assert not any("CREATE TRIGGER" in statement or "DROP TRIGGER" in statement for statement in statements)
+    assert not any("guard_workspace_offboarding_mutation" in statement for statement in statements)
+
+
+def test_private_insight_bootstrap_guards_require_complete_private_tables():
+    class Dialect:
+        def __init__(self, tables):
+            self.tables = tables
+
+        def get_table_names(self, _conn, schema):
+            assert schema == "test_schema"
+            return self.tables
+
+    class Connection:
+        def __init__(self, tables):
+            self.dialect = Dialect(tables)
+            self.statements = []
+
+        def execute(self, statement):
+            self.statements.append(statement)
+
+    partial = Connection(["workspace_connections", "file_insight_mounts"])
+    GUARDS.apply_schema_guards(partial, "test_schema", lambda statement: statement)
+    assert not any(
+        "file_insight_revoke" in statement or "file_insight_object" in statement for statement in partial.statements
+    )
+
+    complete = Connection(
+        [
+            "workspace_connections",
+            "workspace_connection_secrets",
+            "tenant_users",
+            "users",
+            "tenants",
+            "workspace_roles",
+            "workspace_role_permission",
+            "file_catalog_objects",
+            "file_insight_mounts",
+            "file_insight_attempts",
+            "file_insight_object_states",
+        ]
+    )
+    GUARDS.apply_schema_guards(complete, "test_schema", lambda statement: statement)
+    statements = complete.statements
+    assert any(
+        '"test_schema"."invalidate_file_insights"(t integer, o integer, c integer) RETURNS void' in s
+        for s in statements
+    )
+    assert sum('CREATE TRIGGER "file_insight_revoke"' in s for s in statements) == 7
+    assert any('CREATE TRIGGER "file_insight_object_changed" AFTER UPDATE OF' in s for s in statements)
+    trigger_statements = [s for s in statements if s.startswith(("CREATE TRIGGER", "DROP TRIGGER"))]
+    function_statements = [s for s in statements if s.startswith("CREATE OR REPLACE FUNCTION")]
+    assert all(' ON "test_schema".' in s for s in trigger_statements)
+    assert all(s.startswith('CREATE OR REPLACE FUNCTION "test_schema".') for s in function_statements)
+
+
+def test_direct_schema_setting_is_resolved_but_unknown_attributes_are_not():
+    scope = _Scope(ast.parse("schema = settings.DB_SCHEMA"))
+    assert scope.text["schema"] == _SCHEMA
+    other = _Scope(ast.parse("schema = provider.target"))
+    assert "schema" not in other.text

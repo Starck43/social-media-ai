@@ -11,6 +11,7 @@
                 <h2 id="workspace-tools-{{ menu_id }}" class="shell-menu-heading">В текущем пространстве</h2>
                 <div class="shell-workspace-actions">
                     <a href="/app/settings">{{ icon('settings') }}<span>Настройки</span></a>
+                    <a href="/app/settings/telegram-accounts/workspace">{{ icon('settings') }}<span>Telegram в пространстве</span></a>
                     {% if perms and perms.can_manage_workspace(tenant.id) %}<button type="button" data-invite-open aria-haspopup="dialog" aria-controls="invite-dialog">{{ icon('mentions') }}<span>Пригласить участника</span></button>{% endif %}
                 </div>
             </section>
@@ -42,8 +43,9 @@
             </section>
             <section class="shell-menu-group" aria-labelledby="account-tools-{{ menu_id }}">
                 <h2 id="account-tools-{{ menu_id }}" class="shell-menu-heading">Аккаунт</h2>
-                <p class="shell-menu-hint">Платформенная роль: {{ user.role.label if user.role else 'Роль не назначена' }}. Права в пространстве указаны отдельно.</p>
+                <p class="shell-menu-hint">Платформенная роль: {{ user.role.label if (user.role is defined and user.role) else 'Роль не назначена' }}. Права в пространстве указаны отдельно.</p>
                 <a href="/app/settings?tab=account">{{ icon('settings') }}<span>Мой аккаунт</span></a>
+                <a href="/app/settings/telegram-accounts">{{ icon('settings') }}<span>Telegram-авторизации</span></a>
                 {% if user and user.has_admin_access() %}<a href="/admin/" target="_blank" rel="noopener">{{ icon('monitor') }}<span><span class="shell-menu-label">Администрирование ↗</span><span class="shell-menu-hint">Модели и действия — по правам аккаунта</span></span></a>{% endif %}
                 <form method="post" action="/app/logout"><input type="hidden" name="_csrf" value="{{ csrf }}"><button>Выйти из аккаунта</button></form>
             </section>
@@ -52,8 +54,9 @@
     {% if menu_id == 'desktop' %}<button type="button" class="shell-icon-button shell-collapse" data-sidebar-collapse aria-label="Свернуть навигацию" aria-expanded="true" aria-controls="nav-desktop" title="Свернуть / развернуть навигацию">{{ icon('sidebar-collapse') }}</button>{% endif %}
 </div>
 <nav id="nav-{{ menu_id }}" class="shell-daily-nav" aria-label="Основные разделы">
-{% if tenant %}{% for item in nav if item.key != 'settings' %}
-{% if item.ready %}<a href="{{ item.href }}" aria-label="{{ item.label }}" data-tooltip="{{ item.label }}" {% if section == item.key %}aria-current="page"{% endif %}>{{ icon(item.icon|default('circle')) }}<span class="shell-nav-label">{{ item.label }}</span></a>
+{% if tenant %}{% set ns = namespace(group='') %}{% for item in nav if item.key != 'settings' %}
+{% set group_label = item.group_label|default('') %}{% if group_label and group_label != ns.group %}{% set ns.group = group_label %}<h2 class="shell-nav-group">{{ group_label }}</h2>{% endif %}
+{% if item.ready %}<a href="{{ item.href }}" aria-label="{{ item.label }}" data-tooltip="{{ item.label }}" {% if section == item.key %}aria-current="page"{% endif %}>{{ icon(item.icon|default('circle')) }}<span class="shell-nav-label">{{ item.label }}</span>{% if item.key == 'actions' and pending_approvals_count|default(0) > 0 %}<span class="ml-auto rounded-full bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-200" data-nav-approvals-badge>{{ pending_approvals_count }}</span>{% endif %}</a>
 {% else %}<span class="shell-unavailable" aria-disabled="true">{{ icon(item.icon|default('circle')) }}<span class="shell-nav-label">{{ item.label }} · скоро</span></span>{% endif %}
 {% endfor %}{% endif %}
 </nav>

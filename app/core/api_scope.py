@@ -12,6 +12,7 @@ checks enforce the corresponding resource boundaries.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 import jwt
@@ -33,16 +34,40 @@ API_PREFIX = "/api"
 # consent — it cannot carry a bearer token; the signed `state` protects it).
 PUBLIC_API_PATHS = frozenset(
     {
+        # Connector enrollment is authenticated by a short-lived, rate-limited
+        # pairing secret + CSR proof, NOT by ambient browser identity.
+        "/api/v1/files/connectors/register",
         "/api/v1/auth/login",
         "/api/v1/auth/refresh-token",
         "/api/v1/auth/register",
         "/api/v1/health",
         "/api/v1/social/callback",
+        # One-click unsubscribe is authenticated by an HMAC-SHA256 signed token
+        # bound to (tenant_id, contact_id, channel, purpose) — requires no login (D16).
+        "/api/v1/integrations/bitrix/messaging/unsubscribe",
     }
 )
 
 TENANT_ID_HEADER = "x-tenant-id"
 TENANT_SLUG_HEADER = "x-tenant-slug"
+
+#: Routes that belong to the account, not to a workspace: they read and write
+#: only the caller's own row, so they stay reachable without a membership and
+#: after a workspace is suspended. Anything that reads workspace data must go
+#: through `_resolve_tenant`.
+_ACCOUNT_PATHS = frozenset({"/api/v1/users/me", "/api/v1/auth/change-password"})
+
+
+def _is_personal_connector_path(path: str, method: str) -> bool:
+    """Only metadata self-list and personal-wide revoke escape workspace scope.
+
+    Never exempt a whole prefix: attach/grants/login remain membership-bound.
+    Authentication still runs before this predicate is used.
+    """
+    normalized = path.rstrip("/")
+    return (method == "GET" and normalized == "/api/v1/connector-accounts/personal") or (
+        method == "POST" and re.fullmatch(r"/api/v1/connector-accounts/[1-9][0-9]*/revoke", normalized) is not None
+    )
 
 
 def _is_public(path: str) -> bool:
@@ -51,9 +76,13 @@ def _is_public(path: str) -> bool:
 
 def _is_personal_catalog_path(path: str) -> bool:
     normalized = path.rstrip("/")
-    return any(normalized == root or normalized.startswith(root + "/") for root in (
-        "/api/v1/llm/llm-models", "/api/v1/llm/llm-providers",
-    ))
+    return any(
+        normalized == root or normalized.startswith(root + "/")
+        for root in (
+            "/api/v1/llm/llm-models",
+            "/api/v1/llm/llm-providers",
+        )
+    )
 
 
 class ApiScopeMiddleware:
@@ -64,7 +93,11 @@ class ApiScopeMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
-        if scope["type"] != "http" or not path.startswith(API_PREFIX) or _is_public(path):
+        if (
+            scope["type"] != "http"
+            or (path != API_PREFIX and not path.startswith(f"{API_PREFIX}/"))
+            or _is_public(path)
+        ):
             await self.app(scope, receive, send)
             return
 
@@ -75,7 +108,25 @@ class ApiScopeMiddleware:
             await self._unauthorized(scope, receive, send)
             return
 
-        if path.rstrip("/") in {"/api/v1/users/me", "/api/v1/auth/change-password"}:
+        personal_notifications = (
+            path == "/api/v1/notifications" or path.startswith("/api/v1/notifications/")
+        ) and not (
+            request.method == "POST"
+            and path.rstrip("/") in {"/api/v1/notifications", "/api/v1/notifications/notifications"}
+        )
+        if (
+            path.rstrip("/") in _ACCOUNT_PATHS
+            or personal_notifications
+            or _is_personal_connector_path(path, request.method)
+        ):
+            # Account-level, not workspace-level (`docs/platform/API.md`, Authorization):
+            # the caller's own profile and password follow the account, so an
+            # API-only registration without a membership can still use them, and
+            # a suspended workspace cannot take away self-service that never
+            # reads workspace data. Personal connector revoke only withdraws the
+            # caller's own authorization/consents; no workspace data is returned.
+            # Workspace denial is enforced where workspace
+            # data is read, not here — see `_resolve_tenant`.
             request.state.api_user = user
             with tenant_scope(), permission_scope(user):
                 await self.app(scope, receive, send)
@@ -87,9 +138,14 @@ class ApiScopeMiddleware:
                 await self.app(scope, receive, send)
             return
 
+        normalized_path = path.rstrip("/")
+        users_root = "/api/v1/users"
+        roles_root = f"{users_root}/roles"
+        under_users = normalized_path == users_root or normalized_path.startswith(f"{users_root}/")
         operator_path = (
-            path.startswith("/api/v1/users/roles")
-            or (path.startswith("/api/v1/users") and path.rstrip("/") != "/api/v1/users/me")
+            normalized_path == roles_root
+            or normalized_path.startswith(f"{roles_root}/")
+            or (under_users and normalized_path != f"{users_root}/me")
         )
         if operator_path:
             if not user.has_admin_access():

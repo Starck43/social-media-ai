@@ -1,6 +1,6 @@
 """Isolated home contract checks; no application imports or database bootstrap.
 
-Normal local execution follows Kilo/test-runner/pare-test with --noconftest.
+Normal local execution follows test-runner/pare-test with --noconftest.
 Remote sandbox checks use the skill's no-DB exception and never access DB.
 AST-loaded functions check orchestration; acceptance still needs the real ASGI app.
 """
@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock
 import pytest
 from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
+from tests.shared.template_shell import shell_perms
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -25,27 +27,26 @@ def _functions(*names):
     ]
     for node in nodes:
         node.decorator_list = []
+
         # Inject the result renderer in these isolated checks, never import app
         # services (which would initialize application dependencies).
-        node.body = [
-            child
-            for child in node.body
-            if not (
-                isinstance(child, ast.ImportFrom)
-                and child.module
-                in (
+        class ModelImports(ast.NodeTransformer):
+            def visit_ImportFrom(self, child):
+                if child.module in (
                     "app.services.ai.analysis_render",
                     "app.services.digest.checkpoints",
                     "app.services.digest.delivery_outcomes",
-                    "app.models.ai_analytics",
-                    "app.models.collected_item",
-                    "app.models.digest_run",
-                    "app.models.job",
+                    "app.models.analysis.ai_analytics",
+                    "app.models.collection.collected_item",
+                    "app.models.notifications.digest_run",
+                    "app.models.scheduling.job",
                     "app.models.managers.agent_task_manager",
                     "app.core.tenant_context",
-                )
-            )
-        ]
+                ):
+                    return None
+                return child
+
+        ModelImports().visit(node)
     module = ast.Module(
         body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), *nodes],
         type_ignores=[],
@@ -83,7 +84,7 @@ def _render(offer, *, real_base=False, **extra):
     env.globals["url_for"] = lambda name, path: "/static/" + path
     context = {
         "tenant": {"id": 7, "name": "Fixture workspace"},
-        "user": SimpleNamespace(username="fixture", has_admin_access=lambda: False),
+        "user": SimpleNamespace(username="fixture", role=None, has_admin_access=lambda: False),
         "section": "dashboard",
         "nav": [],
         "mobile_nav": [],
@@ -104,7 +105,7 @@ def _render(offer, *, real_base=False, **extra):
         "pipeline": None,
         "_tz": "Europe/Moscow",
         "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query=""), query_params={}),
-        "perms": SimpleNamespace(can_manage_workspace=lambda target: False, is_owner=False, workspace_role="VIEWER"),
+        "perms": shell_perms(can_open_chat=True, can_manage_workspace=lambda target: False, workspace_role="viewer"),
         "member_level": None,
     }
     context.update(extra)
@@ -443,13 +444,15 @@ def _with_models(staged=0, analyzed=0, jobs=()):
     AIAnalytics = types.SimpleNamespace(objects=_CountQuery(analyzed))
     CollectedItem = types.SimpleNamespace(objects=_CountQuery(staged))
     Job = types.SimpleNamespace(
-        objects=_CountQuery(rows=jobs), created_at=types.SimpleNamespace(desc=lambda: "created-desc")
+        objects=_CountQuery(rows=jobs),
+        created_at=types.SimpleNamespace(desc=lambda: "created-desc"),
+        id=types.SimpleNamespace(desc=lambda: "id-desc"),
     )
     return {"AIAnalytics": AIAnalytics, "CollectedItem": CollectedItem, "Job": Job}
 
 
 @pytest.mark.asyncio
-async def test_pipeline_hidden_without_analytics_or_task_rights():
+async def test_pipeline_hidden_without_component_view_rights():
     scope = _functions("_pipeline")
     scope.update(_with_models())
     assert await scope["_pipeline"](7, False, _offer()) is None
@@ -469,9 +472,11 @@ async def test_pipeline_counts_staged_analyzed_and_running_jobs():
     stubs = _with_models(staged=4, analyzed=9, jobs=(running, queued))
     scope = _functions("_pipeline")
     scope.update(stubs)
-    result = await scope["_pipeline"](7, False, _offer(("aianalytics", "view")))
+    result = await scope["_pipeline"](
+        7, False, _offer(("aianalytics", "view"), ("collecteditem", "view"), ("job", "view"))
+    )
     assert result["staged"] == 4 and result["analyzed"] == 9
-    assert result["running"] == [{"job_type": "collect", "collect": True}]
+    assert result["running"] == [{"job_type": "collect", "label": "Сбор данных выполняется…"}]
     assert result["queued_count"] == 1 and result["job_count"] == 2
     assert any(kwargs.get("tenant_id") == 7 for _, kwargs in stubs["CollectedItem"].objects.filters)
     assert any(kwargs.get("tenant_id") == 7 for _, kwargs in stubs["Job"].objects.filters)
@@ -479,17 +484,18 @@ async def test_pipeline_counts_staged_analyzed_and_running_jobs():
 
 def test_pipeline_strip_shows_waiting_and_model_activity():
     markup = _render(
-        _offer(("aianalytics", "view")),
+        _offer(("aianalytics", "view"), ("collecteditem", "view"), ("job", "view")),
         pipeline={
             "scope_all": False,
             "staged": 4,
             "analyzed": 9,
-            "running": [{"job_type": "analyze", "collect": False}],
+            "running": [{"job_type": "analyze", "label": "Анализ выполняется…"}],
+            "preview_limit": 3,
             "queued_count": 0,
             "job_count": 1,
         },
     )
     assert "data-home-pipeline" in markup
-    assert "ожидают анализа" in markup
+    assert "сохранено материалов" in markup
     assert "сохранено анализов" in markup
-    assert "Модель анализирует…" in markup
+    assert "Анализ выполняется…" in markup

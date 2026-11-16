@@ -482,7 +482,6 @@ def main():
         )
         application.idle_processes()
         frozen = [
-            "migrations/versions/0094_add_llm_outcome_events.py",
             "app/models/analysis/llm_outcome_event.py",
             "app/models/llm/llm_outcome_event.py",
             "app/models/managers/llm_outcome_event_manager.py",
@@ -493,7 +492,6 @@ def main():
             frozen.extend(
                 [
                     "scripts/isolated_outcome_fixture.py",
-                    "migrations/versions/0093_add_llm_dispatch_receipts.py",
                     "app/models/tenancy/tenant.py",
                     "app/models/analysis/llm_attempt.py",
                     "app/models/llm/llm_attempt.py",
@@ -512,6 +510,21 @@ def main():
             ).strip(),
             "Applied definition/runtime contract changed",
         )
+        # The frozen legacy DDL source moved out of Alembic discovery. Verify
+        # it remains byte-identical to the source at the reviewed application
+        # head, while allowing that historical path to be removed.
+        legacy_sources = {
+            "scripts/migrations/legacy_definitions/0094_add_llm_outcome_events.py": "migrations/versions/0094_add_llm_outcome_events.py",
+        }
+        if args.isolated_fixture:
+            legacy_sources["scripts/migrations/legacy_definitions/0093_add_llm_dispatch_receipts.py"] = (
+                "migrations/versions/0093_add_llm_dispatch_receipts.py"
+            )
+        for current_path, historical_path in legacy_sources.items():
+            expected_bytes = subprocess.check_output(
+                ["git", "show", f"{args.expected_application_head}:{historical_path}"], cwd=ROOT
+            )
+            require((ROOT / current_path).read_bytes() == expected_bytes, "Legacy definition source changed")
         expected = application_evidence(
             args.application_report, args.expected_application_head, isolated=args.isolated_fixture
         )

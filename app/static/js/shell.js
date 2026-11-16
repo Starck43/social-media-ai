@@ -27,6 +27,30 @@
             if (focus) popover.querySelector('[data-popover-trigger]').focus();
         };
         const initializedPopovers = new WeakSet();
+        const usable = el => Boolean(el && !el.disabled && !el.closest('[hidden], [inert]') && el.getClientRects().length);
+        // One option list for both entry and movement: only select options that
+        // are visible, enabled and in the focus order (never hidden/inert ones).
+        const selectOptions = panel => Array.from(panel.querySelectorAll('[data-popover-option]'))
+            .filter(option => option.tabIndex >= 0 && usable(option));
+        // Keyboard navigation shared by popover-select option lists; Tab and
+        // Escape keep their native/overlay meaning. The trigger has its own
+        // handler and stops its events, so only real option events land here.
+        const moveOptions = (event, panel) => {
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+            // Never hijack typing inside an editable control.
+            if (event.target.closest?.('input:not([type="hidden"]), textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+            event.preventDefault();
+            const options = selectOptions(panel);
+            if (!options.length) return;
+            const current = options.indexOf(document.activeElement);
+            const selected = options.findIndex(option => option.getAttribute('aria-selected') === 'true');
+            let next;
+            if (event.key === 'Home') next = 0;
+            else if (event.key === 'End') next = options.length - 1;
+            else if (current < 0) next = selected >= 0 ? selected : (event.key === 'ArrowUp' ? options.length - 1 : 0);
+            else next = (current + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+            options[next].focus();
+        };
         const initPopovers = (root = document) => {
             root.querySelectorAll('[data-shell-popover]').forEach(popover => {
                 if (initializedPopovers.has(popover)) return;
@@ -60,10 +84,29 @@
                     else closePopover(popover);
                 });
                 trigger.addEventListener('keydown', event => {
-                    if (event.key === 'ArrowDown') { event.preventDefault(); open(); panel.querySelector('a, button')?.focus(); }
+                    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+                    event.preventDefault();
+                    // The event bubbles to the popover's own option handler;
+                    // stopping it here keeps one key press to one focus move.
+                    event.stopPropagation();
+                    if (panel.hidden) open();
+                    if (popover.hasAttribute('data-popover-select')) {
+                        const options = selectOptions(panel);
+                        const selected = options.find(option => option.getAttribute('aria-selected') === 'true');
+                        const target = event.key === 'ArrowDown'
+                            ? (selected || options[0])
+                            : (selected || options[options.length - 1]);
+                        target?.focus();
+                    } else {
+                        panel.querySelector('a, button')?.focus();
+                    }
                 });
                 popover.addEventListener('keydown', event => {
-                    if (event.key === 'Escape' && !panel.hidden) { event.preventDefault(); event.stopPropagation(); closePopover(popover, true); }
+                    // Options must stay inside this popover; Escape closes it.
+                    if (event.key === 'Escape' && !panel.hidden) { event.preventDefault(); event.stopPropagation(); closePopover(popover, true); return; }
+                    if (panel.hidden || !popover.hasAttribute('data-popover-select')) return;
+                    if (event.target === trigger) return;
+                    moveOptions(event, panel);
                 });
                 popover.addEventListener('focusout', event => {
                     if (event.relatedTarget && popover.contains(event.relatedTarget)) return;
@@ -110,30 +153,80 @@
                 if (!popover.contains(event.target)) closePopover(popover);
             });
         });
-        let scrollDepth = 0, oldOverflow = '';
+        // Registered shell dialogs are the only ones the shell manages.
+        const shellDialogs = Array.from(document.querySelectorAll('dialog.shell-dialog, dialog.shell-drawer, dialog.shell-right-panel'));
+        // Exact inline overflow saved by the first managed opening; the last
+        // managed close writes it back verbatim (including an empty value).
+        let scrollDepth = 0, savedOverflow;
         document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
             trigger.setAttribute('aria-controls', trigger.dataset.dialogOpen);
             trigger.setAttribute('aria-expanded', 'false');
         });
-        document.querySelectorAll('dialog.shell-dialog, dialog.shell-drawer, dialog.shell-right-panel').forEach(dialog => {
-            dialog.addEventListener('close', () => {
-                scrollDepth = Math.max(0, scrollDepth - 1);
-                if (!scrollDepth) document.body.style.overflow = oldOverflow;
-                document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
-                    if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'false');
-                });
-                // Native dialog normally restores focus; handle disappeared/hidden launchers.
-                const launcher = dialog.shellLauncher;
-                if (launcher?.isConnected && launcher.getClientRects().length) launcher.focus();
-                else document.getElementById('page-content')?.focus();
+        // Single focusable-controls source for the Tab trap and focus fallbacks.
+        // Hidden inputs, hidden/inert subtrees and negative tabindex are excluded.
+        const tabbables = root => Array.from(root.querySelectorAll(
+            'a[href], button, input:not([type="hidden"]), select, textarea, [tabindex]'
+        )).filter(el => !el.disabled && !el.hasAttribute('inert') && el.tabIndex >= 0 && usable(el));
+        const restoreFocus = (root, launcher) => {
+            if (launcher?.isConnected && usable(launcher)) launcher.focus();
+            else if (root && usable(root)) root.focus();
+            else document.getElementById('page-content')?.focus();
+        };
+        const claim = dialog => {
+            if (!shellDialogs.includes(dialog) || !dialog.open || dialog.shellDepth) return;
+            dialog.shellDepth = true;
+            if (!scrollDepth) savedOverflow = document.body.style.overflow;
+            scrollDepth++;
+            document.body.style.overflow = 'hidden';
+            document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
+                if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'true');
             });
+        };
+        const release = dialog => {
+            if (dialog.shellDepth && scrollDepth) {
+                scrollDepth--;
+                if (!scrollDepth) document.body.style.overflow = savedOverflow;
+            }
+            dialog.shellDepth = false;
+        };
+        // Pages and modules (chat dock) announce their successful showModal via
+        // this explicit event; the shell stays the only owner of scroll depth,
+        // launcher hand-off and aria-expanded, and native close does the undo.
+        // `bubbles` lets a dialog-local dispatch reach the document listener.
+        const notifyOpened = dialog => dialog.dispatchEvent(new CustomEvent('app:shell-dialog-open', { detail: { dialog }, bubbles: true, composed: true }));
+        document.addEventListener('app:shell-dialog-open', event => {
+            const dialog = event.detail?.dialog || event.target;
+            if (dialog instanceof HTMLDialogElement) claim(dialog);
+        });
+        const finishClose = dialog => {
+            if (dialog.open || !dialog.shellDepth) return;
+            release(dialog);
+            document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
+                if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'false');
+            });
+            restoreFocus(dialog, dialog.shellLauncher);
+        };
+        // The open attribute is authoritative even if a reused native dialog's
+        // queued close event has not arrived. Both paths perform cleanup once.
+        const dialogObserver = new MutationObserver(records => {
+            records.forEach(record => finishClose(record.target));
+        });
+        shellDialogs.forEach(dialog => {
+            dialogObserver.observe(dialog, { attributes: true, attributeFilter: ['open'] });
+            dialog.addEventListener('cancel', event => {
+                if (event.defaultPrevented) return;
+                // Use the same explicit close path for Escape and close buttons.
+                event.preventDefault();
+                dialog.close();
+            });
+            dialog.addEventListener('close', () => finishClose(dialog));
             dialog.addEventListener('keydown', event => {
                 if (event.key !== 'Tab') return;
-                const controls = Array.from(dialog.querySelectorAll('a[href], button, input, select, textarea, [tabindex="0"]'))
-                    .filter(el => el.getClientRects().length && !el.disabled);
+                const controls = tabbables(dialog);
+                if (!controls.length) { event.preventDefault(); dialog.focus(); return; }
                 const first = controls[0], last = controls[controls.length - 1];
-                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+                if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog)) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialog)) { event.preventDefault(); first.focus(); }
             });
             dialog.addEventListener('click', event => {
                 const rect = dialog.getBoundingClientRect();
@@ -142,12 +235,9 @@
         });
         function openDialog(dialog, launcher = document.activeElement) {
             if (!dialog || dialog.open) return;
-            dialog.shellLauncher = launcher;
-            if (!scrollDepth++) { oldOverflow = document.body.style.overflow; document.body.style.overflow = 'hidden'; }
+            dialog.shellLauncher = launcher || document.activeElement;
             dialog.showModal();
-            document.querySelectorAll('[data-dialog-open]').forEach(trigger => {
-                if (trigger.dataset.dialogOpen === dialog.id) trigger.setAttribute('aria-expanded', 'true');
-            });
+            notifyOpened(dialog);
         }
         async function openInvites(launcher) {
             const dialog = document.getElementById('invite-dialog');
@@ -216,7 +306,8 @@ const AttentionPreferences = {
     },
     visible(item, preferences) {
         // Persisted messages cannot be suppressed until mandatory notice kinds have a contract.
-        return item.kind === 'notification' || (item.kind === 'connection' && preferences.connections) || (item.kind === 'task' && preferences.tasks);
+        return item.kind === 'notification' || (item.kind === 'connection' && preferences.connections) ||
+            ((item.kind === 'task' || item.kind === 'delivery') && preferences.tasks);
     },
     quietNow(preferences, now = new Date()) {
         if (!preferences.quiet) return false;
@@ -322,18 +413,9 @@ function notificationPreferences(userId, csrf) {
 }
 
 function notificationsBell(csrf, workspaceId, userId) {
-    const destinationRoots = ['', '/app/settings?tab=connections', '/app/tasks', '/app/sources', '/app/analytics', '/app/digests', '/app/scenarios'];
-    const destinations = new Set(destinationRoots);
-    const validDestination = (value) => {
-        if (destinations.has(value)) return true;
-        if (typeof value !== 'string' || !value.startsWith('/app/tasks/')) return false;
-        const rest = value.slice('/app/tasks/'.length);
-        return /^[1-9][0-9]*$/.test(rest);
-    };
     return {
         openModal: false, loading: false, items: [], error: '', pending: false,
         hasMore: false, complete: false, contextChanged: false, generation: 0,
-        backingTaskEvents: new Map(),
         preferences: AttentionPreferences.defaults(), preferencesOpen: false, popupVisible: false, popupKeys: new Set(), primed: false,
         preferenceRequestId: 0,
         init() {
@@ -363,7 +445,6 @@ function notificationsBell(csrf, workspaceId, userId) {
                 this.preferenceRequestId++;
                 this.contextChanged = true;
                 this.items = [];
-                this.backingTaskEvents.clear();
             }, { once: true });
         },
         headers() { return { Accept: 'application/json', 'X-App-Workspace': String(workspaceId), 'X-App-User': String(userId) }; },
@@ -390,80 +471,39 @@ function notificationsBell(csrf, workspaceId, userId) {
         matches(data) { return data?.context?.workspace_id === workspaceId && data?.context?.user_id === userId; },
         reset(message) {
             this.generation++; this.preferenceRequestId++; this.items = []; this.hasMore = false; this.complete = false;
-            this.backingTaskEvents.clear();
             this.loading = false; this.pending = false; this.contextChanged = true; this.error = message;
             this.popupVisible = false; this.popupKeys.clear();
             if (this.openModal) this.$nextTick(() => this.$refs.dialog?.focus());
             this.updateDockSpace();
         },
         validItem(item) {
-            return item && typeof item.key === 'string' && item.key.length > 0 &&
-                ['notification', 'connection', 'task'].includes(item.kind) &&
-                item.workspace_id === workspaceId && item.scope === (item.kind === 'connection' ? 'personal' : 'workspace') &&
-                ['none', 'read', 'open'].includes(item.action) && validDestination(item.destination) &&
-                (item.kind !== 'connection' || (item.read_id === null && item.destination === '/app/settings?tab=connections')) &&
-                typeof item.title === 'string' && typeof item.message === 'string' && typeof item.created_at === 'string' &&
-                (item.task_id === undefined || (['task', 'notification'].includes(item.kind) && Number.isSafeInteger(item.task_id) && item.task_id > 0)) &&
-                (item.kind !== 'notification' || item.task_id === undefined || item.current_task_key !== undefined) &&
-                (item.current_task_key === undefined || (item.kind === 'notification' && Number.isSafeInteger(item.task_id) &&
-                    (item.current_task_key === null || (typeof item.current_task_key === 'string' && item.current_task_key.startsWith(`task:${workspaceId}:${item.task_id}:failed:`))))) &&
-                (item.failure_key === undefined || item.failure_key === null || (typeof item.failure_key === 'string' && item.failure_key === item.current_task_key)) &&
-                (item.backing_event === undefined || (item.kind === 'task' && item.backing_event &&
-                    typeof item.backing_event.key === 'string' && new RegExp(`^notification:${workspaceId}:[1-9][0-9]*$`).test(item.backing_event.key) &&
-                    item.backing_event.failure_key === item.key &&
-                    typeof item.backing_event.created_at === 'string')) &&
-                (item.read_id === null || (Number.isSafeInteger(item.read_id) && item.read_id > 0));
+            if (!item || typeof item.key !== 'string' || !item.key || item.scope !== 'personal' ||
+                typeof item.title !== 'string' || typeof item.message !== 'string' || typeof item.created_at !== 'string') return false;
+            if (item.kind === 'notification') return item.user_id === userId &&
+                Number.isSafeInteger(item.workspace_id) && item.workspace_id > 0 &&
+                Number.isSafeInteger(item.id) && item.id > 0 && item.read_id === item.id && item.action === 'read' &&
+                item.key === `notification:user:${userId}:${item.id}` && item.destination === `/app/notifications/open/${item.id}`;
+            if (item.kind === 'delivery') return item.user_id === userId &&
+                Number.isSafeInteger(item.workspace_id) && item.workspace_id > 0 && item.read_id === null && item.action === 'open' &&
+                item.key.startsWith(`delivery:${item.workspace_id}:${userId}:`) &&
+                item.destination === `/app/notifications/delivery/${item.workspace_id}`;
+            return item.kind === 'connection' && item.workspace_id === workspaceId && item.read_id === null &&
+                item.action === 'open' && item.destination === '/app/settings?tab=connections';
         },
         reconcile(data) {
             const unavailable = data.unavailable ?? [];
-            if (!Array.isArray(unavailable) || unavailable.some(source => !['connections', 'tasks', 'messages'].includes(source)) ||
+            if (!Array.isArray(unavailable) || unavailable.some(source => !['connections', 'deliveries', 'messages'].includes(source)) ||
                 data.complete !== (unavailable.length === 0)) throw new Error('sources');
-            const kinds = { connections: 'connection', tasks: 'task', messages: 'notification' };
+            const kinds = { connections: 'connection', deliveries: 'delivery', messages: 'notification' };
             const failedKinds = new Set(unavailable.map(source => kinds[source]));
-            if (typeof data.task_events_authorized !== 'boolean' || !data.task_events_authorized || !failedKinds.has('notification')) this.backingTaskEvents.clear();
-            if (data.task_events_authorized && !failedKinds.has('notification') && !failedKinds.has('task')) {
-                for (const item of data.notifications) {
-                    const event = item.kind === 'task' ? item.backing_event : null;
-                    if (event && typeof event.key === 'string' && new RegExp(`^notification:${workspaceId}:[1-9][0-9]*$`).test(event.key) &&
-                        event.failure_key === item.key && typeof event.created_at === 'string') {
-                        this.backingTaskEvents.set(event.key, { created_at: event.created_at, failure_key: event.failure_key });
-                    }
-                }
-                while (this.backingTaskEvents.size > 100) this.backingTaskEvents.delete(this.backingTaskEvents.keys().next().value);
-            }
-            const taskStates = new Map();
-            for (const item of data.notifications) {
-                if (Number.isSafeInteger(item.task_id) && item.task_id > 0) {
-                    taskStates.set(item.task_id, item.kind === 'task' ? item.key : item.current_task_key);
-                }
-            }
-            const retained = this.items.filter(item => failedKinds.has(item.kind) && (item.state !== 'unknown' || data.task_events_authorized) &&
-                !(item.kind === 'task' && taskStates.has(item.task_id) && taskStates.get(item.task_id) !== item.key))
-                .map(item => ({ ...item, read_id: null, action: item.kind === 'notification' ? 'none' : item.action }));
+            // Keep failed categories visible as stale, never actionable. A successful
+            // refresh drops revoked receipts; no workspace task signals are synthesized.
+            const retained = this.items.filter(item => failedKinds.has(item.kind))
+                .map(item => ({ ...item, read_id: null, action: 'none' }));
             const merged = new Map([...retained, ...data.notifications].map(item => [item.key, item]));
-            const signals = new Map([...merged.values()].filter(item => item.kind === 'task').map(item => [item.key, item]));
-            const freshKeys = new Set(data.notifications.map(item => item.key)), rebound = new Set();
-            for (const item of merged.values()) {
-                const signal = item.kind === 'notification' && signals.get(item.failure_key);
-                if (!signal) continue;
-                if (freshKeys.has(item.key) && !rebound.has(signal.key)) {
-                    signal.read_id = item.read_id; rebound.add(signal.key);
-                }
-                merged.delete(item.key);
-            }
-            if (failedKinds.has('notification') && data.task_events_authorized) {
-                for (const [key, event] of this.backingTaskEvents) {
-                    if ([...merged.values()].some(item => item.key === key || (item.kind === 'task' && item.key === event.failure_key))) continue;
-                    merged.set(key, {
-                        key, kind: 'notification', scope: 'workspace', workspace_id: workspaceId,
-                        title: 'Событие требует проверки', message: 'Состояние сообщения неизвестно, источник временно недоступен.',
-                        state: 'unknown', created_at: event.created_at, destination: '', action: 'none', read_id: null
-                    });
-                }
-            }
-            const rank = { connection: 0, task: 1, notification: 2 };
+            const rank = { connection: 0, delivery: 1, notification: 2 };
             const items = [...merged.values()].sort((a, b) => rank[a.kind] - rank[b.kind] ||
-                (a.kind === 'connection' ? 0 : b.created_at.localeCompare(a.created_at) || b.key.localeCompare(a.key)));
+                b.created_at.localeCompare(a.created_at) || b.key.localeCompare(a.key));
             this.hasMore = data.has_more || items.length > 100 || (retained.length > 0 && this.hasMore);
             this.items = items.slice(0, 100); this.complete = data.complete;
         },
@@ -526,7 +566,7 @@ function notificationsBell(csrf, workspaceId, userId) {
                 if (!this.matches(data) || !data.ok) {
                     this.reset('Не удалось подтвердить доступ к сообщению. Перезагрузите страницу.'); return;
                 }
-                // Read acknowledges the shared event, never the active problem.
+                // Read acknowledges only this User receipt, never a shared event/problem.
                 this.items = this.items.filter(n => n.kind !== 'notification' || n.key !== item.key);
                 for (const n of this.items) if (n.key === item.key) n.read_id = null;
                 read = true;
@@ -538,7 +578,7 @@ function notificationsBell(csrf, workspaceId, userId) {
         },
         linkLabel(item) {
             if (item.kind === 'connection') return 'Открыть мои подключения';
-            if ((item.kind === 'task' || item.kind === 'notification') && Number.isSafeInteger(item.task_id) && item.task_id > 0) return 'Открыть задачу';
+            if (item.kind === 'delivery') return 'Открыть доставку';
             return 'Открыть раздел';
         },
         hasUnread() { return this.visibleItems().some(n => n.read_id); },

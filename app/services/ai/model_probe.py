@@ -1,9 +1,8 @@
-"""Shared offline checks, admin metadata connectivity and bounded billed requests.
+"""Shared offline checks, metadata connectivity and bounded billed requests.
 
-Web settings retain the offline ``probe_short`` contract. The admin's explicit
-short POST uses ``probe_connectivity`` (metadata only, never generation).
-``probe_real_capped`` defaults to an eight-token probe for existing callers;
-admin-supplied questions get a bounded, usable answer via the same billed client.
+``probe_short`` is local-only; ``probe_connectivity`` checks metadata without
+generation. Explicit ``probe_real_capped`` calls use the same billed client and
+may spend tokens. All real probes retain bounded output and admission controls.
 """
 
 from __future__ import annotations
@@ -33,6 +32,15 @@ def probe_status(model) -> dict[str, Any]:
     Returns ``{"ok": bool, "checks": [...], "hint": str}``. Each check is a
     ``(label, passed)`` pair for the UI. Never touches the network.
     """
+    from app.services.ai.catalog_reads import current_catalog_reads
+
+    if current_catalog_reads() is not None:
+        return {
+            "ok": False,
+            "checks": [("Доступ только к метаданным", False)],
+            "hint": "Каталог доступен для чтения. Проверка ключей и запросы не активированы.",
+            "tokens_spent": 0,
+        }
     provider = getattr(model, "provider", None)
     checks: list[tuple[str, bool]] = []
     try:
@@ -131,7 +139,10 @@ def request_parameters(model, prompt: str = "") -> tuple[str, int]:
         raise ValueError("Prompt exceeds 8000 characters")
     question = prompt.strip()
     limit = REQUEST_MAX_TOKENS if question else PROBE_MAX_TOKENS
-    return question or PROBE_PROMPT, min(limit, max(1, int(model.max_tokens)))
+    from app.services.ai.generation_policy import requested_output_limit
+
+    requested = min(limit, max(1, int(model.max_tokens)))
+    return question or PROBE_PROMPT, requested_output_limit(model, requested=requested)
 
 
 def _dispatch_ready(model) -> bool:
@@ -146,6 +157,8 @@ async def probe_connectivity(model) -> dict[str, Any]:
     works. Unsupported metadata routes must remain failures, never chat retries.
     """
     from app.services.ai.llm_client import LLMClientFactory
+    from app.services.ai.personal_dispatch import validate_personal_dispatch
+    from app.services.ai.provider_egress import provider_destination, provider_http_client
 
     result = {"ok": False, "tier": "connectivity", "tokens_spent": 0, "method": "GET /models"}
     if not _dispatch_ready(model):
@@ -155,8 +168,11 @@ async def probe_connectivity(model) -> dict[str, Any]:
     started = monotonic()
     try:
         client = LLMClientFactory.create(model)
-        async with httpx.AsyncClient(follow_redirects=False) as http:
-            response = await http.get(f"{client.base_url}/models", headers=client._headers(), timeout=PROBE_TIMEOUT)
+        await validate_personal_dispatch(client)
+        async with provider_http_client() as http:
+            response = await http.get(
+                provider_destination(client.base_url, "/models"), headers=client._headers(), timeout=PROBE_TIMEOUT
+            )
         result["http_status"] = response.status_code
         if response.status_code != 200:
             hints = {
@@ -206,6 +222,7 @@ def safe_probe_value(value, api_key: str = "", *, depth: int = 0, budget=None):
         raw = str(raw)
         raw = raw.replace(api_key, "[redacted]") if api_key else raw
         raw = re.sub(r"(?i)Bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [redacted]", raw)
+        raw = re.sub(r"gAAAAA[A-Za-z0-9_=-]+", "[redacted]", raw)
         raw = re.sub(
             r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|session(?:id)?|cookie)\s*([=:])\s*([^\s&,;\"'<>]+)",
             r"\1\2[redacted]",
@@ -223,7 +240,7 @@ def safe_probe_value(value, api_key: str = "", *, depth: int = 0, budget=None):
                 break
             label = text(key)
             sensitive = re.search(
-                r"(?i)(api.?key|authorization|access.?token|refresh.?token|password|secret|cookie|credential|session|^token$)",
+                r"(?i)(api.?key|authorization|access.?token|refresh.?token|password|secret|cookie|credential|session|cipher|^iv$|^tag$|^token$)",
                 str(key),
             )
             result[label] = (
@@ -299,7 +316,7 @@ def _real_result(observation, response=None, *, api_key="", error=None):
     return result
 
 
-async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
+async def probe_real_capped(model, prompt: str = "", *, purpose: str = "admin_probe") -> dict[str, Any]:
     """One bounded provider request using the client's active accounting mode.
 
     Never bypass admission or retry. Preserve received provider evidence even
@@ -307,6 +324,8 @@ async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
     """
     from app.services.ai.llm_client import LLMClientFactory, journal_chat_attempt
 
+    if purpose not in {"admin_probe", "model_test"}:
+        raise ValueError("Unsupported model probe purpose")
     question, max_tokens = request_parameters(model, prompt)
 
     def blocked(code, message):
@@ -340,9 +359,14 @@ async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
             [{"role": "user", "content": question}],
             max_tokens=max_tokens,
             temperature=0.0,
-            personal_billing_purpose="admin_probe",
+            personal_billing_purpose=purpose,
         )
     except Exception as exc:
+        # Only exceptions from an actual provider try carry this identity.
+        # Admission denials have none and must not fabricate a paid attempt.
+        attempt_id = getattr(exc, "dispatch_id", None)
+        if attempt_id is not None:
+            await journal_chat_attempt(client, purpose, None, dispatch_id=attempt_id)
         stage = observation.get("stage")
         if stage == "admission":
             # Match only fixed repository-owned messages. Never display arbitrary
@@ -416,17 +440,24 @@ async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
         result = _real_result(observation, api_key=client.api_key, error=error)
         if observation.get("dispatch_state") == "not_dispatched":
             result["tokens_spent"] = 0
+        hint = provider_limit_hint(result, model)
+        if hint is not None:
+            result["limit_hint"] = hint
         return result
     if not isinstance(response, dict):
-        return _real_result(
+        result = _real_result(
             observation,
             api_key=client.api_key,
             error=("invalid_response", "Ответ не подтверждён. Не повторяйте автоматически."),
         )
+        hint = provider_limit_hint(result, model)
+        if hint is not None:
+            result["limit_hint"] = hint
+        return result
     dispatch_id = response.pop("_personal_dispatch_id", None)
     journal_warning = False
     try:
-        await journal_chat_attempt(client, "admin_probe", response, dispatch_id=dispatch_id)
+        await journal_chat_attempt(client, purpose, response, dispatch_id=dispatch_id)
     except Exception:
         journal_warning = True
     result = _real_result(observation, response, api_key=client.api_key)
@@ -434,4 +465,192 @@ async def probe_real_capped(model, prompt: str = "") -> dict[str, Any]:
     if journal_warning:
         result["save_warning"] = "Ответ получен, но журнал не подтверждён. Не повторяйте вызов автоматически."
         result["accounting_status"] = "journal_unconfirmed"
+    hint = provider_limit_hint(result, model)
+    if hint is not None:
+        result["limit_hint"] = hint
     return result
+
+
+_PROVIDER_LIMIT_MESSAGES = {
+    "rate_limit": "Провайдер сообщил об ограничении частоты запросов или временной квоте.",
+    "quota": "Провайдер сообщил, что доступная квота исчерпана.",
+    "budget": "Провайдер сообщил об ограничении бюджета или баланса.",
+    "billing": "Провайдер сообщил о проблеме оплаты или баланса аккаунта.",
+    "pricing_mismatch": "Провайдер сообщил стоимость вызова при нулевом тарифе модели. Проверьте тариф в настройках.",
+}
+
+
+def _finite_limit_number(value: Any):
+    """Parse bounded JSON numeric evidence without accepting bools or infinities."""
+    from decimal import Decimal, InvalidOperation
+
+    if isinstance(value, bool) or type(value) not in (int, float, str):
+        return None
+    if isinstance(value, str) and len(value) > 64:
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    if not number.is_finite() or (number != 0 and abs(number.adjusted()) > 30):
+        return None
+    return number
+
+
+def provider_limit_hint(result: dict[str, Any], model=None) -> dict[str, str] | None:
+    """Map structured provider status/error/price evidence to fixed safe UI copy.
+
+    Never return provider text, credentials, or arbitrary response fields. A
+    provider-reported price is evidence for a warning only; it never edits the
+    configured catalog tariff. Zero token rates are not interpreted as quota.
+    """
+    if not isinstance(result, dict) or result.get("tier") != "real":
+        return None
+
+    status = result.get("http_status")
+    payload = result.get("response_json")
+    code = None
+
+    # Only inspect recognized limit containers, never model-generated choices,
+    # arbitrary metadata or free-text response content.
+    limit_containers = {
+        "limits": "budget",
+        "quota": "quota",
+        "quotas": "quota",
+        "budget": "budget",
+        "budgets": "budget",
+        "rate_limit": "rate_limit",
+        "rate_limits": "rate_limit",
+        "usage_limit": "budget",
+        "usage_limits": "budget",
+        "daily_limit": "budget",
+        "billing": "billing",
+        "credits": "quota",
+    }
+    exhausted_flags = {"exhausted", "exceeded", "limit_exceeded", "quota_exceeded", "rate_limited", "limit_reached"}
+    remaining_fields = {
+        "remaining",
+        "remaining_quota",
+        "quota_remaining",
+        "remaining_budget",
+        "budget_remaining",
+        "credits_remaining",
+    }
+    if isinstance(payload, dict):
+        for container_name, category in limit_containers.items():
+            container = payload.get(container_name)
+            if not isinstance(container, dict):
+                continue
+            nodes = [(container, category)]
+            for key in ("daily", "monthly", "requests", "tokens", "current"):
+                nested = container.get(key)
+                if isinstance(nested, dict):
+                    nested_category = "rate_limit" if key == "requests" else "quota" if key == "tokens" else category
+                    nodes.append((nested, nested_category))
+            for node, node_category in nodes:
+                if any(node.get(flag) is True for flag in exhausted_flags):
+                    code = node_category
+                    break
+                for field in remaining_fields:
+                    amount = _finite_limit_number(node.get(field))
+                    if amount is not None and amount <= 0:
+                        code = node_category
+                        break
+                if code is None and "limit" in node and "used" in node:
+                    limit = _finite_limit_number(node["limit"])
+                    used = _finite_limit_number(node["used"])
+                    if limit is not None and used is not None and limit > 0 and used >= limit:
+                        code = node_category
+                if code is not None:
+                    break
+            if code is not None:
+                break
+
+    fragments: list[str] = []
+    if isinstance(payload, dict):
+        provider_error = payload.get("error")
+        if isinstance(provider_error, dict):
+            for field in ("code", "type", "message", "status"):
+                value = provider_error.get(field)
+                if isinstance(value, (str, int)) and not isinstance(value, bool):
+                    fragments.append(str(value).lower()[:180])
+        elif isinstance(provider_error, str):
+            fragments.append(provider_error.lower()[:180])
+        for field in ("error_code", "error_type", "error_message"):
+            value = payload.get(field)
+            if isinstance(value, str):
+                fragments.append(value.lower()[:180])
+    error_code = result.get("error_code")
+    if isinstance(error_code, str):
+        fragments.append(error_code.lower()[:160])
+    response_body = result.get("response_body")
+    if isinstance(response_body, str):
+        fragments.append(response_body.lower()[:2000])
+    text = " ".join(fragments)
+
+    # A structured exhaustion signal wins over generic HTTP 429/402. Otherwise
+    # classify the provider's explicit error fields, then generic status.
+    if code is None:
+        if any(
+            term in text
+            for term in (
+                "insufficient_quota",
+                "quota_exceeded",
+                "quota exceeded",
+                "out of quota",
+                "quota exhausted",
+                "credits exhausted",
+            )
+        ):
+            code = "quota"
+        elif any(
+            term in text
+            for term in (
+                "rate_limit",
+                "rate limit",
+                "too many requests",
+                "requests per minute",
+                "rpm_limit",
+                "tpm_limit",
+            )
+        ):
+            code = "rate_limit"
+        elif any(
+            term in text
+            for term in (
+                "budget_exceeded",
+                "budget exceeded",
+                "spending limit",
+                "monthly limit",
+                "daily limit",
+                "usage limit",
+            )
+        ):
+            code = "budget"
+        elif any(
+            term in text
+            for term in ("billing", "payment required", "payment method", "insufficient balance", "no credits")
+        ):
+            code = "billing"
+
+    if code is None and status == 429:
+        code = "rate_limit"
+    elif code is None and status == 402:
+        code = "billing"
+
+    if code is None and model is not None:
+        provider_cost = result.get("provider_cost_usd")
+        try:
+            from decimal import Decimal, InvalidOperation
+
+            reported = Decimal(str(provider_cost))
+            configured = (
+                Decimal(str(getattr(model, "input_cost_per_1k", 0))) == 0
+                and Decimal(str(getattr(model, "output_cost_per_1k", 0))) == 0
+            )
+            if configured and reported.is_finite() and reported > 0:
+                code = "pricing_mismatch"
+        except (InvalidOperation, ValueError, TypeError):
+            pass
+
+    return {"code": code, "message": _PROVIDER_LIMIT_MESSAGES[code]} if code else None

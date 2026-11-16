@@ -24,6 +24,8 @@ class TableRegistryAdmin(BaseView):
     name = "Реестр таблиц"
     name_plural = "Реестр таблиц"
     icon = "fa fa-database"
+    category = "Система"
+    category_icon = "fa fa-database"
 
     def _is_owner(self, request: Request) -> bool:
         user = request.state.admin_user if getattr(request.state, "admin_user", None) is not None else None

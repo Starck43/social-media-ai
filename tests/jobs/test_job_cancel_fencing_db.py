@@ -1,7 +1,8 @@
 """Prepared cancellation concurrency checks; owner execution only.
 
-Uses the existing reviewed test schema via the claim DB fixture. No conftest,
-bootstrap/reset/migrations, provider or live calls. Run sequentially with other
+Uses the existing reviewed test schema via the claim DB fixture. Pytest keeps
+the root conftest and real tenant guards. No bootstrap/reset/migrations,
+provider or live calls. Run sequentially with other
 DB/pytest processes. Only this test's generated tenants/rows are cleaned up.
 """
 
@@ -11,6 +12,7 @@ from dataclasses import replace
 from datetime import timedelta
 from unittest.mock import patch
 
+import pytest
 import test_job_claim_outcomes_db as db_fixtures
 from sqlalchemy import event
 
@@ -18,6 +20,8 @@ from app.core import database as database_module
 from app.core.database import async_session_maker
 from app.core.tenant_context import TenantContextError, tenant_scope
 from app.jobs.claim_outcomes import OutcomeAck
+
+pytestmark = pytest.mark.tenancy
 
 
 class CancelDatabaseTests(unittest.IsolatedAsyncioTestCase):

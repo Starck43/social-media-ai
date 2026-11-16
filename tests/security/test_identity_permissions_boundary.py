@@ -94,8 +94,12 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         with self.tenant.tenant_scope(31), p.permission_scope(self.user, is_owner=True):
             for model in ("source", "agenttask", "agentscenario"):
                 self.assertTrue(p.has_permission(self.user, model, "create"))
-            for model in ("llmmodel", "llmprovider", "user", "role", "permission", "unknown"):
+            for model in ("user", "role", "permission", "unknown"):
                 self.assertFalse(p.has_permission(self.user, model, "delete"), model)
+            # No workspace preset reaches the personal catalog, but its own
+            # owner branch answers for this user's rows (`e14c395`).
+            for model in ("llmmodel", "llmprovider"):
+                self.assertTrue(p.has_permission(self.user, model, "delete"), model)
             self.assertTrue(p.has_permission(self.user, "job", "delete"))
             self.assertTrue(p.has_permission(self.user, "tenant", "update"))
             self.assertFalse(p.has_role(self.user, "ADMIN"))
@@ -136,12 +140,18 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(p.has_role(self.user, "UNKNOWN"))
 
     def test_explicit_operator_scope_and_real_role_rights_preserved(self):
-        with self.tenant.tenant_scope(bypass=True):
+        with self.tenant.tenant_scope(bypass=True), self.perms.operator_permission_scope():
             self.assertTrue(self.perms.has_permission(None, "llmmodel", "delete"))
             self.assertTrue(self.perms.has_role(None, "ADMIN"))
+        # The personal catalog follows the *acting user* only (`e14c395`): it is
+        # outside any workspace preset and inside a tenant it is answered by
+        # that branch alone, never by the account's predicate.
         self.user.has_perm_for = lambda model, action: model == "llmmodel" and action == self.action.VIEW
-        self.assertTrue(self.perms.has_permission(self.user, "llmmodel", "view"))
+        self.assertFalse(self.perms.has_permission(self.user, "llmmodel", "view"))
         self.assertFalse(self.perms.has_permission(self.user, "llmmodel", "delete"))
+        with self.tenant.tenant_scope(31), self.perms.permission_scope(self.user):
+            self.assertTrue(self.perms.has_permission(self.user, "llmmodel", "view"))
+            self.assertTrue(self.perms.has_permission(self.user, "llmmodel", "delete"))
         self.user.has_perm_for = lambda *args: (_ for _ in ()).throw(RuntimeError("detached"))
         self.assertFalse(self.perms.has_permission(self.user, "llmmodel", "view"))
 
@@ -195,7 +205,10 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         def sync(*, current_user=None):
             calls.append("sync")
 
-        @p.require_permission("llmmodel", "create")
+        # The owner preset stops at the workspace; the platform catalog (`role`
+        # is account scope) is outside it, so the right is refused and the
+        # decorator must answer from the same predicate the manager uses.
+        @p.require_permission("role", "update")
         async def async_write(*, current_user=None):
             calls.append("async")
 
@@ -205,6 +218,9 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(p.PermissionDeniedError):
                 await async_write()
         with self.tenant.tenant_scope(31), p.permission_scope(self.user, is_owner=True):
+            # The user carries no platform grant and no preset right here: the
+            # decorator re-asks through `has_permission` and both stay refused
+            # before any side effect.
             with self.assertRaises(p.PermissionDeniedError):
                 sync(current_user=None)
             with self.assertRaises(p.PermissionDeniedError):
@@ -235,9 +251,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         async def downstream(scope, receive, send):
             observations.append((self.perms.get_current_user(), self.tenant.current_tenant_id()))
             self.assertFalse(
-                self.perms.has_permission_by_codename(
-                    self.perms.get_current_user(), "collection.source.delete"
-                )
+                self.perms.has_permission_by_codename(self.perms.get_current_user(), "collection.source.delete")
             )
 
         middleware = api.ApiScopeMiddleware(downstream)

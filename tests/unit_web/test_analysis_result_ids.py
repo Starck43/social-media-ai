@@ -76,6 +76,15 @@ def load_handlers(fresh_rows):
         "app.jobs": SimpleNamespace(progress=progress),
         "app.services.ai.analyzer": SimpleNamespace(AIAnalyzer=Analyzer),
         "app.services.ai.dedup": SimpleNamespace(analysed_hashes=Mock(return_value=set())),
+        # Staged analysis re-checks subscription rights before spending; the
+        # ledger itself is exercised by its own tests, so it is a deny-nothing double.
+        "app.models.managers.entitlement_manager": SimpleNamespace(
+            EntitlementManager=lambda: SimpleNamespace(admit_execution=AsyncMock())
+        ),
+        "app.services.collection.entitlements": SimpleNamespace(
+            intent_capabilities=lambda *args, **kwargs: frozenset(),
+            source_capabilities=lambda sources: frozenset(),
+        ),
     }
     module = load_isolated_source("_analysis_result_ids_handlers", ROOT / "app/jobs/handlers.py", imports)
     module._load_task = AsyncMock(return_value=None)

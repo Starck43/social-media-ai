@@ -89,6 +89,9 @@ async def harness():
         ]
     )
     target.create_template = target.edit_template = "isolated-form.html"
+    # The console shell renders a meta token (S2); this harness boots no app
+    # globals, so it publishes an inert one.
+    admin.templates.env.globals.setdefault("csrf_token", lambda: "synthetic-token")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://offline.test") as client:
         yield NS(admin=admin, target=target, parent=parent, client=client, obj=obj)
 

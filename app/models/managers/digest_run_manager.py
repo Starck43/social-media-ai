@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Optional
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from ..digest_run import DigestRun
+    from ..notifications.digest_run import DigestRun
 
 
 # Error prefix of a scheduled run whose delivery reached some recipients but not all.
@@ -48,7 +48,7 @@ class DigestRunManager(BaseManager["DigestRun"]):
     """Manager for digest runs: idempotency per (schedule, period)."""
 
     def __init__(self):
-        from ..digest_run import DigestRun
+        from ..notifications.digest_run import DigestRun
 
         super().__init__(DigestRun)
 

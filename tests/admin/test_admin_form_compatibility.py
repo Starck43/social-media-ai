@@ -5,14 +5,14 @@ from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace as NS
 
-from app.types import ActionType
-
 import pytest
 from source_import_isolation import load_isolated_source
 from sqlalchemy import DOUBLE, FLOAT, REAL, Column, Double, Float, Integer, Numeric, inspect
 from sqlalchemy.orm import DeclarativeBase
 from starlette.datastructures import FormData
 from wtforms import DecimalField, FloatField
+
+from app.types import ActionType
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -50,7 +50,7 @@ def tenant_case(base_source=None):
     base = admin_source(base_source)
     node = next(
         n
-        for n in ast.parse((ROOT / "app/admin/views.py").read_text()).body
+        for n in ast.parse((ROOT / "app/admin/view_modules/users.py").read_text()).body
         if isinstance(n, ast.ClassDef) and n.name == "TenantAdmin"
     )
     ns = {

@@ -1,6 +1,6 @@
 """Real home acceptance on the existing approved target, without DB bootstrap.
 
-Run only through Kilo/pare-test with --noconftest. Resolve the test target before
+Run only through test-runner/pare-test with --noconftest. Resolve the test target before
 application imports; create and remove only this module's own synthetic rows.
 """
 
@@ -84,13 +84,15 @@ from app.models import (  # noqa: E402
     User,
     WorkspaceRole,
 )
-from app.models.agent_task import agent_task_sources  # noqa: E402
 from app.models.base import Base  # noqa: E402
+from app.models.identity.role import role_permission  # noqa: E402
 from app.models.managers.agent_task_manager import AgentTaskManager  # noqa: E402
 from app.models.managers.tenant_manager import TenantUserManager, tenants  # noqa: E402
-from app.models.role import role_permission  # noqa: E402
+from app.models.scheduling.agent_task import agent_task_sources  # noqa: E402
 from app.types import ActionType, PlatformRoleType, SourceType, WorkspaceRoleType  # noqa: E402
 from app.web import dashboard  # noqa: E402
+from tests.p11_t12_audit_cleanup import purge_tenant_audit_events  # noqa: E402
+from tests.shared.platform_catalog import shared_platform
 from tests.web.test_web_settings import PASSWORD, _client, _login, _name, _register  # noqa: E402
 
 pytestmark = pytest.mark.tenancy
@@ -147,9 +149,7 @@ async def home():
                 user, tenant_id = await _register(client, prefix)
                 users.append(user)
                 tenant_ids.append(tenant_id)
-        platform = await Platform.objects.create(
-            name=_name("HomePlatform"), platform_type="telegram", base_url="https://example.invalid", params={}
-        )
+        platform = await shared_platform("telegram")
         with tenant_scope(bypass=True), operator_permission_scope():
             for index, tenant_id in enumerate(tenant_ids):
                 next_run = datetime.now(timezone.utc) + timedelta(hours=1)
@@ -266,9 +266,8 @@ async def home():
             for user in users:
                 await User.objects.delete_user(user.id)
             for tenant_id in tenant_ids:
+                await purge_tenant_audit_events(tenant_id)
                 await tenants.delete_by_id(tenant_id)
-            if platform is not None:
-                await Platform.objects.delete_by_id(platform.id)
 
 
 async def actor(home, level):

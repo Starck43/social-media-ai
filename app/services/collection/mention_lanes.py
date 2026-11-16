@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 
 # A note is one operator sentence; refuse/missing lists stay a bounded sample.
 MAX_NOTE = 200
-MAX_TEXT = 160
 
 
 def mention_lane_queries(intent: "CollectionIntent") -> tuple[str, ...]:
@@ -37,10 +36,6 @@ def mention_lane_queries(intent: "CollectionIntent") -> tuple[str, ...]:
         # not by this query.
         return (" ".join(intent.queries),) if intent.queries else ()
     return intent.queries
-
-
-def _brief(text: Any, limit: int = MAX_TEXT) -> str:
-    return " ".join(str(text or "").split())[:limit]
 
 
 def mention_note(summary: Mapping[str, Any]) -> str:

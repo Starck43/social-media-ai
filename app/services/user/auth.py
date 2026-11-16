@@ -10,6 +10,10 @@ from starlette.responses import RedirectResponse
 
 from app.core.config import settings
 from app.models import User
+from app.services.user.login_protection import verify_dummy_password
+
+#: One answer for an unknown account, a wrong password and an inactive account.
+GENERIC_LOGIN_ERROR = "Incorrect username/email or password"
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=settings.TOKEN_URL, auto_error=False)
 
@@ -87,23 +91,25 @@ async def authenticate(username_or_email: str, password: str, password_hasher: c
 	user = await User.objects.get_by_username_or_email(username_or_email)
 
 	if not user:
-		# Don't reveal whether the user exists or not for security
-		password_hasher("dummy_password", "dummy_hash")  # Prevent timing attacks
+		# A real bcrypt hash is verified, so an unknown account costs the same
+		# wall-clock time as a wrong password for an existing one.
+		await verify_dummy_password(password)
 		raise HTTPException(
 			status_code=status.HTTP_400_BAD_REQUEST,
-			detail="Incorrect username/email or password",
+			detail=GENERIC_LOGIN_ERROR,
 		)
 
 	if not password_hasher(password, user.hashed_password):
 		raise HTTPException(
 			status_code=status.HTTP_400_BAD_REQUEST,
-			detail="Incorrect username/email or password",
+			detail=GENERIC_LOGIN_ERROR,
 		)
 
 	if not user.is_active:
+		# Same answer as a wrong password: inactivity is not an enumeration hint.
 		raise HTTPException(
 			status_code=status.HTTP_400_BAD_REQUEST,
-			detail="Inactive user"
+			detail=GENERIC_LOGIN_ERROR,
 		)
 
 	return user

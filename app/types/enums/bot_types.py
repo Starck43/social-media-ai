@@ -156,12 +156,12 @@ class GroupingAxis(str, Enum):
     grouping via ``TOPIC_CHAINS``.
     """
 
-    DAYS          = "days"
-    THEMES        = "themes"
-    SOURCES       = "sources"
-    ENTITIES      = "entities"
-    INTENT        = "intent"
-    TOPIC_CHAINS  = "topic_chains"
+    DAYS = "days"
+    THEMES = "themes"
+    SOURCES = "sources"
+    ENTITIES = "entities"
+    INTENT = "intent"
+    TOPIC_CHAINS = "topic_chains"
 
     @property
     def display_name(self) -> str:
@@ -182,6 +182,9 @@ class BotActionStatus(DatabaseEnum, Enum):
     PENDING = ("pending", "Ожидает", "⏳")
     APPROVED = ("approved", "Одобрено", "✅")
     REJECTED = ("rejected", "Отклонено", "❌")
+    CLAIMED = ("claimed", "Захвачено", "🔒")
+    UNKNOWN = ("unknown", "Исход неизвестен", "❓")
+    CANCELLED = ("cancelled", "Отменено", "⛔")
     EXECUTED = ("executed", "Выполнено", "🚀")
     FAILED = ("failed", "Ошибка", "⚠️")
 

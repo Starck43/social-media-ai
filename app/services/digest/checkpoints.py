@@ -12,6 +12,8 @@ from copy import deepcopy
 from hashlib import sha256
 from typing import Any
 
+from app.utils.identifiers import strict_positive_int as _positive_id
+
 _STATUSES = {"pending", "in_flight", "sent", "rejected", "uncertain", "blocked"}
 _TRANSITIONS = {
     "pending": {"in_flight", "blocked"},
@@ -27,10 +29,6 @@ class CheckpointError(ValueError):
 def _require(condition: bool) -> None:
     if not condition:
         raise CheckpointError("Invalid or mismatched digest checkpoint")
-
-
-def _positive_id(value: Any) -> bool:
-    return type(value) is int and value > 0
 
 
 def _text(value: Any) -> bool:

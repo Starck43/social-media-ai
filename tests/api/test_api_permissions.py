@@ -91,11 +91,16 @@ async def _invitee(prefix: str, workspace_role: WorkspaceRoleType, tenant_id: in
 
 
 async def _drop(user: User | None, tenant_id: int | None) -> None:
-    if user is not None:
-        await User.objects.delete_user(user.id)
     if tenant_id is not None:
+        # Action-audit evidence holds a RESTRICT FK on the workspace; clear it
+        # through the supported retention path before the tenant row goes.
+        from tests.p11_t12_audit_cleanup import purge_tenant_audit_events
+
+        await purge_tenant_audit_events(tenant_id)
         with tenant_scope(bypass=True):
             await tenants.delete_by_id(tenant_id)
+    if user is not None:
+        await User.objects.delete_user(user.id)
 
 
 async def _platform_value() -> int:
@@ -374,6 +379,7 @@ async def test_sources_api_refuses_a_null_update_field() -> None:
 
 
 # ── Tasks CRUD tests ────────────────────────────────────────────────────────
+
 
 async def test_tasks_crud() -> None:
     """Full CRUD cycle for tasks."""

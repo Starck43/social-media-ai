@@ -1,6 +1,7 @@
 """Isolated stdlib checks of the actual runner helper; no app/DB imports.
 
-Execute only through the project's Kilo/test-runner/pare-test route.
+Execute only through the project's test-runner/pare-test route (Perch is the
+Codex external fallback).
 """
 
 import ast

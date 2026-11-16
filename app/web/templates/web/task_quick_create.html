@@ -1,0 +1,11 @@
+{% extends "web/base.html" %}
+{% block title %}Новое дело — AI Assistant{% endblock %}
+{% block page_heading %}Подготовить задачу{% endblock %}
+{% block content %}
+<div class="max-w-2xl space-y-5">{% include "web/_task_tabs.html" %}
+<section class="ui-card space-y-4"><h2 class="text-lg font-semibold">Новое дело</h2><p class="ui-muted">Создайте дело в планировщике. Исходное сообщение или документ останется в своём разделе.</p>
+{% if context %}<a class="underline" href="{{ context.href }}">Открыть источник</a>{% endif %}
+<form method="post" action="/app/task-hub/new" class="space-y-4"><input type="hidden" name="_csrf" value="{{ csrf }}">
+{% if origin %}<input type="hidden" name="origin" value="{{ origin }}"><input type="hidden" name="origin_id" value="{{ origin_id }}">{% endif %}{% if boundary %}<input type="hidden" name="boundary" value="{{ boundary }}">{% endif %}{% if thread_id %}<input type="hidden" name="thread_id" value="{{ thread_id }}">{% endif %}
+<label class="block">Название<input class="ui-control mt-2 min-h-[44px] w-full" name="title" maxlength="500" required></label><label class="block">Описание<textarea class="ui-control mt-2 min-h-[44px] w-full" name="description" maxlength="20000" rows="4"></textarea></label><button class="ui-control min-h-[44px]" type="submit">Создать дело</button></form></section></div>
+{% endblock %}

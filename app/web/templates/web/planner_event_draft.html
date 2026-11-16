@@ -1,0 +1,11 @@
+{% extends "web/base.html" %}
+{% block title %}Черновик поздравления — AI Assistant{% endblock %}
+{% block page_heading %}Черновик поздравления{% endblock %}
+{% block content %}
+<section class="ui-card space-y-4" aria-labelledby="draft-heading">
+    <h2 id="draft-heading" class="text-lg font-semibold">{{ draft.subject }}</h2>
+    <p class="whitespace-pre-wrap break-words">{{ draft.draft_text }}</p>
+    <p class="ui-muted">Черновик создан. Отправка не выполнялась.</p>
+    <a class="ui-control inline-flex min-h-[44px]" href="/app/planner">Вернуться к задачам</a>
+</section>
+{% endblock %}

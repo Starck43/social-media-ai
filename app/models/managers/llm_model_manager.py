@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Optional
 from .base_manager import BaseManager
 
 if TYPE_CHECKING:
-    from ..agent_scenario import AgentScenario
-    from ..ai_analytics import AIAnalytics
-    from ..llm_model import LLMModel
-    from ..llm_provider import LLMProvider
+    from ..analysis.agent_scenario import AgentScenario
+    from ..analysis.ai_analytics import AIAnalytics
+    from ..llm.llm_model import LLMModel
+    from ..llm.llm_provider import LLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class LLMModelManager(BaseManager):
     """Manager for LLMModel operations."""
 
     def __init__(self):
-        from ..llm_model import LLMModel
+        from ..llm.llm_model import LLMModel
 
         super().__init__(LLMModel)
 
@@ -293,7 +293,7 @@ class LLMModelManager(BaseManager):
         from sqlalchemy import func, or_, select
         from app.core.personal_catalog_context import current_catalog_owner_id
         from app.services.ai.personal_catalog import lock_owner, require_actor, set_default_in_session
-        from ..llm_model import LLMModel
+        from ..llm.llm_model import LLMModel
         from sqlalchemy.orm import selectinload
 
         owner_id = current_catalog_owner_id()
@@ -303,8 +303,8 @@ class LLMModelManager(BaseManager):
             model = await self.get(id=model_id, owner_user_id=owner_id, session=session)
             if model is None:
                 raise ValueError("Model unavailable")
-            from ..agent_scenario import AgentScenario
-            from ..tenant import Tenant
+            from ..analysis.agent_scenario import AgentScenario
+            from ..tenancy import Tenant
 
             model_type = model.model_type
             was_default, caps = model.is_default, set(model.capabilities)
@@ -356,7 +356,7 @@ class LLMModelManager(BaseManager):
         2. Same type, active, name in distinct ai_analytics.llm_model
         3. Same type, active
         """
-        from ..ai_analytics import AIAnalytics
+        from ..analysis.ai_analytics import AIAnalytics
         from app.services.ai.llm_client import default_model_sort_key
 
         # Get all active models of this type with provider prefetched

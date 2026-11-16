@@ -24,6 +24,7 @@ class NotificationType(DatabaseEnum, Enum):
     SYSTEM_UPDATE = ("system_update", "Обновление системы", "🔄")
     SUBSCRIBED_ACTIVITY = ("subscribed_activity", "Активность подписки", "🔔")
     KEYWORD_MENTION = ("keyword_mention", "Упоминание ключевого слова", "🔑")
+    SOURCE_AUTH_REQUIRED = ("source_auth_required", "Нужен личный доступ", "🔐")
 
     def __init__(self, db_value, display_name, emoji):
         self._db_value = db_value

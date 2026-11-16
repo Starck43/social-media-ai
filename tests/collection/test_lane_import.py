@@ -44,6 +44,7 @@ from app.services.collection.lane_import import (
     resolve_lane_targets,
 )
 from app.types import SourceType
+from tests.shared.platform_catalog import shared_platform
 
 # --- parsing (no database) --------------------------------------------------
 
@@ -443,14 +444,8 @@ async def platform():
     if existing is not None:
         yield existing
         return
-    created = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type="vk",
-        base_url="https://vk.com",
-        params={},
-    )
+    created = await shared_platform("vk")
     yield created
-    await Platform.objects.delete_by_id(created.id)
 
 
 @pytest.fixture

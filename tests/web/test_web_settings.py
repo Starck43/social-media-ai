@@ -1,6 +1,6 @@
 """`/app/settings` — workspace, team, personal keys, channels (stage G).
 
-The page is where `docs/TENANCY.md` stops being a document and becomes UI, so
+The page is where `docs/platform/TENANCY.md` stops being a document and becomes UI, so
 the tests below pin the three rules that decide who owns what:
 
 * **a workspace owns itself** — profile and team use a bound settings capability,
@@ -55,7 +55,15 @@ def test_unknown_tab_falls_back_to_workspace() -> None:
     assert _tab_of(_R("credentials")) == "connections"
     # A hand-typed tab must not reach a template branch that does not exist.
     assert _tab_of(_R("../../admin")) == "workspace"
-    assert set(TABS) == {"account", "workspace", "team", "connections", "models", "agent", "channels"}
+    assert set(TABS) == {
+        "account",
+        "workspace",
+        "team",
+        "connections",
+        "models",
+        "agent",
+        "channels",
+    }
     assert _tab_of(_R("account")) == "account"
 
 
@@ -178,7 +186,7 @@ async def test_the_workspace_tab_shows_the_tier_and_the_comparison() -> None:
     template, so a limit the runtime enforces and a limit the pricing page shows
     cannot drift apart without a test going red.
     """
-    from app.models.tenant import Tenant
+    from app.models.tenancy.tenant import Tenant
 
     async with await _client() as client:
         user, tenant_id = await _register(client, "PlanView")
@@ -208,7 +216,7 @@ async def test_a_non_owner_cannot_change_the_tier() -> None:
     The form is hidden for non-superusers, so this asserts the handler too —
     hiding a button is not a check.
     """
-    from app.models.tenant import Tenant
+    from app.models.tenancy.tenant import Tenant
 
     async with await _client() as client:
         owner, tenant_id = await _register(client, "PlanOwner")

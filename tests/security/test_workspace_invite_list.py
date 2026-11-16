@@ -40,11 +40,17 @@ async def _issue(client, role: str, days: int = 7) -> str:
 
 
 async def _revoke(client, invite_id: int):
+    """Revoke an invite; return `(page, dialog)` with the outcome and the list.
+
+    The POST answers 302 to `?tab=team&invite_dialog=1`: the page there carries
+    the flash, while the open-invite list lives in the on-demand dialog
+    `/app/settings/invites`, which the browser loads next. Both are fetched in
+    that order — the redirect target must be followed as one request, because a
+    separate `?tab=team` GET afterwards consumes the flash with nothing to show.
+    """
     token = await _csrf(client, "/app/settings?tab=team")
-    response = await client.post(f"/app/settings/invites/{invite_id}/revoke", data={"_csrf": token})
-    if "invite_dialog=1" in str(response.url):
-        return await client.get("/app/settings/invites")
-    return response
+    page = await client.post(f"/app/settings/invites/{invite_id}/revoke", data={"_csrf": token}, follow_redirects=True)
+    return page, await client.get("/app/settings/invites")
 
 
 async def _new_user(prefix: str) -> User:
@@ -85,12 +91,14 @@ async def test_owner_sees_open_invites_and_a_revoked_code_no_longer_joins() -> N
             assert code not in page.text
 
             open_rows = await TenantInviteManager().open_for_tenant(tenant_id)
-            analyst_id = [row.id for row in open_rows if row.id in ids][-1]
-            resp = await _revoke(c, analyst_id)
+            # `open_for_tenant` is newest-first, so `[-1]` would be the analyst
+            # (issued first); the id must come from the rendered order.
+            analyst_id = next(row.id for row in open_rows if row.id == ids[-1])
+            resp, dialog = await _revoke(c, analyst_id)
             assert "Приглашение отозвано" in resp.text
-            assert len(REVOKE_RE.findall(resp.text)) == 1
+            assert len(REVOKE_RE.findall(dialog.text)) == 1
 
-            again = await _revoke(c, analyst_id)
+            again, _ = await _revoke(c, analyst_id)
             assert "Приглашение не найдено или уже недействительно" in again.text
 
         async with await _client() as c:
@@ -141,7 +149,7 @@ async def test_an_invite_of_another_workspace_is_not_revoked() -> None:
 
         async with await _client() as c:
             second, second_tenant = await _register(c, "InvForB")
-            resp = await _revoke(c, foreign_id)
+            resp, _ = await _revoke(c, foreign_id)
             assert "Приглашение не найдено или уже недействительно" in resp.text
 
         assert [row.id for row in await TenantInviteManager().open_for_tenant(first_tenant)] == [foreign_id]
@@ -169,7 +177,7 @@ async def test_a_member_who_does_not_manage_the_workspace_sees_no_list_and_canno
             partial = await c.get("/app/settings/invites")
             assert partial.status_code == 403
             assert not REVOKE_RE.search(partial.text)
-            resp = await _revoke(c, invite_id)
+            resp, _ = await _revoke(c, invite_id)
             assert DENIED in resp.text
 
         assert [row.id for row in await TenantInviteManager().open_for_tenant(tenant_id)] == [invite_id]

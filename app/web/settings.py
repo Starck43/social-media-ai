@@ -1,7 +1,7 @@
-"""Workspace settings `/app/settings` (docs/API.md).
+"""Workspace settings `/app/settings` (docs/platform/API.md).
 
 Scoped sections on one page. What belongs here and what stays in `/admin` is not
-a preference — it follows `docs/TENANCY.md`:
+a preference — it follows `docs/platform/TENANCY.md`:
 
 * **workspace** — the profile of the current workspace, and of nothing else.
 * **team** — memberships in `tenant_users`; a personal secret is only usable by
@@ -14,7 +14,7 @@ a preference — it follows `docs/TENANCY.md`:
   fallback for platforms without an OAuth flow (and for anyone who prefers it).
   A user only ever sees and writes their own secrets, never another member's.
 * **channels** — where digests and the agent are delivered.
-* **platforms** — the global catalog, active platform administrators only.
+* The global platform catalog is managed only in SQLAdmin, not user settings.
 
 Personal providers/models are managed on the models tab. Workspace chat
 configuration references a numeric model ID in the current user's catalog.
@@ -23,12 +23,13 @@ configuration references a numeric model ID in the current user's catalog.
 from __future__ import annotations
 
 import math
+from html import escape
 from typing import Any
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from app.models.tenant import Tenant
+from app.models.tenancy.tenant import Tenant
 from app.services.tenancy import member_roles
 from app.types import ActionType
 
@@ -47,7 +48,6 @@ TABS: tuple[str, ...] = (
     "team",
     "agent",
     "channels",
-    "platforms",
 )
 #: Tabs that only configure the workspace; a member who cannot manage it does
 #: not get them (their forms are refused anyway by `_guard_workspace_settings`).
@@ -61,7 +61,6 @@ MANAGER_TABS: frozenset[str] = frozenset({"agent", "channels"})
 # this is the manual fallback *inside* that card for anyone who cannot use OAuth.
 SELF_SERVICE_KINDS: dict[str, tuple[tuple[str, str], ...]] = {
     "vk": (("user_token", "VK: личный токен вручную"),),
-    "telegram": (("session", "Telegram: файл сессии MTProto"),),
 }
 
 #: Access levels an owner gives a member (see `app/services/tenancy/member_roles.py`).
@@ -95,7 +94,7 @@ PLAN_ROWS: tuple[dict[str, Any], ...] = (
 #: `PLAN_LIMITS` so a new tier appears without touching the template, and a
 #: changed number appears everywhere it is shown.
 def _plan_table() -> list[dict[str, Any]]:
-    from app.models.tenant import Tenant
+    from app.models.tenancy.tenant import Tenant
 
     rows = []
     for row in PLAN_ROWS:
@@ -108,11 +107,20 @@ def _plan_table() -> list[dict[str, Any]]:
                 value = f"{value} дн."
             entry[plan] = value
         rows.append(entry)
+    from app.services.tenancy.plan_catalog import CATALOG_VERSION, PLAN_CATALOG
+
+    rows.append(
+        {
+            "key": "product_capabilities",
+            "label": f"Product capabilities (catalog v{CATALOG_VERSION})",
+            **{plan: ", ".join(PLAN_CATALOG[plan].capabilities) for plan in Tenant.PLANS},
+        }
+    )
     return rows
 
 
 def _plan_labels() -> dict[str, str]:
-    from app.models.tenant import Tenant
+    from app.models.tenancy.tenant import Tenant
 
     return {plan: Tenant.PLAN_LIMITS[plan]["label"] for plan in Tenant.PLANS}
 
@@ -162,25 +170,18 @@ def _workspace_access(request: Request, tenant_id: int | None) -> bool:
     )
 
 
-def _platform_access(request: Request) -> bool:
-    """Global catalog access is a fresh active platform-admin property, not a workspace grant."""
-    user = getattr(request.state, "web_user", None)
-    return bool(_personal_access(request) and getattr(user, "is_platform_admin", False))
-
-
 def _visible_tabs(request: Request, tenant_id: int | None) -> tuple[str, ...]:
     """Personal data is caller-owned; concrete workspace capabilities gate shared data."""
     if not _personal_access(request):
         return ()
-    global_tabs = ("platforms",) if _platform_access(request) else ()
-    workspace_tabs = tuple(tab for tab in TABS if tab != "platforms")
+    workspace_tabs = TABS
     if not _workspace_access(request, tenant_id):
         # Existing personal connection write/OAuth routes still require onboarding.
-        return ("account", "models") + global_tabs
+        return ("account", "models")
     perms = getattr(request.state, "web_perms", None)
     if perms is not None and perms.can_manage_workspace(tenant_id):
-        return workspace_tabs + global_tabs
-    return tuple(tab for tab in workspace_tabs if tab not in MANAGER_TABS) + global_tabs
+        return workspace_tabs
+    return tuple(tab for tab in workspace_tabs if tab not in MANAGER_TABS)
 
 
 def _visible_tab(request: Request, tenant_id: int | None, visible: tuple[str, ...]) -> str:
@@ -206,22 +207,10 @@ async def settings_page(request: Request):
         "settings_manage": manage,
         "settings_team_visible": manage,
         "is_superuser": False,
-        "settings_scope": (
-            "global"
-            if tab == "platforms"
-            else ("personal" if tab in ("account", "connections", "models") else "workspace")
-        ),
+        "settings_scope": "personal" if tab in ("account", "connections", "models") else "workspace",
     }
 
-    if tab == "platforms":
-        from app.models.platform import Platform
-        from app.types import PlatformType
-
-        context.update(
-            platforms=await Platform.objects.filter().order_by(Platform.id),
-            platform_type_options=[(kind.db_value, kind.label, "") for kind in PlatformType],
-        )
-    elif tab == "workspace":
+    if tab == "workspace":
         tenant = request.state.tenant
         if manage:
             # Full configuration and quota projections require concrete-target capability.
@@ -232,17 +221,19 @@ async def settings_page(request: Request):
                 plan_labels=_plan_labels(),
                 plan_rows=_plan_table(),
                 plan_usage=await _plan_usage(tenant, perms),
+                entitlement_policy=tenant.entitlement_policy,
             )
         else:
             # Explicit member read contract: no budget/prompt/channel/plan configuration.
             context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
     elif tab == "agent" and manage:
         from app.services.ai.personal_catalog import chat_model_options
+
         context["agent_model_options"] = await chat_model_options(user_id=user.id, tenant_id=tenant_id)
 
-        # Read the last probe result from session (set by /agent/model-probe).
-        probe_result = request.session.get("agent_model_probe_result")
-        if probe_result is not None and isinstance(probe_result, dict):
+        # The Models tab and Agent form share the same compact probe outcome.
+        probe_result = request.session.get("settings_model_probe_result")
+        if isinstance(probe_result, dict) and probe_result.get("owner_user_id") == user.id:
             context["probe_result"] = probe_result
         else:
             context["probe_result"] = None
@@ -261,8 +252,8 @@ async def settings_page(request: Request):
             # Explicit member read contract: no budget/prompt/channel/plan configuration.
             context["workspace_summary"] = {"name": tenant.name, "timezone": tenant.timezone}
     elif tab == "team" and manage:
+        from app.models.identity.user import User
         from app.models.managers.tenant_manager import TenantUserManager
-        from app.models.user import User
 
         memberships = await TenantUserManager().web_memberships_for_tenant(tenant_id)
         member_ids = [m.user_id for m in memberships if m.user_id is not None]
@@ -275,23 +266,68 @@ async def settings_page(request: Request):
         )
     elif tab == "models":
         from .settings_llm import settings_llm_context
+
         context.update(await settings_llm_context(request))
     elif tab == "connections":
         from app.models.managers.user_credential_manager import user_credentials
-        from app.services.social.connections import CONNECTIONS, connection_statuses
+        from app.services.social.connections import (
+            CONNECTIONS,
+            build_workspace_connectors,
+            connection_statuses,
+            credential_matches_workspace,
+        )
 
         credentials = await user_credentials.web_metadata_for_user(user_id=user.id)
         statuses = {status.platform: status for status in await connection_statuses(user.id)}
+        # One card per connector: the P12 catalog decides which connectors exist
+        # and supplies the display facts, the pre-P12 spec keeps the operator
+        # wording and the interactive parts (buttons, manual key form).
+        details = {
+            card["platform_type"]: card
+            for card in build_workspace_connectors(
+                credentials=credentials,
+                statuses=statuses,
+                tenant_id=tenant_id,
+                username=getattr(user, "username", None),
+            )
+        }
+        from app.integrations.catalog import PROVIDERS, WORKSPACE_PROVIDERS
+        from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
+
+        try:
+            workspace_rows, can_configure = await workspace_connections.list_for_actor(
+                tenant_id=tenant_id, actor_id=user.id
+            )
+        except ConnectionDenied:
+            workspace_rows, can_configure = [], False
+        context.update(
+            workspace_connection_rows=workspace_rows,
+            workspace_connection_write=can_configure,
+            workspace_providers=WORKSPACE_PROVIDERS,
+            yandex_browse_csrf=(
+                _yandex_browse_csrf(request)
+                if any(row.get("provider_id") == "yandex_disk" and row.get("is_active") for row in workspace_rows)
+                else ""
+            ),
+        )
         context["connections"] = [
             {
                 "platform": spec.platform,
+                "provider": PROVIDERS.get(spec.platform),
                 "title": spec.title,
                 "purpose": spec.purpose,
                 "is_oauth": spec.is_oauth,
                 "manual_hint": spec.manual_hint,
                 "status": statuses.get(spec.platform),
                 "manual_kinds": SELF_SERVICE_KINDS.get(spec.platform, ()),
-                "rows": [row for row in credentials if row.platform == spec.platform],
+                "provider_forms": WORKSPACE_PROVIDERS if spec.platform == "email" else (),
+                "rows": [
+                    row
+                    for row in credentials
+                    if row.platform == spec.platform
+                    and credential_matches_workspace(getattr(row, "meta", None), tenant_id)
+                ],
+                "details": details.get(spec.platform),
             }
             for spec in CONNECTIONS
         ]
@@ -301,72 +337,58 @@ async def settings_page(request: Request):
         context.update(
             channels=await TenantChannelManager().filter(tenant_id=tenant_id), action_types=ActionType.choices()
         )
+    elif tab == "account":
+        from app.services.workspace.today import available_start_pages, get_user_start_page
+
+        context.update(
+            start_page_options=available_start_pages(perms),
+            current_start_page=get_user_start_page(
+                getattr(user, "id", None),
+                getattr(request, "session", None) if isinstance(getattr(request, "session", None), dict) else None,
+            ),
+        )
 
     response = render(request, "web/settings.html", section="settings", **context)
     response.headers["Cache-Control"] = "no-store"
     return response
 
 
-@router.post("/platforms")
-async def platform_save(
+@router.post("/start-page")
+async def start_page_update(
     request: Request,
-    name: str = Form(...),
-    base_url: str = Form(...),
-    platform_type: str = Form(""),
-    platform_id: int = Form(0),
-    enabled: str = Form(""),
+    start_page: str = Form("dashboard"),
     token: str = Form("", alias="_csrf"),
 ):
-    """Edit the global catalog without exposing destructive cascades or personal secrets."""
-    if not _platform_access(request):
-        return HTMLResponse("Недостаточно прав", status_code=403)
+    """Save the user's preferred start page (O-2) with safe fallback if unpermitted."""
+    from app.services.workspace.today import set_user_start_page
+
+    if not _personal_access(request):
+        add_flash(request, "error", "Только для вошедшего пользователя")
+        return RedirectResponse(f"{BACK}?tab=account", status_code=302)
     if not ensure_csrf(request, token):
-        return HTMLResponse("Неверный CSRF-токен", status_code=403)
-    from urllib.parse import urlsplit
-
-    from sqlalchemy.exc import IntegrityError
-
-    from app.models.platform import Platform
-    from app.types import PlatformType
-
-    name, base_url = name.strip(), base_url.strip()
+        add_flash(request, "error", "Сессия истекла, попробуйте ещё раз")
+        return RedirectResponse(f"{BACK}?tab=account", status_code=302)
+    user = getattr(request.state, "web_user", None)
+    session = getattr(request, "session", None)
     try:
-        url = urlsplit(base_url)
-        valid_url = url.scheme in ("http", "https") and bool(url.hostname) and not url.username and not url.password
-        # Accessing port rejects malformed authorities without making a network request.
-        url.port
+        set_user_start_page(
+            getattr(user, "id", None),
+            start_page,
+            session=session if isinstance(session, dict) else None,
+        )
     except ValueError:
-        valid_url = False
-    if not name or len(name) > 50 or len(base_url) > 255 or not valid_url or not 0 <= platform_id <= 2_147_483_647:
-        add_flash(request, "error", "Укажите название до 50 символов и корректный HTTP(S) URL без логина и пароля")
-        return RedirectResponse(BACK + "?tab=platforms", status_code=302)
-    try:
-        if platform_id:
-            result = await Platform.objects.update_by_id(
-                platform_id, name=name, base_url=base_url, is_active=enabled == "on"
-            )
-            if result is None:
-                return HTMLResponse("Платформа не найдена", status_code=404)
-        else:
-            kind = PlatformType.get_by_value(platform_type)
-            if kind is None:
-                raise ValueError("Unknown platform type")
-            await Platform.objects.create_platform(
-                name=name, platform_type=kind, base_url=base_url, is_active=enabled == "on"
-            )
-    except (ValueError, IntegrityError):
-        add_flash(request, "error", "Не удалось сохранить: проверьте тип и уникальность названия платформы")
-    else:
-        add_flash(request, "success", "Платформа сохранена")
-    return RedirectResponse(BACK + "?tab=platforms", status_code=302)
+        add_flash(request, "error", "Некорректная стартовая страница")
+        return RedirectResponse(f"{BACK}?tab=account", status_code=302)
+    add_flash(request, "success", "Стартовая страница сохранена.")
+    return RedirectResponse(f"{BACK}?tab=account", status_code=303)
 
 
 async def _plan_usage(tenant: Any, perms: Any) -> dict[str, str]:
     """Manager-only quota projections; resource counts additionally require VIEW."""
-    from app.models.agent_scenario import AgentScenario
-    from app.models.agent_task import AgentTask
+    from app.models.analysis.agent_scenario import AgentScenario
+    from app.models.collection.source import Source
     from app.models.managers.tenant_manager import TenantChannelManager, TenantUserManager
-    from app.models.source import Source
+    from app.models.scheduling.agent_task import AgentTask
 
     counts = {}
     for key, model, model_name in (
@@ -498,6 +520,7 @@ async def agent_settings_update(
     try:
         selected_id = int(agent_model_id) if agent_model_id.strip() else None
         from app.services.ai.personal_catalog import validate_chat_model
+
         selected = await validate_chat_model(
             user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=selected_id
         )
@@ -527,8 +550,10 @@ async def agent_model_probe(
     agent_model_id: str = Form(""),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
+    probe_mode: str = Form("local"),
+    consent: str = Form(""),
 ):
-    """Run the shared prompt-free local check; never silently call a provider."""
+    """Run the shared local check or explicitly consented bounded provider test."""
     tenant_id = action_tenant_id(request, tenant_id)
     denied = _guard_workspace_settings(request, tenant_id)
     if denied is not None:
@@ -538,18 +563,18 @@ async def agent_model_probe(
         return RedirectResponse(BACK, status_code=302)
 
     from app.models.managers.tenant_manager import tenants
-    from app.services.ai.model_probe import probe_short
+    from app.services.ai.personal_catalog import chat_model_options, validate_chat_model
 
     if await tenants.get(id=tenant_id) is None:
         add_flash(request, "error", "Пространство не найдено")
         return RedirectResponse(BACK, status_code=302)
 
     tenant = await tenants.get(id=tenant_id)
-    model = None
+    model_id = None
     if agent_model_id.strip():
         try:
-            from app.services.ai.personal_catalog import validate_chat_model
-            model = await validate_chat_model(
+            model_id = int(agent_model_id)
+            await validate_chat_model(
                 user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=int(agent_model_id)
             )
         except (ValueError, PermissionError):
@@ -557,13 +582,39 @@ async def agent_model_probe(
             return RedirectResponse(BACK + "?tab=agent", status_code=302)
 
     else:
-        model = await LLMModel.objects.resolve_default_model("text")
-    result = probe_short(model)
+        if tenant.agent_model_id is not None:
+            try:
+                model_id = int(tenant.agent_model_id)
+                await validate_chat_model(user_id=request.state.web_user.id, tenant_id=tenant_id, model_id=model_id)
+            except (ValueError, PermissionError):
+                model_id = None
+        else:
+            options = await chat_model_options(user_id=request.state.web_user.id, tenant_id=tenant_id)
+            effective = next((option for option in options if option["is_effective_default"]), None)
+            model_id = effective["id"] if effective else None
+    if model_id is None:
+        request.session["settings_model_probe_result"] = {
+            "model_id": None,
+            "model_name": None,
+            "owner_user_id": request.state.web_user.id,
+            "mode": probe_mode,
+            "ok": False,
+            "text": "Для теста выберите модель, доступную этому пространству.",
+            "limit_hint": None,
+        }
+        return RedirectResponse(f"{BACK}?tab=agent", status_code=303)
+    from .settings_llm import _run_probe
 
-    # Save probe result in session and redirect back to the settings page so
-    # the template shows it from `context["probe_result"]`.
-    request.session["agent_model_probe_result"] = result
-    return RedirectResponse(f"{BACK}?tab=agent", status_code=302)
+    response = await _run_probe(
+        request,
+        model_id=str(model_id),
+        mode=probe_mode,
+        tenant_id=tenant_id,
+        consent=consent,
+    )
+    if isinstance(response, RedirectResponse):
+        response.headers["Location"] = f"{BACK}?tab=agent"
+    return response
 
 
 @router.post("/credentials")
@@ -576,7 +627,8 @@ async def credential_store(
 ):
     """Store one of the caller's own personal secrets.
 
-    No permission gate on purpose: a row here is keyed by `users.id`, so a user
+    Only the VK manual fallback is accepted; Telegram uses bounded connector-account login. A row here is keyed
+    by `users.id`, so a user
     writes only their own vault and needs no right to do it. What *does* need a
     right is using someone else's — that is `owner.py::resolve_source_owner`.
 
@@ -899,15 +951,13 @@ async def plan_update(
     plan: str = Form(...),
     token: str = Form("", alias="_csrf"),
     tenant_id: int | None = Form(default=None),
+    policy_version: int | None = Form(default=None),
 ):
-    """Move a workspace to another billing tier.
+    """Platform-curated account assignment, never a workspace-role purchase.
 
-    Superuser-only, and deliberately so: this is a billing act, not a workspace
-    preference, so a workspace owner cannot grant themselves limits they did not
-    buy. A downgrade that leaves the workspace over its new ceilings is allowed
-    and reported — refusing would trap a customer who has to downgrade precisely
-    because they are over budget — but it is spelled out so the operator knows
-    what to delete before the next create attempt fails.
+    Enabled mode resolves sponsorship from the session's workspace, requires an
+    explicit policy revision and updates every sponsored workspace's mirror.
+    Posted tenant/holder identities grant no authority. No payment is initiated.
     """
     back = f"{BACK}?tab=workspace"
 
@@ -916,7 +966,7 @@ async def plan_update(
         return RedirectResponse(back, status_code=302)
 
     user = getattr(request.state, "web_user", None)
-    if user is None or not False:
+    if user is None or not user.is_superuser:
         add_flash(request, "error", "Менять тариф может только оператор платформы")
         return RedirectResponse(back, status_code=302)
 
@@ -937,6 +987,41 @@ async def plan_update(
         add_flash(request, "error", f"Неизвестный тариф: {plan}")
         return RedirectResponse(back, status_code=302)
 
+    from app.core.config import settings
+    from app.core.database import async_session_maker
+    from app.models import User
+
+    if settings.USER_SERVICE_PLANS_ENABLED:
+        from app.services.tenancy.service_plan_management import assign_user_plan
+        from app.services.tenancy.service_plan_policy import ServicePlanPolicyError
+
+        if type(policy_version) is not int or policy_version <= 0:
+            add_flash(request, "error", "Укажите утверждённую версию политики тарифа")
+            return RedirectResponse(back, status_code=302)
+        try:
+            async with async_session_maker() as session, session.begin():
+                # The service locks/rechecks the operator and holder together.
+                if tenant.plan_holder_user_id is None:
+                    raise ServicePlanPolicyError("missing_plan_holder")
+                await assign_user_plan(
+                    session,
+                    actor_user_id=user.id,
+                    user_id=tenant.plan_holder_user_id,
+                    plan_code=requested,
+                    policy_version=policy_version,
+                    # Preserve fresh state under the lock, not a request-time cache.
+                    preserve_state=True,
+                )
+        except (PermissionError, ServicePlanPolicyError, ValueError):
+            add_flash(request, "error", "Назначение тарифа запрещено или политика не настроена")
+            return RedirectResponse(back, status_code=302)
+        add_flash(request, "success", "Тариф аккаунта обновлён во всех его пространствах")
+        return RedirectResponse(back, status_code=302)
+
+    fresh = await User.objects.prefetch_related("role").get(id=user.id, is_active=True)
+    if fresh is None or not fresh.is_superuser:
+        add_flash(request, "error", "Менять тариф может только оператор платформы")
+        return RedirectResponse(back, status_code=302)
     if requested == tenant.plan:
         add_flash(request, "info", f"Тариф уже «{tenant.plan_label}»")
         return RedirectResponse(back, status_code=302)
@@ -984,3 +1069,261 @@ async def channel_update(
     await TenantChannelManager().update_by_id(channel.id, is_digest_target=is_digest_target == "on")
     add_flash(request, "success", "Настройка канала сохранена")
     return RedirectResponse(f"{BACK}?tab=channels", status_code=302)
+
+
+@router.post("/workspace-connections")
+async def workspace_connection_save(request: Request):
+    """Catalog fields only; duplicate/unknown form keys fail closed, secrets never echoed."""
+    from app.integrations.catalog import InvalidConnectorInput
+    from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
+
+    form = await request.form()
+    csrf_token = form.get("_csrf", "")
+    if not isinstance(csrf_token, str) or not _personal_access(request) or not ensure_csrf(request, csrf_token):
+        return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
+    # Never trust a posted workspace id (including a platform superuser's request).
+    tenant_id = request.state.tenant_id
+    allowed = {"_csrf", "provider_id", "method", "label", "connection_id", "account_login", "app_password"}
+    try:
+        if set(form) - allowed or any(len(form.getlist(key)) != 1 for key in form):
+            raise InvalidConnectorInput("unknown_field")
+        raw_id = form.get("connection_id", "")
+        connection_id = int(raw_id) if raw_id else None
+        await workspace_connections.save(
+            tenant_id=tenant_id,
+            actor_id=request.state.web_user.id,
+            provider_id=form.get("provider_id", ""),
+            method=form.get("method", ""),
+            label=form.get("label", ""),
+            connection_id=connection_id,
+            values={key: form[key] for key in ("account_login", "app_password") if key in form},
+        )
+    except ConnectionDenied:
+        return HTMLResponse("Подключение недоступно", status_code=403)
+    except (InvalidConnectorInput, ValueError, TypeError):
+        add_flash(
+            request,
+            "error",
+            "Проверьте поля формы. Этот ящик, возможно, уже добавлен: измените существующее подключение.",
+        )
+    else:
+        add_flash(request, "success", "Подключение сохранено. Доступ ещё не проверен; отправка писем выключена.")
+    return RedirectResponse(f"{BACK}?tab=connections#conn-ws-email", status_code=303)
+
+
+@router.post("/workspace-connections/{connection_id}/{operation}")
+async def workspace_connection_action(request: Request, connection_id: int, operation: str):
+    from app.integrations.catalog import WORKSPACE_PROVIDER_IDS
+    from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
+
+    form = await request.form()
+    csrf_token = form.get("_csrf", "")
+    if not isinstance(csrf_token, str) or not _personal_access(request) or not ensure_csrf(request, csrf_token):
+        return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
+    if set(form) != {"_csrf"} or len(form.getlist("_csrf")) != 1:
+        return HTMLResponse("Некорректная форма", status_code=400)
+    if operation not in ("check", "disable"):
+        return HTMLResponse("Действие не найдено", status_code=404)
+    try:
+        arguments = dict(
+            tenant_id=request.state.tenant_id,
+            actor_id=request.state.web_user.id,
+            connection_id=connection_id,
+            allowed_provider_ids=WORKSPACE_PROVIDER_IDS,
+        )
+        if operation == "check":
+            result = await workspace_connections.verify(**arguments)
+            add_flash(
+                request,
+                "success" if result["state"] == "verified" else "error",
+                result["state_label"] + ". " + result["check_detail"],
+            )
+        else:
+            await workspace_connections.disable(**arguments)
+            add_flash(
+                request,
+                "success",
+                "Подключение отключено, локальный пароль удалён. Для отзыва доступа удалите пароль приложения у провайдера.",
+            )
+    except ConnectionDenied:
+        return HTMLResponse("Подключение недоступно", status_code=403)
+    return RedirectResponse(f"{BACK}?tab=connections#conn-ws-email", status_code=303)
+
+
+@router.post("/yandex-connections")
+async def yandex_connection_save(request: Request):
+    """Save one private, unverified read-only connection; never call a provider."""
+    from app.models.managers.workspace_connection_manager import ConnectionDenied
+    from app.services.file_workspace.connections import FolderConnectionInputError, create_yandex_connection
+
+    form = await request.form()
+    token = form.get("_csrf", "")
+    if not isinstance(token, str) or not _personal_access(request) or not ensure_csrf(request, token):
+        return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
+    expected = {"_csrf", "label", "root", "oauth_token", "scope_ack"}
+    if set(form) != expected or any(len(form.getlist(key)) != 1 for key in form) or form.get("scope_ack") != "on":
+        return HTMLResponse("Некорректная форма", status_code=400)
+    try:
+        await create_yandex_connection(
+            tenant_id=request.state.tenant_id,
+            actor_id=request.state.web_user.id,
+            label=form["label"],
+            root=form["root"],
+            oauth_token=form["oauth_token"],
+        )
+    except ConnectionDenied:
+        return HTMLResponse("Подключение недоступно", status_code=403)
+    except FolderConnectionInputError:
+        add_flash(request, "error", "Проверьте путь папки и токен. Сохранённые токены не показываются.")
+    except RuntimeError:
+        return HTMLResponse("Не удалось безопасно сохранить подключение", status_code=503)
+    else:
+        add_flash(request, "success", "Подключение сохранено. Доступ не проверен; просмотр папки доступен по кнопке.")
+    return RedirectResponse(f"{BACK}?tab=connections#conn-ws-yandex_disk", status_code=303)
+
+
+@router.post("/yandex-connections/{connection_id}/disable")
+async def yandex_connection_disable(request: Request, connection_id: int):
+    """Remove only the caller's Yandex secret; remote OAuth revocation is separate."""
+    from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
+
+    form = await request.form()
+    token = form.get("_csrf", "")
+    if not isinstance(token, str) or not _personal_access(request) or not ensure_csrf(request, token):
+        return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
+    if set(form) != {"_csrf"} or len(form.getlist("_csrf")) != 1:
+        return HTMLResponse("Некорректная форма", status_code=400)
+    try:
+        await workspace_connections.disable(
+            tenant_id=request.state.tenant_id,
+            actor_id=request.state.web_user.id,
+            connection_id=connection_id,
+            expected_provider="yandex_disk",
+        )
+    except ConnectionDenied:
+        return HTMLResponse("Подключение недоступно", status_code=403)
+    add_flash(request, "success", "Подключение отключено и токен удалён. Отзовите доступ приложения в Яндексе.")
+    return RedirectResponse(f"{BACK}?tab=connections#conn-ws-yandex_disk", status_code=303)
+
+
+def _yandex_browse_session_id(request: Request, *, create: bool) -> str | None:
+    """Bind browsing CSRF to the signed session, actor and active workspace."""
+    from app.admin.csrf import SESSION_ID_KEY, ensure_session_id
+
+    session_id = ensure_session_id(request) if create else request.session.get(SESSION_ID_KEY)
+    actor = getattr(getattr(request.state, "web_user", None), "id", None)
+    tenant = getattr(request.state, "tenant_id", None)
+    if not isinstance(session_id, str) or type(actor) is not int or type(tenant) is not int:
+        return None
+    return f"yandex-browse:{session_id}:{actor}:{tenant}"
+
+
+def _yandex_browse_csrf(request: Request) -> str:
+    session_id = _yandex_browse_session_id(request, create=True)
+    if not session_id:
+        return ""
+    return request.app.state.csrf_manager.generate_token(session_id=session_id)
+
+
+def _verify_yandex_browse_csrf(request: Request, token: str) -> bool:
+    session_id = _yandex_browse_session_id(request, create=False)
+    return bool(session_id and request.app.state.csrf_manager.verify_token(token, session_id=session_id))
+
+
+def _private_file_response(response: HTMLResponse) -> HTMLResponse:
+    """Do not cache listings or load third-party scripts alongside file names."""
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+    )
+    return response
+
+
+@router.post("/yandex-connections/{connection_id}/browse")
+async def yandex_connection_browse(request: Request, connection_id: int):
+    """Read one bounded metadata page after CSRF and fresh owner/policy checks."""
+    from urllib.parse import parse_qsl
+
+    from app.integrations.file_workspace.policy import _components
+    from app.integrations.file_workspace.yandex_disk import MetadataError, _disk_path
+    from app.models.managers.workspace_connection_manager import ConnectionDenied
+    from app.services.file_workspace.yandex_reader import list_owned_folder
+
+    if not _personal_access(request):
+        return _private_file_response(HTMLResponse("Подключение недоступно", status_code=403))
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/x-www-form-urlencoded":
+        return _private_file_response(HTMLResponse("Некорректная форма", status_code=400))
+    # Bound even chunked requests before parsing; paths never appear in the URL.
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 65536:
+            return _private_file_response(HTMLResponse("Некорректная форма", status_code=400))
+        body.extend(chunk)
+    try:
+        pairs = parse_qsl(
+            body.decode("utf-8"), keep_blank_values=True, strict_parsing=True, max_num_fields=3, errors="strict"
+        )
+        form = dict(pairs)
+        if len(pairs) != len(form) or set(form) not in ({"_csrf"}, {"_csrf", "folder", "offset"}):
+            raise ValueError
+        if "folder" in form:
+            raw_offset = form["offset"]
+            if not raw_offset.isascii() or not raw_offset.isdecimal() or len(raw_offset) > 7:
+                raise ValueError
+            offset = int(raw_offset)
+            if offset > 1_000_000:
+                raise ValueError
+            folder = form["folder"]
+        else:
+            folder, offset = None, 0
+    except (ValueError, UnicodeError):
+        return _private_file_response(HTMLResponse("Некорректная форма", status_code=400))
+    if not _verify_yandex_browse_csrf(request, form["_csrf"]):
+        return _private_file_response(HTMLResponse("Недостаточно прав или сессия истекла", status_code=403))
+    try:
+        page = await list_owned_folder(
+            tenant_id=request.state.tenant_id,
+            actor_id=request.state.web_user.id,
+            connection_id=connection_id,
+            folder=folder,
+            offset=offset,
+        )
+    except ConnectionDenied:
+        return _private_file_response(HTMLResponse("Подключение или папка недоступны", status_code=403))
+    except MetadataError as error:
+        messages = {
+            "reauthorization_required": "Доступ к Диску отклонён. Проверьте токен и разрешения в Яндексе.",
+            "rate_limited": "Яндекс.Диск временно ограничил запросы. Попробуйте позже.",
+            "response_too_large": "Ответ слишком большой для безопасного просмотра.",
+            "invalid_page": "Некорректная страница списка.",
+            "invalid_provider_response": "Не удалось обработать ответ Диска.",
+        }
+        message = messages.get(str(error), "Не удалось получить список. Проверьте подключение и попробуйте позже.")
+        # Provider failure is not a folder: the shared browse template carries the
+        # sibling navigation legend and would look like a directory claim.
+        return _private_file_response(
+            HTMLResponse(
+                '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+                '<meta name="referrer" content="no-referrer"><title>Папка недоступна</title></head>'
+                f'<body><main><p role="alert">{escape(message)}</p>'
+                '<p><a href="/app/settings?tab=connections#conn-ws-yandex_disk">'
+                "← К подключениям</a></p></main></body></html>",
+                status_code=503,
+            )
+        )
+    current, root = _components(page.current_path), _components(page.root_path)
+    parent = _disk_path(current[:-1]) if len(current) > len(root) else None
+    response = render(
+        request,
+        "web/yandex_file_browser.html",
+        connection_id=connection_id,
+        page=page,
+        parent=parent,
+        offset=offset,
+        previous_offset=max(0, offset - 100) if offset else None,
+        error=None,
+        csrf=_yandex_browse_csrf(request),
+    )
+    return _private_file_response(response)

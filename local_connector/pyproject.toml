@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "social-media-ai-local-connector"
+version = "0.3.0"
+description = "Local-only selected-folder connector development scaffold with bounded extraction and OCR"
+requires-python = ">=3.11"
+dependencies = [
+    "watchdog>=4.0",
+    "pypdf>=5",
+    "python-docx>=1.1",
+    "openpyxl>=3.1",
+    "Pillow>=10",
+]
+
+[project.optional-dependencies]
+desktop = [
+    "cryptography>=46",
+    "keyring>=25",
+    "PySide6-Essentials>=6.8",
+    "SecretStorage>=3.3; sys_platform == 'linux'",
+]
+
+[tool.setuptools]
+packages = ["local_connector", "local_connector.extract", "local_connector.packaging", "local_connector.search", "local_connector.transfer"]
+
+[tool.setuptools.package-dir]
+local_connector = "."
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["local_connector"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+fail_under = 80
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120

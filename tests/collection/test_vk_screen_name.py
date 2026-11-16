@@ -1,7 +1,7 @@
 """Tests for VK screen_name -> numeric ID resolution during collection.
 
 A VK source can store either a numeric ID or a short name (screen_name) in
-`external_id` (docs/TENANCY.md, admin "Внешний ID источника"). The VK API only
+`external_id` (docs/platform/TENANCY.md, admin "Внешний ID источника"). The VK API only
 accepts numeric `owner_id`, so `VKClient` resolves a screen_name once per run:
 `users.get` for a person, then `groups.getById` for a community, and finally
 `utils.resolveScreenName` as a last resort (it answers 1051 for this app
@@ -16,6 +16,7 @@ import pytest
 from app.models import Platform, Source
 from app.services.social.vk_client import VKClient
 from app.types import SourceType
+from tests.shared.platform_catalog import shared_platform
 
 
 class FakeResponse:
@@ -49,14 +50,8 @@ class FakeClient:
 
 @pytest.fixture
 async def platform():
-    p = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type="vk",
-        base_url="https://vk.com",
-        params={},
-    )
+    p = await shared_platform("vk")
     yield p
-    await Platform.objects.delete_by_id(p.id)
 
 
 @pytest.fixture

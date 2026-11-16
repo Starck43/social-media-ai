@@ -1,16 +1,24 @@
 from pathlib import Path
 
+from jinja2 import pass_context
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from starlette.staticfiles import StaticFiles
 
 from app.admin.authorization import AdminAuthorizationBackend
-from app.admin.csrf import CSRFTokenManager
+from app.admin.csrf import CSRFTokenManager, issue_token
+from app.admin.session import AdminAsyncSession
 from app.core.config import settings
 from app.core.database import async_engine
 from app.templates.filters import register_template_filters
 
 from .auth import AdminAuthBackend
+from .connector_registry import ConnectorRegistryAdmin
+from .file_catalog import FileCatalogAdmin
+from .inlines import related_inlines
+from .knowledge_registry import KnowledgeRegistryAdmin
 from .registry import TableRegistryAdmin
 from .related import RelatedAdmin, related_controls, related_token
+from .view_modules.plan_model_grants import PlanModelGrantAdmin
 from .views import (
     AgentScenarioAdmin,
     AgentTaskAdmin,
@@ -34,10 +42,6 @@ from .views import (
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
-# # Add 'sqladmin' prefix to template paths
-# templates.env.globals['include_sqladmin'] = lambda name: f"sqladmin/{name}"
-
-
 def _render_analysis(summary_data):
     """Shared `summary_data` → display structure, used by the admin detail page.
 
@@ -53,7 +57,9 @@ def setup_admin(app):
     """Initialize SQLAdmin with all views."""
 
     # --- CSRF ---
-    csrf_manager = CSRFTokenManager(secret_key=settings.SECRET_KEY)
+    # Reuse the manager `app/main.py` already published: one token issuer per
+    # process, so every surface verifies the tokens any of them minted.
+    csrf_manager = getattr(app.state, "csrf_manager", None) or CSRFTokenManager(secret_key=settings.SECRET_KEY)
     app.state.csrf_manager = csrf_manager
 
     from .endpoints import router as admin_router
@@ -67,21 +73,39 @@ def setup_admin(app):
     admin = RelatedAdmin(
         app=app,
         engine=async_engine,
+        session_maker=async_sessionmaker(async_engine, class_=AdminAsyncSession, expire_on_commit=False),
         authentication_backend=authentication_backend,
         authorization_backend=AdminAuthorizationBackend(),
         base_url="/admin",
-        title="ИИ Ассистент",
+        title="AI Assistant",
         logo_url="/static/logo.png",
         templates_dir=str(PROJECT_ROOT / "app" / "templates"),
     )
 
+    # sqladmin mounts itself as a sub-application at `/admin`, so inside console
+    # routes `request.app` is that Starlette app, not the FastAPI one. Publish
+    # the same manager on both states: templates and `verify_request_token`
+    # resolve it from `request.app.state` and must find it on either surface.
+    admin.admin.state.csrf_manager = csrf_manager
+    admin.admin.state.admin = admin
+
+    @pass_context
+    def _csrf_token(context):
+        # Templates render per request, so the token binds to that session;
+        # without a request (e.g. shell rendering) fall back to an unbound token.
+        request = context.get("request")
+        if request is None:
+            return csrf_manager.generate_token()
+        return issue_token(request)
+
     admin.templates.env.globals.update(
         {
-            "csrf_token": lambda: csrf_manager.generate_token(),
+            "csrf_token": _csrf_token,
             "settings": settings,
             "debug": settings.DEBUG,
             "render_analysis": _render_analysis,
             "related_controls": related_controls,
+            "related_inlines": related_inlines,
             "related_token": related_token,
         }
     )
@@ -111,6 +135,7 @@ def setup_admin(app):
         NotificationAdmin,
         LLMProviderAdmin,
         LLMModelAdmin,
+        PlanModelGrantAdmin,
         TenantAdmin,
         UserCredentialAdmin,
     ]
@@ -118,6 +143,9 @@ def setup_admin(app):
     # The owner's read-only map of every table, first in the menu so the widest
     # surface is not buried under the model pages it summarises.
     admin.add_view(TableRegistryAdmin)
+    admin.add_view(ConnectorRegistryAdmin)
+    admin.add_view(FileCatalogAdmin)
+    admin.add_view(KnowledgeRegistryAdmin)
     for view_class in view_configs:
         admin.add_view(view_class)
 

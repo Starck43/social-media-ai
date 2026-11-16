@@ -32,7 +32,9 @@ async def actions_log(limit: int = 10) -> dict[str, Any]:
         "actions": [
             {
                 "id": a.id,
-                "action_type": a.action_type.name,
+                "action_type": a.action_type.name if a.action_type else None,
+                "capability": a.capability,
+                "target_ref": a.target_ref,
                 "status": a.status.name,
                 "dry_run": a.dry_run,
                 "created_at": a.created_at.isoformat() if a.created_at else None,
@@ -111,6 +113,17 @@ async def action_send(action_id: int, dry_run: bool = True) -> dict[str, Any]:
         return {"success": False, "error": "Action is not pending", "dry_run": True}
     if not isinstance(action.payload, dict):
         return {"success": False, "error": "Invalid action payload", "dry_run": True}
+    if action.agent_scenario_id is None or action.source_id is None:
+        return {
+            "success": True,
+            "action_id": action.id,
+            "status": action.status.name,
+            "dry_run": True,
+            "preview_only": True,
+            "capability": action.capability,
+            "target_ref": action.target_ref,
+            "payload": dict(action.payload),
+        }
     scenario = await AgentScenario.objects.get(id=action.agent_scenario_id)
     source = await Source.objects.get(id=action.source_id)
     if scenario is None or source is None:

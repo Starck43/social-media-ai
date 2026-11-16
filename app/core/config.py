@@ -1,9 +1,17 @@
 from pathlib import Path
-from typing import Optional
+from typing import Literal
 
 from dotenv import load_dotenv
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.core.settings_views import (
+    SENSITIVE_FIELDS,
+    CollectionSettingsView,
+    DatabaseSettingsView,
+    LLMSettingsView,
+    SecuritySettingsView,
+)
 
 load_dotenv()
 
@@ -16,8 +24,31 @@ class Settings(BaseSettings):
         extra="ignore",  # Игнорируем лишние переменные в .env
     )
 
+    @property
+    def database(self) -> DatabaseSettingsView:
+        return DatabaseSettingsView.from_settings(self)
+
+    @property
+    def security(self) -> SecuritySettingsView:
+        return SecuritySettingsView.from_settings(self)
+
+    @property
+    def collection(self) -> CollectionSettingsView:
+        return CollectionSettingsView.from_settings(self)
+
+    @property
+    def llm(self) -> LLMSettingsView:
+        return LLMSettingsView.from_settings(self)
+
+    def safe_dict(self) -> dict:
+        """Explicit log/diagnostic representation; legacy model_dump stays compatible."""
+        values = self.model_dump(mode="json")
+        return {name: "<redacted>" if name in SENSITIVE_FIELDS else value for name, value in values.items()}
+
     # Настройки приложения
     ENVIRONMENT: str = "development"
+    # None: development/test only; explicit True opts into exposure in any environment.
+    API_DOCS_ENABLED: bool | None = None
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000,http://localhost:8501"
     BACKEND_CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # React dev server
@@ -26,17 +57,38 @@ class Settings(BaseSettings):
     ]
     HOST: str = "0.0.0.0"
     PORT: int = 8000
-    SECRET_KEY: str
+    SECRET_KEY: str = Field(repr=False)
     DEBUG: bool = False
+
+    # Local gateway is default-OFF; deployment requires independent security review.
+    LOCAL_CONNECTOR_ENABLED: bool = False
+    LOCAL_CONNECTOR_SECURITY_REVIEWED: bool = False
+    LOCAL_CONNECTOR_CA_CERT: str = ""
+    LOCAL_CONNECTOR_CA_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
+    LOCAL_CONNECTOR_SIGNING_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
+    LOCAL_CONNECTOR_PAIRING_KEY: SecretStr = Field(default=SecretStr(""), repr=False)
+    LOCAL_CONNECTOR_KEY_ID: str = "local-gateway-v1"
 
     # Admin settings
     ADMIN_ENABLED: bool = True
+    # P12-T12 catalog read UI only. Requires 0124; does not enable provider refresh,
+    # open-original, extraction, writes or local-only execution.
+    FILE_CATALOG_UI_ENABLED: bool = False
+    # Explicit private actions; requires 0128, reviewed deployment and user consent.
+    FILE_WORKSPACE_ACTIONS_ENABLED: bool = False
+    # Historical result view/delete only; does not register a save/version provider.
+    FILE_PRIVATE_RESULTS_UI_ENABLED: bool = False
 
     # Rate limiting settings
-    RESET_PASSWORD_RATE_LIMIT: str = "3/hour"
     CHANGE_PASSWORD_RATE_LIMIT: str = "5/minute"
-    LOGIN_TIMEOUT_MINUTES: int = 15  # Lockout duration after max attempts
-    MAX_LOGIN_ATTEMPTS: int = 5
+    LOGIN_TIMEOUT_MINUTES: int = 15  # Lockout duration and counting window, shared across login surfaces
+    MAX_LOGIN_ATTEMPTS: int = 5  # Failed attempts per account before the shared lockout
+    LOGIN_IP_MAX_ATTEMPTS: int = 20  # Failed attempts per client address, across all accounts
+
+    # People one workspace may hold (owner + invited members), across every tier.
+    # The tier's own `max_team_members` still applies; whichever is tighter wins.
+    # Deployment-wide for now; per-workspace settings tables are a later task.
+    MAX_WORKSPACE_MEMBERS: int = Field(default=2, ge=1)
 
     # Collection freshness. An active source that has not been checked for
     # longer than this is reported on the sources page. Collection runs on the
@@ -54,6 +106,13 @@ class Settings(BaseSettings):
     # API настройки
     API_V1_STR: str = "/api/v1"
     TOKEN_URL: str = f"{API_V1_STR}/auth/login"
+    # Public links (including unsubscribe URLs) require an explicitly configured host.
+    PUBLIC_BASE_URL: str = ""
+    CALENDAR_EVENT_WRITE_ENABLED: bool = False
+    KILL_CALENDAR_EVENT_WRITE: bool = False
+    GOOGLE_CALENDAR_CLIENT_ID: str = ""
+    GOOGLE_CALENDAR_CLIENT_SECRET: SecretStr = Field(default=SecretStr(""), repr=False, exclude=True)
+    UNSUBSCRIBE_TOKEN_TTL_SECONDS: int = Field(default=90 * 86400, ge=60)
 
     # JWT настройки: only HMAC with SECRET_KEY; asymmetric algorithms are refused
     # so a public key can never be accepted as an HMAC secret.
@@ -81,8 +140,10 @@ class Settings(BaseSettings):
     SCRF_TOKEN_EXPIRY_MINUTES: int = 15
     SCRF_TOKEN_LENGTH: int = 32
 
-    POSTGRES_URL: str
-    REDIS_URL: str = "redis://localhost:6379/0"  # Optional: only needed by frozen Celery/sqladmin storage
+    POSTGRES_URL: str = Field(repr=False)
+    REDIS_URL: str = Field(
+        default="redis://localhost:6379/0", repr=False
+    )  # Active admin SlowAPI storage and frozen Celery compatibility
     DB_SCHEMA: str = "public"
     DB_TEST_SCHEMA: str = "test_schema"
     # Connection pool for the async engine: `pool` (default) reuses
@@ -98,24 +159,50 @@ class Settings(BaseSettings):
     # External platform credentials (optional — integrations are enabled based on presence).
     # Application/infrastructure config, one-per-deployment: read from here. Personal
     # L2 secrets (VK user_token, Telegram MTProto parts) live in `user_credentials`.
-    VK_APP_ID: Optional[str] = None
-    VK_SERVICE_KEY: Optional[str] = None  # VK console "Сервисный ключ доступа" — L1 service token
-    VK_CLIENT_ACCESS_KEY: Optional[str] = None  # VK console "Защищённый ключ" — OAuth client secret
-    VK_API_BASE_URL: str = "https://api.vk.com/method"
-    VK_OAUTH_BASE_URL: str = "https://id.vk.ru"  # VK ID (OAuth 2.1): /authorize + /oauth2/auth
-    VK_REDIRECT_URI: str = "http://localhost/api/v1/social/callback"  # VK OAuth callback (must be public)
-    VK_API_VERSION: str = "5.199"
+    VK_APP_ID: str | None = None
+    VK_SERVICE_KEY: str | None = Field(
+        default=None, repr=False
+    )  # VK console "Сервисный ключ доступа" — L1 service token
+    # Explicit deployment-owned VK grant metadata. Empty means unknown/no grant;
+    # never infer these from a token's presence or OAuth login scopes.
+    VK_SERVICE_METHOD_GRANTS: list[str] | None = None
+    VK_SERVICE_GRANTED_SCOPES: list[str] | None = None
+    VK_SERVICE_METHOD_SCOPES: dict[str, list[str]] = Field(default_factory=dict)
+    VK_CLIENT_ACCESS_KEY: str | None = Field(
+        default=None, repr=False
+    )  # VK console "Защищённый ключ" — OAuth client secret
+    # Deployment egress trust boundary; exact OAuth hostnames, comma-separated.
+    VK_OAUTH_ALLOWED_HOSTS: str = "id.vk.ru"
+    # Legacy migration inputs only (0120). Runtime uses Platform.params.
+    VK_OAUTH_BASE_URL: str = "https://id.vk.ru"  # Legacy 0120 migration input only
+    VK_REDIRECT_URI: str = "http://localhost/api/v1/social/callback"  # Legacy 0120 migration input only
+    # Endpoints, version and OAuth URLs live in Platform.params: no runtime fallback.
     VK_REQUEST_TIMEOUT: float = 30.0
 
-    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    # Bitrix24 global application (P14-T05): the OAuth client secret never travels in
+    # environment configuration. The deployment knows only the path of an operator-supplied
+    # secret file and the name of the secret inside it. Empty path means no application
+    # credentials; resolution then fails closed with `bitrix_credentials_unavailable`.
+    BITRIX24_APP_SECRET_FILE: str = ""
+    BITRIX24_APP_SECRET_NAME: str = "client_secret"
+    # Rollback-only bridge: read `BITRIX24_CLIENT_ID` / `BITRIX24_CLIENT_SECRET` from
+    # deployment settings when the operator store is not in place yet. Default OFF, and
+    # never consulted while `BITRIX24_APP_SECRET_FILE` is set.
+    BITRIX24_LEGACY_ENV_CREDENTIALS: bool = False
+
+    TELEGRAM_BOT_TOKEN: str | None = Field(default=None, repr=False)
+    # Legacy migration input only (0120); ignored by runtime.
     TELEGRAM_API_BASE_URL: str = "https://api.telegram.org"
     TELEGRAM_REQUEST_TIMEOUT: float = 30.0
-    # Env fallback for the MTProto session (L2 Telegram). Prefer the personal vault
-    # of the source's owner: python -m cli.main credentials login telegram --user <id>
-    TELEGRAM_API_ID: Optional[str] = None
-    TELEGRAM_API_HASH: Optional[str] = None
-    TELEGRAM_SESSION: Optional[str] = None
-    TELEGRAM_ADMIN_CHAT_ID: Optional[str] = None  # Fixed operator alerts only; no workspace/digest fallback
+    # Dark launch only. Enable separately after migrations, final tests/audit
+    # and deployment approval; never fall back to a vault for selected grants.
+    TELEGRAM_ACCOUNT_RUNTIME_ENABLED: bool = False
+    # Deprecated compatibility inputs only, NOT personal runtime fallbacks.
+    # New MTProto reads require an explicit personal authorization/workspace grant.
+    TELEGRAM_API_ID: str | None = None
+    TELEGRAM_API_HASH: str | None = Field(default=None, repr=False)
+    TELEGRAM_SESSION: str | None = Field(default=None, repr=False)
+    TELEGRAM_ADMIN_CHAT_ID: str | None = None  # Fixed operator alerts only; no workspace/digest fallback
 
     # Common social collection defaults
     SOCIAL_PAGE_SIZE: int = 50
@@ -137,7 +224,7 @@ class Settings(BaseSettings):
     TELEGRAM_DIGEST_CHANNEL_ID: str = ""  # Deprecated, ignored by digest delivery; use workspace channel bindings
 
     # MAX messenger (Bot API: https://dev.max.ru)
-    MAX_BOT_TOKEN: Optional[str] = None
+    MAX_BOT_TOKEN: str | None = Field(default=None, repr=False)
     MAX_API_URL: str = "https://platform-api2.max.ru"
     MAX_OWNER_ID: str = ""  # MAX user id allowed to talk to the agent
     MAX_CHANNEL_ID: str = ""  # Deprecated, ignored by digest delivery; use workspace channel bindings
@@ -145,24 +232,117 @@ class Settings(BaseSettings):
     # --- Tenancy ---
     # Shared bot model: clients bind their chats via invite codes
     # (/start <code>); chats are resolved to tenants from the DB.
-    CREDENTIALS_KEY: Optional[str] = None  # Fernet key for tenant secrets
+    CREDENTIALS_KEY: str | None = Field(default=None, repr=False)  # Fernet key for tenant secrets
+    # --- Personal data (P13-T02, D8) ---
+    # Separate from CREDENTIALS_KEY on purpose: credential and personal-data keys
+    # must never share one compromise. First encryption key is the active one;
+    # the rest keep older ciphertext readable during rotation.
+    PII_ENCRYPTION_KEYS: str | None = Field(default=None, repr=False)  # ordered Fernet keys, comma-separated
+    PII_INDEX_KEY: str | None = Field(default=None, repr=False)  # HMAC-SHA256 key for blind indexes; kept stable
+    RATE_LIMIT_KEY: SecretStr | None = Field(default=None, repr=False, exclude=True)  # stable, separate HMAC key
     DEFAULT_TENANT_SLUG: str = "owner"  # slug of the bootstrap tenant
 
     # --- Task runner ---
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_POLL_SECONDS: int = 30
+    # Opt-in same-host runtime presence. API/runtime must share this trusted
+    # local POSIX directory; never use a distributed/network filesystem lease.
+    RUNTIME_STATE_DIR: Path | None = None
+
+    @field_validator("RUNTIME_STATE_DIR")
+    @classmethod
+    def _absolute_runtime_state_dir(cls, value: Path | None) -> Path | None:
+        if value is not None:
+            value = value.expanduser()
+            if not value.is_absolute():
+                raise ValueError("RUNTIME_STATE_DIR must be an absolute path")
+        return value
+
+    # --- Outbox attachment spool ---
+    # Attachment bytes are transient: an approved document is rendered, hashed and
+    # delivered, and the file lives only from render until dispatch plus this TTL.
+    # Long-term file storage belongs to the owner's own cloud or local store
+    # (S3 connector per D9), never to PostgreSQL, which would grow without bound
+    # across thousands of tenants. The directory must stay outside static roots;
+    # `app.services.attachments.spool` enforces 0o700 directories and 0o600 files.
+    ATTACHMENT_STORAGE_DIR: Path | None = None
+    ATTACHMENT_MAX_FILE_BYTES: int = Field(default=5 * 1024 * 1024, ge=1)
+    ATTACHMENT_MAX_TOTAL_BYTES: int = Field(default=10 * 1024 * 1024, ge=1)
+    ATTACHMENT_SPOOL_TTL_SECONDS: int = Field(default=900, ge=60)
+
+    @field_validator("ATTACHMENT_STORAGE_DIR")
+    @classmethod
+    def _absolute_attachment_storage_dir(cls, value: Path | None) -> Path | None:
+        if value is not None:
+            value = value.expanduser()
+            if not value.is_absolute():
+                raise ValueError("ATTACHMENT_STORAGE_DIR must be an absolute path")
+        return value
+
+    @model_validator(mode="after")
+    def _attachment_total_not_below_file(self) -> "Settings":
+        if self.ATTACHMENT_MAX_TOTAL_BYTES < self.ATTACHMENT_MAX_FILE_BYTES:
+            raise ValueError("ATTACHMENT_MAX_TOTAL_BYTES must not be below ATTACHMENT_MAX_FILE_BYTES")
+        return self
+
+    # Workspace subscriptions: selecting a provider never enables checkout.
+    # Live payments are deliberately unsupported by this foundation. Test stores
+    # use the same API host; the merchant credentials, not a URL, select test mode.
+    SUBSCRIPTION_PAYMENT_PROVIDER: Literal["yookassa"] = "yookassa"
+    SUBSCRIPTION_PAYMENT_MODE: Literal["test"] = "test"
+    SUBSCRIPTION_CHECKOUT_ENABLED: bool = False
+    # Additive tariff storage can ship before the separately approved cutover.
+    USER_SERVICE_PLANS_ENABLED: bool = False
+    YOOKASSA_SHOP_ID: str = ""
+    YOOKASSA_SECRET_KEY: SecretStr = Field(default=SecretStr(""), repr=False, exclude=True)
+    YOOKASSA_RETURN_URL: str = ""
+    YOOKASSA_HTTP_TIMEOUT: float = Field(default=15.0, ge=1.0, le=30.0)
+
+    @field_validator("YOOKASSA_SHOP_ID")
+    @classmethod
+    def _yookassa_shop_id(cls, value: str) -> str:
+        value = value.strip()
+        if value and (not value.isascii() or not value.isdecimal()):
+            raise ValueError("YOOKASSA_SHOP_ID must be an ASCII numeric merchant ID")
+        return value
+
+    @field_validator("YOOKASSA_RETURN_URL")
+    @classmethod
+    def _yookassa_return_url(cls, value: str) -> str:
+        from urllib.parse import urlsplit
+
+        value = value.strip()
+        if not value:
+            return value
+        try:
+            url = urlsplit(value)
+            port = url.port
+        except ValueError:
+            raise ValueError("YOOKASSA_RETURN_URL must be a valid HTTPS URL") from None
+        if (
+            url.scheme != "https"
+            or not url.hostname
+            or url.username is not None
+            or url.password is not None
+            or url.fragment
+            or port not in (None, 443, 8443)
+            or any(character.isspace() or ord(character) < 32 for character in value)
+        ):
+            raise ValueError("YOOKASSA_RETURN_URL requires HTTPS without credentials or a fragment")
+        return value
+
     # Personal budget admission is opt-in until schema and real acceptance pass.
     PERSONAL_BILLING_ENABLED: bool = False
     SCHEDULER_TIMEZONE: str = "Europe/Moscow"
 
     # --- Agent ---
-    AGENT_MODEL: Optional[str] = None  # explicit LLMModel name; auto-resolved when empty
+    AGENT_MODEL: str | None = None  # explicit LLMModel name; auto-resolved when empty
     AGENT_HISTORY_LIMIT: int = 20  # messages kept in agent context per session
     AGENT_MAX_ITERATIONS: int = 6  # max tool-call rounds per user message
     AGENT_DAILY_COST_LIMIT: float = 5.0  # USD cap across agent + digests per day
     AGENT_MAX_TOKENS: int = 2048  # reply size cap for chat (analysis uses LLM_DEFAULT_MAX_TOKENS)
     AGENT_TEMPERATURE: float = 0.3
-    AGENT_SYSTEM_PROMPT: Optional[str] = None  # system prompt for agent chat; falls back to built-in default
+    AGENT_SYSTEM_PROMPT: str | None = None  # system prompt for agent chat; falls back to built-in default
 
     # --- Background jobs ---
     JOB_MAX_ATTEMPTS: int = 3
@@ -195,10 +375,23 @@ class Settings(BaseSettings):
 
     # LLM rate limiting
     LLM_REQUEST_DELAY: int = 1000  # Default rate limit delay in milliseconds
+    # P21-T14 shared cross-process provider rate budget (dormant until set:
+    # 0 RPM/TPM/concurrency means the acquirer passes attempts through). The
+    # acquirer itself is the single seam wiring; no live dispatch is enabled.
+    LLM_RATE_RPM: int = 0  # requests per minute per bucket scope
+    LLM_RATE_TPM: int = 0  # tokens per minute per bucket scope
+    LLM_RATE_CONCURRENCY: int = 0  # max in-flight attempts per pool key
+    LLM_RATE_MAX_WAIT_SECONDS: float = 8.0  # bounded wait before denial
+    LLM_RATE_LEASE_TTL_SECONDS: float = 60.0  # in-flight lease expiry
+    LLM_RATE_LOCK_TIMEOUT_MS: int = 250  # per-statement lock timeout
     LLM_DEFAULT_TEMPERATURE: float = 0.3  # Conservative temperature for analysis tasks
     LLM_DEFAULT_MAX_TOKENS: int = 400  # Optimal for social media annotations
     LLM_DEFAULT_STREAM: bool = False  # Complete responses for processing
     LLM_DEFAULT_TIMEOUT: float = 60.0  # Request timeout in seconds
+    # Opaque alias -> deployment environment name. Personal catalogs never use it.
+    LLM_MANAGED_CREDENTIAL_REFS: dict[str, str] = Field(default_factory=dict, repr=False)
+    # The dispatch seam stays dormant until P21-T13...P21-T16 provide the foundations.
+    LLM_DISPATCH_SEAM_ENABLED: bool = False
 
 
 settings = Settings()

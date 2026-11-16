@@ -9,8 +9,8 @@ from .base_manager import BaseManager
 if TYPE_CHECKING:
     from app.types import ActionType
 
-    from ..permission import Permission
-    from ..role import Role
+    from ..identity.permission import Permission
+    from ..identity.role import Role
 
 
 class RoleManager(BaseManager["Role"]):
@@ -101,8 +101,8 @@ class RoleManager(BaseManager["Role"]):
         from app.core.permissions import get_current_user
         from app.core.tenant_context import is_bypass
 
-        from ..role import role_permission
-        from ..user import User
+        from ..identity.role import role_permission
+        from ..identity.user import User
 
         actor = get_current_user()
         if actor is None:
@@ -180,8 +180,8 @@ class RoleManager(BaseManager["Role"]):
         """
         from app.core.access_catalog import resolve_permission_key
 
-        from ..model_type import ModelType
-        from ..permission import Permission
+        from ..identity.model_type import ModelType
+        from ..identity.permission import Permission
 
         resolved = resolve_permission_key(permission_codename)
         if resolved is None:

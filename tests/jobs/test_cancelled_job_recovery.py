@@ -14,7 +14,8 @@ from unittest.mock import AsyncMock
 
 import test_job_claim_outcomes as claim_fixtures
 import test_jobs_queue_signals as signal_fixtures
-from source_import_isolation import load_isolated_source
+
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
 BUDGET = load_isolated_source("_cancel_recovery_budget", ROOT / "app/jobs/attempt_budget.py")

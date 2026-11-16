@@ -1,5 +1,35 @@
 function chatApp() {
         return {
+            panelOpen: true,
+            workspaceTab: 'context',
+            panelLoading: false,
+            panelData: { decisions: [], runs: [], materials: [] },
+            evidenceContext: window.__chatEvidenceContext || null,
+            workspaceCards: [],
+            workspaceCardsLoading: false,
+            workspaceCardsError: '',
+            modalTitle: '',
+            modalLoading: false,
+            modalError: '',
+            workspaceTasks: [],
+            workspaceSearch: '',
+            workspaceOffset: 0,
+            workspaceNextOffset: null,
+            workspaceListLoading: false,
+            workspaceListError: '',
+            workspaceTask: null,
+            workspaceTaskId: null,
+            workspaceTaskLoading: false,
+            workspaceTaskError: '',
+            workspaceCheckedAt: '',
+            workspaceListRequest: 0,
+            workspaceTaskRequest: 0,
+            awaitingConfirmation: Boolean(window.__chatAwaitingConfirmation),
+            attachmentPolicy: window.__chatAttachmentPolicy || null,
+            attachments: [],
+            attachmentUploading: false,
+            attachmentSeq: 0,
+            draftNotice: '',
             pending: false,
             sending: false,
             abortController: null,
@@ -7,17 +37,32 @@ function chatApp() {
             confirmation: null,
             autoScroll: true,
             messages: [],
+            connectorSearch: window.__chatConnectorSearch || { enabled: false, devices: [] },
+            connectorDeviceId: String((window.__chatConnectorSearch?.devices || [])[0]?.id || ''),
+            connectorReferences: [],
+            connectorSearchPending: false,
+            connectorSearchError: '',
+            connectorSearchPartial: false,
             thinkingSeconds: 0,
             thinkingTimer: null,
             starters: [
                 { icon: '📊', title: 'Сводка за неделю', hint: 'Главные темы и активность', text: 'Сводка за неделю' },
                 { icon: '🗂️', title: 'Мои источники', hint: 'Что сейчас собирается', text: 'Покажи мои источники' },
-                { icon: '⏰', title: 'Новая задача', hint: 'Регулярный сбор и анализ', text: 'Хочу создать задачу' },
+                { icon: '🔎', title: 'Разовый сбор и анализ', hint: 'Уточним охват и покажем план', text: 'Хочу разово собрать и проанализировать недавние публикации о ремонте в Казани. Исключи рекламу, покажи ссылки и причины. Сначала уточни источники, период и ограничения.' },
+                { icon: '⏰', title: 'Новое расписание', hint: 'Регулярная задача с подтверждением', text: 'Хочу настроить регулярный сбор и анализ. Сначала уточни цель, источники, период, результат и ограничения, покажи расписание и дождись моего подтверждения.' },
+                { icon: '📈', title: 'Статус и результаты', hint: 'Продолжить с задачей или запуском', text: 'Покажи статус и доступные результаты задачи, которую мы обсуждали, и предложи, что проверить дальше.' },
                 { icon: '✨', title: 'Возможности', hint: 'Команды и примеры', text: '/help' },
             ],
             csrf: document.querySelector('input[name="_csrf"]')?.value || '',
 
             init() {
+                try {
+                    this.panelOpen = sessionStorage.getItem('chat.workspace.panel') !== 'closed';
+                    const savedTab = sessionStorage.getItem('chat.workspace.tab');
+                    if (['context', 'decisions', 'runs', 'materials'].includes(savedTab)) this.workspaceTab = savedTab;
+                } catch (_) { /* Storage may be unavailable in private sessions. */ }
+                this.syncCardsFromState();
+                this.loadWorkspaceTasks();
                 // Event delegation for JSON copy buttons (added via x-html)
                 document.addEventListener('click', (e) => {
                     const btn = e.target.closest('[data-copy-json]')
@@ -41,14 +86,605 @@ function chatApp() {
                     target.addEventListener('scroll', this._onScrollBound, { passive: true });
                     window.addEventListener('resize', this._onScrollBound);
                 }
+                if (typeof ResizeObserver !== 'undefined') {
+                    this._chatResizeObserver = new ResizeObserver(() => this.onScroll());
+                    if (this.$refs.messages) this._chatResizeObserver.observe(this.$refs.messages);
+                    if (this.$refs.form) this._chatResizeObserver.observe(this.$refs.form);
+                }
                 // Initialize messages from server-rendered data
                 this.messages = this.visibleMessages(window.__chatMessages || [])
                 // Scroll to bottom on page load
                 this.$nextTick(() => { this.scrollToBottom(); this.onScroll(); })
             },
 
+            destroy() {
+                this._chatResizeObserver?.disconnect();
+                const target = this._scroller === document.scrollingElement || this._scroller === document.documentElement ? window : this._scroller;
+                target?.removeEventListener('scroll', this._onScrollBound);
+                window.removeEventListener('resize', this._onScrollBound);
+                this.stopThinking();
+            },
+            toggleWorkspacePanel() {
+                this.panelOpen = !this.panelOpen;
+                try { sessionStorage.setItem('chat.workspace.panel', this.panelOpen ? 'open' : 'closed'); } catch (_) { /* Keep the panel usable without storage. */ }
+                this.$nextTick(() => requestAnimationFrame(() => {
+                    // Alpine's x-show schedules visibility in a frame. Focus only
+                    // after the tab/panel is visible, including in Safari.
+                    const target = this.panelOpen ? this.$refs.workspacePanel : this.$refs.panelToggle;
+                    target?.focus();
+                    this.onScroll();
+                    if (this.panelOpen && !window.matchMedia('(min-width: 1200px)').matches) target?.scrollIntoView({block: 'start'});
+                }));
+            },
+            openWorkspacePage(path, title, launcher = document.activeElement) {
+                let url;
+                try { url = new URL(path, window.location.origin); } catch (_) { return; }
+                // Keep authentication and canonical page permission checks in the iframe.
+                if (url.origin !== window.location.origin || !url.pathname.startsWith('/app/') || url.pathname.startsWith('/app/chat')) return;
+                url.searchParams.set('embedded', '1');
+                this.modalTitle = title;
+                this.modalLoading = true;
+                this.modalError = '';
+                this._modalLauncher = launcher;
+                this.$refs.workspaceFrame.src = url.href;
+                if (!this.$refs.workspaceDialog.open) this.$refs.workspaceDialog.showModal();
+            },
+            workspaceFrameLoaded() {
+                const frame = this.$refs.workspaceFrame;
+                if (!frame.hasAttribute('src')) return;
+                this.modalLoading = false;
+                try {
+                    const doc = frame.contentDocument;
+                    if (!doc || !frame.contentWindow.location.pathname.startsWith('/app/')) {
+                        this.modalError = 'Страница недоступна. Проверьте вход и доступ к данным.';
+                        return;
+                    }
+                    // Existing pages keep their scripts, forms, CSRF and permission checks.
+                    // Hide only duplicate shell navigation inside this embedded document.
+                    const style = doc.createElement('style');
+                    style.textContent = '.shell-sidebar,.shell-drawer,.shell-navbar,.shell-skip,.shell-guest-theme{display:none!important}.shell-layout{display:block!important}.shell-page{margin:0!important;min-width:0}.shell-content{padding:16px!important}';
+                    doc.head.append(style);
+                    doc.addEventListener('keydown', event => {
+                        if (event.key === 'Escape' && !doc.querySelector('dialog[open]')) {
+                            event.preventDefault();
+                            this.$refs.workspaceDialog.close();
+                        }
+                    });
+                } catch (_) { this.modalError = 'Не удалось открыть страницу в этом окне.'; }
+            },
+            workspaceModalClosed() {
+                this.$refs.workspaceFrame.removeAttribute('src');
+                this.modalLoading = false;
+                this.modalError = '';
+                const launcher = this._modalLauncher;
+                this.$nextTick(() => (launcher?.isConnected && launcher.getClientRects().length ? launcher : this.$refs.input)?.focus());
+                if (this.workspaceTaskId) this.refreshWorkspaceTask();
+                this.loadWorkspaceTasks(this.workspaceOffset);
+            },
+            draftAction(text) {
+                if (this.pending || this.awaitingConfirmation) return;
+                const input = this.$refs.input;
+                const existing = input.value.trim();
+                input.value = existing ? input.value + '\n\n' + text : text;
+                this.draftNotice = existing ? 'Запрос добавлен к вашему черновику. Проверьте перед отправкой.' : 'Запрос подготовлен. Уточните детали и отправьте.';
+                this.resizeInput();
+                input.focus();
+                this.$nextTick(() => this.scrollToBottom());
+            },
+            async workspaceRead(url) {
+                const response = await fetch(url, {headers: {'Accept': 'application/json'}, cache: 'no-store'});
+                const data = await response.json();
+                if (!response.ok) {
+                    const error = new Error(data.error || 'Не удалось загрузить данные');
+                    error.status = response.status;
+                    throw error;
+                }
+                return data;
+            },
+            async loadWorkspaceTasks(offset = 0) {
+                if (!document.querySelector('[data-chat-task-picker]')) return;
+                const request = ++this.workspaceListRequest;
+                this.workspaceListLoading = true;
+                this.workspaceListError = '';
+                this.workspaceTasks = [];
+                this.workspaceNextOffset = null;
+                try {
+                    const data = await this.workspaceRead('/app/chat/workspace/tasks?' + new URLSearchParams({search: this.workspaceSearch, offset}));
+                    if (request !== this.workspaceListRequest) return;
+                    this.workspaceTasks = data.tasks || [];
+                    this.workspaceOffset = offset;
+                    this.workspaceNextOffset = data.next_offset;
+                } catch (error) {
+                    if (request === this.workspaceListRequest) {
+                        this.workspaceListError = error.status === 403 ? 'Доступ к задачам изменился.' : 'Не удалось загрузить задачи. Повторите попытку.';
+                        if (error.status === 403) this.clearWorkspaceTask();
+                    }
+                } finally {
+                    if (request === this.workspaceListRequest) this.workspaceListLoading = false;
+                }
+            },
+            async selectWorkspaceTask(id) {
+                if (this.pending || this.awaitingConfirmation) return;
+                this.clearWorkspaceTask();
+                this.workspaceTaskId = Number(id);
+                await this.refreshWorkspaceTask();
+            },
+            clearWorkspaceTask() {
+                if (this.pending || this.awaitingConfirmation) return;
+                ++this.workspaceTaskRequest;
+                this.workspaceTaskId = null;
+                this.workspaceTask = null;
+                this.workspaceTaskError = '';
+                this.workspaceCheckedAt = '';
+                this.workspaceTaskLoading = false;
+                this.syncCardsFromState();
+            },
+            async refreshWorkspaceTask() {
+                if (!this.workspaceTaskId) return;
+                const id = this.workspaceTaskId;
+                const request = ++this.workspaceTaskRequest;
+                this.workspaceTaskLoading = true;
+                this.workspaceTaskError = '';
+                // Do not keep stale plan/results visible after access changes.
+                this.workspaceTask = null;
+                this.workspaceCheckedAt = '';
+                this.syncCardsFromState();
+                try {
+                    const data = await this.workspaceRead('/app/chat/workspace/tasks/' + id);
+                    if (request !== this.workspaceTaskRequest || id !== this.workspaceTaskId) return;
+                    this.workspaceTask = data;
+                    this.workspaceCheckedAt = new Date().toLocaleTimeString('ru-RU');
+                    this.workspaceCardsError = '';
+                    this.syncCardsFromState();
+                } catch (error) {
+                    if (request === this.workspaceTaskRequest) {
+                        this.workspaceTaskError = [403, 404].includes(error.status) ? 'Задача больше недоступна. Снимите выбор или выберите другую.' : 'Не удалось обновить задачу. Повторите попытку.';
+                        this.syncCardsFromState();
+                    }
+                } finally {
+                    if (request === this.workspaceTaskRequest) this.workspaceTaskLoading = false;
+                }
+            },
+            selectWorkspaceTab(tab) {
+                if (!['context', 'decisions', 'runs', 'materials'].includes(tab)) return;
+                this.workspaceTab = tab;
+                try { sessionStorage.setItem('chat.workspace.tab', tab); } catch (_) {}
+                if (tab !== 'context') this.loadWorkspacePanel();
+            },
+            async loadWorkspacePanel() {
+                this.panelLoading = true;
+                try {
+                    const params = new URLSearchParams();
+                    if (this.workspaceTaskId) params.set('task_id', String(this.workspaceTaskId));
+                    if (this.evidenceContext) {
+                        params.set('context_type', this.evidenceContext.type || '');
+                        params.set('context_id', String(this.evidenceContext.context_id || this.evidenceContext.id || ''));
+                        params.set('boundary', this.evidenceContext.boundary || 'cloud');
+                    }
+                    const data = await this.workspaceRead('/app/chat/workspace/panel?' + params.toString());
+                    this.panelData = {
+                        decisions: data.decisions || [],
+                        runs: data.runs || [],
+                        materials: data.materials || [],
+                    };
+                } catch (_) {
+                    // Panel fallback uses local state
+                } finally {
+                    this.panelLoading = false;
+                }
+            },
+            syncCardsFromState() {
+                const cards = [];
+                if (this.workspaceTask) {
+                    const snap = this.workspaceTask;
+                    cards.push({
+                        id: 'plan_preview:task:' + snap.id,
+                        card_type: 'plan_preview',
+                        title: 'План задачи: ' + snap.name,
+                        status: snap.plan_status || 'unavailable',
+                        summary: snap.plan?.goal || 'План задачи',
+                        authoritative_ref: 'agent_task:' + snap.id,
+                        authoritative_url: snap.task_url || ('/app/tasks/' + snap.id),
+                        actions: [
+                            { kind: 'link', label: 'Открыть страницу задачи', href: snap.task_url || ('/app/tasks/' + snap.id) },
+                        ],
+                    });
+                    if (snap.latest) {
+                        if (['pending', 'running'].includes(snap.latest.status) || snap.latest.progress) {
+                            cards.push({
+                                id: 'progress:task:' + snap.id,
+                                card_type: 'progress',
+                                title: 'Выполнение: ' + snap.name,
+                                status: snap.latest.status || 'running',
+                                progress: snap.latest.progress || null,
+                                authoritative_ref: 'agent_task:' + snap.id,
+                                authoritative_url: snap.task_url || ('/app/tasks/' + snap.id),
+                                actions: [
+                                    { kind: 'link', label: 'Управление запуском', href: snap.task_url || ('/app/tasks/' + snap.id) },
+                                ],
+                            });
+                        }
+                        cards.push({
+                            id: 'result:task:' + snap.id,
+                            card_type: 'result',
+                            title: 'Результат: ' + snap.name,
+                            status: snap.latest.status || 'done',
+                            limitations: snap.latest.coverage === 'partial_or_bounded' ? 'Охват ограничен параметрами запуска; полнота данных не подтверждена.' : '',
+                            authoritative_ref: 'agent_task:' + snap.id,
+                            authoritative_url: snap.task_url || ('/app/tasks/' + snap.id),
+                            actions: [
+                                { kind: 'link', label: 'Открыть результаты', href: snap.task_url || ('/app/tasks/' + snap.id) },
+                            ],
+                        });
+                    }
+                }
+                if (this.evidenceContext) {
+                    const ctx = this.evidenceContext;
+                    const kind = ctx.type || ctx.context_type || 'knowledge';
+                    const cid = ctx.context_id || ctx.id || '';
+                    const cardType = ['document', 'communication'].includes(kind) ? 'draft' : 'result';
+                    const authUrl = this.evidenceContextPageUrl() || '/app/knowledge';
+                    cards.push({
+                        id: cardType + ':' + kind + ':' + cid,
+                        card_type: cardType,
+                        title: ctx.title || ('Объект #' + cid),
+                        status: ctx.is_local_only || ctx.boundary === 'local_only' ? 'local_only' : (ctx.status || 'ready'),
+                        summary: ctx.excerpt || '',
+                        limitations: ctx.extraction_limit_note || '',
+                        authoritative_ref: ctx.ref || (kind + ':' + cid),
+                        authoritative_url: authUrl,
+                        actions: [
+                            { kind: 'link', label: 'Открыть страницу', href: authUrl },
+                        ],
+                    });
+                }
+                this.workspaceCards = cards;
+            },
+            async refreshWorkspaceCards() {
+                this.workspaceCardsLoading = true;
+                this.workspaceCardsError = '';
+                try {
+                    const params = new URLSearchParams();
+                    if (this.workspaceTaskId) params.set('task_id', String(this.workspaceTaskId));
+                    if (this.evidenceContext) {
+                        params.set('context_type', this.evidenceContext.type || '');
+                        params.set('context_id', String(this.evidenceContext.context_id || this.evidenceContext.id || ''));
+                        params.set('boundary', this.evidenceContext.boundary || 'cloud');
+                    }
+                    const data = await this.workspaceRead('/app/chat/workspace/cards?' + params.toString());
+                    this.workspaceCards = data.cards || [];
+                } catch (error) {
+                    this.workspaceCards = [];
+                    this.workspaceCardsError = [403, 404].includes(error.status)
+                        ? 'Связанная запись больше недоступна или доступ к ней изменился.'
+                        : 'Не удалось обновить карточку из сервиса.';
+                } finally {
+                    this.workspaceCardsLoading = false;
+                }
+            },
+            async clearEvidenceContext() {
+                if (this.pending || this.awaitingConfirmation) return;
+                this.evidenceContext = null;
+                window.__chatEvidenceContext = null;
+                this.workspaceCardsError = '';
+                this.syncCardsFromState();
+                try {
+                    await fetch('/app/chat/context/clear', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: new URLSearchParams({ '_csrf': this.csrf }),
+                    });
+                } catch (_) {
+                    // Best-effort session clear
+                }
+            },
+            activeBoundary() {
+                return this.evidenceContext?.boundary || 'cloud';
+            },
+            boundaryBadgeLabel() {
+                const b = this.activeBoundary();
+                if (b === 'local_only') return 'Контур: local_only (облако заблокировано)';
+                if (b === 'company') return 'Контур: company (корпоративный)';
+                return 'Контур: cloud (облачная модель)';
+            },
+            isLocalOnlyBlocked() {
+                if (this.awaitingConfirmation) return false;
+                const b = this.activeBoundary();
+                return Boolean(this.evidenceContext && b !== 'cloud');
+            },
+            contextTypeLabel(type) {
+                return ({
+                    task: 'Задача',
+                    communication: 'Переписка',
+                    contact: 'Контакт',
+                    document: 'Документ',
+                    case: 'Кейс',
+                    followup: 'Напоминание',
+                    knowledge: 'База знаний',
+                })[type] || 'Контекст';
+            },
+            evidenceContextPageUrl() {
+                if (!this.evidenceContext) return '';
+                const kind = this.evidenceContext.type || this.evidenceContext.context_type || '';
+                const id = this.evidenceContext.id || this.evidenceContext.context_id || '';
+                if (this.evidenceContext.href) return this.evidenceContext.href;
+                if (kind === 'document' && id) return '/app/documents/' + id;
+                if (kind === 'contact' && id) return '/app/contacts/' + id;
+                if (kind === 'task' && id) return '/app/tasks/' + id;
+                if (kind === 'communication') return '/app/communications';
+                if (kind === 'case') return '/app/cases';
+                if (kind === 'followup') return '/app/followups';
+                return '/app/knowledge';
+            },
+            cardTypeLabel(cardType) {
+                return ({
+                    plan_preview: 'План',
+                    decision: 'Решение',
+                    progress: 'В работе',
+                    result: 'Результат',
+                    draft: 'Черновик',
+                    brief: 'Сводка',
+                })[cardType] || 'Карточка';
+            },
+            cardStatusLabel(status) {
+                return ({
+                    available: 'Доступен',
+                    ready: 'Актуально',
+                    pending: 'Ожидает',
+                    running: 'Выполняется',
+                    done: 'Готово',
+                    failed: 'Ошибка',
+                    local_only: 'Только локально',
+                    unavailable: 'Недоступно',
+                })[status] || status || '';
+            },
+            workspaceContextBlocked() {
+                return Boolean(!this.awaitingConfirmation && this.workspaceTaskId &&
+                    (this.workspaceTaskLoading || this.workspaceTaskError));
+            },
+            workspacePlanNotice(status) {
+                return ({legacy: 'Для этой задачи нет сохранённого плана.', source_access_required: 'Для просмотра плана нужен доступ к источникам.', scenario_access_required: 'Для просмотра плана нужен доступ к сценарию.', scope_changed: 'Источники изменились. Проверьте план задачи.', source_unavailable: 'Один из источников недоступен.'})[status] || 'План недоступен. Откройте подробности задачи.';
+            },
+            workspaceWindow(window) {
+                if (!window) return 'Период не указан';
+                return window.type === 'rolling' ? 'Последние ' + window.days + ' дн.' : (window.start || 'С начала') + ' — ' + (window.end || 'по текущую дату');
+            },
+            workspaceRunStatus(status) {
+                return ({pending: 'В очереди', running: 'Выполняется', done: 'Обработка завершена — проверьте результат и охват', failed: 'Завершилось с ошибкой', cancelled: 'Отменено', unavailable: 'Сведения о запуске недоступны'})[status] || 'Состояние не подтверждено';
+            },
             visibleMessages(items) {
                 return items.filter(m => ['user', 'assistant'].includes(m.role) && typeof m.content === 'string' && m.content.trim());
+            },
+            attachmentEnabled() {
+                return Boolean(this.attachmentPolicy && this.attachmentPolicy.enabled);
+            },
+            attachmentAcceptAttr() {
+                if (!this.attachmentPolicy) return '';
+                const docs = this.attachmentPolicy.allowed_document_extensions || [];
+                const imgs = this.attachmentPolicy.allowed_image_extensions || [];
+                return [...docs, ...imgs].join(',');
+            },
+            selectedConnectorRoots() {
+                const device = this.connectorSearch.devices.find((item) => String(item.id) === this.connectorDeviceId);
+                return device?.roots || [];
+            },
+            companyReferenceLabel(reference) {
+                const parts = [reference.path || 'Файл'];
+                if (reference.page) parts.push('стр. ' + reference.page);
+                if (reference.sheet) parts.push('лист ' + reference.sheet);
+                return parts.join(' · ');
+            },
+            async searchCompanyReferences() {
+                const query = (this.$refs.input?.value || '').trim();
+                const selectedRoots = [...this.$root.querySelectorAll('[data-company-root]:checked')].map((input) => input.value);
+                if (!query || !this.connectorDeviceId || !selectedRoots.length) {
+                    this.connectorSearchError = 'Введите запрос и выберите согласованные папки.';
+                    this.connectorReferences = [];
+                    return;
+                }
+                this.connectorSearchPending = true;
+                this.connectorSearchError = '';
+                this.connectorReferences = [];
+                this.connectorSearchPartial = false;
+                try {
+                    const body = new URLSearchParams({
+                        '_csrf': this.csrf,
+                        'query': query,
+                        'device_id': this.connectorDeviceId,
+                    });
+                    selectedRoots.forEach((root) => body.append('roots', root));
+                    const response = await fetch('/app/chat/connector-search', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body,
+                        cache: 'no-store',
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok || data.error) throw new Error(data.error || 'Поиск подключённых папок недоступен.');
+                    this.connectorReferences = Array.isArray(data.references) ? data.references : [];
+                    this.connectorSearchPartial = Boolean(data.partial);
+                } catch (error) {
+                    this.connectorSearchError = error.message || 'Поиск подключённых папок недоступен.';
+                } finally {
+                    this.connectorSearchPending = false;
+                }
+            },
+            handleAttachClick() {
+                if (!this.attachmentEnabled()) {
+                    this.$refs.attachmentInfo?.showModal();
+                    return;
+                }
+                this.$refs.attachmentInput?.click();
+            },
+            openAttachmentLimits() {
+                this.$refs.attachmentInfo?.showModal();
+            },
+            chooseFileFromDialog() {
+                this.$refs.attachmentInfo?.close();
+                if (this.attachmentEnabled()) {
+                    this.$refs.attachmentInput?.click();
+                }
+            },
+            attachmentStateLabel(att) {
+                if (!att) return '';
+                if (att.state === 'selected') return 'Выбрано — проверка…';
+                if (att.state === 'rejected') return 'Отклонено';
+                if (att.state === 'processed') return 'Обработано';
+                if (att.requires_confirmation) {
+                    return att.confirmed ? 'Подтверждено' : 'Требуется подтверждение';
+                }
+                return 'Готово к отправке';
+            },
+            readyAttachments() {
+                return this.attachments.filter(
+                    (a) => a.id && (a.state === 'uploaded' || a.state === 'confirm_required')
+                );
+            },
+            hasRejectedAttachments() {
+                return this.attachments.some((a) => a.state === 'rejected');
+            },
+            hasUnconfirmedLargeAttachments() {
+                const ready = this.readyAttachments();
+                if (!ready.length) return false;
+                if (ready.some((a) => a.requires_confirmation && !a.confirmed)) return true;
+                const threshold = this.attachmentPolicy?.confirm_token_threshold || 1500;
+                const totalTokens = ready.reduce((acc, a) => acc + (Number(a.estimated_tokens) || 0), 0);
+                return totalTokens >= threshold && !ready.every((a) => a.confirmed);
+            },
+            toggleAttachmentConfirm(clientId, checked) {
+                const item = this.attachments.find((a) => a.clientId === clientId);
+                if (item) {
+                    item.confirmed = Boolean(checked);
+                }
+            },
+            async onFilesSelected(event) {
+                const inputEl = event?.target;
+                const files = Array.from(inputEl?.files || []);
+                // Reset immediately so selecting the same file again triggers change in Safari/Chrome
+                if (inputEl) inputEl.value = '';
+                if (!files.length || !this.attachmentEnabled()) return;
+
+                const maxFiles = this.attachmentPolicy?.max_files_per_turn || 4;
+                const activeCount = this.attachments.filter((a) => a.state !== 'rejected').length;
+                if (activeCount + files.length > maxFiles) {
+                    this.notice = `Можно прикрепить не более ${maxFiles} файлов к одному сообщению.`;
+                    return;
+                }
+                this.notice = '';
+                for (const file of files) {
+                    await this.uploadAttachment(file);
+                }
+            },
+            async uploadAttachment(file) {
+                const clientId = 'att-' + (++this.attachmentSeq) + '-' + Date.now();
+                const entry = {
+                    clientId,
+                    id: null,
+                    filename: file.name || 'file',
+                    size_bytes: file.size || 0,
+                    state: 'selected',
+                    summary_label: 'Проверка формата и оценка токенов…',
+                    estimated_tokens: 0,
+                    estimated_cost_usd: 0,
+                    requires_confirmation: false,
+                    confirmation_reason: '',
+                    omitted_note: '',
+                    confirmed: false,
+                    error: '',
+                };
+                this.attachments.push(entry);
+                this.attachmentUploading = true;
+                try {
+                    const formData = new FormData();
+                    formData.append('_csrf', this.csrf);
+                    formData.append('file', file);
+                    if (this.workspaceTaskId) {
+                        formData.append('task_id', String(this.workspaceTaskId));
+                    }
+                    const response = await fetch('/app/chat/attachments', {
+                        method: 'POST',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: formData,
+                    });
+                    let data = {};
+                    try {
+                        data = await response.json();
+                    } catch (_) {
+                        data = {};
+                    }
+                    if (!response.ok || data.error || !data.attachment) {
+                        entry.state = 'rejected';
+                        entry.summary_label = '';
+                        entry.error = data.error || `Файл отклонён (${response.status}).`;
+                        return;
+                    }
+                    const srv = data.attachment;
+                    entry.id = srv.id;
+                    entry.filename = srv.filename || entry.filename;
+                    entry.summary_label = srv.summary_label || '';
+                    entry.estimated_tokens = Number(srv.estimated_tokens) || 0;
+                    entry.estimated_cost_usd = Number(srv.estimated_cost_usd) || 0;
+                    entry.requires_confirmation = Boolean(srv.requires_confirmation);
+                    entry.confirmation_reason = srv.confirmation_reason || '';
+                    entry.omitted_note = srv.omitted_note || '';
+                    entry.state = entry.requires_confirmation ? 'confirm_required' : 'uploaded';
+                } catch (err) {
+                    console.error('Attachment upload error:', err);
+                    entry.state = 'rejected';
+                    entry.summary_label = '';
+                    entry.error = err.message || 'Не удалось загрузить файл.';
+                } finally {
+                    this.attachmentUploading = this.attachments.some((a) => a.state === 'selected');
+                }
+            },
+            async removeAttachment(clientId) {
+                const idx = this.attachments.findIndex((a) => a.clientId === clientId);
+                if (idx === -1) return;
+                const [removed] = this.attachments.splice(idx, 1);
+                if (removed?.id) {
+                    try {
+                        await fetch(`/app/chat/attachments/${encodeURIComponent(removed.id)}/delete`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'Accept': 'application/json',
+                            },
+                            body: new URLSearchParams({ '_csrf': this.csrf }),
+                        });
+                    } catch (_) {
+                        // Best-effort server cleanup
+                    }
+                }
+            },
+            async cleanupStagedAttachments() {
+                const staged = this.attachments.filter((a) => a.id);
+                this.attachments = [];
+                if (!staged.length) return;
+                try {
+                    await fetch('/app/chat/attachments/cleanup', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json',
+                        },
+                        body: new URLSearchParams({ '_csrf': this.csrf }),
+                    });
+                } catch (_) {
+                    // Best-effort cleanup
+                }
             },
             requestConfirmation(kind, id = null) {
                 if (this.pending) return;
@@ -57,6 +693,12 @@ function chatApp() {
             performConfirmation() {
                 const action = this.confirmation; this.confirmation = null;
                 if (action?.kind === 'clear') this.clearHistory();
+                else if (action?.kind === 'send_large_attachments') {
+                    for (const att of this.readyAttachments()) {
+                        att.confirmed = true;
+                    }
+                    this.sendMessage(action.preset || '', true);
+                }
                 else if (action) this.deleteMessage(action.id);
             },
             isLast(message) { return this.messages.at(-1)?.id === message.id },
@@ -75,8 +717,12 @@ function chatApp() {
                 this.thinkingTimer = null
             },
             resizeInput() { const el = this.$refs.input; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 180) + 'px'; },
-            attachFile() { this.notice = 'Прикрепление файлов пока не поддерживается.'; },
-            stopGeneration() { if (this.abortController) this.abortController.abort(); },
+            stopGeneration() {
+                if (this.abortController) this.abortController.abort();
+                if (this.attachments.some((a) => a.id)) {
+                    this.cleanupStagedAttachments();
+                }
+            },
             safeMarkdown(html) {
                 const doc = new DOMParser().parseFromString(html, 'text/html');
                 const allowed = new Set(['P','BR','STRONG','EM','DEL','UL','OL','LI','H1','H2','H3','H4','BLOCKQUOTE','PRE','CODE','A','TABLE','THEAD','TBODY','TR','TH','TD','HR','DIV','SPAN','BUTTON']);
@@ -163,14 +809,46 @@ function chatApp() {
                 const data = await response.json()
                 if (!response.ok) throw new Error(data.error || 'Не удалось обновить диалог')
                 this.messages = this.visibleMessages(data.messages || [])
+                this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
                 this.$nextTick(() => this.scrollToBottom())
             },
 
-            async sendMessage(preset = '') {
+            async sendMessage(preset = '', forceConfirmLarge = false) {
                 const textarea = this.$refs.input
-                const text = (typeof preset === 'string' && preset ? preset : textarea.value).trim()
-                if (!text || this.pending) return
+                const rawText = (typeof preset === 'string' && preset ? preset : textarea.value).trim()
+                const readyAtts = this.readyAttachments()
+                if (this.isLocalOnlyBlocked()) {
+                    this.notice = 'Этот контекст нельзя передавать в облачный чат. Локальный маршрут не настроен.'
+                    return
+                }
+                if ((!rawText && !readyAtts.length) || this.pending || this.workspaceContextBlocked()) return
+                if (this.attachmentUploading) {
+                    this.notice = 'Дождитесь завершения проверки и загрузки вложений.'
+                    return
+                }
+                if (this.hasRejectedAttachments()) {
+                    this.notice = 'Удалите отклонённые вложения перед отправкой сообщения.'
+                    return
+                }
+                if (!forceConfirmLarge && this.hasUnconfirmedLargeAttachments()) {
+                    const totalTokens = readyAtts.reduce((acc, a) => acc + (Number(a.estimated_tokens) || 0), 0)
+                    const modelMax = this.attachmentPolicy?.model_max_tokens || 4096
+                    this.confirmation = {
+                        kind: 'send_large_attachments',
+                        preset: typeof preset === 'string' ? preset : '',
+                        label: `Крупное вложение (~${totalTokens} токенов при лимите модели ${modelMax}). Подтвердить отправку и расход токенов?`,
+                    }
+                    return
+                }
+
+                const text = rawText || 'Проанализируй прикреплённые файлы в контексте задачи.'
+                const attachmentIds = readyAtts.map((a) => a.id).join(',')
+                const confirmLarge = (forceConfirmLarge || readyAtts.some((a) => a.confirmed)) ? '1' : ''
+
                 this.notice = ''
+                this.draftNotice = '';
+                const selectedId = this.workspaceTaskId;
+                const activeContext = this.evidenceContext;
 
                 this.pending = true
                 this.sending = true
@@ -178,10 +856,15 @@ function chatApp() {
                 this.startThinking()
 
                 // Optimistic: show user message immediately
+                const optimisticText = readyAtts.length
+                    ? `[Вложения: ${readyAtts.map((a) => a.filename).join(', ')}]
+
+${text}`
+                    : text
                 const userMsg = {
                     id: 'pending-' + Date.now(),
                     role: 'user',
-                    content: text,
+                    content: optimisticText,
                     created_at: new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
                 }
                 this.messages.push(userMsg)
@@ -200,6 +883,10 @@ function chatApp() {
                         body: new URLSearchParams({
                             '_csrf': this.csrf,
                             'text': text,
+                            ...(selectedId ? {task_id: selectedId} : {}),
+                            ...(activeContext ? {context_type: activeContext.type, context_id: activeContext.context_id, boundary: activeContext.boundary} : {}),
+                            ...(attachmentIds ? {attachment_ids: attachmentIds} : {}),
+                            ...(confirmLarge ? {confirm_large: confirmLarge} : {}),
                         }),
                         signal: this.abortController.signal,
                     })
@@ -219,8 +906,14 @@ function chatApp() {
                         throw error
                     }
 
+                    for (const att of readyAtts) {
+                        att.state = 'processed'
+                    }
+                    this.attachments = []
+
                     // Replace with full transcript from server (includes user msg + assistant replies)
                     this.messages = this.visibleMessages(data.messages || [])
+                    this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
                     if (data.warning) this.notice = data.warning
                     else if (data.awaiting_confirmation) {
                         // A staged confirmation is a question, not a missing
@@ -242,7 +935,7 @@ function chatApp() {
                     // never typed, which is exactly how a spent daily limit
                     // looked like a broken form.
                     userMsg.failed = true
-                    textarea.value = text
+                    textarea.value = rawText
                     this.notice = (err.code === 'daily_limit_reached' ? 'Лимит: ' : '') +
                         (err.message || 'Не удалось отправить сообщение.')
                     this.$nextTick(() => this.scrollToBottom())
@@ -251,6 +944,7 @@ function chatApp() {
                     this.sending = false
                     this.abortController = null
                     this.stopThinking()
+                    if (this.workspaceTaskId) this.refreshWorkspaceTask();
                 }
             },
 
@@ -273,6 +967,10 @@ function chatApp() {
                     const data = await response.json()
                     if (!response.ok || data.error) throw new Error(data.error)
                     this.messages = this.visibleMessages(data.messages || [])
+                    this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
+                    this.attachments = [];
+                    this.pending = false;
+                    this.clearWorkspaceTask();
                     if (data.warning) this.notice = data.warning
                     this.$nextTick(() => this.scrollToBottom())
                 } catch (err) {
@@ -331,21 +1029,18 @@ function chatApp() {
 
             onScroll() {
                 const scroller = this._scroller || this.scrollContainer();
-                if (!scroller) return;
-                const isDoc = scroller === document.scrollingElement || scroller === document.documentElement;
-                // Primary: is there scrollable room below (>120px)? Works even with short chats.
-                const distance = isDoc
-                    ? scroller.scrollHeight - window.innerHeight - window.scrollY
-                    : scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-                if (distance > 120) { this.autoScroll = false; return; }
-                // Secondary: input form is below the visible viewport (long page, form out of view).
                 const form = this.$refs.form;
-                if (form) {
-                    const rect = form.getBoundingClientRect();
-                    const viewport = window.innerHeight || document.documentElement.clientHeight;
-                    if (rect.top - viewport > 120) { this.autoScroll = false; return; }
+                if (!scroller || !form) return;
+                const isDoc = scroller === document.scrollingElement || scroller === document.documentElement;
+                const bounds = isDoc ? {top: 0, bottom: window.innerHeight} : scroller.getBoundingClientRect();
+                const rect = form.getBoundingClientRect();
+                // Only offer the shortcut after the entire composer is below view.
+                // A tall context panel must not make it appear beside a visible input.
+                this.autoScroll = rect.top < bounds.bottom + 80;
+                const chat = this.$refs.messages?.getBoundingClientRect();
+                if (chat && this.$refs.scrollButton) {
+                    this.$refs.scrollButton.style.left = (chat.left + chat.width / 2) + 'px';
                 }
-                this.autoScroll = true;
             },
 
             copyText(text, event) {

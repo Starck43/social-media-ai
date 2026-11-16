@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from source_import_isolation import load_isolated_source
+from tests.shared.decomposition_source_loader import load_decomposed_source as load_isolated_source
 
 ROOT = Path(__file__).resolve().parents[2]
 PRIVATE = "PRIVATE-ANALYZER-DETAIL"
@@ -37,9 +37,7 @@ class InlineErrorsTests(unittest.IsolatedAsyncioTestCase):
             Source=SimpleNamespace(objects=SimpleNamespace(filter=self.filter, update_last_checked=self.checked)),
         )
         imports = {
-            "app.core.tenant_context": SimpleNamespace(
-                current_tenant_id=Mock(), is_bypass=Mock(), tenant_scope=Mock()
-            ),
+            "app.core.tenant_context": SimpleNamespace(current_tenant_id=Mock(), is_bypass=Mock(), tenant_scope=Mock()),
             "app.models": self.models,
             "app.services.ai.analyzer": SimpleNamespace(AIAnalyzer=Mock(return_value=self.analyzer)),
             "app.services.social.factory": SimpleNamespace(get_social_client=Mock(return_value=self.client)),
@@ -56,7 +54,8 @@ class InlineErrorsTests(unittest.IsolatedAsyncioTestCase):
         self.collector._stage_items = AsyncMock(return_value=2)
         self.collector._retire_staged = AsyncMock(return_value=2)
         self.handlers = load_isolated_source(
-            "_inline_collect_handler", ROOT / "app/jobs/handlers.py",
+            "_inline_collect_handler",
+            ROOT / "app/jobs/handlers.py",
             {
                 "app.services.social.credentials": imports["app.services.social.credentials"],
                 "app.services.monitoring.collector": SimpleNamespace(ContentCollector=lambda: self.collector),
@@ -71,9 +70,15 @@ class InlineErrorsTests(unittest.IsolatedAsyncioTestCase):
 
     def make_source(self, source_id):
         return SimpleNamespace(
-            id=source_id, name=f"source{source_id}", external_id=f"source{source_id}",
-            platform_id=3, platform=SimpleNamespace(params={}), source_type=self.user_type,
-            last_checked=None, params={}, tenant_id=1,
+            id=source_id,
+            name=f"source{source_id}",
+            external_id=f"source{source_id}",
+            platform_id=3,
+            platform=SimpleNamespace(params={}),
+            source_type=self.user_type,
+            last_checked=None,
+            params={},
+            tenant_id=1,
         )
 
     async def analyze(self, *args, **kwargs):
@@ -94,16 +99,20 @@ class InlineErrorsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_partial_analysis_preserves_collected_rows_and_stage_order(self):
         events = []
+
         async def stage(*args, durable=False, selection=None):
             events.append("stage")
             self.assertFalse(durable)
             return 2
+
         async def analyze(*args, **kwargs):
             events.append("analyze")
             return await self.analyze(*args, **kwargs)
+
         async def retire(*args):
             events.append("retire")
             return 2
+
         self.collector._stage_items.side_effect = stage
         self.analyzer.analyze_content.side_effect = analyze
         self.collector._retire_staged.side_effect = retire
@@ -199,9 +208,13 @@ class InlineErrorsTests(unittest.IsolatedAsyncioTestCase):
     async def test_handler_rejects_malformed_reported_counts(self):
         for value in (True, False, 1.0, "1", None, -1, 0):
             with self.subTest(value=value):
-                self.collector.collect_from_source = AsyncMock(return_value={
-                    "content_count": 2, "new_items": 1, "analysis_errors": value,
-                })
+                self.collector.collect_from_source = AsyncMock(
+                    return_value={
+                        "content_count": 2,
+                        "new_items": 1,
+                        "analysis_errors": value,
+                    }
+                )
                 result = await self.handle()
                 self.assertEqual(result["error"], 0)
                 self.assertNotIn("analysis_errors", result["per_source"][0])

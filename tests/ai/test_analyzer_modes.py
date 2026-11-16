@@ -11,18 +11,13 @@ import pytest
 from app.models import Platform, Source
 from app.services.ai.analyzer import AIAnalyzer
 from app.types import PlatformType, SourceType
+from tests.shared.platform_catalog import shared_platform
 
 
 @pytest.fixture
 async def platform():
-    p = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type=PlatformType.VK.db_value,
-        base_url="https://vk.com",
-        params={},
-    )
+    p = await shared_platform(PlatformType.VK.db_value)
     yield p
-    await Platform.objects.delete_by_id(p.id)
 
 
 @pytest.fixture
@@ -67,7 +62,15 @@ async def test_base_analyze_does_not_save_a_timed_out_llm_stub(monkeypatch, sour
     saved = []
 
     async def fake_analyze_text(
-        self, text_items, agent_scenario, content_stats, platform_name, source, trigger_config=None, task_payload=None, **kwargs
+        self,
+        text_items,
+        agent_scenario,
+        content_stats,
+        platform_name,
+        source,
+        trigger_config=None,
+        task_payload=None,
+        **kwargs,
     ):
         return {
             "request": {"model": "m", "prompt": "p", "provider": "openai"},
@@ -100,7 +103,16 @@ async def test_analyze_content_uses_passed_scenario_when_forwarded(monkeypatch, 
 
     mode_called = []
 
-    async def fake_by_themes(self, content, source, force_reanalyze=False, agent_scenario=None, trigger_config=None, task_payload=None, **kwargs):
+    async def fake_by_themes(
+        self,
+        content,
+        source,
+        force_reanalyze=False,
+        agent_scenario=None,
+        trigger_config=None,
+        task_payload=None,
+        **kwargs,
+    ):
         mode_called.append(agent_scenario)
         return []
 
@@ -108,7 +120,8 @@ async def test_analyze_content_uses_passed_scenario_when_forwarded(monkeypatch, 
 
     sc = AgentScenario(id=999, name="Сценарий 6", analysis_types=["sentiment"])
     await AIAnalyzer().analyze_content(
-        [{"text": "x"}], source,
+        [{"text": "x"}],
+        source,
         agent_scenario=sc,
     )
     assert mode_called == [sc]

@@ -20,9 +20,10 @@ from app.core.tenant_context import tenant_scope
 from app.jobs import progress as job_progress
 from app.jobs.claim_outcomes import JobClaim, JobClaimLostError, JobNotAcquiredError, JobOutcomeReceipt, OutcomeAck
 from app.jobs.handlers import HANDLERS
-from app.jobs.result_outcomes import reported_llm_cost, returned_failure
 from app.jobs.recovery_policy import OUTCOME_UNCONFIRMED_PREFIX, outcome_unconfirmed
+from app.jobs.result_outcomes import reported_llm_cost, returned_failure
 from app.models.managers.job_manager import JobManager
+from app.utils.error_kinds import classify_error as _error_kind
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ jobs = JobManager()
 
 
 _FAILURE_MESSAGE = "Не удалось завершить обработку. Подробности сохранены в задаче."
-_LOG_JOB_TYPES = frozenset({"collect", "digest", "prune", "analyze", "learn", "reflect"})
+_LOG_JOB_TYPES = frozenset({"collect", "digest", "prune", "analyze", "learn", "reflect", "comms.email.sync"})
 
 
 class JobOutcomePersistenceError(RuntimeError):
@@ -66,21 +67,6 @@ def _log_id(value: Any) -> int | None:
 
 def _log_job_type(value: Any) -> str:
     return value if type(value) is str and value in _LOG_JOB_TYPES else "unknown"
-
-
-def _error_kind(error: BaseException) -> str:
-    """Bounded categories, not exception messages, repr, args or tracebacks."""
-    if isinstance(error, TimeoutError):
-        return "timeout"
-    if isinstance(error, ConnectionError):
-        return "connection_error"
-    if isinstance(error, OSError):
-        return "io_error"
-    if isinstance(error, ValueError):
-        return "value_error"
-    if isinstance(error, RuntimeError):
-        return "runtime_error"
-    return "unexpected_error"
 
 
 def _log_job(level: int, event: str, job: Any, *, error_code: str = "none") -> None:
@@ -119,6 +105,7 @@ def _job_label(job_type: str) -> str:
         "analyze": "Анализ",
         "learn": "Обучение",
         "reflect": "Рефлексия",
+        "comms.email.sync": "Синхронизация почты",
     }
     return labels.get(job_type, job_type)
 
@@ -257,8 +244,11 @@ async def _notify_job_result(job: Any, *, success: bool, error: str | None = Non
                 title=f"Ошибка задачи «{label}»",
                 message=f"Задача «{label}» не выполнена. {_FAILURE_MESSAGE}",
                 ntype=NotificationType.API_ERROR,
-                entity_type="task",
+                entity_type="task" if job.agent_task_id else None,
                 entity_id=job.agent_task_id,
+                recipient_user_ids=[job.initiated_by_user_id] if getattr(job, "initiated_by_user_id", None) else [],
+                severity="action_required",
+                dedup_key=f"job-outcome:{job.id}:attempt:{getattr(job, 'attempts', 0)}:{success}",
             )
         except Exception:  # noqa: BLE001 — a failing notification must never break the worker
             _log_job(logging.ERROR, "job_error_notification_failed", job, error_code="notification_write_failed")
@@ -272,8 +262,11 @@ async def _notify_job_result(job: Any, *, success: bool, error: str | None = Non
             title=f"Задача «{label}» завершена с ошибками" if source_errors else f"Задача «{label}» выполнена",
             message=_job_success_message(job, result),
             ntype=NotificationType.API_ERROR if source_errors else NotificationType.REPORT_READY,
-            entity_type="task",
+            entity_type="task" if job.agent_task_id else None,
             entity_id=job.agent_task_id,
+            recipient_user_ids=[job.initiated_by_user_id] if getattr(job, "initiated_by_user_id", None) else [],
+            severity="warning" if source_errors else "info",
+            dedup_key=f"job-outcome:{job.id}:attempt:{getattr(job, 'attempts', 0)}:{success}",
         )
     except Exception:  # noqa: BLE001
         _log_job(logging.ERROR, "job_success_notification_failed", job, error_code="notification_write_failed")
@@ -308,9 +301,14 @@ async def _post_ordinary_outcome(receipt: JobOutcomeReceipt) -> JobOutcomeReceip
             claim,
             success=success,
             result=receipt.result if success else None,
-            error=None if success else (
-                "Результат выполнения не подтверждён. Проверьте задание перед повторным запуском."
-                if outcome_unconfirmed(receipt.error) else _FAILURE_MESSAGE
+            error=(
+                None
+                if success
+                else (
+                    "Результат выполнения не подтверждён. Проверьте задание перед повторным запуском."
+                    if outcome_unconfirmed(receipt.error)
+                    else _FAILURE_MESSAGE
+                )
             ),
         )
     except Exception:
@@ -359,13 +357,15 @@ async def _ordinary_heartbeat(claim: JobClaim, state: _OrdinaryHeartbeatState) -
 async def _run_ordinary_handler(claim: JobClaim, job: Any, handler: Callable, payload: dict) -> Any:
     async def invoke():
         if claim.job_type == "digest":
+            from app.services.ai.catalog_execution import run_with_job_catalog
             from app.services.digest.job_delivery import execute_digest_job
 
-            from app.services.ai.catalog_execution import run_with_job_catalog
             async def scoped_digest(digest_payload):
                 return await run_with_job_catalog(job, handler, digest_payload)
+
             return await execute_digest_job(job, payload, scoped_digest)
         from app.services.ai.catalog_execution import run_with_job_catalog
+
         return await run_with_job_catalog(job, handler, payload)
 
     # The handler task copies the bound context; per-source progress uses this claim.
@@ -444,7 +444,15 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
 
         known_delivery_failure = isinstance(error, DeliveryFailure)
         retry = allow_retry and known_delivery_failure and error.retryable is True
-        stored_error = str(error) if known_delivery_failure else f"{OUTCOME_UNCONFIRMED_PREFIX}{_error_kind(error)}"
+        from app.services.tenancy.entitlements import EntitlementDenied
+
+        # A policy refusal is confirmed and terminal, not uncertain provider work.
+        entitlement_denied = isinstance(error, EntitlementDenied)
+        stored_error = (
+            str(error)
+            if known_delivery_failure or entitlement_denied
+            else f"{OUTCOME_UNCONFIRMED_PREFIX}{_error_kind(error)}"
+        )
         try:
             receipt = await jobs.mark_failed(claim.job_id, error=stored_error, allow_retry=retry, claim=claim)
             receipt = _require_outcome_receipt(receipt, claim)
@@ -487,6 +495,8 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
     payload = dict(job.payload or {})
     payload["agent_task_id"] = job.agent_task_id
     payload["job_id"] = job.id
+    payload["attempts"] = job.attempts
+    payload["_prior_result"] = dict(job.result) if isinstance(getattr(job, "result", None), dict) else {}
     payload["_trusted_initiated_by_user_id"] = job.initiated_by_user_id
     with tenant_scope(job.tenant_id):
         checkpoint_mode = False
@@ -498,11 +508,12 @@ async def execute_job(job: Any, handler: Callable, *, allow_retry: bool = True) 
             return await _execute_ordinary(job, handler, payload, allow_retry=allow_retry)
         # Keep checkpoint dispatch/finalization, including persisted-reference routing.
         try:
+            from app.services.ai.catalog_execution import run_with_job_catalog
             from app.services.digest.job_delivery import execute_digest_job, finalize_digest_job
 
-            from app.services.ai.catalog_execution import run_with_job_catalog
             async def scoped_digest(digest_payload):
                 return await run_with_job_catalog(job, handler, digest_payload)
+
             result = await execute_digest_job(job, payload, scoped_digest)
             if await finalize_digest_job(job, result=result) is None:
                 _log_job(logging.WARNING, "job_completion_claim_lost", job, error_code="claim_lost")
@@ -538,6 +549,22 @@ def _claimed_outcome(receipt: JobOutcomeReceipt) -> dict[str, Any]:
 async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, Any]:
     """Return ordinary committed receipts, never a newer attempt's current row."""
     handler = HANDLERS.get(job.job_type)
+    if handler is None and job.job_type == "comms.outbox.dispatch":
+        from app.jobs.job_handlers.outbox_dispatch import handle_outbox_dispatch
+
+        handler = handle_outbox_dispatch
+    if handler is None and job.job_type == "documents.approvals.expire":
+        from app.jobs.job_handlers.document_approval_expiry import handle_document_approval_expiry
+
+        handler = handle_document_approval_expiry
+    if handler is None and job.job_type == "planner.reminders.dispatch":
+        from app.jobs.job_handlers.planner_reminders import handle_planner_reminders
+
+        handler = handle_planner_reminders
+    if handler is None and job.job_type == "calendar.sync":
+        from app.jobs.job_handlers.calendar_sync import handle_calendar_sync
+
+        handler = handle_calendar_sync
     if not handler:
         # A missing handler is not a transient execution failure. Stop this row
         # for operator inspection instead of spending its remaining attempts.
@@ -677,9 +704,53 @@ async def drain(max_jobs: int | None = None) -> int:
     return processed
 
 
+async def _telegram_login_maintenance_loop() -> None:
+    """Retry bounded expiry independently of potentially long-running jobs."""
+    while True:
+        delay = 60
+        try:
+            from app.services.social.telegram_login_maintenance import (
+                BATCH_SIZE,
+                expire_attempt_batch,
+                purge_attempt_batch,
+                wipe_terminal_attempt_batch,
+            )
+
+            with tenant_scope(bypass=True):
+                count = max(
+                    await expire_attempt_batch(), await wipe_terminal_attempt_batch(), await purge_attempt_batch()
+                )
+            if count == BATCH_SIZE:
+                delay = 1
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 — retry without logging data or exception text
+            logger.warning("telegram_login_maintenance_failed error_code=%s", _error_kind(error))
+        try:
+            from app.services.file_workspace.private_maintenance import purge_expired_private_insights
+
+            with tenant_scope(bypass=True):
+                if await purge_expired_private_insights(limit=100) == 100:
+                    delay = 1
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:  # noqa: BLE001 — bounded retry; never log private data
+            logger.warning("private_insight_maintenance_failed error_code=%s", _error_kind(error))
+        await asyncio.sleep(delay)
+
+
 async def worker_forever(poll_seconds: int = 5) -> None:
     """Worker loop: poll the jobs table and process due jobs."""
     logger.info("worker_started")
+    maintenance = asyncio.create_task(_telegram_login_maintenance_loop())
+    try:
+        await _worker_loop(poll_seconds)
+    finally:
+        maintenance.cancel()
+        await asyncio.gather(maintenance, return_exceptions=True)
+
+
+async def _worker_loop(poll_seconds: int) -> None:
     last_maintenance = 0.0
     while True:
         try:

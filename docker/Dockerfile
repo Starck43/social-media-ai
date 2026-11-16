@@ -1,5 +1,6 @@
 # Build context: repository root (docker-compose `build.context: ..`).
-FROM python:3.12-slim
+ARG PYTHON_VERSION=3.14
+FROM python:${PYTHON_VERSION}-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -10,6 +11,10 @@ WORKDIR /srv/app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libharfbuzz-subset0 \
+    fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependencies first for better layer caching
@@ -32,5 +37,5 @@ EXPOSE 8000
 
 # Default entrypoint: API (the agent runtime is started via
 # `python -m app.runtime`, the worker via `python -m app.worker`)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--ws", "websockets", "--ws-max-size", "65536", "--ws-max-queue", "1", "--ws-per-message-deflate", "false"]
 

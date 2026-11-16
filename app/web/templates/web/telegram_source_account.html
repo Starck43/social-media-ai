@@ -1,0 +1,53 @@
+{% extends "web/base.html" %}
+{% block title %}Аккаунт источника Telegram — AI Monitor{% endblock %}
+{% block page_heading %}Аккаунт источника Telegram{% endblock %}
+{% block page_context %}Явный выбор в текущем пространстве{% endblock %}
+{% block extra_head %}{{ super() }}<link rel="stylesheet" href="{{ static_v('css/telegram-accounts.css') }}">{% endblock %}
+{% block content %}
+<div class="telegram-accounts">
+    <a class="telegram-accounts-back" href="/app/settings/telegram-accounts/workspace">← К разрешениям пространства</a>
+    {% if source_error %}
+    <section class="ui-card" role="alert"><h2>Выбор недоступен</h2><p>{{ source_error }}</p></section>
+    {% elif picker %}
+    <section class="ui-card telegram-accounts-intro">
+        <h2>{{ picker.source.name }}</h2><p>Источник № {{ picker.source.source_id }} · {{ picker.source.external_id }}</p>
+        <p>Можно выбрать только вашу авторизацию с действующим разрешением в этом пространстве. Выбор включает личное чтение истории; это не проверка сессии Telegram и не вход в аккаунт.</p>
+        {% if not runtime_enabled %}<p><strong>Личный сбор пока выключен.</strong> Выбор можно подготовить, но включение требует итоговых проверок и отдельного разрешения.</p>{% endif %}
+        {% if picker.source.selection_state == 'selected' %}
+        <p>Текущий выбор: разрешение № {{ picker.source.grant_id }} · ревизия {{ picker.source.authorization_revision }}. Доступность при выполнении проверяется заново.</p>
+        {% elif picker.source.selection_state == 'other_owner' %}
+        <p>Сейчас выбран аккаунт другого участника. Его данные не показаны. Замена возможна только на ваше явное разрешение.</p>
+        {% elif picker.source.selection_state == 'invalid' %}
+        <p>Сохранённый выбор устарел или некорректен. Подтвердите новый выбор; автоматической замены нет.</p>
+        {% else %}<p>Личный аккаунт не выбран. Старая сессия и аккаунт владельца пространства не подставляются.</p>{% endif %}
+    </section>
+    {% if picker.can_edit %}
+    <section class="ui-card"><h2>Выбрать моё разрешение</h2>
+        {% if picker.choices %}
+        <form class="telegram-account-revoke" method="post" action="/app/settings/telegram-accounts/workspace/sources/{{ picker.source.source_id }}/bind">
+            <input type="hidden" name="_csrf" value="{{ source_csrf }}">
+            <input type="hidden" name="expected_binding" value="{{ picker.source.binding_token }}">
+            <label for="telegram-source-grant">Личный аккаунт Telegram</label>
+            <select id="telegram-source-grant" class="telegram-account-select" name="grant_choice" required>
+                <option value="">Выберите аккаунт явно</option>
+                {% for grant in picker.choices %}<option value="{{ grant.grant_id }}:{{ grant.authorization_id }}:{{ grant.authorization_revision }}">ID {{ grant.subject_key }} · запись {{ grant.authorization_id }} · разрешение {{ grant.grant_id }} · ревизия {{ grant.authorization_revision }}</option>{% endfor %}
+            </select>
+            <label class="telegram-account-confirm"><input type="checkbox" name="confirm" value="bind-source" required><span>Разрешаю этому источнику читать историю через выбранный мой аккаунт. Ожидавшие задания нужно создать заново.</span></label>
+            <button class="telegram-account-allow-button" type="submit">Сохранить явный выбор</button>
+        </form>
+        {% else %}<p>Нет подходящих разрешений. Сначала разрешите использовать вашу авторизацию в этом пространстве.</p>{% endif %}
+    </section>
+    {% if picker.source.selection_state != 'unselected' %}
+    <section class="ui-card"><h2>Убрать выбор источника</h2><p>Личная авторизация и разрешения других источников не удаляются. Другой аккаунт не выбирается.</p>
+        <form class="telegram-account-revoke" method="post" action="/app/settings/telegram-accounts/workspace/sources/{{ picker.source.source_id }}/clear">
+            <input type="hidden" name="_csrf" value="{{ source_csrf }}">
+            <input type="hidden" name="expected_binding" value="{{ picker.source.binding_token }}">
+            <label class="telegram-account-confirm"><input type="checkbox" name="confirm" value="clear-source" required><span>Подтверждаю удаление выбора. Личный сбор без нового выбора недоступен.</span></label>
+            <button class="telegram-account-revoke-button" type="submit">Убрать выбор</button>
+        </form>
+    </section>
+    {% endif %}
+    {% else %}<section class="ui-card"><h2>Только просмотр</h2><p>Для изменения нужно право редактирования источников текущего пространства.</p></section>{% endif %}
+    {% endif %}
+</div>
+{% endblock %}

@@ -28,7 +28,19 @@ async_engine = create_async_engine(
 )
 
 # Создание синхронного engine
-engine = create_engine(settings.POSTGRES_URL, echo=settings.DEBUG, pool_pre_ping=True, pool_recycle=3600)
+#
+# `POSTGRES_URL` names the asyncpg driver for the async engine above. A sync
+# engine cannot use it, so the URL is re-pointed at psycopg (the sync driver the
+# wheel smoke test asserts): setup scripts and migration tests use this one as
+# `app.core.database.engine`.
+engine = create_engine(
+    settings.POSTGRES_URL.replace("postgresql+asyncpg://", "postgresql+psycopg://").replace(
+        "postgresql://", "postgresql+psycopg://"
+    ),
+    echo=settings.DEBUG,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+)
 
 # Создаем асинхронную фабрику сессий
 async_session_maker = async_sessionmaker(async_engine, expire_on_commit=False, class_=AsyncSession)

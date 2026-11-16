@@ -1,5 +1,5 @@
-from datetime import date, datetime
 from contextlib import nullcontext
+from datetime import date, datetime
 from typing import Any, ClassVar
 
 from sqladmin import ModelView
@@ -44,7 +44,7 @@ class AdminFormConverter(ModelConverter):
 
 # Foreign-key columns the console edits as a plain integer select, by column
 # name. `owner_user_id` is the same column on both the provider and the model.
-_EXPLICIT_FK_COLUMNS = frozenset({"owner_user_id"})
+_EXPLICIT_FK_COLUMNS = frozenset({"owner_user_id", "llm_model_id"})
 
 
 class BaseAdmin(ModelView):
@@ -57,6 +57,14 @@ class BaseAdmin(ModelView):
     page_size = 50
     page_size_options = [25, 50, 100, 200]
     save_as = False
+
+    # Target-view defaults for every reverse-FK inline. Columns remain subject
+    # to the shared scalar/list/detail safety rules, never an access override.
+    inline_columns: ClassVar[list[str] | None] = None
+    inline_link_columns = ("id", "name", "title", "username", "label")
+    inline_page_size = 25
+    inline_page_size_options = (10, 25, 50, 100)
+    inline_exclude = False
 
     # Which `ActionType` each custom `@action` of this view needs, by the slug
     # the `action` decorator generates. Unlisted actions default to `update`
@@ -89,6 +97,22 @@ class BaseAdmin(ModelView):
     }
 
     column_labels = {
+        "id": "ID",
+        "name": "Название",
+        "user_id": "Пользователь",
+        "owner_user_id": "Владелец",
+        "tenant_id": "Рабочее пространство",
+        "provider_id": "Провайдер",
+        "platform_id": "Платформа",
+        "source_id": "Источник",
+        "agent_task_id": "Задача",
+        "agent_scenario_id": "Сценарий",
+        "role_id": "Роль",
+        "initiated_by_user_id": "Инициатор",
+        "text_llm_model_id": "Текстовая модель",
+        "image_llm_model_id": "Модель изображений",
+        "video_llm_model_id": "Видеомодель",
+        "agent_model_id": "Модель чата",
         "created_at": "Дата создания",
         "updated_at": "Дата обновления",
         "is_active": "Активен",
@@ -178,11 +202,3 @@ class BaseAdmin(ModelView):
     async def get_object_for_details(self, request: Request) -> Any:
         with self._catalog_scope(request):
             return await super().get_object_for_details(request)
-
-    async def on_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
-        """Perform actions before model is created/updated."""
-        await super().on_model_change(data, model, is_created, request)
-
-    async def after_model_change(self, data: dict, model: Any, is_created: bool, request=None) -> None:
-        """Perform actions after model is created/updated."""
-        await super().after_model_change(data, model, is_created, request)

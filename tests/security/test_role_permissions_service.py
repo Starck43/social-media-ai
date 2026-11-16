@@ -1,14 +1,35 @@
 """Structured platform grants are configurable only for the operator role."""
 
+import secrets
 from contextlib import asynccontextmanager
 
 import pytest
 
-from app.models import Permission, PlatformRole
+from app.core import permissions as perms
+from app.models import Permission, PlatformRole, Role, User
 from app.services.user.permissions import RolePermissionService
 from app.types import PlatformRoleType
 
 pytestmark = pytest.mark.tenancy
+
+
+@asynccontextmanager
+async def _console_admin():
+    """An explicit active platform admin: role-grant writes are a console act.
+
+    `Role.objects.set_permissions` (which the service funnels into) refuses an
+    anonymous caller, and the bootstrap data bypass is not an identity.
+    """
+    token = secrets.token_hex(4)
+    admin = await User.objects.create_user(
+        username=f"rolegrant{token}",
+        email=f"rolegrant{token}@example.invalid",
+        password="secret-password-1",
+        role_id=(await Role.objects.get(codename=PlatformRoleType.SUPERUSER.value)).id,
+    )
+    admin = await User.objects.prefetch_related("role").get(id=admin.id)
+    with perms.permission_scope(admin):
+        yield admin
 
 
 async def _some_codenames(count: int = 3) -> list[str]:
@@ -22,11 +43,13 @@ async def _operator_with(codenames: list[str]):
     original = await RolePermissionService.get_role_permissions(role.id)
     permissions = [await Permission.objects.get_by_codename(code) for code in codenames]
     assert all(permissions), "requested permission keys are seeded"
-    await RolePermissionService._set_role_permissions(role.id, [permission.id for permission in permissions])
+    async with _console_admin():
+        await RolePermissionService._set_role_permissions(role.id, [permission.id for permission in permissions])
     try:
         yield role
     finally:
-        await RolePermissionService._set_role_permissions(role.id, [permission.id for permission in original])
+        async with _console_admin():
+            await RolePermissionService._set_role_permissions(role.id, [permission.id for permission in original])
 
 
 async def test_expand_resolves_only_registered_permission_keys():
@@ -39,7 +62,7 @@ async def test_expand_resolves_only_registered_permission_keys():
 
 async def test_replace_updates_only_operator_grants():
     first, second = await _some_codenames(2)
-    async with _operator_with([first, second]) as operator:
+    async with _operator_with([first, second]) as operator, _console_admin():
         result = await RolePermissionService.update_role_permissions(
             role_codename=operator.codename, permission_codenames=[first], strategy="replace"
         )
@@ -50,7 +73,7 @@ async def test_replace_updates_only_operator_grants():
 
 async def test_merge_keeps_existing_operator_grants_and_adds_known_keys():
     first, second, third = await _some_codenames(3)
-    async with _operator_with([first, second]) as operator:
+    async with _operator_with([first, second]) as operator, _console_admin():
         result = await RolePermissionService.update_role_permissions(
             role_codename=operator.codename, permission_codenames=[third], strategy="merge"
         )
@@ -64,7 +87,7 @@ async def test_merge_keeps_existing_operator_grants_and_adds_known_keys():
 
 async def test_synchronize_replaces_operator_grants():
     first, second = await _some_codenames(2)
-    async with _operator_with([first, second]) as operator:
+    async with _operator_with([first, second]) as operator, _console_admin():
         result = await RolePermissionService.update_role_permissions(
             role_codename=operator.codename, permission_codenames=[first], strategy="synchronize"
         )

@@ -39,6 +39,7 @@ from app.models.managers.tenant_manager import tenants
 from app.services.collection.intent import CollectionIntent, parse_collection_intent
 from app.services.collection.population import PopulationError, resolve_population
 from app.types import SourceType
+from tests.shared.platform_catalog import shared_platform
 
 # --- shared fakes (no database) ----------------------------------------------
 
@@ -315,14 +316,8 @@ async def platform():
     if existing is not None:
         yield existing
         return
-    created = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type="vk",
-        base_url="https://vk.com",
-        params={},
-    )
+    created = await shared_platform("vk")
     yield created
-    await Platform.objects.delete_by_id(created.id)
 
 
 @pytest.fixture

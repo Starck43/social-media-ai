@@ -44,7 +44,7 @@ async def onboarding(request: Request):
     sources_count = await Source.objects.filter(is_active=True).values(func.count(Source.id)).scalar(0)
     tasks_count = await AgentTask.objects.values(func.count(AgentTask.id)).scalar(0)
 
-    from app.models.platform import Platform
+    from app.models.collection.platform import Platform
     from app.types import SourceType
 
     return render(

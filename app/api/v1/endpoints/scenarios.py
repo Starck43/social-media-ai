@@ -7,14 +7,14 @@ including which analysis types to apply and what actions to take.
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import require_model_perm
 from app.models import AgentScenario, User
 from app.schemas.scenario import (
     ScenarioCreate,
-    ScenarioUpdate,
     ScenarioResponse,
+    ScenarioUpdate,
 )
 from app.services.ai.scenario import PlanLimitError, scenario_service
 from app.services.ai.scenario_schema import ScenarioSchemaError
@@ -71,16 +71,21 @@ async def create_scenario(
 @router.get("/scenarios", response_model=list[ScenarioResponse])
 async def list_scenarios(
     is_active: Optional[bool] = None,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     _user: User = Depends(require_model_perm("agentscenario", ActionType.VIEW)),
 ):
     """List all bot scenarios with an optional filter by active status."""
     if is_active is True:
-        scenarios = await scenario_service.get_active_scenarios()
+        scenarios = (
+            await AgentScenario.objects.filter(is_active=True).order_by(AgentScenario.id).limit(limit).offset(offset)
+        )
     elif is_active is False:
-        all_scenarios = await AgentScenario.objects.filter()
-        scenarios = [s for s in all_scenarios if not s.is_active]
+        scenarios = (
+            await AgentScenario.objects.filter(is_active=False).order_by(AgentScenario.id).limit(limit).offset(offset)
+        )
     else:
-        scenarios = await AgentScenario.objects.filter()
+        scenarios = await AgentScenario.objects.filter().order_by(AgentScenario.id).limit(limit).offset(offset)
 
     return [
         ScenarioResponse(

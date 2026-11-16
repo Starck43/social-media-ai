@@ -1,0 +1,60 @@
+# P18 — Local file connector (TZ module 5)
+
+[Product direction](../product/PRODUCT_PLAN.md#business-modules) · [Adapted specification and review](../product/BUSINESS_MODULES.md) · [ROADMAP](../../ROADMAP.md#p18)
+
+**Phase status: DONE 2026-11-15** (planned tasks T01–T07 accepted; activation, [Q-19](../tasks/q-19.md), and three-OS evidence [Q-22](../tasks/q-22.md) remain open gates).
+Owner estimate (TZ): 6–8 weeks — not a repository commitment.
+
+**Goal:** An installable desktop connector that indexes user-selected folders locally (including OCR) and answers federated search from the cloud with metadata and snippets only, uploading a file only on explicit request.
+
+## Baseline: done and arriving
+
+- In `dev`: `LOCAL_GATEWAY` descriptor (certificate fingerprint), `local_only`/`company`/`cloud` boundaries with chat refusal for local-only content (P12-T11), local-connector constraints in [PRODUCT_PLAN](../product/PRODUCT_PLAN.md#extension-contracts).
+- Arriving via open PRs: P12-T12 file workspace — private catalog, scans/traversal, bounded text read, line evidence, private storage, admission contract ([PR #327](https://github.com/Starck43/social-media-ai/pull/327)); [P12-T13 contract review (accepted)](../audit/p12/p12-t13.md); P8-T34 Yandex Disk read-only pilot. Folder policies: P12-T15 (TODO).
+
+## Adapted requirements
+
+TZ 5.1–5.5, adapted:
+
+- **Application:** desktop app (D6, R-17), folder selection, local SQLite FTS5 index, local UI on `127.0.0.1` only, authentication by pairing (not a static API key), auto-update on file changes.
+- **Indexing:** PDF, DOCX, XLSX, TXT, MD; text extraction; Tesseract OCR; metadata; full-text; incremental.
+- **Search:** full-text, filters, snippets, file reference (path, page/sheet), ranking.
+- **Security/privacy:** no bulk upload; only metadata/snippets leave the machine; user-selected folders; system/secret exclusions; ACL-aware; index deletion and device revocation.
+- **Cloud integration:** search requests delivered over the connector's **outbound** channel (R-05), optional file fetch on user request, version tracking.
+
+## Data model (adapted)
+
+Cloud: `local_connectors`, pairing codes; results reuse P12-T12 catalog/evidence records. Local: SQLite FTS5 index (files, chunks, anchors).
+
+Conventions: integer keys, `TenantScopedMixin`, `settings.DB_SCHEMA`, Alembic revision = next free after rebasing on `dev` (R-01, R-20).
+
+## API (adapted)
+
+Cloud: `POST /api/v1/files/connectors/register`, `GET /api/v1/files/connectors`, `DELETE /api/v1/files/connectors/{id}`, `POST /api/v1/files/search`, connector WebSocket. Connector operations (`health`, `search`, `file.metadata`, `file.fetch`, `index.status`, `index.delete`/rebuild) are protocol messages, not an inbound HTTP API (R-05).
+
+## Acceptance
+
+TZ criteria: install (T07); index selected folders (T03); OCR (T04); full-text search (T05); snippets (T05); files not uploaded (T01/T06); incremental indexing (T03); index deletion (T03/T06); cloud search requests (T02); file reference (T05).
+
+## Plan
+
+1. [P18-T01](../audit/p18/p18-t01.md) — Local connector protocol, pairing and revocation contract · `P3` · `C3` · **ACCEPTED 2026-11-03** (`8b805aaa`, [audit](../audit/p18/p18-t01.md)); P12-T12 increment integrated. The protocol ships in `docs/connectors/LOCAL_CONNECTOR_PROTOCOL.md`
+2. [P18-T02 accepted](../audit/p18/p18-t02.md) — DONE 2026-11-04; owner-scoped default-off gateway and chat references; source `8618eeb0634fa2600be558fb611c3433f51b109b`.
+3. [P18-T03 accepted scaffold](../audit/p18/p18-t03.md) — **DONE 2026-11-06**; local-only development scaffold; accepted source `d726a476fe95f9d0c3757082394de4de2d75e4c6`; full device/platform/security gates remain P18-T05/T06/T07 and Q-19.
+4. ~~P18-T04 — Text extraction and OCR with resource limits~~ **DONE 2026-11-08**, accepted source `e74b8e81`, merge `11767207` — [audit](../audit/p18/p18-t04.md)
+5. [P18-T05](../audit/p18/p18-t05.md) — **DONE 2026-11-15**; local search with `bm25` ranking, filters, bounded snippets, ACL/root/exclusion rechecks, durable replay ledger and the signed command receiver (accepted `ad086dd4`, merged `ccc26334`; PR #491; host `local_connector/tests` 121 passed / 1 skipped). Real mTLS, OS keystore and platform ACL evidence stay gated by Q-19 / P18-T07.
+6. [P18-T06](../audit/p18/p18-t06.md) — **DONE 2026-11-15**; consented single-file fetch under exact-version issuer, `mtime_ns`/fstat version tracking, post-fetch cloud drift (`local_changed_after_fetch`), fenced paused `index.delete`, and `Remove all data` / device snippet & replay purge (accepted `a2c77673`, merged `e657bcdb`; PR #492; `app/services/local_connector` coverage 93.45%, 84 integration + 62 device T03/T05/T06 tests pass). Production issuer, `app/web/` confirmation UI, and byte-transfer frame stay gated by Q-19 / owner decision.
+7. [P18-T07 accepted](../audit/p18/p18-t07.md) — Packaging, signing and auto-update for Windows, macOS and Linux · `P3` · `C4` · **DONE 2026-11-15**, accepted source `9ca9e47d`, merge `ad7ae24d` — the packaging, authenticated update/rollback, OS key store, mTLS diagnostic and native Windows adapter are delivered; the three-OS native evidence and the Windows runtime enablement stay open in [Q-22](../tasks/q-22.md)
+
+## Dependencies and gates
+
+[P18-T01](../audit/p18/p18-t01.md) protocol is accepted; an independent security review ([Q-19](../tasks/q-19.md)) remains required before real-user activation. P12-T12's delivered increment is integrated (merge `48caea61`). Platforms: Windows, macOS, Linux.
+
+## Owner-scoped intermediate delivery (2026-11-06)
+
+P18-T03 may close as a local-only development scaffold under the
+[owner decision](https://github.com/Starck43/social-media-ai/pull/425#issuecomment-6685420638).
+This does not close the phase or authorize real-user activation. Full device
+session/replay remains P18-T05/T06; the tray/install flow and the three-OS
+path/ACL evidence remain open in [Q-22](../tasks/q-22.md) after the accepted
+P18-T07 increment; real mTLS/key-store and activation remain Q-19/Q-22.

@@ -1,0 +1,10 @@
+const fs=require('fs'),vm=require('vm'),assert=require('node:assert/strict');
+const sandbox={document:{documentElement:{dataset:{},style:{setProperty(){}}},addEventListener(){}},localStorage:{getItem(){return null}},URLSearchParams};
+vm.createContext(sandbox);vm.runInContext(fs.readFileSync('app/static/js/shell.js','utf8'),sandbox);
+const bell=sandbox.notificationsBell('fixture',7,101);
+const item={key:'notification:user:101:9',id:9,kind:'notification',scope:'personal',user_id:101,workspace_id:8,title:'mine',message:'safe',created_at:'',destination:'/app/notifications/open/9',action:'read',read_id:9};
+assert.equal(bell.validItem(item),true);
+assert.equal(bell.validItem({...item,user_id:102}),false);
+assert.equal(bell.validItem({...item,destination:'https://evil.invalid'}),false);
+assert.equal(bell.validItem({...item,scope:'workspace'}),false);
+console.log('Personal inbox client contracts: 4 passed');

@@ -38,8 +38,10 @@ def _fake_user(platform_grants: set[tuple[str, ActionType]], *, superuser: bool 
 
 def test_workspace_models_are_the_tenant_scoped_ones() -> None:
     names = workspace_models()
-    assert {"source", "agenttask", "agentscenario", "aianalytics", "digestrun"} <= names
-    assert not {"llmmodel", "llmprovider", "platform", "user", "role", "tenant"} & names
+    assert {"source", "agenttask", "agentscenario", "aianalytics", "digestrun", "tenant"} <= names
+    # The global fleet, accounts, roles and the personal LLM catalog never become
+    # workspace resources: a membership cannot govern them.
+    assert not {"llmmodel", "llmprovider", "platform", "user", "role"} & names
     # Every platform role, including the owner, keeps workspace models out of
     # its preset: membership decisions never follow the platform ladder.
     from app.core.access_catalog import workspace_grants
@@ -57,10 +59,19 @@ def test_member_role_is_the_only_workspace_authority() -> None:
     with tenant_scope(31), permission_scope(user, member_grants=viewer_grants):
         assert has_permission(user, "source", "view")
         assert not has_permission(user, "source", "create")  # platform grants do not leak in
-        assert not has_permission(user, "llmmodel", "create")  # web scope never falls back to platform grants
+        # The personal LLM catalog follows the acting user, never the role: the
+        # membership grant above is inert for `llmmodel`, and the check succeeds
+        # only because the caller is looking at their own catalog.
+        assert "llmmodel" not in workspace_models()
+        assert has_permission(user, "llmmodel", "create")
     # Another workspace is not restricted by this scope's grants.
     with tenant_scope(31), permission_scope(user, member_grants=viewer_grants), tenant_scope(32):
         assert not has_permission(user, "source", "create")
+    # Nobody reaches another user's catalog, whatever their workspace grant says.
+    other = _fake_user(set())
+    other.id = 99
+    with tenant_scope(31), permission_scope(other, member_grants=viewer_grants):
+        assert not has_permission(user, "llmmodel", "create")
 
 
 def test_member_role_can_grant_more_than_the_platform_role_inside_the_workspace() -> None:
@@ -68,7 +79,9 @@ def test_member_role_can_grant_more_than_the_platform_role_inside_the_workspace(
     with tenant_scope(31), permission_scope(user, member_grants=frozenset({("agentscenario", ActionType.UPDATE)})):
         assert has_permission(user, "agentscenario", "update")
         assert not has_permission(user, "agentscenario", "delete")
-        assert not has_permission(user, "llmmodel", "update")
+        # No workspace role reaches the personal catalog (see the previous test);
+        # the acting user's own models stay available inside any workspace.
+        assert has_permission(user, "llmmodel", "update")
 
 
 def test_workspace_owner_gets_workspace_rights_but_platform_admin_does_not_bypass_membership() -> None:

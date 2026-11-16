@@ -1,0 +1,77 @@
+{% extends "web/base.html" %}
+{% from "web/_macros.html" import control, icon %}
+{% block title %}Файлы подключённых папок — AI Assistant{% endblock %}
+{% block page_heading %}Файлы подключённых папок{% endblock %}
+{% block page_actions %}
+<a href="/app/knowledge" class="ui-control">← К базе знаний</a>
+<a href="/app/documents" class="ui-control">Документы и версии</a>
+{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ static_v('css/file_catalog.css') }}">
+{% endblock %}
+{% block content %}
+<div class="file-catalog" data-file-catalog>
+    <section class="ui-card file-catalog-intro" aria-labelledby="catalog-heading">
+        <div>
+            <h2 id="catalog-heading">Сохранённый каталог</h2>
+            <p>Названия и типы файлов из ваших подключённых папок. Оригиналы остаются на Яндекс.Диске и здесь не копируются.</p>
+        </div>
+        <span class="file-catalog-tag">Только метаданные</span>
+    </section>
+    {% if mounts %}
+    <section class="ui-card" aria-label="Поиск файлов">
+        <form method="get" action="/app/knowledge/files" class="file-catalog-search">
+            <div>
+                <label for="file-mount">Подключённая папка</label>
+                <select id="file-mount" name="connection_id" class="{{ control() }}">
+                    {% for mount in mounts %}<option value="{{ mount.id }}" {% if selected.id == mount.id %}selected{% endif %}>{{ mount.label }} · {{ mount.root }}</option>{% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="file-query">Название файла или папки</label>
+                <input id="file-query" name="q" value="{{ q }}" maxlength="200" placeholder="Например, договор" class="{{ control() }}">
+            </div>
+            <button type="submit" class="ui-control">Найти</button>
+        </form>
+        <p class="file-catalog-note">Поиск только по сохранённым названиям. Обновление с диска, открытие оригинала и анализ пока недоступны.</p>
+        {% if scan_message %}<p class="file-catalog-note" role="status" data-file-catalog-scan-status>{{ scan_message }}</p>{% endif %}
+    </section>
+    <section class="ui-card" aria-labelledby="file-results-heading">
+        <div class="file-catalog-results-heading">
+            <h2 id="file-results-heading">{% if q %}Результаты поиска{% else %}Файлы и папки{% endif %}</h2>
+            <span class="file-catalog-note">По 50 записей на странице</span>
+        </div>
+        {% if files %}
+        <ul class="file-catalog-list" aria-label="Сохранённые файлы">
+            {% for file in files %}
+            <li>
+                <span class="file-catalog-icon" aria-hidden="true">{{ icon('folder' if file.kind == 'dir' else 'document') }}</span>
+                <div class="file-catalog-item">
+                    <a href="/app/knowledge/files/{{ file.id }}?connection_id={{ selected.id }}" class="file-catalog-name">{{ file.name }}</a>
+                    <p class="file-catalog-path">{{ file.path }}</p>
+                    <p class="file-catalog-note">{{ 'Папка' if file.kind == 'dir' else 'Файл' }} · Сведения получены {{ file.observed_at|human_dt(tz=_tz) }}</p>
+                </div>
+                <span class="file-catalog-tag">Содержимое не сохранено</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <div class="file-catalog-empty" data-file-catalog-empty>
+            <h3>{% if q or after %}Ничего не найдено{% else %}В каталоге пока нет записей{% endif %}</h3>
+            <p>{% if q or after %}Нет доступных сохранённых записей на этой странице. Измените запрос или вернитесь к началу списка.{% else %}Это не означает, что папка пуста: её содержимое здесь ещё не сохранено. Доступ к оригиналам не проверяется при просмотре каталога.{% endif %}</p>
+        </div>
+        {% endif %}
+        <nav class="file-catalog-paging" aria-label="Страницы каталога">
+            {% if q or after %}<a href="/app/knowledge/files?connection_id={{ selected.id }}" class="ui-control">К началу списка</a>{% endif %}
+            {% if next_url %}<a href="{{ next_url }}" class="ui-control" rel="next">Следующая страница →</a>{% endif %}
+        </nav>
+    </section>
+    {% else %}
+    <section class="ui-card file-catalog-empty" data-file-catalog-empty>
+        <h2>Нет доступных подключённых папок</h2>
+        <p>Здесь появятся записи из ваших личных подключений. Отключённые папки и папки других участников не показываются.</p>
+        <a href="/app/settings?tab=connections" class="ui-control">К настройкам подключений</a>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

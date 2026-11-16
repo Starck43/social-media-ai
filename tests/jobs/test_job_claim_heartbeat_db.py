@@ -1,6 +1,6 @@
-"""OWNER ONLY: actual PostgreSQL heartbeat predicates and rollback, no pytest.
+"""Actual PostgreSQL heartbeat predicates and rollback on the approved test target.
 
-Run sequentially: python tests/test_job_claim_heartbeat_db.py
+Run sequentially through root conftest or: python tests/jobs/test_job_claim_heartbeat_db.py
 Existing localhost:5432/social_manager/test_schema only. No bootstrap/seed helper,
 DDL/reset/migration/provider/job execution. Synthetic inserts/updates stay in one
 outer transaction and are rolled back; PostgreSQL sequences may still advance.
@@ -19,13 +19,17 @@ from unittest.mock import patch
 from urllib.parse import urlparse
 from uuid import uuid4
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 NOW = datetime(2026, 10, 10, tzinfo=timezone.utc)
+pytestmark = pytest.mark.tenancy
 
 
 def validate_environment():
     from dotenv import load_dotenv
+
     from scripts.setup_test_db import resolve_and_redirect
 
     load_dotenv(ROOT / ".env", override=False)
@@ -35,9 +39,12 @@ def validate_environment():
         urls.append(os.environ["TEST_POSTGRES_URL"])
     for raw in urls:
         parsed = urlparse(raw)
-        if (parsed.scheme not in {"postgresql", "postgresql+psycopg2", "postgresql+asyncpg"}
-                or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
-                or (parsed.port or 5432) != 5432 or parsed.path != "/social_manager"):
+        if (
+            parsed.scheme not in {"postgresql", "postgresql+psycopg2", "postgresql+asyncpg"}
+            or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+            or (parsed.port or 5432) != 5432
+            or parsed.path != "/social_manager"
+        ):
             raise RuntimeError("Stop: expected approved local social_manager target; no DB action performed")
     if os.environ.get("DB_TEST_SCHEMA", "") != "test_schema":
         raise RuntimeError("Stop: explicitly set DB_TEST_SCHEMA=test_schema; no DB action performed")
@@ -84,20 +91,29 @@ async def execute():
         outer = await connection.begin()
         await connection.exec_driver_sql("SET LOCAL statement_timeout = '10s'")
         await connection.exec_driver_sql("SET LOCAL lock_timeout = '3s'")
-        factory = async_sessionmaker(bind=connection, class_=AsyncSession, expire_on_commit=False,
-                                     join_transaction_mode="create_savepoint")
+        factory = async_sessionmaker(
+            bind=connection, class_=AsyncSession, expire_on_commit=False, join_transaction_mode="create_savepoint"
+        )
         # Session.begin releases its savepoint, never the caller's outer transaction.
         # Patch only this process's manager factory; no runtime/worker is started.
         with patch.object(database, "async_session_maker", factory):
             async with factory() as session:
                 async with session.begin():
-                    tenants = [Tenant(name="Heartbeat synthetic test", slug=prefix + suffix, plan="business")
-                               for suffix in ("-a", "-b")]
+                    tenants = [
+                        Tenant(name="Heartbeat synthetic test", slug=prefix + suffix, plan="business")
+                        for suffix in ("-a", "-b")
+                    ]
                     session.add_all(tenants)
                     await session.flush()
                     tenant_ids[:] = [row.id for row in tenants]
-                    task = AgentTask(tenant_id=tenants[0].id, name=prefix, job_type="learn",
-                                     cron_expr="0 0 * * *", payload={}, is_active=False)
+                    task = AgentTask(
+                        tenant_id=tenants[0].id,
+                        name=prefix,
+                        job_type="learn",
+                        cron_expr="0 0 * * *",
+                        payload={},
+                        is_active=False,
+                    )
                     session.add(task)
                     await session.flush()
                     task_ids.append(task.id)
@@ -105,10 +121,21 @@ async def execute():
             manager = JobManager()
 
             async def make_job(tenant=own, **changes):
-                values = dict(tenant_id=tenant, job_type="learn", agent_task_id=None, status="running",
-                              run_at=NOW, locked_at=NOW - timedelta(minutes=40), started_at=NOW,
-                              attempts=2, max_attempts=3, payload={"synthetic": prefix},
-                              result={"retained": prefix}, error="retained", llm_cost=1.25)
+                values = dict(
+                    tenant_id=tenant,
+                    job_type="learn",
+                    agent_task_id=None,
+                    status="running",
+                    run_at=NOW,
+                    locked_at=NOW - timedelta(minutes=40),
+                    started_at=NOW,
+                    attempts=2,
+                    max_attempts=3,
+                    payload={"synthetic": prefix},
+                    result={"retained": prefix},
+                    error="retained",
+                    llm_cost=1.25,
+                )
                 values.update(changes)
                 async with factory() as session:
                     async with session.begin():
@@ -164,8 +191,10 @@ async def execute():
             await pass_check("explicit bypass remains constrained to one claim tenant/row")
 
             for changed_claim in (
-                replace(claim, job_id=foreign.id), replace(claim, job_type="collect"),
-                replace(claim, agent_task_id=task_ids[0]), replace(claim, attempts=3),
+                replace(claim, job_id=foreign.id),
+                replace(claim, job_type="collect"),
+                replace(claim, agent_task_id=task_ids[0]),
+                replace(claim, attempts=3),
                 replace(claim, started_at=NOW + timedelta(seconds=1)),
             ):
                 before_own = await read(job.id)
@@ -176,14 +205,22 @@ async def execute():
 
             async with factory() as session:
                 async with session.begin():
-                    await session.execute(update(Job).where(Job.id == job.id, Job.tenant_id == own)
-                                          .values(attempts=3, started_at=NOW + timedelta(seconds=2)))
+                    await session.execute(
+                        update(Job)
+                        .where(Job.id == job.id, Job.tenant_id == own)
+                        .values(attempts=3, started_at=NOW + timedelta(seconds=2))
+                    )
             before_new = await read(job.id)
             assert await renew(claim) is False
             assert await read(job.id) == before_new
             with tenant_scope(own):
-                assert await manager.renew_claim(replace(claim, attempts=3, started_at=NOW + timedelta(seconds=2)),
-                                                now=NOW + timedelta(seconds=20)) is True
+                assert (
+                    await manager.renew_claim(
+                        replace(claim, attempts=3, started_at=NOW + timedelta(seconds=2)),
+                        now=NOW + timedelta(seconds=20),
+                    )
+                    is True
+                )
             await pass_check("old generation cannot heartbeat a newer acquired identity")
 
             task_job, task_claim = await make_job(agent_task_id=task_ids[0])
@@ -224,6 +261,11 @@ async def execute():
     assert checks == 9
     print("9 checks passed; outer rollback complete; no bootstrap/DDL/global sweep/DELETE/provider actions")
     print("Sequence values may advance; inter-connection lock/reaper races and dispatcher timer remain unverified")
+
+
+async def test_postgresql_claim_heartbeat_storage_and_rollback():
+    """Expose the prepared storage checks to the guarded focused pytest selection."""
+    await execute()
 
 
 def main():

@@ -1,7 +1,8 @@
 """Prepared PostgreSQL claim/outcome regressions; owner execution only.
 
 Owner: python tests/test_job_claim_outcomes_db.py
-Uses an EXISTING reviewed test schema. No conftest/bootstrap/schema operations,
+Uses an EXISTING reviewed test schema. Pytest uses the root conftest with the
+tenancy marker, never its legacy platform bypass. No bootstrap/schema operations,
 providers or sends. Concurrent sessions belong to one sequential test process.
 """
 
@@ -15,6 +16,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.setup_test_db import resolve_and_redirect
@@ -32,6 +35,7 @@ from app.models import AgentTask, Job, Tenant
 from app.models.managers.job_manager import JobManager
 
 NOW = datetime(2026, 10, 10, tzinfo=timezone.utc)
+pytestmark = pytest.mark.tenancy
 
 
 class ClaimDatabaseTests(unittest.IsolatedAsyncioTestCase):

@@ -36,6 +36,7 @@ from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
 from app.channels.base import Inbound
 from app.core.config import settings
 from app.core.permissions import get_current_user, has_permission_by_codename, permission_scope
+from app.core.presentation import MessageId, PresentationMessage, render_message
 from app.core.tenant_context import tenant_scope
 from app.services.tenancy.resolver import (
     Resolution,
@@ -121,18 +122,30 @@ def _pending_confirmation(session: Any) -> Optional[dict]:
 
 
 def _same_pending_intent(existing: Optional[dict], name: str, args: Any) -> bool:
-    """Whether `existing` already asks for exactly this tool call.
+    """Whether `existing` already asks for exactly this tool call, and can still be answered.
 
     Compared by the stored `arguments_digest` (the same canonical form the
     confirmation consumes), so a reworded request that resolves to the same
     action does not create a second pending intent.
+
+    The comparison is only sound while the stored intent is still answerable:
+    an expired intent would otherwise be reported as "already waiting for your
+    reply", and the owner's «да» would then be rejected by `pending_rejection`
+    — the silent dead end `82555f2` set out to remove. An expired intent is
+    simply not "the same pending intent", so a fresh one replaces it.
     """
     if not isinstance(existing, dict) or existing.get("name") != name:
         return False
     from app.agent.confirmation import arguments_digest
 
     stored = existing.get("arguments_digest")
-    return isinstance(stored, str) and bool(stored) and stored == arguments_digest(args)
+    if not (isinstance(stored, str) and stored and stored == arguments_digest(args)):
+        return False
+    try:
+        expiry = datetime.fromisoformat(existing["expires_at"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return expiry.tzinfo is not None and expiry > datetime.now(timezone.utc)
 
 
 async def _write_staged_reply(row: Any, text: str) -> None:
@@ -330,7 +343,8 @@ def _human_confirmation(name: str, args: dict) -> str:
         "source_disable": lambda a: f"отключить источник №{a.get('source_id')}",
         "task_add": lambda a: (
             f"создать задачу «{a.get('name')}»: {_JOB_TYPE_LABELS.get(a.get('job_type'), a.get('job_type'))}, "
-            f"{_human_cron(a)}" + (f", начиная с {a.get('start_date')}" if a.get("start_date") else "")
+            f"{_human_cron(a)}"
+            + (f", начиная с {a.get('start_date')}" if a.get("start_date") else "")
             + (f"; {_human_collection(a.get('collection'))}" if _human_collection(a.get("collection")) else "")
         ),
         "task_update": lambda a: _human_task_update(a),
@@ -471,6 +485,8 @@ async def handle_web_message(
     user_id: int,
     role_id: int | None = None,
     role_codename: str | None = None,
+    attachments: list[dict[str, Any]] | None = None,
+    confirm_large_attachments: bool = False,
 ) -> Optional[str]:
     """Run one agent turn for a browser message in the given workspace.
 
@@ -483,14 +499,23 @@ async def handle_web_message(
     Everything after the resolution is the shared path: the same session row
     (`channel='web'`, one per user in this workspace), the same confirmation
     gate, the same daily cost cap and the same tool loop as a messenger chat.
-    Returns the reply text, or None when `text` is empty.
+    Returns the reply text, or None when `text` and `attachments` are empty.
     """
     text = (text or "").strip()
+    attachment_list = list(attachments or [])
+    if not text and attachment_list:
+        text = "Проанализируй прикреплённые вложения и помоги применить их к моим задачам."
     if not text:
         return None
 
-    # Check for prompt injection attempts
+    # Check for prompt injection attempts across user text and extracted document text
     injection_error = _check_prompt_injection(text)
+    if not injection_error:
+        for att in attachment_list:
+            if isinstance(att, dict) and att.get("extracted_text"):
+                injection_error = _check_prompt_injection(str(att["extracted_text"]))
+                if injection_error:
+                    break
     if injection_error:
         return injection_error
 
@@ -507,6 +532,8 @@ async def handle_web_message(
         chat_id=str(user_id),
         user_id=str(user_id),
         text=text,
+        attachments=attachment_list,
+        confirm_large_attachments=bool(confirm_large_attachments),
     )
 
     with tenant_scope(tenant_id):
@@ -623,9 +650,15 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
         ):
             return "Это подтверждение относится к другому пользователю."
         from app.models.managers.agent_message_manager import agent_messages
+        from app.services.chat_attachments import attachment_store
 
         await agent_messages.clear(session.id)
         await _clear_pending(session, expected=pending)
+        await _patch_session_state(session, {"pending_attachment_confirmation": None})
+        try:
+            attachment_store.cleanup_actor(tenant_id=resolution.tenant_id, user_id=identity.user_id)
+        except Exception:
+            pass
         return "История диалога очищена."
 
     if text.split()[0].split("@")[0].lower() == "/help":
@@ -724,10 +757,190 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
         if not isinstance(pending.get("authorization"), dict) or pending_actor_matches(pending, identity):
             await _clear_pending(session, expected=pending)
 
+    # 1b) Large-attachment / high-token confirmation flow (before touching the model)
+    state_dict = session.state if isinstance(session.state, dict) else {}
+    pending_att = state_dict.get("pending_attachment_confirmation")
+    inbound_attachments = list(getattr(inbound, "attachments", None) or [])
+    confirm_large_flag = bool(getattr(inbound, "confirm_large_attachments", False))
+
+    if isinstance(pending_att, dict) and not inbound_attachments:
+        if is_confirmation_verdict(text, agree=True):
+            if not pending_actor_matches(pending_att, identity):
+                return "Это подтверждение вложений относится к другому пользователю."
+            await _patch_session_state(session, {"pending_attachment_confirmation": None})
+            try:
+                expiry = datetime.fromisoformat(pending_att["expires_at"])
+            except (KeyError, TypeError, ValueError):
+                expiry = None
+            if expiry is None or expiry.tzinfo is None or expiry <= datetime.now(timezone.utc):
+                await session.append("user", text)
+                reply = "Время ожидания подтверждения вложения истекло. Прикрепите файл заново."
+                await session.append("assistant", reply)
+                await session.touch()
+                return reply
+            from app.services.chat_attachments import AttachmentValidationError, attachment_store
+
+            staged_ids = [str(x) for x in (pending_att.get("attachment_ids") or []) if x]
+            staged_text = str(pending_att.get("text") or text)
+            try:
+                loaded_pairs = attachment_store.build_turn_payloads(
+                    tenant_id=resolution.tenant_id,
+                    user_id=identity.user_id,
+                    attachment_ids=staged_ids,
+                )
+                inbound_attachments = [pair[1] for pair in loaded_pairs]
+                text = staged_text
+                confirm_large_flag = True
+            except AttachmentValidationError as exc:
+                await session.append("user", text)
+                await session.append("assistant", exc.message)
+                await session.touch()
+                return exc.message
+        elif is_confirmation_verdict(text, agree=False):
+            if not pending_actor_matches(pending_att, identity):
+                return "Это подтверждение вложений относится к другому пользователю."
+            from app.services.chat_attachments import attachment_store
+
+            staged_ids = [str(x) for x in (pending_att.get("attachment_ids") or []) if x]
+            await _patch_session_state(session, {"pending_attachment_confirmation": None})
+            try:
+                attachment_store.cleanup_actor(
+                    tenant_id=resolution.tenant_id,
+                    user_id=identity.user_id,
+                    attachment_ids=staged_ids or None,
+                )
+            except Exception:
+                pass
+            await session.append("user", text)
+            reply = "Отправка большого вложения отменена, временные файлы удалены."
+            await session.append("assistant", reply)
+            await session.touch()
+            return reply
+        else:
+            if pending_actor_matches(pending_att, identity):
+                await _patch_session_state(session, {"pending_attachment_confirmation": None})
+
+    if inbound_attachments:
+        from app.services.chat_attachments import (
+            AttachmentValidationError,
+            PreparedAttachment,
+            attachment_store,
+            evaluate_turn_attachments,
+            format_transcript_attachment_header,
+            resolve_workspace_attachment_policy,
+        )
+
+        policy = await resolve_workspace_attachment_policy(
+            tenant_id=resolution.tenant_id,
+            user_id=identity.user_id,
+        )
+        prepared_objs: list[PreparedAttachment] = []
+        for att in inbound_attachments:
+            prepared_objs.append(
+                PreparedAttachment(
+                    id=str(att.get("id") or "0" * 32),
+                    tenant_id=resolution.tenant_id,
+                    user_id=identity.user_id,
+                    filename=str(att.get("filename") or "file.txt"),
+                    extension=str(att.get("extension") or ".txt"),
+                    content_type=str(att.get("content_type") or "text/plain"),
+                    kind=str(att.get("kind") or "document"),
+                    size_bytes=int(att.get("size_bytes") or 0),
+                    sha256=str(att.get("sha256") or ""),
+                    estimated_tokens=int(att.get("estimated_tokens") or 0),
+                    estimated_cost_usd=float(att.get("estimated_cost_usd") or 0.0),
+                    extracted_text=att.get("extracted_text"),
+                    extracted_chars=int(att.get("extracted_chars") or 0),
+                    total_chars=int(att.get("total_chars") or 0),
+                    page_count=att.get("page_count"),
+                    extracted_pages=att.get("extracted_pages"),
+                    omitted_pages=int(att.get("omitted_pages") or 0),
+                    row_count=att.get("row_count"),
+                    extracted_rows=att.get("extracted_rows"),
+                    omitted_rows=int(att.get("omitted_rows") or 0),
+                    width=att.get("width"),
+                    height=att.get("height"),
+                    truncated=bool(att.get("truncated")),
+                    extraction_summary=str(att.get("extraction_summary") or ""),
+                    omission_notice=att.get("omission_notice"),
+                    requires_confirmation=bool(att.get("requires_confirmation")),
+                    confirmation_reasons=list(att.get("confirmation_reasons") or []),
+                    confirmation_prompt=att.get("confirmation_prompt"),
+                    model_name=policy.model_name,
+                    model_max_tokens=policy.model_max_tokens,
+                )
+            )
+        try:
+            eval_result = evaluate_turn_attachments(prepared_objs, policy)
+        except AttachmentValidationError as exc:
+            # Clean up rejected staged files so invalid/unsupported uploads do not linger
+            staged_ids = [str(att.get("id")) for att in inbound_attachments if att.get("id")]
+            try:
+                attachment_store.cleanup_actor(
+                    tenant_id=resolution.tenant_id,
+                    user_id=identity.user_id,
+                    attachment_ids=staged_ids,
+                )
+            except Exception:
+                pass
+            await session.append("user", text)
+            await session.append("assistant", exc.message)
+            await session.touch()
+            return exc.message
+
+        if eval_result["requires_confirmation"] and not confirm_large_flag:
+            from datetime import timedelta
+
+            staged_ids = [str(att.get("id")) for att in inbound_attachments if att.get("id")]
+            pending_payload = {
+                "kind": "large_attachment_turn",
+                "text": text,
+                "attachment_ids": staged_ids,
+                "estimated_tokens": eval_result["total_estimated_tokens"],
+                "model_name": eval_result["model_name"],
+                "model_max_tokens": eval_result["model_max_tokens"],
+                "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
+                "authorization": {
+                    "version": 3,
+                    "actor": identity.actor_binding(),
+                    "session_id": session.id,
+                },
+            }
+            await _patch_session_state(session, {"pending_attachment_confirmation": pending_payload})
+            header = format_transcript_attachment_header(inbound_attachments)
+            await session.append("user", f"{header}\n{text}" if header else text)
+            prompt_reply = (
+                f"{eval_result['confirmation_prompt']}\n" "[выбор: Да, подтверждаю отправку вложений | Отмена]"
+            )
+            await session.append("assistant", prompt_reply)
+            await session.touch()
+            return prompt_reply
+
     # 2) Model loop with tool calling
-    await session.append("user", text)
-    messages = await _build_messages(session, identity)
-    return await _run_tool_loop(session, messages, tool_specs_for(identity), limit, identity)
+    if inbound_attachments:
+        from app.services.chat_attachments import attachment_store, format_transcript_attachment_header
+
+        header = format_transcript_attachment_header(inbound_attachments)
+        transcript_user_text = f"{header}\n{text}" if header else text
+    else:
+        transcript_user_text = text
+
+    await session.append("user", transcript_user_text)
+    messages = await _build_messages(session, identity, turn_attachments=inbound_attachments, raw_user_text=text)
+    reply_out = await _run_tool_loop(session, messages, tool_specs_for(identity), limit, identity)
+    if inbound_attachments:
+        from app.services.chat_attachments import attachment_store
+
+        staged_ids = [str(att.get("id")) for att in inbound_attachments if att.get("id")]
+        try:
+            attachment_store.cleanup_actor(
+                tenant_id=resolution.tenant_id,
+                user_id=identity.user_id,
+                attachment_ids=staged_ids,
+            )
+        except Exception:
+            pass
+    return reply_out
 
 
 def tool_specs_for(identity: RuntimeIdentity | None) -> list[dict[str, Any]]:
@@ -832,9 +1045,7 @@ async def _run_tool_loop(
             await session.append("assistant", denied)
             return _join_replies(reply, denied)
         if limit and await _cost_today() >= limit:
-            reply = _join_replies(
-                reply, f"{LIMIT_REACHED_PREFIX} расходов исчерпан во время обработки запроса."
-            )
+            reply = _join_replies(reply, f"{LIMIT_REACHED_PREFIX} расходов исчерпан во время обработки запроса.")
             break
 
         try:
@@ -943,14 +1154,11 @@ def _model_failure_hint(response: dict | None) -> str:
     switched = [item for item in failures if item.get("reason") != "budget"]
     if not switched:
         return ""
-    parts = [
-        f"{item.get('model')} — {FAILURE_LABELS.get(item.get('reason'), item.get('reason'))}"
-        for item in switched
-    ]
+    parts = [f"{item.get('model')} — {FAILURE_LABELS.get(item.get('reason'), item.get('reason'))}" for item in switched]
     return "Переключил модель: " + "; ".join(parts) + "."
 
 
-def _llm_error_reply(exc: BaseException) -> str:
+def _llm_error_reply(exc: BaseException, *, locale: str | None = None) -> str:
     """A short, actionable LLM failure line for the chat — never the raw body.
 
     `httpx.HTTPStatusError` stringifies to `<status>: <response text>`, which for
@@ -963,15 +1171,17 @@ def _llm_error_reply(exc: BaseException) -> str:
     """
     status = getattr(getattr(exc, "response", None), "status_code", None)
     if status is None:
-        return "Не удалось обратиться к языковой модели. Подробности в логах."
+        message = PresentationMessage(MessageId.LLM_REQUEST_FAILED)
 
-    if status == 401 or status == 403:
-        return "Языковая модель отклонила запрос: неверный или истёкший API-ключ. Подробности в логах."
-    if status == 429:
-        return "Языковая модель временно недоступна из-за лимита запросов. Подробности в логах."
-    if 400 <= status < 500:
-        return f"Языковая модель отклонила мой запрос ({status}). Подробности в логах."
-    return f"Языковая модель сейчас недоступна ({status}). Подробности в логах."
+    elif status == 401 or status == 403:
+        message = PresentationMessage(MessageId.LLM_AUTH_REJECTED)
+    elif status == 429:
+        message = PresentationMessage(MessageId.LLM_RATE_LIMITED)
+    elif 400 <= status < 500:
+        message = PresentationMessage(MessageId.LLM_REQUEST_REJECTED, {"status": status})
+    else:
+        message = PresentationMessage(MessageId.LLM_UNAVAILABLE, {"status": status})
+    return render_message(message, locale=locale)
 
 
 async def _handle_feedback(session: Any, inbound: Any, command: str, text: str) -> str:
@@ -1022,9 +1232,28 @@ async def _handle_memory_command(session: Any, resolution: Any, text: str) -> st
     return reply
 
 
-async def _build_messages(session: Any, identity: RuntimeIdentity) -> list[dict]:
+async def _build_messages(
+    session: Any,
+    identity: RuntimeIdentity,
+    *,
+    turn_attachments: list[dict[str, Any]] | None = None,
+    raw_user_text: str | None = None,
+) -> list[dict]:
     """System prompt (+ style and learned memory) and session history."""
     history = await session.history()
+    if turn_attachments and history:
+        from app.services.chat_attachments import build_turn_user_message_content
+
+        for idx in range(len(history) - 1, -1, -1):
+            if history[idx].get("role") == "user":
+                history[idx] = {
+                    "role": "user",
+                    "content": build_turn_user_message_content(
+                        raw_user_text if raw_user_text is not None else str(history[idx].get("content") or ""),
+                        turn_attachments,
+                    ),
+                }
+                break
     with memory_actor_scope(identity.user_id, identity.is_owner):
         prompt = await build_system_prompt(actor_user_id=identity.user_id, is_owner=identity.is_owner)
     return [
@@ -1039,6 +1268,7 @@ async def build_system_prompt(*, actor_user_id: int | None = None, is_owner: boo
     """System prompt (+ style and learned memory) and session history."""
     from app.agent.prompts import (
         ANALYTICS_SECTION,
+        ATTACHMENT_SECTION,
         QUICK_REPLIES_SECTION,
         SCENARIO_SECTION,
         TASK_SECTION,
@@ -1051,7 +1281,14 @@ async def build_system_prompt(*, actor_user_id: int | None = None, is_owner: boo
     # Use env var if set, otherwise fall back to the built-in default.
     system_prompt = settings.AGENT_SYSTEM_PROMPT or DEFAULT_SYSTEM_PROMPT
 
-    sections = [system_prompt, SCENARIO_SECTION, TASK_SECTION, ANALYTICS_SECTION, QUICK_REPLIES_SECTION]
+    sections = [
+        system_prompt,
+        SCENARIO_SECTION,
+        TASK_SECTION,
+        ANALYTICS_SECTION,
+        ATTACHMENT_SECTION,
+        QUICK_REPLIES_SECTION,
+    ]
 
     tenant = None
     tid = current_tenant_id()
@@ -1109,7 +1346,9 @@ async def _chat(messages: list[dict], specs: list[dict], *, budget: Optional[flo
     # The workspace may name the model for this chat; otherwise the ★ default
     # (`is_default`) starts. Either way the call walks this user's own
     # models on failure, most-proven first — see `chat_with_fallback`.
-    narrative_model = await _preferred_agent_model(tenant)
+    from app.services.ai.llm_client import _payload_has_media
+
+    narrative_model = await _preferred_agent_model(tenant, require_image=_payload_has_media(messages))
     if budget is not None and budget <= 0:
         return None
     failures: list = []
@@ -1128,7 +1367,7 @@ async def _chat(messages: list[dict], specs: list[dict], *, budget: Optional[flo
     return response
 
 
-async def _preferred_agent_model(tenant: Any):
+async def _preferred_agent_model(tenant: Any, *, require_image: bool = False):
     """The model this workspace names for the agent chat, else the ★ default.
 
     `tenants.agent_model_id` is a numeric FK. An unavailable explicit selection
@@ -1136,16 +1375,23 @@ async def _preferred_agent_model(tenant: Any):
     """
     from app.models import LLMModel
 
+    if require_image and tenant is not None and hasattr(tenant, "allows_model_type"):
+        if not tenant.allows_model_type("image"):
+            raise ValueError("Workspace plan does not allow image-capable models")
+
     identity = getattr(tenant, "agent_model_id", None)
     if identity is not None:
         from app.core.personal_catalog_context import current_catalog_owner_id
         from app.services.ai.personal_catalog import eligible_chat_model
+
         model = await LLMModel.objects.select_related("provider").get(id=identity, is_active=True)
         allowed = tenant.plan_limits().get("model_types") if tenant else None
         if model is not None and eligible_chat_model(model, user_id=current_catalog_owner_id(), allowed_types=allowed):
+            if require_image and "image" not in (model.capabilities or ()):
+                raise ValueError("Configured chat model does not support image attachments")
             return model
         raise ValueError("Configured chat model is unavailable; reselect a personal model")
-    return await LLMModel.objects.resolve_default_model("text")
+    return await LLMModel.objects.resolve_default_model("image" if require_image else "text")
 
 
 async def _cost_today() -> float:
@@ -1162,8 +1408,8 @@ async def _spend_remaining() -> Optional[float]:
     a permission for one model: past it the chat stops instead of quietly
     switching the owner to a paid provider.
     """
-    from app.core.tenant_context import current_tenant_id
     from app.agent.runtime import tenant_daily_cost_limit
+    from app.core.tenant_context import current_tenant_id
 
     tid = current_tenant_id()
     if tid is None:

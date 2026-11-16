@@ -8,16 +8,22 @@ import pytest
 from starlette.requests import Request
 
 from app.models.managers.job_manager import JobManager
-from app.web import sources, tasks
+from app.web import job_routes as tasks
+from app.web import sources, task_presenters
 
 SECRET = "PRIVATE-PROVIDER-DETAIL"
 
 
 def _request(*, tenant_id=41, memberships=(), platform_admin=False):
-    request = Request({
-        "type": "http", "method": "GET", "path": "/app/tasks/job/88/status",
-        "headers": [], "query_string": b"",
-    })
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/app/tasks/job/88/status",
+            "headers": [],
+            "query_string": b"",
+        }
+    )
     request.state.tenant_id = tenant_id
     request.state.web_user = SimpleNamespace(id=12, is_active=True, is_platform_admin=platform_admin)
     request.state.memberships = list(memberships)
@@ -26,28 +32,53 @@ def _request(*, tenant_id=41, memberships=(), platform_admin=False):
 
 def _membership(*, tenant_id=41, active=True, role="admin", user_id=12):
     return SimpleNamespace(
-        tenant_id=tenant_id, user_id=user_id, channel="web", is_active=active,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        channel="web",
+        is_active=active,
         role=SimpleNamespace(codename=role),
     )
 
 
 def _job(*, tenant_id=41):
     progress = {
-        "attempt": 3, "total": 1, "completed": 0, "first": 0,
-        "current": "Private source", "updated_at": "2026-10-17T09:00:00+00:00",
-        "items": [{
-            "source_id": 9, "name": "Private source", "state": "running",
-            "raw_total": 12, "raw_processed": 3, "raw_selected": 4,
-        }],
+        "attempt": 3,
+        "total": 1,
+        "completed": 0,
+        "first": 0,
+        "current": "Private source",
+        "updated_at": "2026-10-17T09:00:00+00:00",
+        "items": [
+            {
+                "source_id": 9,
+                "name": "Private source",
+                "state": "running",
+                "raw_total": 12,
+                "raw_processed": 3,
+                "raw_selected": 4,
+            }
+        ],
     }
     return SimpleNamespace(
-        id=88, tenant_id=tenant_id, job_type="analyze", status="failed", error=SECRET,
-        attempts=3, locked_at=datetime(2026, 10, 16, tzinfo=timezone.utc),
-        agent_task_id=None, payload={}, result={
-            "per_source": [{
-                "source_id": 9, "name": "Previous attempt", "raw_total": 99,
-                "raw_processed": 99, "raw_selected": 99,
-            }],
+        id=88,
+        tenant_id=tenant_id,
+        job_type="analyze",
+        status="failed",
+        error=SECRET,
+        attempts=3,
+        locked_at=datetime(2026, 10, 16, tzinfo=timezone.utc),
+        agent_task_id=None,
+        payload={},
+        result={
+            "per_source": [
+                {
+                    "source_id": 9,
+                    "name": "Previous attempt",
+                    "raw_total": 99,
+                    "raw_processed": 99,
+                    "raw_selected": 99,
+                }
+            ],
             "progress": progress,
             "provider_payload": SECRET,
         },
@@ -63,18 +94,28 @@ class _JobQuery:
 
 
 def _mock_job_store(monkeypatch, job):
-    monkeypatch.setattr(tasks.Job.objects, "filter", lambda **criteria: _JobQuery(
-        job if criteria.get("tenant_id") == job.tenant_id and criteria.get("id") == job.id else None
-    ))
+    monkeypatch.setattr(
+        tasks.Job.objects,
+        "filter",
+        lambda **criteria: _JobQuery(
+            job if criteria.get("tenant_id") == job.tenant_id and criteria.get("id") == job.id else None
+        ),
+    )
 
 
 @pytest.mark.parametrize(
     "memberships,platform_admin",
-    [([], True), ([_membership(active=False)], False), ([_membership(role="owner")], False),
-     ([_membership(tenant_id=77)], False)],
+    [
+        ([], True),
+        ([_membership(active=False)], False),
+        ([_membership(role="owner")], False),
+        ([_membership(tenant_id=77)], False),
+    ],
 )
 async def test_job_status_diagnostics_require_active_membership_and_admin_role(
-    monkeypatch, memberships, platform_admin,
+    monkeypatch,
+    memberships,
+    platform_admin,
 ):
     job = _job()
     _mock_job_store(monkeypatch, job)
@@ -146,11 +187,17 @@ def test_cancelled_before_start_diagnostics_do_not_reuse_prior_snapshot():
 def test_done_coverage_prefers_final_per_source_counters():
     job = _job()
     job.status = "done"
-    job.result["per_source"] = [{
-        "source_id": 9, "name": "Current", "raw_total": 8, "raw_processed": 8, "raw_selected": 8,
-    }]
+    job.result["per_source"] = [
+        {
+            "source_id": 9,
+            "name": "Current",
+            "raw_total": 8,
+            "raw_processed": 8,
+            "raw_selected": 8,
+        }
+    ]
 
-    coverage = tasks._raw_coverage(job)
+    coverage = task_presenters._raw_coverage(job)
 
     assert coverage[0]["total"] == 8
     assert coverage[0]["processed"] == 8
@@ -159,7 +206,9 @@ def test_done_coverage_prefers_final_per_source_counters():
 
 @pytest.mark.parametrize("membership,has_diagnostics", [(_membership(), True), (_membership(active=False), False)])
 async def test_source_progress_fragment_obeys_workspace_admin_diagnostics_gate(
-    monkeypatch, membership, has_diagnostics,
+    monkeypatch,
+    membership,
+    has_diagnostics,
 ):
     job = _job()
     source = SimpleNamespace(id=9, tenant_id=41)
@@ -172,9 +221,7 @@ async def test_source_progress_fragment_obeys_workspace_admin_diagnostics_gate(
     monkeypatch.setattr(JobManager, "source_progress_jobs", lambda self, *args, **kwargs: _async_jobs(job))
     monkeypatch.setattr(sources, "perms_can", lambda request, resource, action: True)
 
-    response = await sources.source_analysis_progress(
-        _request(memberships=[membership]), 9
-    )
+    response = await sources.source_analysis_progress(_request(memberships=[membership]), 9)
 
     assert response.status_code == 200
     assert SECRET not in response.body.decode()
@@ -197,8 +244,11 @@ async def test_source_progress_fragment_adds_run_model_and_counters_for_admins(m
     async def _summary(source_id, job):
         assert source_id == 9
         return {
-            "total": 1, "succeeded": 0, "failed": 1,
-            "model": "zai-org/GLM-5.3-Flash", "provider": "river",
+            "total": 1,
+            "succeeded": 0,
+            "failed": 1,
+            "model": "zai-org/GLM-5.3-Flash",
+            "provider": "river",
             "error_code": "failed_transport",
         }
 

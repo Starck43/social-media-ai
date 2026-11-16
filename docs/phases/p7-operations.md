@@ -1,41 +1,20 @@
-# P7 — Reproducible operation (gate: operations are reproducible from evidence)
+# P7 — Reproducible operation
 
-Goal: one owner per migrator/scheduler/listener; private database; recoverable
-encrypted credentials; staging-backed install/upgrade/rollback/restore proofs.
+[Product direction](../product/PRODUCT_PLAN.md#foundation-directions) · [ROADMAP](../../ROADMAP.md#p7) · [full historical notes](../audit/history/phase-p7-history.md)
 
-## Tasks
+**Goal:** Installation, migrations, runtime ownership and recovery are reproducible from evidence.
 
-- [ ] P7-T01 — loopback-only database binding before production release;
-  accept: checked-in PostgreSQL host publish restricted to `127.0.0.1:5432:5432`
-  in `docker/docker-compose.yml`, container `db:5432` and local-owner tools
-  preserved, network isolation proven with local/staging evidence;
-  depends: none; owns: `docker/docker-compose.yml`; owner: product-owner; status: TODO —
-  deferred pre-production; do NOT start/restart Compose (API startup runs Alembic)
+**Plan — active task cards:**
 
-- [ ] P7-T02 — produce one staging-backed install, upgrade, rollback, restore
-  or runtime-ownership proof; accept: documented staging evidence for the
-  chosen operation; depends: staging availability; owns: docs/evidence lane;
-  owner: unassigned; status: BLOCKED — no staging environment is available; the
-  runtime-ownership half is unblocked in principle (single
-  `python -m app.runtime` owner) but is a deployment-stage proof, so this row
-  waits with P4-T01 or should be DROPPED with it.
+- [P7-T02](../tasks/p7-t02.md) — One staging-backed operations proof
+- P7-T07 — Clarify local development versus server staging/production startup commands — **ACCEPTED 2026-10-31** (notion-ai; merged in `dev` via [`c3f57bc`](https://github.com/Starck43/social-media-ai/commit/c3f57bcfcdde65abe7e6d14b1f22ba62427506b2) and [`98a356d`](https://github.com/Starck43/social-media-ai/commit/98a356dcff44316238e9affd9f4eec27721449fa), [PR #287](https://github.com/Starck43/social-media-ai/pull/287) merged as `db1e5dd3`; [audit](../audit/p7/p7-t07.md) accepted after two corrected findings)
 
-- [x] P7-T03 — use canonical domain model imports and direct manager registration;
-  accept: public/legacy/domain class identity, manager bindings and schema preserved;
-  focused import checks completed; depends: none; owns: `app/models/`,
-  `tests/test_model_bootstrap.py`, `docs/MODELS.md`; owner: codex; status: DONE —
-  2026-10-16; `tests/test_model_bootstrap.py` PASS 17/17 on dirty diff at HEAD
-  da83366; Black/isort check-only and `git diff --check` clean. Wider model-layout
-  run at the same HEAD: FAIL, 138 passed/20 failed; failures assert leaf-class app
-  labels, schema fingerprints and relationship contracts. This refactor changes only
-  facade/bootstrap/package docs and adds bootstrap checks; leaf declarations and tests
-  are untouched, so the wider result is not claimed green. No migrations or schema
-  changes required.
+**Accepted history:**
 
-- [x] P7-T04 — document routine OpenCode routing and separate pytest route;
-  status: DONE — 2026-10-15; TOML and `git diff --check` passed; OpenCode API
-  unavailable; no pytest required.
+- [P7-T03](../audit/history/phase-p7-history.md#p7-t03) — use canonical domain model imports and direct manager registration
+- [P7-T04](../audit/history/phase-p7-history.md#p7-t04) — document routine OpenCode routing and separate pytest route
+- [P7-T01](../audit/p7/p7-t01.md) — loopback-only database binding before production release · 2026-10-25 · `526cfd2`
+- [P7-T05](../audit/p7/p7-t05.md) — prepare isolated staging and database recovery · DONE 2026-10-29 · accepted review source `e8099a150283e86fa2258360fc8151532acd8ed8`; PR #280 merge `045150db19fc402de5b51c18b4fe037388f0846d`
+- [P7-T06](../audit/p7/p7-t06.md) — prepare a gated single-VPS deployment path · DONE 2026-10-29 · accepted source `e8099a150283e86fa2258360fc8151532acd8ed8`; PR #281 merge `02dde506b91b71431cd713c7121a434eae026f10`
 
-## Phase approval
-
-- [ ] PHASE DONE — approved by: codex, date: —, dev SHA: —
+**Phase status:** Active phase; close only after every plan item is accepted.

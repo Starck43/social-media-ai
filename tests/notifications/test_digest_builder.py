@@ -14,6 +14,7 @@ from app.models.managers.digest_run_manager import (
     DigestRunInProgress,
 )
 from app.services.digest import builder
+from tests.shared.platform_catalog import shared_platform
 
 TASK_NAMES = [
     "it-digest",
@@ -472,12 +473,7 @@ async def test_handle_digest_wires_sources_and_scenario(monkeypatch):
     from app.types import SourceType
     from app.web.tasks import _replace_task_sources
 
-    platform = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type="vk",
-        base_url="https://vk.com",
-        params={},
-    )
+    platform = await shared_platform("vk")
     source = await Source.objects.create(
         platform_id=platform.id,
         name="digest-source",
@@ -526,7 +522,6 @@ async def test_handle_digest_wires_sources_and_scenario(monkeypatch):
         await AgentTask.objects.delete_by_id(task.id)
         await AgentScenario.objects.delete_by_id(scenario.id)
         await Source.objects.delete_by_id(source.id)
-        await Platform.objects.delete_by_id(platform.id)
 
 
 async def test_broadcast_digest_sends_to_tenant_digest_targets(monkeypatch):

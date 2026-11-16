@@ -140,6 +140,15 @@ class DigestEnvironment:
             },
         )
         self.spec = self.tools.get_tool("digest_send_now")
+        # A test rewrites `required_permission` to replay an older contract, but the
+        # registry hands out a frozen `Tool`: the mutable stand-in keeps that copy
+        # local, and the fields the confirmation path reads stay identical.
+        self.spec = SimpleNamespace(
+            name=self.spec.name,
+            required_permission=self.spec.required_permission,
+            confirm=self.spec.confirm,
+            parameters=self.spec.parameters,
+        )
         self.actor = self.identity.RuntimeIdentity(
             tenant_id=31,
             user_id=12,
@@ -310,7 +319,7 @@ class DigestEnvironment:
             {
                 "fastapi": fastapi,
                 "fastapi.responses": response_module,
-                "app.models.digest_run": module_with(DigestRun=object),
+                **dict.fromkeys(("app.models.notifications.digest_run",), module_with(DigestRun=object)),
                 "app.services.digest.builder": self.builder,
                 "app.services.digest.render": module_with(render_digest=lambda *args: "mock rendering"),
                 "app.web.deps": self.webdeps,

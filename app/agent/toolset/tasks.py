@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import ValidationError
+
 from app.agent.tools import tool
+from app.services.task_contracts import TaskLaunchArguments, task_launch_tool_error
 
 
 def _get_job_types() -> tuple[str, ...]:
@@ -23,6 +26,18 @@ def _get_job_types() -> tuple[str, ...]:
 # a half-configured task.
 _REQUIRED_START_DATE = ("start_date", "с какой даты собирать контент")
 _MAX_PG_INTEGER = 2_147_483_647
+_TASK_READ_ERRORS = {
+    "task_read_forbidden": "Нет доступа к задаче этого workspace.",
+    "task_result_invalid": "Укажите сохранённую задачу этого workspace.",
+    "task_read_unconfirmed": "Не удалось безопасно прочитать задачу. Попробуйте позже.",
+}
+
+
+def _task_read_error(code: str) -> dict[str, str]:
+    """Use fixed messages so DB and provider exception text stays private."""
+    if code not in _TASK_READ_ERRORS:
+        code = "task_read_unconfirmed"
+    return {"error": _TASK_READ_ERRORS[code], "code": code}
 
 
 def _missing_task_fields(
@@ -39,11 +54,7 @@ def _missing_task_fields(
         missing.append("job_type (что запускать)")
     if not str(cron or "").strip():
         missing.append("cron (расписание)")
-    if (
-        job_type
-        and AgentTaskManager.requires_content_dates(job_type)
-        and not AgentTaskManager.parse_date(start_date)
-    ):
+    if job_type and AgentTaskManager.requires_content_dates(job_type) and not AgentTaskManager.parse_date(start_date):
         missing.append(_REQUIRED_START_DATE[0] + " (YYYY-MM-DD — " + _REQUIRED_START_DATE[1] + ")")
     return missing
 
@@ -74,6 +85,8 @@ async def task_list() -> list[dict[str, Any]]:
     return [
         {
             "name": t.name,
+            "id": t.id,
+            "task_url": f"/app/tasks/{t.id}",
             "cron": t.cron_expr,
             "job_type": t.job_type,
             "active": t.is_active,
@@ -198,6 +211,14 @@ async def task_list() -> list[dict[str, Any]]:
                     "candidates {limit, confirm}, date_window {start, end}"
                 ),
             },
+            "task_plan": {
+                "type": "object",
+                "description": (
+                    "Универсальный план соцзадачи: goal, platforms, source_scope/source_ids, collection, "
+                    "window (fixed с start/end или rolling с days), scenario_id и trigger (once либо schedule "
+                    "с cron/timezone). План задаёт источники, сценарий, сбор, окно и расписание."
+                ),
+            },
         },
         "required": ["name", "cron", "job_type"],
     },
@@ -223,6 +244,7 @@ async def task_add(
     influencer_names: list[str] | None = None,
     topic_list: list[str] | None = None,
     collection: dict[str, Any] | None = None,
+    task_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from zoneinfo import ZoneInfo
 
@@ -231,7 +253,45 @@ async def task_add(
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.tasks.cron import next_run_at, resolve_tz
 
+    plan_block = None
+    if task_plan is not None:
+        from app.services.task_creation import TaskPlanCreateConflict, resolve_task_plan_create
+        from app.services.task_plans import TaskPlanError
+
+        try:
+            prepared_plan = resolve_task_plan_create(
+                task_plan,
+                requested_cron=cron,
+                requested_scenario_id=scenario_id,
+                requested_source_ids=source_ids,
+                enforce_source_match=source_ids is not None,
+                conflict_order=("cron_expr", "source_ids", "scenario_id"),
+            )
+            plan_block = dict(task_plan)
+            if collection is not None:
+                return {"error": "collection is defined by task_plan; omit the legacy collection field"}
+            if start_date is not None or end_date is not None:
+                return {"error": "date fields are defined by task_plan.window; omit legacy date fields"}
+            cron = prepared_plan.cron_expr
+            source_ids = list(prepared_plan.source_ids) if prepared_plan.source_scope == "selected" else []
+            scenario_id = prepared_plan.scenario_id
+            collection = dict(task_plan.get("collection") or {})
+            if prepared_plan.plan.window and prepared_plan.plan.window.type == "fixed":
+                start_date = prepared_plan.plan.window.start.isoformat()
+                end_date = prepared_plan.plan.window.end.isoformat() if prepared_plan.plan.window.end else None
+        except TaskPlanCreateConflict as error:
+            messages = {
+                "cron_expr": "cron conflicts with task_plan.trigger; provide matching values",
+                "source_ids": "source_ids conflicts with task_plan.source_ids",
+                "scenario_id": "scenario_id conflicts with task_plan.scenario_id",
+            }
+            return {"error": messages[error.field]}
+        except TaskPlanError as error:
+            return {"error": str(error)}
+
     missing = _missing_task_fields(cron=cron, job_type=job_type, start_date=start_date)
+    if plan_block is not None and prepared_plan.plan.window and prepared_plan.plan.window.type == "rolling":
+        missing = [item for item in missing if not item.startswith("start_date ")]
     if missing:
         # Refused before anything is written: the same turn asks the owner for
         # what is missing instead of leaving a scheduled task nobody can run.
@@ -279,7 +339,7 @@ async def task_add(
 
     # collect/analyze need a content start date — without it a fresh source
     # drains the whole history from the first post (same rule as the web form).
-    if AgentTaskManager.requires_content_dates(job_type):
+    if AgentTaskManager.requires_content_dates(job_type) and plan_block is None:
         start = AgentTaskManager.parse_date(start_date)
         if start is None:
             return {"error": "Для задачи этого типа укажите start_date (с какой даты собирать контент, YYYY-MM-DD)"}
@@ -299,46 +359,72 @@ async def task_add(
     except CollectionIntentError as error:
         return {"error": collection_error_message(str(error))}
 
+    if plan_block is not None:
+        try:
+            from app.services.task_creation import project_task_plan_create
+
+            projected = project_task_plan_create(payload, prepared_plan, job_type=job_type)
+            assert projected.payload is not None
+            payload = projected.payload
+        except ValueError as error:
+            return {"error": str(error)}
+
     # The workspace zone, same rule as the web form and the runner: a task
     # created here in the global zone would shift by the offset on its first fire.
     tenant = await Tenant.objects.get(id=current_tenant_id())
     tz = resolve_tz(tenant)
-    from app.core.database import new_session
+    if plan_block is not None:
+        from app.services.task_plans import task_plan_timezone
 
-    session = new_session()
+        try:
+            tz = task_plan_timezone(plan_block, tz)
+        except ValueError as error:
+            return {"error": str(error)}
     try:
-        async with session.begin():
-            from app.models.managers.job_manager import JobManager
+        if source_ids is not None and any(
+            type(value) is not int or not 0 < value <= _MAX_PG_INTEGER for value in source_ids
+        ):
+            return {"error": "Source ids must be positive PostgreSQL INTEGER values"}
+        from app.services.task_creation import create_task_with_sources
 
-            if source_ids is not None and any(
-                type(value) is not int or not 0 < value <= _MAX_PG_INTEGER for value in source_ids
-            ):
-                return {"error": "Source ids must be positive PostgreSQL INTEGER values"}
-            await JobManager.lock_source_admission(session, current_tenant_id())
-            task = await AgentTask.objects.create(
-                session=session,
-                name=name,
-                cron_expr=cron,
-                job_type=job_type,
-                payload=payload,
-                agent_scenario_id=scenario_id,
-                is_active=True,
-                next_run_at=next_run_at(cron, tz),
-            )
-            if source_ids is not None:
-                await AgentTaskManager().set_sources(task.id, source_ids, session=session)
+        task = await create_task_with_sources(
+            task_values={
+                "name": name,
+                "cron_expr": cron,
+                "job_type": job_type,
+                "payload": payload,
+                "agent_scenario_id": scenario_id,
+                "is_active": plan_block is None,
+                "next_run_at": next_run_at(cron, tz),
+            },
+            source_ids=source_ids,
+            tenant_id=current_tenant_id(),
+        )
     except ValueError as error:
         return {"error": str(error)}
-    finally:
-        await session.close()
-
     result: dict[str, Any] = {
         "status": "created",
+        "id": task.id,
+        "task_url": f"/app/tasks/{task.id}",
         "name": task.name,
         "next_run_at": (
             task.next_run_at.astimezone(ZoneInfo(tz)).strftime("%d.%m.%Y %H:%M") if task.next_run_at else None
         ),
     }
+
+    if plan_block is not None:
+        try:
+            from app.services.billing.payer import consent_current_user_as_task_payer
+
+            await consent_current_user_as_task_payer(task.id)
+            await AgentTask.objects.update_by_id(task.id, is_active=True)
+            result["active"] = True
+        except Exception:
+            # Keep the task available for explicit setup, but never activate an
+            # AI plan until the authenticated owner has consented to its payer.
+            result["active"] = False
+            result["billing_consent_required"] = True
+            result["billing_error"] = "Настройте личный AI-бюджет и подтвердите оплату задачи в настройках"
 
     # Hint when the bound scenario wants specific targets the task does not
     # carry — the analysis would otherwise have nothing to aim at. Surfaced as
@@ -357,7 +443,6 @@ async def task_add(
                 ]
 
     return result
-
 
 
 @tool(
@@ -485,6 +570,14 @@ async def task_remove(name: str) -> dict[str, Any]:
                     "comments, candidates, date_window). Не передавайте, чтобы сохранить текущий; {} убирает сбор"
                 ),
             },
+            "task_plan": {
+                "type": "object",
+                "description": (
+                    "Полная замена универсального плана соцзадачи (goal, platforms, source_scope/source_ids, "
+                    "collection, window, scenario_id, trigger). При передаче omit legacy source_ids, "
+                    "scenario_id, cron, collection и даты. Без task_plan существующий план сохраняется."
+                ),
+            },
         },
         "required": ["name"],
     },
@@ -511,13 +604,13 @@ async def task_update(
     topic_list: list[str] | None = None,
     deactivate_after_success: bool | None = None,
     collection: dict[str, Any] | None = None,
+    task_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from app.core.database import new_session
     from app.core.tenant_context import current_tenant_id
     from app.models import AgentTask, Tenant
     from app.models.managers.agent_task_manager import AgentTaskManager
     from app.tasks.cron import next_run_at, resolve_tz
-
-    from app.core.database import new_session
 
     session = new_session()
     try:
@@ -531,6 +624,40 @@ async def task_update(
                 return {"error": f"Task {name!r} not found"}
             original_job_type = task.job_type
             original_cron = task.cron_expr
+            existing_plan = (task.payload or {}).get("task_plan")
+            from app.services.task_plans import prepare_task_plan_update
+
+            policy_input = {}
+            for key, value in (
+                ("source_ids", source_ids),
+                ("agent_scenario_id", scenario_id),
+                ("cron_expr", cron),
+                ("collection", collection),
+                ("start_date", start_date),
+                ("end_date", end_date),
+            ):
+                if value is not None:
+                    policy_input[key] = value
+            if clear_scenario:
+                policy_input["agent_scenario_id"] = None
+            if task_plan is not None:
+                policy_input["task_plan"] = task_plan
+            try:
+                mutation = prepare_task_plan_update(task.payload, policy_input, job_type=job_type or task.job_type)
+            except ValueError as error:
+                return {"error": str(error)}
+            parsed_plan = mutation.plan if task_plan is not None else None
+            clearing_existing_plan = mutation.cleared
+            if clearing_existing_plan:
+                existing_plan = None
+            if parsed_plan is not None:
+                cron = mutation.changes["cron_expr"]
+                source_ids = mutation.changes["source_ids"]
+                scenario_id = parsed_plan.scenario_id
+                collection = None
+                if parsed_plan.window and parsed_plan.window.type == "fixed":
+                    start_date = parsed_plan.window.start.isoformat()
+                    end_date = parsed_plan.window.end.isoformat() if parsed_plan.window.end else None
             if source_ids is not None and any(
                 type(value) is not int or not 0 < value <= _MAX_PG_INTEGER for value in source_ids
             ):
@@ -575,7 +702,7 @@ async def task_update(
                     return {"error": f"Некорректная {field}: {value!r} (ожидается YYYY-MM-DD)"}
             new_job_type = job_type if job_type is not None else task.job_type
             existing_dates = (task.payload or {}).get("cli_dates") or {}
-            if AgentTaskManager.requires_content_dates(new_job_type):
+            if AgentTaskManager.requires_content_dates(new_job_type) and parsed_plan is None and existing_plan is None:
                 start = (
                     AgentTaskManager.parse_date(start_date)
                     if start_date is not None
@@ -630,6 +757,20 @@ async def task_update(
                 except CollectionIntentError as error:
                     return {"error": collection_error_message(str(error))}
 
+            if task_plan is not None:
+                from app.services.task_plans import apply_parsed_task_plan
+
+                try:
+                    updated_payload = apply_parsed_task_plan(updated_payload, parsed_plan, job_type=new_job_type)
+                except ValueError as error:
+                    return {"error": str(error)}
+            elif (task.payload or {}).get("task_plan") is not None and existing_plan is None:
+                from app.services.task_plans import apply_task_plan
+
+                # Explicitly clear the plan block and its collection/date
+                # projection when the task becomes a digest or another legacy type.
+                updated_payload = apply_task_plan(updated_payload, None, job_type=new_job_type)
+
             # Compute next_run_at if cron changed
             tenant = await Tenant.objects.get(id=current_tenant_id(), session=session)
             updates: dict[str, Any] = {
@@ -641,13 +782,24 @@ async def task_update(
             # scenario — the analysis then ran without its methodology. The same
             # happened to the trial flag, which was set after the payload was written
             # and therefore never saved at all.
-            if clear_scenario:
+            if clearing_existing_plan:
+                updates["agent_scenario_id"] = mutation.changes["agent_scenario_id"]
+            elif clear_scenario:
                 updates["agent_scenario_id"] = None
             elif scenario_id is not None:
                 updates["agent_scenario_id"] = scenario_id
-            if cron is not None and cron != task.cron_expr:
+            elif task_plan is not None:
+                # A complete plan replaces the relationship too, including an
+                # explicit empty scenario choice.
+                updates["agent_scenario_id"] = parsed_plan.scenario_id
+            if cron is not None and (cron != task.cron_expr or task_plan is not None):
                 updates["cron_expr"] = cron
-                updates["next_run_at"] = next_run_at(new_cron, resolve_tz(tenant))
+                tz = resolve_tz(tenant)
+                if task_plan is not None:
+                    from app.services.task_plans import task_plan_timezone
+
+                    tz = task_plan_timezone(task_plan, tz)
+                updates["next_run_at"] = next_run_at(new_cron, tz)
             if deactivate_after_success is not None:
                 # A trial task gets a live schedule back: it had been switched off
                 # after its success, so re-arming means the next run must be planned.
@@ -659,7 +811,12 @@ async def task_update(
             if source_ids is not None:
                 await AgentTaskManager().set_sources(task.id, source_ids, session=session)
 
-            changes: dict[str, Any] = {"status": "updated", "name": task.name}
+            changes: dict[str, Any] = {
+                "status": "updated",
+                "id": task.id,
+                "task_url": f"/app/tasks/{task.id}",
+                "name": task.name,
+            }
             if job_type:
                 changes["old_job_type"] = original_job_type
                 changes["new_job_type"] = job_type
@@ -700,3 +857,370 @@ async def task_pause(name: str, pause: bool = True) -> dict[str, Any]:
         return {"error": f"Task {name!r} not found"}
     await AgentTask.objects.update_by_id(task.id, is_active=not pause)
     return {"status": "paused" if pause else "resumed", "name": name}
+
+
+@tool(
+    name="task_execute_once",
+    description=(
+        "Запустить одну ограниченную социальную задачу сбора или сбора с анализом сразу через общий диспетчер. "
+        "При повторе того же запроса передай тот же request_id: результат запуска будет использован повторно. "
+        "Разные намерения пользователя получают разные request_id. Тип ограничен collect/analyze; "
+        "произвольные поля команды и payload запрещены."
+    ),
+    required_permission="scheduling.task.create",
+    parameters={
+        **TaskLaunchArguments.model_json_schema(),
+    },
+)
+async def task_execute_once(
+    request_id: str | None = None,
+    plan: dict[str, Any] | None = None,
+    job_type: str = "analyze",
+    **extra: Any,
+) -> dict[str, Any]:
+    """Queue one bounded collect/analyze run through the common admission service."""
+    try:
+        command = TaskLaunchArguments.model_validate(
+            {"request_id": request_id, "plan": plan, "job_type": job_type, **extra}
+        ).to_command()
+    except ValidationError:
+        return task_launch_tool_error("request_invalid")
+
+    from app.jobs.source_activity import SourceJobBusy
+    from app.models.managers.personal_billing_manager import PersonalBillingUnavailable
+    from app.services.task_contracts import TaskLaunchError, task_plan_tool_error
+    from app.services.task_launch import launch_social_task
+    from app.services.task_plans import TaskPlanError
+    from app.services.tenancy.entitlements import EntitlementDenied
+
+    try:
+        return await launch_social_task(command.plan, request_id=command.request_id, job_type=command.job_type)
+    except TaskPlanError as error:
+        return task_plan_tool_error(error.code)
+    except TaskLaunchError as error:
+        return task_launch_tool_error(error.code)
+    except EntitlementDenied as error:
+        return {
+            "error": "Task launch is denied by workspace policy.",
+            "code": "entitlement_denied",
+            "decision": error.decision.to_dict(),
+        }
+    except PermissionError:
+        return task_launch_tool_error("launch_forbidden")
+    except SourceJobBusy:
+        return task_launch_tool_error("source_busy")
+    except PersonalBillingUnavailable:
+        return task_launch_tool_error("billing_unavailable")
+    except Exception:
+        return task_launch_tool_error("launch_unconfirmed")
+
+
+@tool(
+    name="task_result",
+    description=(
+        "Показать состояние запуска и доступные результаты задачи. "
+        "После task_execute_once используй возвращённый task_id; queued ещё не означает готовый результат."
+    ),
+    required_permission="scheduling.task.view",
+    parameters={
+        "type": "object",
+        "properties": {
+            "task_id": {"type": "integer"},
+            "job_id": {"type": "integer"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+        },
+        "required": ["task_id"],
+    },
+)
+async def task_result(task_id: int, job_id: int | None = None, limit: int = 5) -> dict[str, Any]:
+    from app.services.task_results import task_result as read_result
+
+    try:
+        result = await read_result(task_id, job_id=job_id, limit=limit)
+    except PermissionError:
+        return _task_read_error("task_read_forbidden")
+    except ValueError:
+        return _task_read_error("task_result_invalid")
+    except Exception:
+        return _task_read_error("task_read_unconfirmed")
+    return result if result is not None else {"error": "Задача или запуск не найдены", "code": "task_not_found"}
+
+
+@tool(
+    name="task_get",
+    description=(
+        "Открыть сохранённое определение и состояние задачи этого workspace. Возвращает только проверенный план; "
+        "используй перед разъяснением или изменением, а полный task_plan передай на preview и новой проверке прав."
+    ),
+    required_permission="scheduling.task.view",
+    parameters={
+        "type": "object",
+        "properties": {"task_id": {"type": "integer", "minimum": 1}},
+        "required": ["task_id"],
+    },
+)
+async def task_get(task_id: int) -> dict[str, Any]:
+    """Read a permission-filtered saved definition for in-chat follow-up."""
+    from app.services.task_results import task_configuration
+
+    try:
+        result = await task_configuration(task_id)
+    except PermissionError:
+        return _task_read_error("task_read_forbidden")
+    except ValueError:
+        return _task_read_error("task_result_invalid")
+    except Exception:
+        return _task_read_error("task_read_unconfirmed")
+    return result if result is not None else {"error": "Задача не найдена", "code": "task_not_found"}
+
+
+@tool(
+    name="search_plan",
+    description=(
+        "Подготовить ограниченный план социального поиска по запросу пользователя. "
+        "Не запускает сбор и не создаёт источники; варианты остаются предложениями модели."
+    ),
+    required_permission="collection.source.view",
+    parameters={
+        "type": "object",
+        "properties": {
+            "goal": {"type": "string", "description": "Что пользователь хочет найти и зачем"},
+            "platform": {"type": "string", "enum": ["vk", "telegram"]},
+            "queries": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "До пяти предложенных поисковых формулировок; не утверждай, что они уже проверены API",
+            },
+            "source_scope": {"type": "string", "enum": ["selected", "discovery", "all"]},
+            "source_ids": {"type": "array", "items": {"type": "integer"}},
+            "city": {"type": "string", "description": "Необязательный географический фильтр"},
+            "vk_access": {
+                "type": "object",
+                "description": "Необязательный закреплённый доступ: mode=api либо mode=user и credential_id",
+            },
+        },
+        "required": ["goal", "platform", "source_scope"],
+    },
+)
+async def search_plan(
+    goal: str,
+    platform: str,
+    source_scope: str,
+    queries: list[str] | None = None,
+    source_ids: list[int] | None = None,
+    city: str | None = None,
+    vk_access: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate and return a bounded search proposal without platform access."""
+    if not isinstance(goal, str) or not goal.strip() or len(goal) > 2_000:
+        return {"error": "Опишите цель поиска (до 2000 символов)", "code": "goal_invalid"}
+    if platform not in {"vk", "telegram"}:
+        return {"error": "Пока доступны только VK и Telegram", "code": "platform_unsupported"}
+    if source_scope not in {"selected", "discovery", "all"}:
+        return {"error": "Укажите selected, discovery или all", "code": "source_scope_invalid"}
+    ids = source_ids or []
+    if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in ids):
+        return {
+            "error": "Идентификаторы источников должны быть положительными целыми числами",
+            "code": "source_ids_invalid",
+        }
+    if source_scope == "selected" and not ids:
+        return {"error": "Для selected укажите хотя бы один source_id", "code": "sources_required"}
+    if source_scope != "selected" and ids:
+        return {"error": "source_ids допустимы только для selected", "code": "source_ids_unexpected"}
+    if queries is None:
+        queries = []
+    if (
+        not isinstance(queries, list)
+        or len(queries) > 5
+        or any(not isinstance(query, str) or not query.strip() or len(query.strip()) > 200 for query in queries)
+    ):
+        return {"error": "Укажите не более пяти непустых запросов длиной до 200 символов", "code": "queries_invalid"}
+    if city is not None and (not isinstance(city, str) or not city.strip() or len(city.strip()) > 120):
+        return {"error": "Некорректное название города", "code": "city_invalid"}
+    if vk_access is not None:
+        from app.services.social.vk_access import VKSelectionError, parse_vk_selection
+
+        try:
+            vk_access = parse_vk_selection(vk_access).to_dict()
+        except (VKSelectionError, TypeError, AttributeError):
+            return {"error": "Некорректный выбор подключения ВКонтакте", "code": "vk_access_selection_invalid"}
+    from app.services.collection.entitlement_policy import preview_entitlements
+
+    entitlement_preview = await preview_entitlements(
+        {
+            "task_plan": {
+                "platforms": [platform],
+                "source_scope": source_scope,
+                "source_ids": ids,
+                "collection": {"queries": queries},
+            },
+            "collection": {"queries": queries},
+        }
+    )
+    from app.services.social.vk_task_access import preview_vk_access
+
+    preview_plan = {
+        "version": 1,
+        "goal": goal.strip(),
+        "platforms": [platform],
+        "source_scope": source_scope,
+        "source_ids": ids,
+        "collection": {"queries": queries},
+        "window": {"type": "rolling", "days": 1},
+        "trigger": {"type": "once"},
+    }
+    if vk_access is not None:
+        preview_plan["vk_access"] = vk_access
+    vk_access_preview = await preview_vk_access(preview_plan)
+    return {
+        "entitlements": entitlement_preview,
+        "vk_access": vk_access_preview,
+        "status": "proposal",
+        "goal": goal.strip(),
+        "platform": platform,
+        "queries": list(dict.fromkeys(query.strip() for query in queries)),
+        "source_scope": source_scope,
+        "source_ids": ids,
+        "city": city.strip() if city else None,
+        "execution": "not_started",
+        "note": (
+            "Формулировки предложены моделью; доступность и фактический охват "
+            "подтверждаются только запуском через API."
+        ),
+    }
+
+
+@tool(
+    name="task_vk_connections",
+    description="Показать мои подключения ВКонтакте, режимы доступа, scopes и состояние без секретов.",
+    required_permission="scheduling.task.view",
+    parameters={"type": "object", "properties": {}, "required": []},
+)
+async def task_vk_connections() -> dict[str, Any]:
+    """Discover caller-owned choices before constructing a pinned task plan."""
+    from app.core.permissions import get_current_user
+    from app.core.tenant_context import current_tenant_id
+    from app.services.social.vk_connections import connection_catalog
+
+    actor_id = getattr(get_current_user(), "id", None)
+    tenant_id = current_tenant_id()
+    if type(actor_id) is not int or type(tenant_id) is not int:
+        return {"error": "Нужен активный участник рабочего пространства", "code": "vk_access_unavailable"}
+    try:
+        return await connection_catalog(tenant_id=tenant_id, actor_id=actor_id)
+    except PermissionError:
+        return {"error": "Нет доступа к подключениям ВКонтакте", "code": "vk_access_unavailable"}
+
+
+@tool(
+    name="task_vk_search_categories",
+    description="Показать заявленные категории поиска ВКонтакте (люди, видео и другие) и их статус доступности.",
+    required_permission="scheduling.task.view",
+    parameters={"type": "object", "properties": {}, "required": []},
+)
+async def task_vk_search_categories() -> dict[str, Any]:
+    """Share the category registry; execution stays gated by Q-5 evidence.
+
+    Read-only catalog, identical to the other surfaces. Never present a
+    `mocked` category as available: it is contract-tested only until Q-5
+    records method/profile evidence.
+    """
+    from app.services.collection.search_categories import category_catalog
+
+    return {"categories": category_catalog(), "gate": "docs/tasks/q-5.md"}
+
+
+@tool(
+    name="task_plan",
+    description=(
+        "Проверить и показать полный план социальной задачи без сохранения или запуска. "
+        "Используй перед разовым поиском либо созданием расписания."
+    ),
+    required_permission="scheduling.task.create",
+    parameters={
+        "type": "object",
+        "properties": {
+            "plan": {
+                "type": "object",
+                "description": (
+                    "version, goal, platforms, source_scope, source_ids, collection, "
+                    "vk_access {mode: api|user, credential_id?}, "
+                    "window {type: fixed|rolling, start, end, days}, scenario_id, "
+                    "trigger {type: once|schedule, cron, timezone}"
+                ),
+            }
+        },
+        "required": ["plan"],
+    },
+)
+async def task_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    """Pure validation/preview; the shared plan parser also serves other surfaces."""
+    from app.services.task_plans import parse_task_plan, task_plan_block
+
+    try:
+        parsed = parse_task_plan(plan)
+    except (TypeError, ValueError) as error:
+        return {"error": str(error), "code": "task_plan_invalid"}
+    # Verify workspace-owned references before returning a preview as usable.
+    from app.models import AgentScenario, Source
+
+    normalized = task_plan_block(parsed)
+    source_ids = normalized.get("source_ids") or []
+    if source_ids:
+        found = await Source.objects.select_related("platform").filter(id__in=source_ids, is_active=True)
+        found_ids = {source.id for source in found}
+        missing = sorted(set(source_ids) - found_ids)
+        if missing:
+            return {"error": "Один или несколько источников не найдены или отключены", "code": "source_unavailable"}
+        from app.utils.enum_helpers import get_enum_value
+
+        platforms = {get_enum_value(getattr(source.platform, "platform_type", None)) for source in found}
+        requested = set(normalized.get("platforms") or [])
+        if not platforms.issubset(requested):
+            return {"error": "Платформа выбранного источника не входит в план", "code": "source_platform_mismatch"}
+    scenario_id = normalized.get("scenario_id")
+    if scenario_id is not None:
+        scenario = await AgentScenario.objects.get(id=scenario_id)
+        if scenario is None or not scenario.is_active:
+            return {"error": "Сценарий не найден или отключён в этом workspace", "code": "scenario_unavailable"}
+    from app.services.collection.entitlement_policy import preview_entitlements
+
+    entitlements = await preview_entitlements({"task_plan": normalized, "collection": normalized.get("collection", {})})
+    from app.services.social.vk_task_access import preview_vk_access
+
+    vk_access_preview = await preview_vk_access(normalized)
+    return {
+        "status": "validated_preview",
+        "plan": normalized,
+        "writes": False,
+        "run_created": False,
+        "entitlements": entitlements,
+        "vk_access": vk_access_preview,
+    }
+
+
+@tool(
+    name="task_digest_send",
+    description="Отправить уже сформированный дайджест выбранного запуска после подтверждения. Повтор использует квитанции частей.",
+    confirm=True,
+    required_permission="notifications.digest_run.create",
+    parameters={
+        "type": "object",
+        "properties": {"task_id": {"type": "integer", "minimum": 1}, "job_id": {"type": "integer", "minimum": 1}},
+        "required": ["task_id", "job_id"],
+        "additionalProperties": False,
+    },
+)
+async def task_digest_send(task_id: int, job_id: int) -> dict[str, Any]:
+    from app.services.task_digest_delivery import send_task_digest
+
+    try:
+        return await send_task_digest(task_id, job_id)
+    except PermissionError:
+        return {"error": "Report delivery is not permitted.", "code": "task_digest_forbidden"}
+    except Exception:
+        return {
+            "error": "Inspect the retained delivery receipts before retrying.",
+            "code": "task_digest_requires_review",
+        }

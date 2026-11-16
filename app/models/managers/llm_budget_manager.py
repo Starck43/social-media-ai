@@ -23,7 +23,7 @@ GUARDS = {
 
 class LLMBudgetManager(BaseManager):
     def __init__(self):
-        from ..analysis.llm_budget import LLMBudgetReservation
+        from ..llm.llm_budget import LLMBudgetReservation
 
         super().__init__(LLMBudgetReservation)
 
@@ -48,7 +48,7 @@ class LLMBudgetManager(BaseManager):
         from app.services.ai.dispatch_receipts import validate_receipt
         from app.services.tenancy.resolver import resolved_daily_cost_limit
 
-        from ..analysis.llm_budget import LLMBudgetDay
+        from ..llm.llm_budget import LLMBudgetDay
         from ..tenancy.tenant import Tenant
 
         payer = current_tenant_id()

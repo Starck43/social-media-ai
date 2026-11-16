@@ -20,7 +20,7 @@ def load(relative, name):
 
 runner = load("tests/acceptance/test_llm_budget_pg.py", "_coherence_runner")
 preparation = load("scripts/prepare_llm_budget_fixture.py", "_coherence_preparation")
-template = json.loads((ROOT / "docs/validation/llm-budget-pg-approval.isolated.example.json").read_text())
+template = json.loads((ROOT / "tests/shared/fixtures/llm-budget-pg-approval.isolated.example.json").read_text())
 frozen = json.loads(
     subprocess.check_output(
         [

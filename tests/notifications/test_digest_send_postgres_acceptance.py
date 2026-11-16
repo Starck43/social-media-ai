@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from contextlib import asynccontextmanager, contextmanager
-from copy import copy, deepcopy
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -386,8 +386,17 @@ async def test_persisted_obsolete_intents_are_rejected(invalid, digest_effects):
         elif invalid == "version2":
             pending["authorization"]["version"] = 2
         else:
-            old_spec = copy(get_tool("digest_send_now"))
-            old_spec.required_permission = "notifications.digest_run.update"
+            current = get_tool("digest_send_now")
+            # `Tool` is frozen and not modifiable after construction, so the
+            # historical (pre-cutover) permission is presented as a stand-in spec
+            # with the same name/contract and the retired permission key. The
+            # runtime must compare it against today's tool and refuse.
+            old_spec = SimpleNamespace(
+                name=current.name,
+                required_permission="notifications.digest_run.update",
+                confirm=current.confirm,
+                parameters=current.parameters,
+            )
             pending = make_pending_intent(
                 await subject.identity(),
                 subject.session,
@@ -396,6 +405,7 @@ async def test_persisted_obsolete_intents_are_rejected(invalid, digest_effects):
                 "historical-update",
             )
             assert pending is not None
+            assert pending["required_permission"] == "notifications.digest_run.update"
         with tenant_scope(workspace.tenant_id):
             await agent_sessions.set_state(subject.session.id, pending_confirmation=pending)
         assert "отклонено" in await subject.yes()
@@ -471,13 +481,40 @@ async def test_real_cas_rejects_foreign_scope_and_stale_replaced_intent(digest_e
         assert (await subject.stored())["pending_confirmation"] == old
         await subject.stage()
         replacement = (await subject.stored())["pending_confirmation"]
+        # `82555f2`: an identical repeat is answered by the pending intent, so the
+        # same `intent_id` survives and the stored snapshot is unchanged.
+        assert replacement["intent_id"] == old["intent_id"]
+        assert replacement == old
+        # Exactly one question is outstanding and one «да» answers it. The CAS is
+        # the unit twin's job (`test_repeated_identical_intent_keeps_intent_id_
+        # and_stays_answerable_once`); consuming the snapshot by hand here would
+        # spend the intent and leave «да» with nothing to confirm.
+        reply = await subject.yes()
+        assert "отклонено" not in reply
+        digest_effects.publisher.assert_awaited_once_with(**ARGS)
+        assert "pending_confirmation" not in await subject.stored()
+
+
+async def test_real_changed_intent_retires_the_old_snapshot(digest_effects):
+    """A *changed* intent is a new question; the old snapshot must not consume it."""
+    async with owned_workspace() as workspace:
+        subject = await actor(workspace)
+        old = await staged(subject, digest_effects)
+        identity = await subject.identity()
+        with tenant_scope(workspace.tenant_id):
+            await runtime._dispatch_or_stage(
+                subject.session,
+                "digest_send_now",
+                {**ARGS, "period": "themes-of-week"},
+                f"call-{uuid4().hex}",
+                identity,
+            )
+        replacement = (await subject.stored())["pending_confirmation"]
         assert replacement["intent_id"] != old["intent_id"]
         with tenant_scope(workspace.tenant_id):
             assert await agent_sessions.consume_pending_confirmation(subject.session.id, old) is None
         assert (await subject.stored())["pending_confirmation"] == replacement
         digest_effects.publisher.assert_not_awaited()
-        await subject.yes()
-        digest_effects.publisher.assert_awaited_once_with(**ARGS)
 
 
 async def test_two_real_confirmation_turns_wait_on_row_then_publish_once(digest_effects, monkeypatch):

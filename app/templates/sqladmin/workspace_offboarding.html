@@ -1,0 +1,57 @@
+{% extends "sqladmin/layout.html" %}
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">{{ title }}</h3></div>
+    <div class="card-body">
+      {% if error %}<div class="alert alert-warning" role="alert" data-offboarding-error="{{ error_code }}">{{ error }}</div>{% endif %}
+      {% if receipt %}
+      <div class="alert alert-success" role="status">Пространство №{{ receipt.workspace_id }} удалено. Запись в журнале сохранена.</div>
+      <p>Квитанция: <code data-offboarding-receipt>{{ receipt.event_id }}</code></p>
+      <p>Удалено просроченных записей аудита: {{ receipt.expired_audit_count }}.</p>
+      {% elif preview %}
+      <h4>{{ preview.workspace_name }} · №{{ preview.workspace_id }}</h4>
+      <p>Будут безвозвратно удалены пространство и принадлежащие ему данные. Личные провайдеры и модели пользователя сохраняются.</p>
+      <dl class="row">
+        <dt class="col-sm-7">Аудит с действующим сроком хранения</dt><dd class="col-sm-5" data-retained-count>{{ preview.retained_audit_count }}</dd>
+        <dt class="col-sm-7">Просроченные записи аудита</dt><dd class="col-sm-5" data-expired-count>{{ preview.expired_audit_count }}</dd>
+        <dt class="col-sm-7">Защищённые финансовые и служебные записи</dt><dd class="col-sm-5">{{ preview.protected_record_count }}</dd>
+      </dl>
+      {% for blocker in preview.blockers %}<p class="text-warning">{{ blocker }}</p>{% endfor %}
+      {% if stage == 'setup' %}
+      <form method="post" action="{{ action_url }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="intent" value="preview"><input type="hidden" name="pks" value="{{ preview.workspace_id }}">
+        <div class="mb-3"><label class="form-label" for="reason_code">Причина</label>
+        <select class="form-select" id="reason_code" name="reason_code">{% for key, label in reason_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></div>
+        <div class="mb-3"><label class="form-label" for="retention_policy">Политика аудита</label>
+        <select class="form-select" id="retention_policy" name="retention_policy">{% for key, label in policy_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select>
+        <small class="form-hint" data-policy-hint>
+          {% if preview.retained_audit_count == 0 and preview.expired_audit_count == 0 %}
+          Аудита у этого пространства нет. Оба варианта дают одно и то же: пространство удаляется полностью.
+          {% elif preview.retained_audit_count %}
+          Удерживается {{ preview.retained_audit_count }} записей аудита с действующим сроком хранения. Удаление заблокировано при любом выборе: сначала нужна плановая очистка после истечения срока.
+          {% else %}
+          Все {{ preview.expired_audit_count }} записей аудита просрочены. «Сохранить аудит» оставит их и заблокирует удаление; «Удалить просроченный аудит» разрешит удаление и запишет число стёртых записей в квитанцию.
+          {% endif %}
+        </small></div>
+        <button class="btn btn-primary" type="submit">Предварительный просмотр</button>
+      </form>
+      {% else %}
+      <p>{{ reason_labels[preview.reason_code] }}. {{ policy_labels[preview.retention_policy] }}.</p>
+      {% if preview.can_delete %}
+      <form method="post" action="{{ action_url }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="intent" value="confirm">
+        <input type="hidden" name="review_token" value="{{ preview.review_token }}">
+        <label class="form-check mb-3"><input class="form-check-input" type="checkbox" name="confirmed" value="yes" required>
+        <span class="form-check-label">Подтверждаю необратимое удаление этого пространства.</span></label>
+        <button class="btn btn-danger" type="submit">Удалить пространство и сохранить квитанцию</button>
+      </form>
+      {% endif %}
+      {% endif %}
+      {% endif %}
+    </div>
+    <div class="card-footer d-flex gap-3"><a href="{{ list_url }}">К списку пространств</a><a href="{{ journal_url }}">Журнал удалений</a></div>
+  </div>
+</div>
+{% endblock %}

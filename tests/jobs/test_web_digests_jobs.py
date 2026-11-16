@@ -30,7 +30,7 @@ from app.web.digests import valid_period
 from app.web.jobs import RETRYABLE
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from app.models.agent_task import AgentTask
+    from app.models.scheduling.agent_task import AgentTask
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 DENIED = "Недостаточно прав"
@@ -167,7 +167,7 @@ async def _seed_job(
 
 
 async def _seed_task(tenant_id: int, name: str = "Сбор VK") -> "AgentTask":
-    from app.models.agent_task import AgentTask
+    from app.models.scheduling.agent_task import AgentTask
 
     with tenant_scope(bypass=True):
         return await AgentTask.objects.create(

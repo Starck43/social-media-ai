@@ -3,23 +3,17 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
-from croniter import croniter
-
 from app.core.database import with_db_session
 from app.core.permissions import require_permission
 from app.types import ActionType
 
 from .base_manager import BaseManager
+from .task_inputs import SOURCE_BASED_JOB_TYPES, TaskInputsMixin
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from ..agent_task import AgentTask
-
-
-# Job types that operate on concrete sources. The rest (digest, prune, learn,
-# reflect) work at the workspace/memory level and do not require a source.
-SOURCE_BASED_JOB_TYPES = frozenset({"collect", "analyze"})
+    from ..scheduling.agent_task import AgentTask
 
 
 class _RetryAdmissionBusy(Exception):
@@ -33,9 +27,20 @@ class _RetryAdmissionBusy(Exception):
 class _RetryAdmissionTransaction:
     """Convert retry-busy only after the database transaction rolls back."""
 
-    def __init__(self, session: Any) -> None:
+    def __init__(self, session: Any, *, audit_context: dict[str, Any] | None = None) -> None:
         self.transaction = session.begin()
         self.busy_job = None
+        self.audit_context = audit_context
+
+    def _log(self, method: str, reason_code: str) -> None:
+        if not self.audit_context:
+            return
+        try:
+            from app.services import action_audit
+
+            getattr(action_audit, method)(**self.audit_context, reason_code=reason_code)
+        except Exception:  # noqa: BLE001 - diagnostics must not change transaction outcomes
+            pass
 
     async def __aenter__(self):
         await self.transaction.__aenter__()
@@ -43,10 +48,33 @@ class _RetryAdmissionTransaction:
 
     async def __aexit__(self, exc_type, exc, traceback):
         if isinstance(exc, _RetryAdmissionBusy):
-            await self.transaction.__aexit__(exc_type, exc, traceback)
+            try:
+                await self.transaction.__aexit__(exc_type, exc, traceback)
+            except BaseException:
+                self._log("log_unknown", "commit_ack_unknown")
+                raise
             self.busy_job = exc.job
+            self._log("log_rolled_back", "admission_busy")
             return True
-        return await self.transaction.__aexit__(exc_type, exc, traceback)
+        if exc_type is None:
+            try:
+                return await self.transaction.__aexit__(exc_type, exc, traceback)
+            except BaseException:
+                # A failed commit acknowledgement does not prove rollback.
+                self._log("log_unknown", "commit_ack_unknown")
+                raise
+        try:
+            result = await self.transaction.__aexit__(exc_type, exc, traceback)
+        except BaseException:
+            self._log("log_unknown", "commit_ack_unknown")
+            raise
+        if isinstance(exc, PermissionError):
+            self._log("log_denied", "permission_denied")
+        elif isinstance(exc, ValueError):
+            self._log("log_denied", "operation_refused")
+        else:
+            self._log("log_rolled_back", "transaction_rolled_back")
+        return result
 
 
 def _busy_admission_receipt(task_id: int, job: Any) -> dict[str, Any]:
@@ -54,11 +82,11 @@ def _busy_admission_receipt(task_id: int, job: Any) -> dict[str, Any]:
     return {"status": "busy", "task_id": task_id, "job": job}
 
 
-class AgentTaskManager(BaseManager):
+class AgentTaskManager(TaskInputsMixin, BaseManager):
     """Manager for AgentTask model: cron validation and next-run computation."""
 
     def __init__(self):
-        from ..agent_task import AgentTask
+        from ..scheduling.agent_task import AgentTask
 
         super().__init__(AgentTask)
 
@@ -73,29 +101,25 @@ class AgentTaskManager(BaseManager):
         if not has_permission(user, "job", ActionType.UPDATE):
             raise PermissionDeniedError("Missing permission: job.update")
 
-    @staticmethod
-    def _validate_job_retention_schedule(job_type: str | None, payload: Any, cron_expr: str | None) -> None:
-        if (
-            job_type == "prune"
-            and isinstance(payload, dict)
-            and payload.get("mode") == "job_history"
-            and cron_expr == "@once"
-        ):
-            raise ValueError("Настройка хранения истории должна быть повторяемой, например ежедневно.")
-
     # --- permission-gated writes (user surfaces: web, agent tools, CLI) ----
 
     @require_permission("agenttask", ActionType.CREATE)
     @with_db_session
     async def create(self, session: "AsyncSession", **kwargs: Any) -> "AgentTask":
+        reserved = {"launch_key", "launch_fingerprint", "launch_job_id"}.intersection(kwargs)
+        if reserved:
+            raise ValueError(f"Task launch identity fields are server-managed: {', '.join(sorted(reserved))}")
+        if kwargs.get("job_type") == "social.brief":
+            raise ValueError("Use the signed morning brief schedule service")
         self._require_job_retention_permission(kwargs.get("job_type"))
         self._validate_job_retention_schedule(kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr"))
+        self._validate_task_plan_binding(
+            kwargs.get("job_type"), kwargs.get("payload"), kwargs.get("cron_expr"), kwargs.get("agent_scenario_id")
+        )
         # Resolve the tenant through BaseManager's normal context/bootstrap path
         # before validating the scenario, so the FK failure is a domain error.
         stamped = await self._apply_tenant(session, dict(kwargs))
-        await self._validate_scenario_binding(
-            session, stamped["tenant_id"], stamped.get("agent_scenario_id")
-        )
+        await self._validate_scenario_binding(session, stamped["tenant_id"], stamped.get("agent_scenario_id"))
         return await super().create(session=session, **stamped)
 
     # Fields that define what the next occurrence will do. A change to any of
@@ -129,7 +153,7 @@ class AgentTaskManager(BaseManager):
         """Take the admission gate before a task row lock and refresh identity state."""
         from sqlalchemy import select
 
-        from ..agent_task import AgentTask
+        from ..scheduling.agent_task import AgentTask
         from .job_manager import JobManager
 
         current = await self.get(id=task_id, session=session)
@@ -151,15 +175,33 @@ class AgentTaskManager(BaseManager):
     async def update_by_id(self, instance_id: int, session: "AsyncSession", **kwargs: Any) -> Optional["AgentTask"]:
         if {"id", "tenant_id"}.intersection(kwargs):
             raise ValueError("AgentTask identity fields cannot be updated")
+        reserved = {"launch_key", "launch_fingerprint", "launch_job_id"}.intersection(kwargs)
+        if reserved:
+            raise ValueError(f"Task launch identity fields are server-managed: {', '.join(sorted(reserved))}")
         current = await self._lock_task_for_mutation(session, instance_id)
         if current is None:
             return None
+        if kwargs.get("job_type") == "social.brief":
+            raise ValueError("Use the signed morning brief schedule service")
+        if current.job_type == "social.brief" and set(kwargs) - {"is_active"}:
+            raise ValueError("Morning brief tasks are managed by their schedule form")
         self._require_job_retention_permission(getattr(current, "job_type", None))
         self._require_job_retention_permission(kwargs.get("job_type"))
         self._validate_job_retention_schedule(
             kwargs.get("job_type", current.job_type),
             kwargs.get("payload", current.payload),
             kwargs.get("cron_expr", current.cron_expr),
+        )
+        from app.services.task_plans import validate_vk_access_retained
+
+        validate_vk_access_retained(
+            current.payload, kwargs.get("payload", current.payload), job_type=kwargs.get("job_type", current.job_type)
+        )
+        self._validate_task_plan_binding(
+            kwargs.get("job_type", current.job_type),
+            kwargs.get("payload", current.payload),
+            kwargs.get("cron_expr", current.cron_expr),
+            kwargs.get("agent_scenario_id", current.agent_scenario_id),
         )
         await self._validate_scenario_binding(
             session,
@@ -180,13 +222,14 @@ class AgentTaskManager(BaseManager):
         from sqlalchemy import select
 
         from app.core.database import async_session_maker
-        from ..agent_task import AgentTask
+
+        from ..scheduling.agent_task import AgentTask
         from .job_manager import JobManager
 
         if "agent_scenario_id" in values:
             raise ValueError("Use update_by_id for scenario binding changes")
         unknown = set(values) - set(AgentTask.__mapper__.column_attrs.keys())
-        immutable = {"id", "tenant_id"}.intersection(values)
+        immutable = {"id", "tenant_id", "launch_key", "launch_fingerprint", "launch_job_id"}.intersection(values)
         if unknown:
             raise ValueError(f"Unknown AgentTask fields: {', '.join(sorted(unknown))}")
         if immutable:
@@ -222,6 +265,10 @@ class AgentTaskManager(BaseManager):
 
                 jobs = JobManager()
                 for task in rows:
+                    if values.get("job_type") == "social.brief":
+                        raise ValueError("Use the signed morning brief schedule service")
+                    if task.job_type == "social.brief" and set(values) - {"is_active"}:
+                        raise ValueError("Morning brief tasks are managed by their schedule form")
                     if task.job_type == "prune":
                         self._require_job_retention_permission(task.job_type)
                     self._require_job_retention_permission(values.get("job_type"))
@@ -229,6 +276,19 @@ class AgentTaskManager(BaseManager):
                         values.get("job_type", task.job_type),
                         values.get("payload", task.payload),
                         values.get("cron_expr", task.cron_expr),
+                    )
+                    from app.services.task_plans import validate_vk_access_retained
+
+                    validate_vk_access_retained(
+                        task.payload,
+                        values.get("payload", task.payload),
+                        job_type=values.get("job_type", task.job_type),
+                    )
+                    self._validate_task_plan_binding(
+                        values.get("job_type", task.job_type),
+                        values.get("payload", task.payload),
+                        values.get("cron_expr", task.cron_expr),
+                        task.agent_scenario_id,
                     )
                     if self._replaces_pending_occurrence(task, values):
                         await jobs.delete_pending_for_task(session, tenant_id=task.tenant_id, task_id=task.id)
@@ -274,7 +334,7 @@ class AgentTaskManager(BaseManager):
         return count
 
     async def _delete_with_queued_cleanup(self, session: "AsyncSession", filters: dict[str, Any]) -> int:
-        from ..agent_task import AgentTask
+        from ..scheduling.agent_task import AgentTask
         from .job_manager import JobManager
 
         matching = list(await self.get_queryset(session).filter(**filters).all())
@@ -332,7 +392,7 @@ class AgentTaskManager(BaseManager):
             raise ValueError("Invalid scenario ID")
         from sqlalchemy import select
 
-        from ..agent_scenario import AgentScenario
+        from ..analysis.agent_scenario import AgentScenario
 
         identity = (
             await session.execute(
@@ -353,11 +413,12 @@ class AgentTaskManager(BaseManager):
         session: "AsyncSession | None" = None,
     ) -> int:
         """Change source links under the same gate and task lock as admission."""
-        from sqlalchemy import delete as sa_delete, select
+        from sqlalchemy import delete as sa_delete
+        from sqlalchemy import select
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-        from ..agent_task import agent_task_sources
-        from ..source import Source
+        from ..collection.source import Source
+        from ..scheduling.agent_task import agent_task_sources
         from .job_manager import JobManager
 
         if type(task_id) is not int or task_id <= 0:
@@ -418,155 +479,6 @@ class AgentTaskManager(BaseManager):
                     )
             return len(values)
 
-    @staticmethod
-    def requires_sources(job_type: str) -> bool:
-        """Whether a task of this job type needs at least one active source."""
-        return job_type in SOURCE_BASED_JOB_TYPES
-
-    @staticmethod
-    def wants_deactivate_after_success(payload: Any) -> bool:
-        """Whether this task is a trial: stop after its first successful run.
-
-        The owner decides this when the task is created. A recurring schedule
-        that was never confirmed as one-off is a normal task and keeps running;
-        only an explicit `deactivate_after_success` in the payload ends it.
-        """
-        return isinstance(payload, dict) and payload.get("deactivate_after_success") is True
-
-    @staticmethod
-    def requires_content_dates(job_type: str) -> bool:
-        """Whether a task of this job type needs a content start date.
-
-        Same set as `requires_sources`: collect/analyze pull content from the
-        platforms, and without a `cli_dates.start_date` the first run falls
-        back to "no date filters" and drains the whole history from the first
-        post. digest/prune/learn/reflect work on what is already stored.
-        """
-        return job_type in SOURCE_BASED_JOB_TYPES
-
-    @staticmethod
-    def parse_date(value: str | None):
-        """Parse a form/CLI date to a `date`, or None when absent/invalid.
-
-        Accepts the same formats the CLI's `--start-date` does (DD-MM-YYYY,
-        DD.MM.YYYY, ISO). Stored as `YYYY-MM-DD` so the JSON payload stays
-        serialisable and every reader (`universal_date_parser`) can parse it.
-        """
-        if not value:
-            return None
-        from app.utils.date_parsing import universal_date_parser
-
-        parsed = universal_date_parser(value)
-        return parsed.date() if parsed else None
-
-    @classmethod
-    def resolve_cli_date_window(cls, primary: Any, fallback: Any = None) -> tuple[Any, Any]:
-        """Resolve optional date bounds and reject malformed or reversed windows."""
-        dates = primary if primary not in (None, "", {}) else fallback
-        if dates in (None, "", {}):
-            dates = {}
-        if not isinstance(dates, dict):
-            raise ValueError("Invalid content date window")
-        start_raw = dates.get("start_date")
-        end_raw = dates.get("end_date")
-        if any(value not in (None, "") and not isinstance(value, str) for value in (start_raw, end_raw)):
-            raise ValueError("Invalid content date window")
-        start = cls.parse_date(start_raw)
-        end = cls.parse_date(end_raw)
-        if (start_raw and start is None) or (end_raw and end is None):
-            raise ValueError("Invalid content date window")
-        if start is not None and end is not None and start > end:
-            raise ValueError("Invalid content date window")
-        return start, end
-
-    @staticmethod
-    def build_dates_payload(start_date, end_date=None, force_refresh: bool = True) -> dict:
-        """The payload keys a collect/analyze run needs for its date window.
-
-        Mirrors the CLI: `force_refresh` plus `cli_dates` with the explicit
-        bounds, so a fresh source is not drained from the first post. The CLI
-        always refreshes (its whole point is a one-off full window); the web
-        passes the operator's checkbox so it can run incrementally instead.
-        """
-        cli_dates: dict[str, str] = {}
-        if start_date:
-            cli_dates["start_date"] = str(start_date)
-        if end_date:
-            cli_dates["end_date"] = str(end_date)
-        payload: dict[str, Any] = {"force_refresh": bool(force_refresh)}
-        if cli_dates:
-            payload["cli_dates"] = cli_dates
-        return payload
-
-    @staticmethod
-    def build_selection_payload(
-        *,
-        tracked_users: Any = None,
-        keywords: Any = None,
-        topics: Any = None,
-        keywords_match: str | None = None,
-        existing: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Merge a task's selection into its payload (`docs/design/task-selection.md`).
-
-        The one writer for every surface — web form, CLI, chat tool and API —
-        so the same settings cannot be stored three different ways. `None` means
-        "not supplied, keep what is there"; an empty list/string clears the key.
-
-        Malformed entries raise `SelectionError` so a save fails visibly instead
-        of storing a selection that silently selects nothing.
-        """
-        import app.services.monitoring.selection as selection
-
-        payload = dict(existing or {})
-        if tracked_users is not None:
-            # Validate through the same parser the runtime uses.
-            payload["tracked_users"] = [user.key() for user in selection.parse_tracked_users(tracked_users)]
-            if not payload["tracked_users"]:
-                payload.pop("tracked_users")
-        for raw, key in ((keywords, "keywords_list"), (topics, "topics_list")):
-            if raw is None:
-                continue
-            values = list(raw) if isinstance(raw, (list, tuple)) else [raw]
-            phrases = [" ".join(str(value).split()) for value in values if value and str(value).strip()]
-            if phrases:
-                payload[key] = phrases
-            else:
-                payload.pop(key, None)
-        if keywords_match is not None:
-            if keywords_match not in selection.MATCH_MODES:
-                raise selection.SelectionError("keywords_match_invalid")
-            if keywords_match == selection.MATCH_ANY:
-                # "any" is the default the reader applies: not storing it keeps
-                # the payload (and its analysis fingerprint) stable.
-                payload.pop("keywords_match", None)
-            else:
-                payload["keywords_match"] = keywords_match
-        selection.build_scope(payload)
-        return payload
-
-    @staticmethod
-    def validate_cron(cron_expr: str) -> bool:
-        """Return True if cron expression is valid (5-field) or @once."""
-        if cron_expr == "@once":
-            return True
-        try:
-            croniter(cron_expr, datetime.now(timezone.utc))
-            return True
-        except (ValueError, KeyError):
-            return False
-
-    @staticmethod
-    def next_run_at(cron_expr: str, timezone_name: str, after: Optional[datetime] = None) -> datetime:
-        """Compute next run time for cron expression in the given timezone (UTC returned).
-
-        Delegates to the shared helper so `@once` and 5-field cron behave the
-        same in the web form, the API, the agent tools and the runner.
-        """
-        from app.tasks.cron import next_run_at as compute_next_run
-
-        return compute_next_run(cron_expr, timezone_name, after=after)
-
     async def get_active(self) -> list["AgentTask"]:
         """All active tasks."""
         return await self.filter(is_active=True)
@@ -583,9 +495,9 @@ class AgentTaskManager(BaseManager):
         """
         from sqlalchemy import and_, exists, literal, not_, or_, select
 
-        from ..agent_scenario import AgentScenario
-        from ..agent_task import AgentTask, agent_task_sources
-        from ..source import Source
+        from ..analysis.agent_scenario import AgentScenario
+        from ..collection.source import Source
+        from ..scheduling.agent_task import AgentTask, agent_task_sources
 
         active_scenario = exists(
             select(literal(1)).where(
@@ -644,7 +556,7 @@ class AgentTaskManager(BaseManager):
             return {}
         from sqlalchemy import select
 
-        from ..agent_task import agent_task_sources
+        from ..scheduling.agent_task import agent_task_sources
 
         rows = await self.aggregate_rows(
             select(agent_task_sources.c.agent_task_id, agent_task_sources.c.source_id).where(
@@ -675,7 +587,7 @@ class AgentTaskManager(BaseManager):
             return None
         from sqlalchemy import select
 
-        from ..agent_task import agent_task_sources
+        from ..scheduling.agent_task import agent_task_sources
 
         rows = await self.aggregate_rows(
             select(agent_task_sources.c.agent_task_id).where(agent_task_sources.c.source_id == source_id)
@@ -708,7 +620,7 @@ class AgentTaskManager(BaseManager):
         """
         from sqlalchemy import exists, literal, not_, or_, select
 
-        from ..agent_task import AgentTask, agent_task_sources
+        from ..scheduling.agent_task import AgentTask, agent_task_sources
 
         linked = exists(
             select(literal(1)).where(
@@ -743,7 +655,7 @@ class AgentTaskManager(BaseManager):
         """
         from sqlalchemy import func, or_, select
 
-        from ..agent_task import AgentTask, agent_task_sources
+        from ..scheduling.agent_task import AgentTask, agent_task_sources
 
         ids = sorted({int(sid) for sid in source_ids if sid is not None})
         if not ids:
@@ -810,6 +722,18 @@ class AgentTaskManager(BaseManager):
             return False
         if not AgentTaskManager.requires_sources(getattr(task, "job_type", "") or ""):
             return True
+        payload = getattr(task, "payload", None)
+        plan = payload.get("task_plan") if isinstance(payload, dict) else None
+        source_scope = plan.get("source_scope") if isinstance(plan, dict) else None
+        if source_scope == "discovery":
+            collection = plan.get("collection")
+            discovery = collection.get("discovery") if isinstance(collection, dict) else None
+            if (
+                isinstance(discovery, dict)
+                and discovery.get("queries")
+                and (discovery.get("communities") or discovery.get("people"))
+            ) or (isinstance(collection, dict) and collection.get("queries")):
+                return True
         linked = task.sources or []
         if linked:
             # Explicit links: active iff at least one is active — no fallback.
@@ -825,7 +749,7 @@ class AgentTaskManager(BaseManager):
         means all active" fallback must not let one task collect through
         another task's search lane.
         """
-        from ..source import Source
+        from ..collection.source import Source
 
         rows = await Source.objects.filter(is_active=True, owner_task_id__isnull=True).values(Source.id).rows()
         return {r.id for r in rows}
@@ -874,6 +798,7 @@ class AgentTaskManager(BaseManager):
         extra_payload: Optional[dict[str, Any]] = None,
         retry_exhausted: bool = False,
         supersede_unfinished: bool = False,
+        launch_request_key: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
         """Internal trigger boundary: insert and schedule advancement commit together.
 
@@ -882,7 +807,7 @@ class AgentTaskManager(BaseManager):
         the schedule backwards. Source-work conflicts return a busy receipt
         without recording a trigger or consuming the scheduled occurrence.
         """
-        from sqlalchemy import select
+        from sqlalchemy import func, select
         from sqlalchemy.orm import selectinload
 
         from app.core.config import settings
@@ -890,8 +815,8 @@ class AgentTaskManager(BaseManager):
         from app.core.tenant_context import TenantContextError, current_tenant_id, is_bypass
         from app.tasks.cron import next_run_at
 
-        from ..agent_task import AgentTask
-        from ..source import Source
+        from ..collection.source import Source
+        from ..scheduling.agent_task import AgentTask
         from .job_manager import JobManager
 
         tenant_id = current_tenant_id()
@@ -912,8 +837,15 @@ class AgentTaskManager(BaseManager):
             raise ValueError("Task admission requires an aware timestamp")
         if scheduled and (not isinstance(expected_next_run_at, datetime) or expected_next_run_at.utcoffset() is None):
             raise ValueError("Scheduled admission requires an aware observed due timestamp")
+        trusted_user_actor = type(trusted_actor_id) is int and 0 < trusted_actor_id <= 2147483647
+        audit_context = {
+            "tenant_id": tenant_id,
+            "actor_kind": "scheduler" if scheduled else ("user" if trusted_user_actor else "service"),
+            "actor_id": ("scheduler" if scheduled else (trusted_actor_id if trusted_user_actor else "task_runner")),
+            "task_id": task_id,
+        }
         async with async_session_maker() as session:
-            async with _RetryAdmissionTransaction(session) as retry_transaction:
+            async with _RetryAdmissionTransaction(session, audit_context=audit_context) as retry_transaction:
                 # One lock order with direct source admission and staging:
                 # workspace admission gate, then task/staged rows.
                 await JobManager.lock_source_admission(session, tenant_id)
@@ -925,13 +857,88 @@ class AgentTaskManager(BaseManager):
                         AgentTask.next_run_at == expected_next_run_at,
                         AgentTask.next_run_at <= now,
                     )
-                query = query.options(selectinload(AgentTask.sources), selectinload(AgentTask.agent_scenario))
+                query = query.options(
+                    selectinload(AgentTask.sources).selectinload(Source.platform),
+                    selectinload(AgentTask.agent_scenario),
+                )
                 row = (await session.execute(query.with_for_update(skip_locked=scheduled))).scalar_one_or_none()
                 if row is None:
                     return None
+                if launch_request_key is not None and row.launch_key != launch_request_key:
+                    raise ValueError("Launch receipt key does not match this task")
+                if launch_request_key is not None and row.launch_job_id is not None:
+                    from ..scheduling.job import Job as JobModel
+
+                    existing_job = (
+                        await session.execute(
+                            select(JobModel).where(
+                                JobModel.id == row.launch_job_id,
+                                JobModel.tenant_id == tenant_id,
+                                JobModel.agent_task_id == row.id,
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    return {
+                        "status": "replayed",
+                        "task_id": row.id,
+                        "job_id": row.launch_job_id,
+                        "job": existing_job,
+                        "once": True,
+                    }
+                if launch_request_key is not None:
+                    # Typed HTTP launches use a stable receipt key. Enforce
+                    # actor and workspace concurrency in the same PostgreSQL
+                    # transaction that inserts the job, after receipt replay
+                    # handling and while the shared workspace gate is held.
+                    from app.models import Tenant
+                    from app.services.task_contracts import (
+                        MAX_ACTIVE_TASK_LAUNCHES_PER_ACTOR,
+                        MAX_ACTIVE_TASK_LAUNCHES_PER_WORKSPACE,
+                        TaskLaunchError,
+                    )
+
+                    from ..scheduling.job import Job as JobModel
+
+                    if initiated_by_user_id is None:
+                        raise ValueError("Keyed task admission requires an authenticated actor")
+                    active_actor = (
+                        await session.execute(
+                            select(func.count(JobModel.id)).where(
+                                JobModel.tenant_id == tenant_id,
+                                JobModel.initiated_by_user_id == initiated_by_user_id,
+                                JobModel.status.in_(("pending", "running")),
+                            )
+                        )
+                    ).scalar_one()
+                    active_workspace = (
+                        await session.execute(
+                            select(func.count(JobModel.id)).where(
+                                JobModel.tenant_id == tenant_id,
+                                JobModel.status.in_(("pending", "running")),
+                            )
+                        )
+                    ).scalar_one()
+                    workspace = (
+                        await session.execute(select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)))
+                    ).scalar_one_or_none()
+                    if workspace is None:
+                        raise PermissionError("Workspace is inactive")
+                    configured_limit = workspace.effective_limits().get("max_tasks")
+                    workspace_limit = (
+                        min(MAX_ACTIVE_TASK_LAUNCHES_PER_WORKSPACE, configured_limit)
+                        if type(configured_limit) is int
+                        else MAX_ACTIVE_TASK_LAUNCHES_PER_WORKSPACE
+                    )
+                    if active_actor >= MAX_ACTIVE_TASK_LAUNCHES_PER_ACTOR:
+                        raise TaskLaunchError("actor_task_limit")
+                    if active_workspace >= workspace_limit:
+                        raise TaskLaunchError("workspace_admission_limit")
+                if scheduled:
+                    initiated_by_user_id = None
                 if not scheduled:
                     self._require_job_retention_permission(row.job_type)
                 self._validate_job_retention_schedule(row.job_type, row.payload, row.cron_expr)
+                self._validate_task_plan_binding(row.job_type, row.payload, row.cron_expr, row.agent_scenario_id)
                 if scheduled:
                     active_source_ids = set()
                     if self.requires_sources(row.job_type) and not row.sources:
@@ -950,7 +957,18 @@ class AgentTaskManager(BaseManager):
                 schedule_error = None
                 if scheduled and not once:
                     try:
-                        next_fire = next_run_at(row.cron_expr, timezone_name or settings.SCHEDULER_TIMEZONE, after=now)
+                        if row.job_type == "social.brief":
+                            from app.services.social.brief_schedule import schedule_for_task
+
+                            effective_timezone = schedule_for_task(row).timezone
+                        else:
+                            from app.services.task_plans import task_plan_timezone
+
+                            task_plan = (row.payload or {}).get("task_plan") if isinstance(row.payload, dict) else None
+                            effective_timezone = task_plan_timezone(
+                                task_plan, timezone_name or settings.SCHEDULER_TIMEZONE
+                            )
+                        next_fire = next_run_at(row.cron_expr, effective_timezone, after=now)
                     except (ValueError, KeyError) as error:
                         schedule_error = str(error)
                         next_fire = now
@@ -963,13 +981,66 @@ class AgentTaskManager(BaseManager):
                 else:
                     payload = dict(row.payload or {})
                     if extra_payload:
-                        payload.update({key: value for key, value in extra_payload.items() if value is not None})
+                        persisted_plan = payload.get("task_plan")
+                        protected = {"source_ids", "collection", "cli_dates"}
+                        requested_protected = protected.intersection(extra_payload)
+                        requested_plan = extra_payload.get("task_plan")
+                        override_keys = set(extra_payload) - {"task_plan"}
+                        if isinstance(persisted_plan, dict):
+                            if requested_protected:
+                                raise ValueError(
+                                    "Task plan run overrides must use task_plan for source, collection, "
+                                    "and window fields"
+                                )
+                            override_keys -= protected
+                            if requested_plan is not None:
+                                from app.services.task_plans import apply_task_plan_override
+
+                                payload = apply_task_plan_override(payload, requested_plan, job_type=row.job_type)
+                                self._validate_task_plan_binding(
+                                    row.job_type, payload, row.cron_expr, row.agent_scenario_id
+                                )
+                        elif requested_plan is not None:
+                            raise ValueError("A task without a saved plan cannot accept a per-run task_plan override")
+                        payload.update(
+                            {
+                                key: value
+                                for key, value in extra_payload.items()
+                                if value is not None and key in override_keys
+                            }
+                        )
+                    if isinstance(payload.get("task_plan"), dict):
+                        from app.models.tenancy.tenant import Tenant
+                        from app.services.task_plans import materialize_task_plan_window, task_plan_timezone
+
+                        workspace_timezone = (
+                            timezone_name
+                            or (
+                                await session.execute(select(Tenant.timezone).where(Tenant.id == tenant_id))
+                            ).scalar_one_or_none()
+                        )
+                        effective_timezone = task_plan_timezone(
+                            payload["task_plan"], workspace_timezone or settings.SCHEDULER_TIMEZONE
+                        )
+                        payload = materialize_task_plan_window(payload, now, timezone=effective_timezone)
+                    if row.job_type == "social.brief":
+                        from app.services.social.brief_schedule import occurrence_token, schedule_for_task
+
+                        schedule = schedule_for_task(row)
+                        occurrence = expected_next_run_at if scheduled else now
+                        if occurrence is None or occurrence.utcoffset() is None:
+                            raise ValueError("Morning brief requires an aware occurrence")
+                        occurrence = occurrence.astimezone(timezone.utc)
+                        payload["scheduled_for"] = occurrence.isoformat()
+                        payload["occurrence_token"] = occurrence_token(
+                            tenant_id, row.id, row.payload["signed_config"], occurrence
+                        )
                     retry_reset_count = 0
                     if retry_exhausted:
                         if row.job_type != "analyze":
                             raise ValueError("Exhausted staged content can only be retried by an analysis task")
-                        from ..collected_item import CollectedItem
-                        from ..source import Source
+                        from ..collection.collected_item import CollectedItem
+                        from ..collection.source import Source
                         from .collected_item_manager import CollectedItemManager
 
                         source_rows = list(row.sources or [])
@@ -1024,29 +1095,138 @@ class AgentTaskManager(BaseManager):
                         linked_sources = list(row.sources or [])
                         if any(source.tenant_id != tenant_id for source in linked_sources):
                             raise TenantContextError("Task source snapshot contains a foreign workspace source")
-                        source_rows = linked_sources
-                        if not source_rows:
+                        plan = payload.get("task_plan")
+                        plan = plan if isinstance(plan, dict) else None
+                        source_scope = plan.get("source_scope") if plan else None
+                        if source_scope == "selected":
+                            selected_ids = plan.get("source_ids")
+                            if not isinstance(selected_ids, list) or any(
+                                type(value) is not int for value in selected_ids
+                            ):
+                                raise ValueError("Selected task source scope is malformed")
+                            selected_set = set(selected_ids)
+                            linked_ids = {source.id for source in linked_sources}
+                            if not selected_set.issubset(linked_ids):
+                                raise ValueError("Selected task sources must be linked before task admission")
+                            unexpected = [
+                                source.id
+                                for source in linked_sources
+                                if source.id not in selected_set and source.owner_task_id != row.id
+                            ]
+                            if unexpected:
+                                # Population may link a verified, reusable source
+                                # to this task. Existing persisted links outside
+                                # the selected IDs have no such provenance.
+                                raise ValueError("Task links sources outside its explicit selected scope")
+                            source_rows = [source for source in linked_sources if source.is_active]
+                        elif source_scope == "discovery":
+                            # Discovery links may include manually selected or
+                            # previously imported workspace sources. This run
+                            # resolves exact population matches dynamically;
+                            # only this task's generated lanes are safe to put
+                            # in the detached replay snapshot up front.
+                            source_rows = [
+                                source
+                                for source in linked_sources
+                                if source.is_active and source.owner_task_id == row.id
+                            ]
+                        elif source_scope == "all":
+                            from sqlalchemy import or_
+
                             source_rows = list(
                                 (
                                     await session.execute(
-                                        select(Source).where(
+                                        select(Source)
+                                        .where(
+                                            Source.tenant_id == tenant_id,
+                                            Source.is_active.is_(True),
+                                            or_(Source.owner_task_id.is_(None), Source.owner_task_id == row.id),
+                                        )
+                                        .options(selectinload(Source.platform))
+                                    )
+                                )
+                                .scalars()
+                                .all()
+                            )
+                        else:
+                            source_rows = linked_sources
+                        collection_plan = plan.get("collection") if plan else None
+                        discovery = collection_plan.get("discovery") if isinstance(collection_plan, dict) else None
+                        can_discover_without_existing_source = (
+                            source_scope == "discovery"
+                            and isinstance(collection_plan, dict)
+                            and (
+                                bool(collection_plan.get("queries"))
+                                or (
+                                    isinstance(discovery, dict)
+                                    and bool(discovery.get("queries"))
+                                    and bool(discovery.get("communities") or discovery.get("people"))
+                                )
+                            )
+                        )
+                        if not source_rows and not can_discover_without_existing_source and source_scope is None:
+                            source_rows = list(
+                                (
+                                    await session.execute(
+                                        select(Source)
+                                        .where(
                                             Source.tenant_id == tenant_id,
                                             Source.is_active.is_(True),
                                         )
+                                        .options(selectinload(Source.platform))
                                     )
                                 )
                                 .scalars()
                                 .all()
                             )
                         source_ids = list(dict.fromkeys(source.id for source in source_rows))
-                        if not source_ids:
+                        if source_scope in {"selected", "discovery", "all"}:
+                            platform_keys = set(plan.get("platforms") or [])
+                            if not platform_keys or not platform_keys.issubset({"vk", "telegram"}):
+                                raise ValueError("Task plan platform scope is malformed")
+
+                            from app.jobs.source_activity import source_in_task_platform_scope
+
+                            source_rows = [
+                                source for source in source_rows if source_in_task_platform_scope(source, platform_keys)
+                            ]
+                            source_ids = list(dict.fromkeys(source.id for source in source_rows))
+                        if not source_ids and not can_discover_without_existing_source:
                             raise ValueError("Source task has no effective sources to snapshot")
+                        if plan and "vk_access" in plan:
+                            from app.services.social.vk_task_access import authorized_vk_task_scope
+
+                            connection_actor_id = initiated_by_user_id
+                            if scheduled or connection_actor_id is None:
+                                from app.services.billing.payer import resolve_scheduled_task_payer
+
+                                payer = await resolve_scheduled_task_payer(task_id=row.id, tenant_id=tenant_id)
+                                connection_actor_id = payer.user_id
+                            async with authorized_vk_task_scope(
+                                plan, tenant_id=tenant_id, actor_id=connection_actor_id
+                            ):
+                                pass  # Admission is a check, never a cached execution permit.
+                        from app.models.managers.entitlement_manager import EntitlementManager
+                        from app.services.tenancy.entitlements import EntitlementDenied
+
+                        entitlements = EntitlementManager()
+                        from app.services.collection.entitlement_policy import required_capabilities
+
+                        required = await required_capabilities(session, payload, sources=source_rows)
+                        decision = await entitlements.evaluate(session, required)
+                        if not decision.allowed:
+                            raise EntitlementDenied(decision)
                         payload["source_ids"] = source_ids
                         trigger_type = getattr(row.trigger_type, "name", None)
                         action_type = getattr(row.action_type, "name", None)
                         payload["_effective_snapshot"] = {
                             "version": 1,
+                            "task_id": row.id,
+                            "once": once,
                             "task_payload": dict(payload),
+                            "generated_source_ids": [
+                                source.id for source in source_rows if source.owner_task_id == row.id
+                            ],
                             "scenario_id": row.agent_scenario_id or payload.get("scenario_id"),
                             "trigger_type": trigger_type,
                             "trigger_config": dict(row.trigger_config or {}) if row.trigger_config else None,
@@ -1063,7 +1243,7 @@ class AgentTaskManager(BaseManager):
                         # stopped worker let one pending copy accumulate per
                         # schedule tick. A task keeps at most one queued or
                         # running occurrence; the current one is retained.
-                        from ..job import Job as JobModel
+                        from ..scheduling.job import Job as JobModel
 
                         active_own = (
                             (
@@ -1123,10 +1303,23 @@ class AgentTaskManager(BaseManager):
                         if retry_exhausted:
                             raise _RetryAdmissionBusy(busy.job) from busy
                         return _busy_admission_receipt(row.id, busy.job)
+                    if launch_request_key is not None:
+                        row.launch_job_id = job.id
                     row.last_status = "queued"
                     row.last_error = None
                     if once:
                         row.is_active = False
+                    from ..audit.action_audit_event import ActionAuditEvent
+
+                    await ActionAuditEvent.objects.record_success(
+                        session=session,
+                        actor_kind=audit_context["actor_kind"],
+                        actor_id=audit_context["actor_id"],
+                        action="scheduling.task_admit",
+                        resource_kind="agent_task",
+                        resource_id=row.id,
+                        job_id=job.id,
+                    )
                     receipt = {
                         "status": "enqueued",
                         "task_id": row.id,

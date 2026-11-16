@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.agent import learning
+from app.core.personal_catalog_context import catalog_execution_scope
 from app.services.ai.llm_client import (
     AnthropicClient,
     CustomClient,
@@ -25,14 +26,23 @@ from app.services.ai.llm_client import (
 )
 
 
+@pytest.fixture(autouse=True)
+def catalog_owner():
+    with catalog_execution_scope(2):
+        yield
+
+
 def _stub_model(api_format: str) -> SimpleNamespace:
     provider = SimpleNamespace(
+        owner_user_id=2,
+        credential_version=1,
         name=f"test-{api_format}",
         api_format=api_format,
         base_url="https://llm.example.test",
         get_api_key=lambda: "test-key",
     )
     return SimpleNamespace(
+        owner_user_id=2,
         provider=provider,
         name=f"model-{api_format}",
         model_id=f"model-{api_format}",

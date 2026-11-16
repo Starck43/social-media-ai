@@ -2,7 +2,7 @@
 
 Verifies that `handle_collect` correctly applies the task's m2m sources,
 tracked-user selection is a filter over the source's own content, and the
-the retired excluded_users key has no reader (docs/design/task-selection.md).
+the retired excluded_users key has no reader (docs/connectors/COLLECTION.md#task-selection-contract).
 """
 
 import uuid
@@ -11,18 +11,13 @@ import pytest
 
 from app.models import AgentTask, Platform, Source
 from app.types import SourceType
+from tests.shared.platform_catalog import shared_platform
 
 
 @pytest.fixture
 async def platform():
-    p = await Platform.objects.create(
-        name=f"vk_{uuid.uuid4().hex[:8]}",
-        platform_type="vk",
-        base_url="https://vk.com",
-        params={},
-    )
+    p = await shared_platform("vk")
     yield p
-    await Platform.objects.delete_by_id(p.id)
 
 
 @pytest.fixture
@@ -64,8 +59,16 @@ async def test_handle_collect_uses_m2m_sources(platform, sources, monkeypatch):
         called = []
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
-            selection_scope=None, task_id=None, collection_context=None,
+            self,
+            source,
+            analyze=True,
+            content_type="posts",
+            force_reanalyze=False,
+            run_id=None,
+            dry_run=False,
+            selection_scope=None,
+            task_id=None,
+            collection_context=None,
         ):
             called.append(source.id)
             return _fake_result()
@@ -185,8 +188,16 @@ async def test_handle_collect_records_a_per_source_breakdown(platform, sources, 
         await _replace_task_sources(task.id, [sources[0].id, sources[1].id], task.tenant_id)
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
-            selection_scope=None, task_id=None, collection_context=None,
+            self,
+            source,
+            analyze=True,
+            content_type="posts",
+            force_reanalyze=False,
+            run_id=None,
+            dry_run=False,
+            selection_scope=None,
+            task_id=None,
+            collection_context=None,
         ):
             if source.id == sources[1].id:
                 raise RuntimeError("токен истёк")
@@ -227,8 +238,16 @@ async def test_handle_collect_reports_an_empty_source_as_empty(platform, sources
         await _replace_task_sources(task.id, [sources[0].id], task.tenant_id)
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
-            selection_scope=None, task_id=None, collection_context=None,
+            self,
+            source,
+            analyze=True,
+            content_type="posts",
+            force_reanalyze=False,
+            run_id=None,
+            dry_run=False,
+            selection_scope=None,
+            task_id=None,
+            collection_context=None,
         ):
             return None
 
@@ -266,8 +285,16 @@ async def test_handle_collect_ignores_the_removed_excluded_users_key(platform, s
         called = []
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
-            selection_scope=None, task_id=None, collection_context=None,
+            self,
+            source,
+            analyze=True,
+            content_type="posts",
+            force_reanalyze=False,
+            run_id=None,
+            dry_run=False,
+            selection_scope=None,
+            task_id=None,
+            collection_context=None,
         ):
             called.append(source.id)
             return _fake_result()
@@ -306,8 +333,16 @@ async def test_handle_collect_passes_task_collection_context(platform, sources, 
         captured = {}
 
         async def fake_collect(
-            self, source, analyze=True, content_type="posts", force_reanalyze=False, run_id=None, dry_run=False,
-            selection_scope=None, task_id=None, collection_context=None,
+            self,
+            source,
+            analyze=True,
+            content_type="posts",
+            force_reanalyze=False,
+            run_id=None,
+            dry_run=False,
+            selection_scope=None,
+            task_id=None,
+            collection_context=None,
         ):
             captured["context"] = collection_context
             return _fake_result()

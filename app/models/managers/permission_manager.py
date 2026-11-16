@@ -7,7 +7,7 @@ from .base_manager import BaseManager
 if TYPE_CHECKING:
     from app.types import ActionType
 
-    from ..permission import Permission
+    from ..identity.permission import Permission
 
 
 class PermissionManager(BaseManager):
@@ -22,7 +22,7 @@ class PermissionManager(BaseManager):
     """
 
     def __init__(self):
-        from ..permission import Permission
+        from ..identity.permission import Permission
 
         super().__init__(Permission)
 
@@ -38,7 +38,7 @@ class PermissionManager(BaseManager):
         """
         from app.core.access_catalog import resolve_permission_key
 
-        from ..model_type import ModelType
+        from ..identity.model_type import ModelType
 
         resolved = resolve_permission_key(codename)
         if resolved is None:
@@ -81,7 +81,7 @@ class PermissionManager(BaseManager):
         resource = resource_for(model_name)
         if resource is None:
             return []
-        from ..model_type import ModelType
+        from ..identity.model_type import ModelType
 
         model_type = await BaseManager(ModelType).filter(resource_key=resource.key).first()
         if model_type is None:
@@ -133,7 +133,7 @@ class PermissionManager(BaseManager):
 
         from app.core.access_catalog import resolve_permission_key
 
-        from ..model_type import ModelType
+        from ..identity.model_type import ModelType
 
         resolved = resolve_permission_key(codename)
         if resolved is None or resolved[1] != action_type:

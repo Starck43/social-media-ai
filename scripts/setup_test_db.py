@@ -8,8 +8,13 @@ are configured at import time. Shared-database bootstrap leaves the working
 Alembic version table alone. Schema separation is not a privilege sandbox.
 
 Fresh tables come from Base.metadata.create_all because the early migration
-chain expects existing tables. Reference roles, permissions, platforms and the
-bootstrap tenant are seeded with the canonical setup scripts. Existing drift
+chain expects existing tables. The metadata path emits no trigger or trigger
+function, so after the tables this script applies the guard objects that exist
+only in migration history (``scripts/schema_guards.py``); a failure there stops
+bootstrap. Reference roles, permissions, platforms and the bootstrap tenant are
+seeded with the canonical setup scripts; the committed
+legacy catalog owner (migration 0109) is restored directly because the
+create_all path never executes migration data changes. Existing drift
 is checked before schema creation, reset or seeding and is never automatically
 repaired. A branch missing live table metadata must stop, not remove evidence.
 
@@ -47,6 +52,12 @@ _PLATFORM_SEED = (
     ("telegram", "Телеграм", "https://t.me"),
 )
 
+# Committed legacy catalog owner: migration 0109 assigns the personal catalog
+# to this stable user id and refuses to run unless the user pre-exists and
+# is active. The create_all + stamp head path never executes that data
+# change, so the documented re-seed restores the FK target.
+LEGACY_CATALOG_OWNER_ID = 2
+
 
 def database_name(url: str) -> str:
     """The database part of a postgres URL."""
@@ -71,6 +82,18 @@ def resolve_test_schema() -> str:
 def resolve_working_schema() -> str:
     """Effective canonical working schema, without importing application settings."""
     return os.environ.get(WORKING_SCHEMA_ENV, "").strip() or DEFAULT_WORKING_SCHEMA
+
+
+def working_schema_before_redirect() -> str:
+    """Working schema before any redirect, derived from settings/env, never a literal.
+
+    After ``resolve_and_redirect`` has run, ``_REDIRECTED_WORKING[1]`` holds the
+    pre-redirect working schema. Otherwise fall back to ``resolve_working_schema()``
+    (env ``DB_SCHEMA`` or ``"public"``).
+    """
+    if _REDIRECTED_WORKING:
+        return _REDIRECTED_WORKING[1]
+    return resolve_working_schema()
 
 
 def redact(url: str) -> str:
@@ -144,6 +167,29 @@ async def _create_tables() -> None:
 
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def _apply_guards() -> int:
+    """Reproduce the migration-only guard objects the metadata path cannot create.
+
+    ``create_all`` emits no trigger and no trigger function, so a metadata-built
+    schema would accept evidence mutations the migrated schema refuses. The
+    guards come from ``scripts/schema_guards.py``; the whole application runs in
+    one transaction, so a failure leaves the schema exactly as found.
+    """
+    from sqlalchemy import text
+
+    from app.core.config import settings
+    from app.core.database import async_engine
+    from scripts.schema_guards import GUARD_FUNCTIONS, GUARD_TRIGGERS, apply_schema_guards
+
+    async with async_engine.begin() as conn:
+
+        def apply(sync_conn) -> None:
+            apply_schema_guards(sync_conn, settings.DB_SCHEMA, text)
+
+        await conn.run_sync(apply)
+    return len(GUARD_FUNCTIONS) + len(GUARD_TRIGGERS)
 
 
 async def _missing_columns(conn, metadata, schema: str, *, existing_tables: set[str] | None = None) -> list[str]:
@@ -300,12 +346,20 @@ def _stamp_head(url: str) -> None:
     command.stamp(config, "head")
 
 
-async def _truncate_all() -> None:
-    """Destructive reset of the redirected test schema; never a normal test step."""
+async def _truncate_all(schema: str | None = None) -> None:
+    """Destructive reset of the redirected test schema; never a normal test step.
+
+    A schema aligned through migrations carries guards that refuse
+    truncation (``*_no_truncate`` on the immutable evidence tables, 0093–0100).
+    The reset is this script's own operation, so those ``BEFORE TRUNCATE``
+    triggers are disabled around the ``TRUNCATE`` and re-enabled before the
+    commit; the whole reset runs in one transaction, so a failure anywhere on
+    the path rolls back both, leaving the guards installed as found.
+    """
     from app.core.config import settings
     from app.core.database import async_engine
 
-    schema = settings.DB_SCHEMA
+    schema = schema or settings.DB_SCHEMA
     async with async_engine.begin() as conn:
         result = await conn.execute(
             text(
@@ -317,7 +371,26 @@ async def _truncate_all() -> None:
         )
         tables = [f'"{schema}"."{name}"' for name in result.scalars().all()]
         if tables:
-            await conn.execute(text(f"truncate table {', '.join(tables)} restart identity cascade"))
+            # TRUNCATE-firing user triggers (pg_trigger.tgtype bit 5); system
+            # triggers and constraints stay untouched.
+            guards = (
+                await conn.execute(
+                    text(
+                        "select c.relname, t.tgname from pg_catalog.pg_trigger t "
+                        "join pg_catalog.pg_class c on c.oid = t.tgrelid "
+                        "join pg_catalog.pg_namespace n on n.oid = c.relnamespace "
+                        "where n.nspname = :schema and not t.tgisinternal and (t.tgtype & 32) > 0"
+                    ),
+                    {"schema": schema},
+                )
+            ).all()
+            for table, trigger in guards:
+                await conn.execute(text(f'alter table "{schema}"."{table}" disable trigger "{trigger}"'))
+            try:
+                await conn.execute(text(f"truncate table {', '.join(tables)} restart identity cascade"))
+            finally:
+                for table, trigger in guards:
+                    await conn.execute(text(f'alter table "{schema}"."{table}" enable trigger "{trigger}"'))
 
 
 async def _seed_reference_rows() -> None:
@@ -334,11 +407,13 @@ async def _seed_reference_rows() -> None:
     await _seed_bootstrap_tenant()
     await _seed_permissions()
     await _seed_role_grants()
+    await _seed_legacy_catalog_owner()
 
 
 async def _seed_platforms() -> None:
     """One row per platform, so tests can select them by platform_type."""
     from app.models import Platform
+    from app.services.social.platform_config import initial_platform_params
     from app.types import PlatformType
 
     for platform_type, name, base_url in _PLATFORM_SEED:
@@ -347,7 +422,7 @@ async def _seed_platforms() -> None:
                 name=name,
                 platform_type=PlatformType[platform_type.upper()].db_value,
                 base_url=base_url,
-                params={},
+                params=initial_platform_params(platform_type),
             )
 
 
@@ -384,17 +459,19 @@ async def _seed_role_grants() -> None:
     the administrator holds nothing — and every administrator-gated request
     answers 403 for a role that is supposed to pass.
     """
+    from sqlalchemy import select
+
     from app.core.access_catalog import workspace_grants
     from app.core.database import engine
     from app.models import ModelType, Permission, PlatformRole, WorkspaceRole
     from app.models.identity.role import role_permission
     from app.models.tenancy.workspace_role import workspace_role_permission
-    from sqlalchemy import select
 
     with engine.begin() as conn:
         permission_rows = conn.execute(
-            select(Permission.id, ModelType.resource_key, ModelType.model_name, Permission.action_type)
-            .join(ModelType, Permission.model_type_id == ModelType.id)
+            select(Permission.id, ModelType.resource_key, ModelType.model_name, Permission.action_type).join(
+                ModelType, Permission.model_type_id == ModelType.id
+            )
         ).all()
         by_resource = {
             (resource_key, str(action).lower()): permission_id
@@ -407,9 +484,7 @@ async def _seed_role_grants() -> None:
             (model_name, str(action).lower()): permission_id
             for permission_id, _resource_key, model_name, action in permission_rows
         }
-        admin_id = conn.execute(
-            select(PlatformRole.id).where(PlatformRole.codename == "admin")
-        ).scalar_one_or_none()
+        admin_id = conn.execute(select(PlatformRole.id).where(PlatformRole.codename == "admin")).scalar_one_or_none()
         if admin_id is not None:
             conn.execute(
                 _insert_ignoring_conflicts(role_permission),
@@ -419,17 +494,56 @@ async def _seed_role_grants() -> None:
                 ],
             )
         for role_id, codename in conn.execute(select(WorkspaceRole.id, WorkspaceRole.codename)).all():
-            pairs = {
-                (model_name, str(action).lower())
-                for model_name, action in workspace_grants(codename)
-            }
-            rows = [
-                {"role_id": role_id, "permission_id": by_model[pair]}
-                for pair in sorted(pairs)
-                if pair in by_model
-            ]
+            pairs = {(model_name, str(action).lower()) for model_name, action in workspace_grants(codename)}
+            rows = [{"role_id": role_id, "permission_id": by_model[pair]} for pair in sorted(pairs) if pair in by_model]
             if rows:
                 conn.execute(_insert_ignoring_conflicts(workspace_role_permission), rows)
+
+
+async def _seed_legacy_catalog_owner() -> None:
+    """Restore the committed legacy catalog owner after a reset.
+
+    Migration 0109 assigns the personal catalog rows to the active user with
+    this stable id and refuses to run unless the user pre-exists, but the
+    create_all + stamp head test path never executes that data change. The
+    FK-pinned suites insert providers and models owned by this id, so the
+    row must be a documented committed fixture of the re-seed. It carries a
+    synthetic placeholder hash: no credential, no platform permission, no
+    tenant membership.
+    """
+    from app.core.database import async_engine
+    from app.core.tenant_context import tenant_scope
+    from app.models import PlatformRole, User
+    from app.types import PlatformRoleType
+
+    with tenant_scope(bypass=True):
+        if await User.objects.get(id=LEGACY_CATALOG_OWNER_ID) is None:
+            role = await PlatformRole.objects.get_by_codename(PlatformRoleType.USER)
+            if role is None:
+                raise RuntimeError("Legacy catalog owner seeding requires the 'user' platform role row.")
+            await User.objects.create(
+                id=LEGACY_CATALOG_OWNER_ID,
+                username="legacy_catalog_owner",
+                email="legacy-catalog-owner@localhost.invalid",
+                hashed_password="synthetic-hash-never-a-credential",
+                role_id=role.id,
+                is_active=True,
+            )
+
+    # Explicit fixture IDs do not advance PostgreSQL sequences. Reconcile even
+    # on repeated seeding, without moving an already-ahead sequence backwards.
+    # DB_SCHEMA qualifies ORM tables, not PostgreSQL's search_path. Qualify
+    # the relation explicitly so a shared database cannot target public.users.
+    table_name = async_engine.dialect.identifier_preparer.format_table(User.__table__)
+    async with async_engine.begin() as conn:
+        await conn.execute(
+            text(
+                "SELECT setval(pg_get_serial_sequence(:table_name, 'id'), "
+                f"GREATEST((SELECT MAX(id) FROM {table_name}), "
+                "nextval(pg_get_serial_sequence(:table_name, 'id'))), true)"
+            ),
+            {"table_name": table_name},
+        )
 
 
 def resolve_and_redirect() -> tuple[str, str, str]:
@@ -525,8 +639,19 @@ async def ensure_test_database(test_url: str, *, shares_working_database: bool =
         await conn.execute(text("set transaction isolation level repeatable read, read only"))
         await check_existing_schema(conn, Base.metadata, settings.DB_SCHEMA, require_all_tables=True)
 
+    # Only tables and constraints come from the models; the guard functions and
+    # triggers exist in migration history alone and must be reproduced here.
+    try:
+        guard_count = await _apply_guards()
+    except Exception as exc:
+        raise RuntimeError(
+            "Test bootstrap refused: the migration-only guard functions/triggers could not be applied: "
+            f"{exc}. The schema would accept rows a migrated one refuses; no reference rows were seeded."
+        ) from exc
+    say(f"{guard_count} guard objects applied (functions and triggers from migration history)")
+
     await _seed_reference_rows()
-    say("reference rows seeded (roles, permissions, platforms, bootstrap tenant)")
+    say("reference rows seeded (roles, permissions, platforms, bootstrap tenant, legacy catalog owner)")
 
     await async_engine.dispose()
 

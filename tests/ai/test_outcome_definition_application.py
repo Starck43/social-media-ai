@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 M = load_isolated_source("_application_test", ROOT / "scripts/apply_llm_outcome_definition.py")
 REV = load_isolated_source(
     "_revision_test",
-    ROOT / "migrations/versions/0094_add_llm_outcome_events.py",
+    ROOT / "scripts/migrations/legacy_definitions/0094_add_llm_outcome_events.py",
     imports={"app.core.config": SimpleNamespace(settings=SimpleNamespace(DB_SCHEMA="test_schema"))},
 )
 DEF = M.capture(REV, "test_schema")

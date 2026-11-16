@@ -180,7 +180,7 @@ def plan_lane_migration(
 async def apply_lane_migration(
     plan: LaneMigrationPlan,
     *,
-    source_ids_by_external_id: Mapping[str, int] | None = None,
+    owner_user_id: int | None = None,
 ) -> LaneMigrationResult:
     """Create the lane rows, relink the task and retire the legacy sources.
 
@@ -189,9 +189,8 @@ async def apply_lane_migration(
     source is deactivated and unlinked, never deleted — the row keeps the
     trail of the items it collected.
 
-    `source_ids_by_external_id` is the lane resolution the caller made before
-    planning; it is cross-checked against the database and a disagreement is
-    refused (somebody else changed the lane under the plan).
+    `owner_user_id` is the member a newly created lane collects with; None means
+    service-credential only. It is never defaulted to the workspace owner.
     """
     from app.models import AgentTask, Platform, Source
     from app.models.managers.agent_task_manager import AgentTaskManager
@@ -260,6 +259,7 @@ async def apply_lane_migration(
                 params=dict(spec.params),
                 owner_task_id=plan.task_id,
                 is_active=True,
+                owner_user_id=owner_user_id if isinstance(owner_user_id, int) and owner_user_id > 0 else None,
             )
             created.append(source.id)
             lane_source_ids.append(source.id)
@@ -338,6 +338,7 @@ async def ensure_query_lanes(
     *,
     platform: str,
     dry_run: bool = False,
+    owner_user_id: int | None = None,
 ) -> QueryLanesResult:
     """Make sure the task's query lanes exist and are linked. Idempotent.
 
@@ -347,6 +348,10 @@ async def ensure_query_lanes(
     taken; nothing is ever deleted; a dry run writes nothing and reports the
     phrases still without a lane. Link state is checked against the task's
     loaded sources, so a steady-state re-run performs no writes at all.
+
+    `owner_user_id` is the member a newly created lane collects with; None means
+    the lane is service-credential only. It is never defaulted to the workspace
+    owner.
     """
     task_id = int(task.id)
     platform_key = " ".join(str(platform or "").split()).lower()
@@ -418,6 +423,7 @@ async def ensure_query_lanes(
                 params=dict(spec.params),
                 owner_task_id=task_id,
                 is_active=True,
+                owner_user_id=int(owner_user_id) if isinstance(owner_user_id, int) and owner_user_id > 0 else None,
             )
             created.append(int(lane.id))
             to_link.append(int(lane.id))

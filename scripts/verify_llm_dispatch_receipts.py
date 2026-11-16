@@ -154,7 +154,7 @@ def capture_definition(schema):
         def execute(self, value):
             self.sql.append(value)
 
-    path = ROOT / "migrations/versions/0093_add_llm_dispatch_receipts.py"
+    path = ROOT / "scripts/migrations/legacy_definitions/0093_add_llm_dispatch_receipts.py"
     spec = importlib.util.spec_from_file_location("_receipt_definition_capture", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

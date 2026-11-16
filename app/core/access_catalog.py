@@ -24,6 +24,17 @@ def _resource(key, model, table, actions, workspace=False, personal=False):
 
 
 RESOURCES = (
+    # Capability-only identities: no ORM tables or implicit provider-account access.
+    _resource("onec.data", "OneCData", "onec_data", "VIEW EXPORT", True),
+    _resource("onec.command", "OneCCommand", "onec_command", "CREATE CONFIGURE", True),
+    _resource(
+        "integrations.local_connector", "LocalConnector", "local_connectors", "VIEW CREATE DELETE CONFIGURE", True
+    ),
+    _resource("contacts.contact", "Contact", "contacts", "VIEW CREATE UPDATE DELETE EXPORT", True),
+    _resource("planner.task", "PlannerTask", "planner_tasks", "VIEW CREATE UPDATE DELETE", True),
+    _resource("documents.approval", "DocumentApproval", "document_approvals", "CONFIGURE", True),
+    _resource("comms.message", "UnifiedMessage", "unified_messages", "VIEW CREATE UPDATE DELETE", True),
+    _resource("comms.outbox", "OutboxMessage", "outbox_messages", "VIEW UPDATE CONFIGURE", True),
     _resource("identity.user", "User", "users", "VIEW CREATE UPDATE DELETE"),
     _resource("identity.platform_role", "PlatformRole", "roles", "VIEW CONFIGURE"),
     _resource("identity.permission", "Permission", "permissions", "VIEW"),
@@ -35,7 +46,7 @@ RESOURCES = (
         "VIEW CREATE UPDATE DELETE CONFIGURE",
         personal=True,
     ),
-    _resource("tenancy.workspace", "Tenant", "tenants", "VIEW UPDATE CONFIGURE", True),
+    _resource("tenancy.workspace", "Tenant", "tenants", "VIEW UPDATE DELETE CONFIGURE", True),
     _resource("tenancy.membership", "TenantUser", "tenant_users", "VIEW CREATE UPDATE DELETE", True),
     _resource("tenancy.workspace_role", "WorkspaceRole", "workspace_roles", "VIEW"),
     _resource("tenancy.invite", "TenantInvite", "tenant_invites", "VIEW CREATE UPDATE DELETE", True),
@@ -61,7 +72,21 @@ RESOURCES = (
     _resource("agent.feedback", "AgentFeedback", "agent_feedback", "VIEW CREATE UPDATE DELETE", True, True),
     _resource("notifications.notification", "Notification", "notifications", "VIEW CREATE UPDATE DELETE", True),
     _resource("notifications.digest_run", "DigestRun", "digest_runs", "VIEW CREATE UPDATE DELETE EXPORT", True),
+    _resource("audit.action_audit", "ActionAuditEvent", "action_audit_events", "VIEW EXPORT", True),
+    _resource(
+        "audit.workspace_offboarding", "WorkspaceOffboardingEvent", "workspace_offboarding_events", "VIEW EXPORT"
+    ),
 )
+# These destructive platform operations are never delegated by role grants or
+# inherited through workspace presets. Superuser still needs a declared action.
+SUPERUSER_ONLY_PERMISSIONS = frozenset(
+    {
+        ("tenancy.workspace", ActionType.DELETE),
+        ("audit.workspace_offboarding", ActionType.VIEW),
+        ("audit.workspace_offboarding", ActionType.EXPORT),
+    }
+)
+
 _BY_KEY = {r.key: r for r in RESOURCES}
 _BY_MODEL = {r.model_name: r for r in RESOURCES}
 _BY_MODEL["role"] = _BY_KEY["identity.platform_role"]
@@ -90,6 +115,13 @@ _OLD_DOMAINS = {
     "scheduling": ("social",),
     "agent": ("social",),
     "notifications": ("social",),
+    "audit": (),
+    "contacts": (),
+    "comms": (),
+    "integrations": (),
+    "planner": (),
+    "documents": (),
+    "onec": (),
 }
 _ALIASES = {
     f"{old}.{r.model_name}.{a.db_value}": (r, a)
@@ -101,6 +133,14 @@ _ALIASES.update(
     {
         f"app.role.{a.db_value}": (_BY_KEY["identity.platform_role"], a)
         for a in _BY_KEY["identity.platform_role"].actions
+    }
+)
+_ALIASES.update(
+    {
+        "onec.query": (_BY_KEY["onec.data"], ActionType.VIEW),
+        "onec.export": (_BY_KEY["onec.data"], ActionType.EXPORT),
+        "onec.command.propose": (_BY_KEY["onec.command"], ActionType.CREATE),
+        "onec.command.approve": (_BY_KEY["onec.command"], ActionType.CONFIGURE),
     }
 )
 
@@ -150,22 +190,45 @@ def workspace_grants(codename):
         if role in (WorkspaceRoleType.OWNER, WorkspaceRoleType.ADMIN):
             actions = set(r.actions)
         elif role == WorkspaceRoleType.MANAGER:
-            if r.key in ("collection.source", "analysis.scenario", "scheduling.task"):
+            if r.key == "onec.data":
+                actions = {ActionType.VIEW}
+            elif r.key == "onec.command":
+                actions = {ActionType.CREATE}
+            elif r.key in ("collection.source", "analysis.scenario", "scheduling.task", "planner.task"):
                 actions = set(r.actions)
+            elif r.key == "documents.approval":
+                actions = {ActionType.CONFIGURE}
+            elif r.key == "comms.message":
+                actions = set(r.actions) - {ActionType.DELETE}
+            elif r.key == "comms.outbox":
+                actions = {ActionType.VIEW, ActionType.UPDATE}
             elif r.key in ("analysis.result", "notifications.digest_run", "notifications.notification"):
                 actions = {ActionType.VIEW}
         elif role == WorkspaceRoleType.ANALYST:
-            if r.key == "collection.source":
+            if r.key == "onec.data":
+                actions = {ActionType.VIEW}
+            elif r.key == "collection.source":
                 actions = {ActionType.VIEW, ActionType.ANALYZE, ActionType.EXPORT}
             elif r.key == "analysis.result":
                 actions = {ActionType.VIEW, ActionType.ANALYZE, ActionType.EXPORT}
             elif r.key == "notifications.digest_run":
                 actions = {ActionType.VIEW, ActionType.CREATE, ActionType.EXPORT}
+            elif r.key in ("comms.message", "comms.outbox"):
+                actions = {ActionType.VIEW}
+            elif r.key == "planner.task":
+                actions = {ActionType.VIEW, ActionType.CREATE, ActionType.UPDATE}
         elif role == WorkspaceRoleType.VIEWER:
-            if r.key in ("collection.source", "analysis.result", "notifications.digest_run"):
+            if r.key in (
+                "collection.source",
+                "analysis.result",
+                "notifications.digest_run",
+                "comms.message",
+                "comms.outbox",
+                "planner.task",
+            ):
                 actions = {ActionType.VIEW}
         # Everyone with AI access can operate ONLY their own conversation records.
         if r.personal:
             actions = set(r.actions)
-        grants.update((r.model_name, a) for a in actions & r.actions)
+        grants.update((r.model_name, a) for a in actions & r.actions if (r.key, a) not in SUPERUSER_ONLY_PERMISSIONS)
     return frozenset(grants)

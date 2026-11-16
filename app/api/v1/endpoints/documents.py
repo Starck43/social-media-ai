@@ -1,0 +1,278 @@
+"""Tenant-scoped business document and template CRUD."""
+
+from datetime import datetime
+from typing import Literal
+from uuid import uuid4
+
+from fastapi import Depends, HTTPException, Path, Query
+from fastapi.responses import JSONResponse
+
+from app.api.deps import require_model_perm
+from app.api.v1.conventions import business_router, validate_business_routes
+from app.schemas.business import BusinessPage, BusinessSchema
+from app.services.knowledge.approval_contracts import ApprovalComment, ApprovalOut, ApprovalRequest
+from app.services.knowledge.approvals import ApprovalConflict, approval_service
+from app.services.knowledge.document_contracts import (
+    Boundary,
+    DocumentCreate,
+    DocumentOut,
+    DocumentTransition,
+    DocumentUpdate,
+    DocumentVersion,
+    TemplateCreate,
+    TemplateOut,
+    TemplateUpdate,
+    TemplateVersion,
+)
+from app.services.knowledge.documents import DocumentConflict, DocumentUnavailable, document_service
+from app.services.knowledge.drafting import (
+    DocumentDraftOut,
+    DocumentDraftRequest,
+    DraftingUnavailable,
+    drafting_service,
+)
+from app.services.knowledge.search import document_search_service
+from app.services.knowledge.versions import RestoreRequest, RevisionDiff, RevisionOut, version_service
+from app.types import ActionType
+
+router = business_router("documents", permission=require_model_perm("source", ActionType.VIEW))
+
+
+class DeletedOut(BusinessSchema):
+    deleted: bool
+
+
+async def invoke(operation):
+    try:
+        return await operation
+    except DraftingUnavailable:
+        raise HTTPException(503) from None
+    except DocumentUnavailable:
+        raise HTTPException(404) from None
+    except (DocumentConflict, ApprovalConflict):
+        raise HTTPException(409) from None
+    except PermissionError:
+        raise HTTPException(403) from None
+    except ValueError:
+        raise HTTPException(422) from None
+
+
+@router.get("/templates", response_model=BusinessPage[TemplateOut])
+async def list_templates(limit: int = Query(50, ge=1, le=100), before_id: int | None = Query(None, gt=0)):
+    return await invoke(document_service.list_templates(limit=limit, before_id=before_id))
+
+
+@router.post(
+    "/templates",
+    response_model=TemplateOut,
+    status_code=201,
+    dependencies=[Depends(require_model_perm("source", ActionType.CREATE))],
+)
+async def create_template(request: TemplateCreate):
+    return await invoke(document_service.create_template(request))
+
+
+@router.get("/templates/{template_id}", response_model=TemplateOut)
+async def get_template(template_id: int = Path(gt=0)):
+    return await invoke(document_service.get_template(template_id))
+
+
+@router.put(
+    "/templates/{template_id}",
+    response_model=TemplateOut,
+    dependencies=[Depends(require_model_perm("source", ActionType.UPDATE))],
+)
+async def update_template(request: TemplateUpdate, template_id: int = Path(gt=0)):
+    return await invoke(document_service.update_template(template_id, request))
+
+
+@router.delete(
+    "/templates/{template_id}",
+    response_model=DeletedOut,
+    dependencies=[Depends(require_model_perm("source", ActionType.DELETE))],
+)
+async def delete_template(request: TemplateVersion, template_id: int = Path(gt=0)):
+    return await invoke(document_service.delete_template(template_id, request))
+
+
+@router.post(
+    "/draft",
+    response_model=DocumentDraftOut,
+    status_code=201,
+    dependencies=[Depends(require_model_perm("source", ActionType.CREATE))],
+)
+async def draft_document(request: DocumentDraftRequest):
+    return await invoke(drafting_service.draft(request))
+
+
+@router.get(
+    "",
+    response_model=BusinessPage[DocumentOut],
+    description=(
+        "Search document metadata only (title, type, status, tags, counterparty, author and visible case title). "
+        "Document body content search is unavailable."
+    ),
+)
+async def list_documents(
+    boundary: Boundary = "cloud",
+    limit: int = Query(50, ge=1, le=100),
+    before_id: int | None = Query(None, gt=0),
+    q: str | None = Query(None, min_length=1, max_length=200),
+    document_type: str | None = Query(None, pattern="^(letter|claim_response|contract|memo)$"),
+    status: str | None = Query(None, pattern="^(draft|in_review|approved|rejected|revision_requested)$"),
+    tag: str | None = Query(None, min_length=1, max_length=60),
+    contact_id: int | None = Query(None, gt=0),
+    case_evidence_id: int | None = Query(None, gt=0),
+    author: str | None = Query(None, min_length=1, max_length=150),
+    revision_from: datetime | None = None,
+    revision_to: datetime | None = None,
+    content_search: bool = False,
+):
+    if content_search:
+        request_id = uuid4().hex
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "content_search_unavailable",
+                "message": "Content search is unavailable; document search covers metadata only.",
+                "request_id": request_id,
+            },
+            headers={"X-Request-ID": request_id},
+        )
+    if q is None and all(
+        value is None
+        for value in (document_type, status, tag, contact_id, case_evidence_id, author, revision_from, revision_to)
+    ):
+        return await invoke(document_service.list(boundary=boundary, limit=limit, before_id=before_id))
+    return await invoke(
+        document_search_service.search(
+            q=q,
+            boundary=boundary,
+            limit=limit,
+            before_id=before_id,
+            document_type=document_type,
+            status=status,
+            tag=tag,
+            contact_id=contact_id,
+            case_evidence_id=case_evidence_id,
+            author=author,
+            revision_from=revision_from,
+            revision_to=revision_to,
+        )
+    )
+
+
+@router.post(
+    "",
+    response_model=DocumentOut,
+    status_code=201,
+    dependencies=[Depends(require_model_perm("source", ActionType.CREATE))],
+)
+async def create_document(request: DocumentCreate):
+    return await invoke(document_service.create(request))
+
+
+@router.get(
+    "/approvals/pending",
+    response_model=BusinessPage[ApprovalOut],
+    dependencies=[Depends(require_model_perm("documentapproval", ActionType.CONFIGURE))],
+)
+async def pending_approvals(
+    boundary: Boundary = "cloud", limit: int = Query(50, ge=1, le=100), before_id: int | None = Query(None, gt=0)
+):
+    return await invoke(approval_service.pending(boundary=boundary, limit=limit, before_id=before_id))
+
+
+@router.post(
+    "/{document_id}/request-approval",
+    response_model=ApprovalOut,
+    status_code=201,
+    dependencies=[Depends(require_model_perm("source", ActionType.UPDATE))],
+)
+async def request_approval(request: ApprovalRequest, document_id: int = Path(gt=0), boundary: Boundary = "cloud"):
+    return await invoke(approval_service.request(document_id, request, boundary=boundary))
+
+
+@router.post(
+    "/{document_id}/approvals/{approval_id}/{action}",
+    response_model=ApprovalOut,
+    dependencies=[Depends(require_model_perm("documentapproval", ActionType.CONFIGURE))],
+)
+async def decide_approval(
+    request: ApprovalComment,
+    action: Literal["approve", "reject", "request-revision"],
+    document_id: int = Path(gt=0),
+    approval_id: int = Path(gt=0),
+    boundary: Boundary = "cloud",
+):
+    decision = {"approve": "approved", "reject": "rejected", "request-revision": "revision_requested"}[action]
+    return await invoke(
+        approval_service.decide(
+            document_id, approval_id, {"decision": decision, "comment": request.comment}, boundary=boundary
+        )
+    )
+
+
+@router.get("/{document_id}", response_model=DocumentOut)
+async def get_document(document_id: int = Path(gt=0), boundary: Boundary = "cloud"):
+    return await invoke(document_service.get(document_id, boundary=boundary))
+
+
+@router.patch(
+    "/{document_id}",
+    response_model=DocumentOut,
+    dependencies=[Depends(require_model_perm("source", ActionType.UPDATE))],
+)
+async def update_document(request: DocumentUpdate, document_id: int = Path(gt=0), boundary: Boundary = "cloud"):
+    return await invoke(document_service.update(document_id, request, boundary=boundary))
+
+
+@router.post(
+    "/{document_id}/transition",
+    response_model=DocumentOut,
+    dependencies=[Depends(require_model_perm("source", ActionType.UPDATE))],
+)
+async def transition_document(request: DocumentTransition, document_id: int = Path(gt=0), boundary: Boundary = "cloud"):
+    return await invoke(document_service.transition(document_id, request, boundary=boundary))
+
+
+@router.delete(
+    "/{document_id}", response_model=DeletedOut, dependencies=[Depends(require_model_perm("source", ActionType.DELETE))]
+)
+async def delete_document(request: DocumentVersion, document_id: int = Path(gt=0), boundary: Boundary = "cloud"):
+    return await invoke(document_service.delete(document_id, request, boundary=boundary))
+
+
+@router.get("/{document_id}/versions", response_model=BusinessPage[RevisionOut])
+async def list_versions(
+    document_id: int = Path(gt=0),
+    boundary: Boundary = "cloud",
+    limit: int = Query(50, ge=1, le=100),
+    before_id: int | None = Query(None, gt=0),
+):
+    return await invoke(version_service.list(document_id, boundary=boundary, limit=limit, before_id=before_id))
+
+
+@router.get("/{document_id}/versions/diff", response_model=RevisionDiff)
+async def diff_versions(
+    document_id: int = Path(gt=0),
+    from_id: int = Query(gt=0),
+    to_id: int = Query(gt=0),
+    granularity: Literal["line", "word"] = "line",
+    boundary: Boundary = "cloud",
+):
+    return await invoke(version_service.diff(document_id, from_id, to_id, granularity=granularity, boundary=boundary))
+
+
+@router.post(
+    "/{document_id}/restore/{revision_id}",
+    response_model=DocumentOut,
+    dependencies=[Depends(require_model_perm("source", ActionType.UPDATE))],
+)
+async def restore_version(
+    request: RestoreRequest, document_id: int = Path(gt=0), revision_id: int = Path(gt=0), boundary: Boundary = "cloud"
+):
+    return await invoke(version_service.restore(document_id, revision_id, request, boundary=boundary))
+
+
+validate_business_routes(router)

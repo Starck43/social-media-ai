@@ -33,10 +33,8 @@
 </style>
 {% endblock %}
 {% block page_heading %}Обзор{% endblock %}
-{% block page_actions %}
-{% if can_open_chat %}<a href="/app/chat" data-home-chat class="shell-icon-button" aria-label="Открыть чат" title="Открыть чат">{{ icon('message') }}</a>{% endif %}
-{% endblock %}
 {% block content %}
+    {% if perms and perms.can("plannertask", "create") %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new">Подготовить дело</a>{% endif %}
 <div class="ui-home">
     {% if is_superuser and tenants %}
     <form method="get" class="mb-6">
@@ -51,6 +49,18 @@
     </form>
     {% endif %}
 
+    {% if can_open_chat %}
+    <section data-home-chat-primary class="mb-6 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-5">
+        <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">Начните с разговора</h2>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            Опишите, что хотите собрать или проанализировать, и агент поможет уточнить план и покажет результат.
+        </p>
+        <a href="/app/chat" data-home-chat class="mt-3 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+            Открыть чат →
+        </a>
+    </section>
+    {% endif %}
+
     {% if next_step %}
     <div data-home-next-step class="mb-6 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-4">
         <p class="text-sm text-slate-600 dark:text-slate-400">Начните с одного шага</p>
@@ -60,35 +70,149 @@
     </div>
     {% endif %}
 
-    {# Extension point: actionable attention projection; hidden until implemented. #}
+    {# Extension point: actionable attention projection (P20-T07 «Сегодня»). #}
+    {% if today is defined and today %}
+    <div data-today-workspace class="mb-6 space-y-6">
+        {% if today.start_page is defined and today.start_page.fell_back %}
+        <div data-start-page-fallback role="status" class="rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-900 dark:text-amber-200">
+            Выбранная стартовая страница ({{ today.start_page.preferred_key }}) недоступна в этом пространстве — открыта страница «Сегодня».
+        </div>
+        {% endif %}
+
+        <div data-today-toolbar class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
+            <div class="flex flex-wrap items-center gap-2" data-today-scope-switch role="group" aria-label="Охват страницы Сегодня">
+                <a href="/app/?view=today&amp;scope=mine{% if today.include_dismissed %}&amp;show_dismissed=1{% endif %}"
+                   data-today-scope="mine"
+                   {% if today.scope == 'mine' %}aria-current="true"{% endif %}
+                   class="rounded-lg px-3 py-1.5 text-sm font-medium {% if today.scope == 'mine' %}bg-cyan-500 text-slate-950{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+                    Моё
+                </a>
+                <a href="/app/?view=today&amp;scope=team{% if today.include_dismissed %}&amp;show_dismissed=1{% endif %}"
+                   data-today-scope="team"
+                   {% if today.scope == 'team' %}aria-current="true"{% endif %}
+                   class="rounded-lg px-3 py-1.5 text-sm font-medium {% if today.scope == 'team' %}bg-cyan-500 text-slate-950{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+                    Команда
+                </a>
+            </div>
+            <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                {% if today.include_dismissed %}
+                <a href="/app/?view=today&amp;scope={{ today.scope }}" data-today-toggle-dismissed class="text-cyan-700 dark:text-cyan-400 hover:underline">Скрыть отложенные</a>
+                {% else %}
+                <a href="/app/?view=today&amp;scope={{ today.scope }}&amp;show_dismissed=1" data-today-toggle-dismissed class="text-cyan-700 dark:text-cyan-400 hover:underline">Показать скрытые и отложенные</a>
+                {% endif %}
+                <a href="/app/settings?tab=account" class="text-slate-500 dark:text-slate-400 hover:underline">Стартовая страница →</a>
+            </div>
+        </div>
+
+        {% for sec in today.sections %}
+        {% if sec.key != 'recent_results' %}
+        <section data-today-section="{{ sec.key }}" class="ui-card min-w-0" aria-label="{{ sec.title }}">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">{{ sec.title }}</h2>
+                {% if sec.hidden_count %}
+                <span class="text-xs text-slate-500 dark:text-slate-400" data-today-hidden-count="{{ sec.key }}">Скрыто: {{ sec.hidden_count }}</span>
+                {% endif %}
+            </div>
+            {% if sec.status == 'unavailable' %}
+            <p data-today-section-unavailable="{{ sec.key }}" role="status" class="mt-3 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-900 dark:text-amber-200">
+                {{ sec.reason or 'Раздел временно недоступен.' }}
+            </p>
+            {% elif sec.status == 'denied' %}
+            <p data-today-section-denied="{{ sec.key }}" class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                {{ sec.reason }}
+            </p>
+            {% elif sec.status == 'not_configured' %}
+            <p data-today-section-empty="{{ sec.key }}" class="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                {{ sec.reason }}
+            </p>
+            {% elif sec['items'] %}
+            {% if sec.reason %}
+            <p role="status" class="mt-2 text-xs text-amber-700 dark:text-amber-300">{{ sec.reason }}</p>
+            {% endif %}
+            <ul class="mt-3 divide-y divide-slate-200 dark:divide-slate-800">
+                {% for item in sec['items'] %}
+                <li data-today-item="{{ item.item_key }}" class="flex flex-wrap items-start justify-between gap-3 py-3">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <a href="{{ item.href }}" class="font-medium text-slate-900 dark:text-slate-100 hover:underline" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ item.title }}</a>
+                            {% if item.status_label %}
+                            <span class="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-300">{{ item.status_label }}</span>
+                            {% endif %}
+                            {% if item.stale_or_unavailable and item.marker_label %}
+                            <span data-today-stale-marker class="rounded-md bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-300">{{ item.marker_label }}</span>
+                            {% endif %}
+                            {% if item.actor_state %}
+                            <span data-today-actor-state="{{ item.actor_state }}" class="rounded-md bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">{{ item.actor_state }}</span>
+                            {% endif %}
+                        </div>
+                        {% if item.summary %}
+                        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ item.summary }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <a href="{{ item.href }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-medium text-cyan-700 dark:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>Открыть →</a>
+                        {% if can_open_chat and item.chat_url %}
+                        <a href="{{ item.chat_url }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">В чат</a>
+                        {% endif %}
+                        <form method="post" action="/app/today/item-state" class="inline-flex items-center gap-1">
+                            <input type="hidden" name="_csrf" value="{{ csrf }}">
+                            <input type="hidden" name="item_key" value="{{ item.item_key }}">
+                            <input type="hidden" name="scope" value="{{ today.scope }}">
+                            {% if item.actor_state in ('dismissed', 'snoozed') %}
+                            <button type="submit" name="operation" value="restore" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">Вернуть</button>
+                            {% else %}
+                            <button type="submit" name="operation" value="snooze" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">Отложить</button>
+                            <button type="submit" name="operation" value="dismiss" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">Скрыть</button>
+                            {% endif %}
+                        </form>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p data-today-section-empty="{{ sec.key }}" class="mt-3 text-sm text-slate-500 dark:text-slate-400">Нет элементов, требующих действий.</p>
+            {% endif %}
+        </section>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
 
     {% if pipeline is defined and pipeline %}
     <section data-home-pipeline class="ui-card mb-6 min-w-0" aria-label="Состояние обработки">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Обработка данных</h2>
-            <a href="/app/jobs" class="text-sm text-cyan-700 dark:text-cyan-400 hover:underline">Очередь →</a>
+            {% if offer.get("jobs") %}<a href="/app/jobs" class="text-sm text-cyan-700 dark:text-cyan-400 hover:underline">Очередь →</a>{% endif %}
         </div>
         {% if pipeline.scope_all %}
         <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Выберите пространство, чтобы увидеть состояние его обработки.</p>
         {% else %}
         <div class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {% if offer.get("collected_items") %}
             <div>
                 <p class="text-2xl font-semibold">{{ pipeline.staged }}</p>
-                <p class="text-xs text-slate-600 dark:text-slate-400">ожидают анализа</p>
+                <p class="text-xs text-slate-600 dark:text-slate-400">сохранено материалов</p>
             </div>
+            {% endif %}
+            {% if offer.analytics %}
             <div>
                 <p class="text-2xl font-semibold">{{ pipeline.analyzed }}</p>
                 <p class="text-xs text-slate-600 dark:text-slate-400">сохранено анализов</p>
             </div>
+            {% endif %}
+            {% if offer.get("jobs") %}
             <div>
                 <p class="text-2xl font-semibold">{{ pipeline.running|length }}</p>
-                <p class="text-xs text-slate-600 dark:text-slate-400">выполняется сейчас</p>
+                <p class="text-xs text-slate-600 dark:text-slate-400">выполняются в предпросмотре</p>
             </div>
             <div>
                 <p class="text-2xl font-semibold">{{ pipeline.queued_count }}</p>
-                <p class="text-xs text-slate-600 dark:text-slate-400">в очереди</p>
+                <p class="text-xs text-slate-600 dark:text-slate-400">ожидают в предпросмотре</p>
             </div>
+            {% endif %}
         </div>
+        {% if offer.get("jobs") %}
+        <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">Предпросмотр: {{ pipeline.job_count }} последних активных заданий (не более {{ pipeline.preview_limit }}), не общее число. Счётчики выполнения и ожидания относятся только к этому предпросмотру.</p>
         {% if pipeline.running %}
         <ul class="mt-3 space-y-1.5">
             {% for job in pipeline.running %}
@@ -96,21 +220,22 @@
                 <svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
                 </svg>
-                <span>{% if job.collect %}Сбор выполняется…{% else %}Модель анализирует…{% endif %}</span>
+                <span>{{ job.label }}</span>
             </li>
             {% endfor %}
         </ul>
         {% elif pipeline.job_count == 0 %}
-        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Очередь пуста — новых сборов и анализов нет.</p>
+        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Нет ожидающих или выполняющихся заданий.</p>
         {% else %}
-        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">Задачи в очереди, выполнение скоро начнётся.</p>
+        <p class="mt-3 text-sm text-slate-600 dark:text-slate-400">В предпросмотре — ожидающие задания. Время запуска зависит от расписания.</p>
+        {% endif %}
         {% endif %}
         {% endif %}
     </section>
     {% endif %}
 
     <div class="ui-home-grid{% if offer.tasks %} ui-home-grid-split{% endif %}">
-        <section data-home-results class="ui-card min-w-0">
+        <section data-home-results data-today-section="recent_results" class="ui-card min-w-0">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Последние результаты</h2>
                 <div class="flex flex-wrap gap-4 text-sm text-cyan-700 dark:text-cyan-400">

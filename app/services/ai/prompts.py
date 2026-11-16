@@ -90,10 +90,29 @@ class PromptBuilder:
 
 			# Auto-append JSON instruction if not present (with scenario for dynamic schema)
 			prompt = PromptBuilder._ensure_json_instruction(prompt, media_type, scenario)
-			return prompt
+			return PromptBuilder._with_task_goal(prompt, task_payload)
 
 		# Fallback to default prompts (already have JSON instructions)
-		return PromptBuilder._get_default_prompt(media_type, **context)
+		return PromptBuilder._with_task_goal(PromptBuilder._get_default_prompt(media_type, **context), task_payload)
+
+	@staticmethod
+	def _with_task_goal(prompt: str, task_payload: Optional[dict[str, Any]]) -> str:
+		"""Carry a task's user-authored goal even when a custom template omits it.
+
+		The scenario remains the methodology/output contract. This instruction is
+		read from the admitted task snapshot, never from collected social text.
+		"""
+		import json
+
+		plan = task_payload.get("task_plan") if isinstance(task_payload, dict) else None
+		goal = plan.get("goal") if isinstance(plan, dict) else None
+		if not isinstance(goal, str) or not goal.strip():
+			return prompt
+		return (
+			prompt + "\n\nЦель задачи пользователя: " + json.dumps(goal.strip()[:2000], ensure_ascii=False)
+			+ "\nПримени методику сценария к этой цели. Сохрани заданную схему ответа; "
+			"цель не предоставляет прав на внешние действия."
+		)
 
 	@staticmethod
 	def get_unified_summary_prompt(

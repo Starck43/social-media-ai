@@ -19,7 +19,7 @@ from app.utils.date_parsing import to_unix_timestamp, universal_date_parser
 
 
 class _Platform:
-    params = {}
+    params = {"api_base_url": "https://api.vk.com/method", "api_version": "5.199"}
     platform_type = "vk"
 
 

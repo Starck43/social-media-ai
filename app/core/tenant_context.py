@@ -42,6 +42,12 @@ def current_tenant_id() -> Optional[int]:
     return _tenant_id.get()
 
 
+def current_tenant_ids() -> tuple[int, ...]:
+    """The selected workspace, as a tuple for scope inspection."""
+    tenant_id = current_tenant_id()
+    return () if tenant_id is None else (tenant_id,)
+
+
 def is_bypass() -> bool:
     """True when running as the platform superuser (owner CLI/admin)."""
     return _tenant_bypass.get()
@@ -76,26 +82,15 @@ def tenant_scope(tenant_id: Optional[int] = None, *, bypass: bool = False):
 
 
 class PlatformScopeMiddleware:
-    """Run operator HTTP requests (sqladmin, static, health) as the platform owner.
+    """Leave authenticated surfaces to their own fail-closed tenant scope.
 
-    The HTTP surfaces split into two camps, and this middleware only owns the
-    operator one:
-
-    - **Operator console** — `/admin/*` (sqladmin), `/static/*`, `/health`,
-      `/docs`. Runs in the bootstrap workspace with the guard switched off:
-      the developer/operator legitimately administers every workspace. The CLI
-      is the same thing outside HTTP (`tenant_scope(bypass=True)` in
-      `cli/main.py::_run_platform`).
-    - **Client surfaces** — excluded, because they resolve their own tenant and
-      run scoped: `/app/*` from web memberships (`TenantUIMiddleware`) and
-      `/api/*` from the bearer token + membership (`ApiScopeMiddleware`).
-
-    Letting `/api/*` fall through to bypass is what would let any caller read
-    every tenant's rows, so it is explicitly excluded here.
+    `/admin` is scoped by AdminScopeMiddleware, `/app` by TenantUIMiddleware
+    and `/api` by ApiScopeMiddleware. Infrastructure paths do not open a data
+    scope. Other trusted operator entrypoints retain the explicit bypass.
     """
 
     # Prefixes that own their own (fail-closed) tenant context.
-    TENANT_SCOPED_PREFIXES = ("/app", "/api", "/static")
+    TENANT_SCOPED_PREFIXES = ("/app", "/api", "/static", "/admin", "/dashboard")
     # Exact paths that are infrastructure, not data.
     BYPASS_EXACT_PATHS = ("/health", "/docs", "/redoc", "/openapi.json", "/favicon.ico")
 
@@ -114,4 +109,3 @@ class PlatformScopeMiddleware:
             return
         with tenant_scope(bypass=True):
             await self.app(scope, receive, send)
-

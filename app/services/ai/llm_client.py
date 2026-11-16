@@ -13,6 +13,8 @@ from app.core.config import settings
 from app.models import LLMModel
 from app.services.ai.cache_pricing import cache_price_usd, model_pricing_token_unit, normalize_cache_usage
 from app.services.ai.json_schema_builder import validate_with_pydantic
+from app.services.ai.provider_egress import credential_headers, provider_destination, provider_http_client
+from app.services.ai.response_cost import _num, extract_cost_info
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +36,42 @@ def _payload_has_media(value: Any) -> bool:
     if isinstance(value, dict):
         if any(key in value for key in ("image_url", "input_image", "media_url", "media_urls")):
             return True
+        if value.get("type") == "image" and "source" in value:
+            return True
         return any(_payload_has_media(item) for item in value.values())
     if isinstance(value, (list, tuple)):
         return any(_payload_has_media(item) for item in value)
     return False
+
+
+def _normalize_anthropic_message_content(content: Any) -> Any:
+    """Convert OpenAI-style data-URI `image_url` blocks to Anthropic native base64 image blocks."""
+    if not isinstance(content, list):
+        return content
+    normalized: list[dict[str, Any]] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        if block.get("type") == "image_url":
+            url_val = (block.get("image_url") or {}).get("url") or ""
+            if isinstance(url_val, str) and url_val.startswith("data:") and ";base64," in url_val:
+                header, b64_data = url_val.split(";base64,", 1)
+                media_type = header[5:] or "image/png"
+                normalized.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": b64_data,
+                        },
+                    }
+                )
+            elif isinstance(url_val, str) and url_val:
+                normalized.append({"type": "image", "source": {"type": "url", "url": url_val}})
+        else:
+            normalized.append(block)
+    return normalized
 
 
 async def _personal_admission(
@@ -51,8 +85,12 @@ async def _personal_admission(
     uses_tools: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Reserve one trusted provider envelope before HTTP when personal billing is active."""
+    from app.services.ai.generation_policy import requested_output_limit
     from app.services.ai.personal_dispatch import validate_personal_dispatch
+
     await validate_personal_dispatch(client)
+    if "max_tokens" in payload:
+        payload["max_tokens"] = requested_output_limit(client.model, requested=payload["max_tokens"])
     if not settings.PERSONAL_BILLING_ENABLED:
         return None, None
     api_format = getattr(client.provider, "api_format", None)
@@ -85,9 +123,77 @@ async def _personal_admission(
 
         if type(payload.get("max_tokens")) is not int or payload["max_tokens"] <= 0:
             raise BudgetAdmissionUnavailable("Request output token limit is invalid")
-        payload["max_tokens"] = min(payload["max_tokens"], max_output)
+        payload["max_tokens"] = requested_output_limit(
+            client.model, requested=payload["max_tokens"], approved_plan_limit=max_output
+        )
     dispatch_id = admission["dispatch_id"]
     return admission, dispatch_id
+
+
+def _seam_module() -> Any:
+    """The dispatch seam module, or None in a build that does not carry it.
+
+    Resolved lazily: isolated-source suites exec single functions of this file
+    with narrow globals, so no seam name may be a module-level import that such
+    a scope could miss.
+    """
+    try:
+        from app.services.ai import dispatch_seam
+
+        return dispatch_seam
+    except ImportError:
+        return None
+
+
+def _seam_flag_enabled() -> bool:
+    """Whether the strict seam is activated; False when the flag is unreadable."""
+    try:
+        from app.core.config import settings
+    except ImportError:
+        return False
+    return bool(getattr(settings, "LLM_DISPATCH_SEAM_ENABLED", False))
+
+
+async def _seam_dispatch_attempt(client: Any, **kwargs: Any) -> Any:
+    """The single seam entry of one provider attempt; None without a seam build.
+
+    A strict deployment without the seam module fails closed: the attempt is
+    refused before HTTP instead of running unadmitted.
+    """
+    seam = _seam_module()
+    if seam is None:
+        if _seam_flag_enabled():
+            raise RuntimeError("llm_dispatch_seam_unavailable")
+        return None
+    return await seam.dispatch_attempt(client, **kwargs)
+
+
+def _seam_chat_key() -> str:
+    """Private response key that carries the seam identity of a chat try."""
+    seam = _seam_module()
+    return getattr(seam, "CHAT_DISPATCH_ID_KEY", "_dispatch_id")
+
+
+def _dispatch_identifier(admission: Any) -> str | None:
+    """The seam identity of one admitted try, when this build carries one."""
+    value = getattr(admission, "dispatch_id", None)
+    return value if type(value) is str and value else None
+
+
+def _seam_chat_response(response: dict[str, Any], admission: Any, legacy_id: str | None) -> dict[str, Any]:
+    """Bind a compatibility try to its legacy receipt without adding public keys.
+
+    The existing personal reservation owns its identity until the approved
+    cutover. Strict admission owns its own receipt and must never be rebound.
+    """
+    identity = _dispatch_identifier(admission)
+    if getattr(admission, "reserved", False) and legacy_id is not None and legacy_id != identity:
+        seam = _seam_module()
+        raise seam.DispatchDenial(seam.CODE_ADMISSION_UNAVAILABLE, "step8_admission")
+    seam = _seam_module()
+    if seam is None:
+        return response
+    return seam.DispatchResponse(response, legacy_id or identity)
 
 
 async def _verify_personal_dispatch_day(receipt: dict[str, Any] | None) -> None:
@@ -117,6 +223,10 @@ async def _revalidate_personal_dispatch_before_http(client: Any, receipt: dict[s
     from app.services.ai.personal_dispatch import validate_personal_dispatch
 
     try:
+        if receipt is not None:
+            from app.services.ai.credential_boundary import require_current_credential_version
+
+            require_current_credential_version(receipt.get("__credential_version"), client.credential_version)
         await validate_personal_dispatch(client)
     except asyncio.CancelledError:
         if receipt is not None:
@@ -155,7 +265,7 @@ async def _observe_personal_outcome(
 
     try:
         event = build_outcome_event(
-            receipt,
+            {key: value for key, value in receipt.items() if key != "__credential_version"},
             event_id=uuid4().hex,
             observed_at=datetime.now(timezone.utc),
             dispatch_state=dispatch_state,
@@ -245,6 +355,12 @@ def _cap_text(m: LLMModel) -> bool:
     return bool({"text", "image"}.intersection(m.capabilities))
 
 
+def _catalog_read_scope():
+    from app.services.ai.catalog_reads import current_catalog_reads
+
+    return current_catalog_reads()
+
+
 def _eligible_text_model(m: LLMModel, allowed_types: Optional[set[str]]) -> bool:
     """One automatic routing gate for capabilities, owner, tier and provider.
 
@@ -253,13 +369,18 @@ def _eligible_text_model(m: LLMModel, allowed_types: Optional[set[str]]) -> bool
     preferred flag. The explicit AGENT_MODEL lookup passes this same ownership
     and activity gate and only bypasses the tier.
     """
+    loader = globals().get("_catalog_read_scope")
+    scope = loader() if loader else None
+    if scope is not None:
+        return scope.eligible_row(m, capabilities={"text"})
+
     from app.core.personal_catalog_context import current_catalog_owner_id
     from app.services.ai.personal_catalog import eligible_chat_model
+
     return eligible_chat_model(m, user_id=current_catalog_owner_id(), allowed_types=allowed_types)
 
 
-
-def default_model_sort_key(m: LLMModel) -> tuple[bool, int]:
+def default_model_sort_key(m: LLMModel) -> tuple[bool, int] | tuple[bool, int, int]:
     """Order key for default-model resolution.
 
     Shared by every place that picks "the" model (digest, agent fallback
@@ -269,6 +390,10 @@ def default_model_sort_key(m: LLMModel) -> tuple[bool, int]:
     model and forked the fleet when two providers were flagged. A missing
     attribute is treated as non-default so the picker never crashes.
     """
+    loader = globals().get("_catalog_read_scope")
+    scope = loader() if loader else None
+    if scope is not None:
+        return scope.default_key(m)
     return (not bool(getattr(m, "is_default", False)), int(getattr(m, "id", 0) or 0))
 
 
@@ -280,6 +405,11 @@ async def _allowed_model_types() -> Optional[set[str]]:
     workspace to a vision model breaks it. Returns None (allow everything) when
     no workspace is in scope, so operator-level calls and seeding still work.
     """
+    loader = globals().get("_catalog_read_scope")
+    scope = loader() if loader else None
+    if scope is not None:
+        return set(scope.context.workspace_plan.policy.resource_limits["model_types"])
+
     from app.core.tenant_context import current_tenant_id
     from app.models.managers.tenant_manager import tenants
 
@@ -300,14 +430,25 @@ async def _allowed_model_types() -> Optional[set[str]]:
 
 class LLMClient(ABC):
     def __init__(self, model: LLMModel):
+        # T13 exposes read-only funding-aware choices, not dispatch activation.
+        # No scoped projection may enter the legacy BYOK/decrypt path.
+        if _catalog_read_scope() is not None:
+            from app.services.ai.dispatch_seam import CODE_ADMISSION_UNAVAILABLE, DispatchDenial
+
+            raise DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_admission")
         from app.core.personal_catalog_context import assert_catalog_model
+
         assert_catalog_model(model)
         self.provider = model.provider
         self.model = model
         self.api_key = model.provider.get_api_key()
+        self.credential_version = getattr(model.provider, "credential_version", None)
+        self.custom_endpoint_path = getattr(model, "custom_endpoint_path", None)
         self.base_url = model.provider.base_url.rstrip("/")
         self.model_name = model.model_id
-        self.max_tokens = model.max_tokens
+        from app.services.ai.generation_policy import requested_output_limit
+
+        self.max_tokens = requested_output_limit(model)
         self.default_temperature = model.default_temperature
         self.timeout = float(getattr(settings, "LLM_DEFAULT_TIMEOUT", 60.0))
 
@@ -345,11 +486,7 @@ class LLMClient(ABC):
             # A claimed but unusable provider total (non-USD, malformed, out of
             # range) is unresolved spend. Publishing 0.0 here let a paid call
             # count as free everywhere the legacy `cost` key is read.
-            amount = (
-                float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
-                if reported is not None
-                else None
-            )
+            amount = float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP)) if reported is not None else None
             return {
                 "prompt_tokens": int(prompt_tokens or 0),
                 "completion_tokens": int(completion_tokens or 0),
@@ -417,6 +554,47 @@ class LLMClient(ABC):
             "dispatch_id": uuid4().hex,
         }
 
+    def _analyze_failure(self, request_meta: dict[str, Any], code: str) -> dict[str, Any]:
+        """Allowlisted analyze diagnostics, never provider text or request content.
+
+        Keep dispatch/model identity for journaling, but omit prompt, endpoint,
+        messages and media. Unknown accounting is explicit, never numeric zero.
+        Successful provider content is intentionally unaffected.
+        """
+        if code not in {
+            "timeout",
+            "http_error",
+            "transport_error",
+            "provider_request_failed",
+            "invalid_structured_output",
+        }:
+            code = "provider_request_failed"
+        log = logger.warning if code == "invalid_structured_output" else logger.error
+        log("LLM analyze failed: %s", code)
+        return {
+            "request": {
+                key: request_meta[key]
+                for key in ("model", "llm_model_id", "provider", "dispatch_id")
+                if key in request_meta
+            },
+            "response": {"error": code},
+            "parsed": {},
+            "accounting_usage": {"prompt_tokens": None, "completion_tokens": None},
+            "accounting_cost_usd": None,
+            "accounting_cost_reported": False,
+        }
+
+    @staticmethod
+    def _analyze_transport_error(error: Exception) -> str:
+        """Map by exception type only; never stringify an exception or URL."""
+        if isinstance(error, httpx.TimeoutException):
+            return "timeout"
+        if isinstance(error, httpx.HTTPStatusError):
+            return "http_error"
+        if isinstance(error, httpx.TransportError):
+            return "transport_error"
+        return "provider_request_failed"
+
     def _accounting_usage(
         self, data: Any, prompt_field: str = "prompt_tokens", completion_field: str = "completion_tokens"
     ) -> dict[str, Optional[int]]:
@@ -466,9 +644,9 @@ class LLMClient(ABC):
                     "prompt_tokens": prompt,
                     "completion_tokens": completion,
                     "total_tokens": prompt + completion,
-                    "cost": float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP))
-                    if reported is not None
-                    else 0.0,
+                    "cost": (
+                        float(reported.quantize(_COST_SCALE, rounding=ROUND_HALF_UP)) if reported is not None else 0.0
+                    ),
                     "cost_source": "provider" if reported is not None else "flat_tariff_estimate",
                     "cost_is_estimate": reported is None,
                 }
@@ -520,6 +698,15 @@ class OpenAICompatibleClient(LLMClient):
         payload = self._prepare_analyze(prompt, media_urls, **kwargs)
         timeout = min(self.timeout, 60.0)
         request_meta = self._analysis_request_meta(prompt)
+        await _seam_dispatch_attempt(
+            self,
+            purpose="analysis",
+            stage=stage,
+            execution=execution,
+            has_media=bool(media_urls),
+            requested_output_tokens=payload.get("max_tokens"),
+            dispatch_id=request_meta["dispatch_id"],
+        )
         receipt, reserved_dispatch_id = await _personal_admission(
             self, payload, purpose="analysis", stage=stage, execution=execution, has_media=bool(media_urls)
         )
@@ -529,37 +716,23 @@ class OpenAICompatibleClient(LLMClient):
         await _revalidate_personal_dispatch_before_http(self, receipt)
 
         try:
-            async with httpx.AsyncClient() as c:
+            async with provider_http_client() as c:
                 r = await c.post(
-                    f"{self.base_url}/chat/completions",
+                    provider_destination(self.base_url, "/chat/completions"),
                     headers=self._headers(),
                     json=payload,
                     timeout=timeout,
                 )
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
             raise
-        except httpx.TimeoutException:
+        except Exception as error:
             await _observe_personal_failure(receipt)
-            logger.error(f"Timeout for {self.provider.name} after {timeout}s")
             await _record_llm_usage(self.model, success=False)
-            return {
-                "request": {**payload, **request_meta},
-                "response": {"error": "timeout"},
-                "parsed": {"analysis": "Timeout"},
-            }
-        except Exception as e:
-            await _observe_personal_failure(receipt)
-            logger.error(f"Unexpected error for {self.provider.name}: {e}")
-            await _record_llm_usage(self.model, success=False)
-            return {
-                "request": {**payload, **request_meta},
-                "response": {"error": str(e)},
-                "parsed": {"analysis": f"Error: {e}"},
-            }
+            return self._analyze_failure(request_meta, self._analyze_transport_error(error))
 
         accounting_usage = self._accounting_usage(data)
         accounting_cost = self._accounting_cost(data)
@@ -571,15 +744,23 @@ class OpenAICompatibleClient(LLMClient):
         if pydantic_model is not None:
             try:
                 parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
-            except Exception as exc:
-                logger.warning("Pydantic validation failed for %s: %s", self.provider.name, exc)
-                data["error"] = "invalid_structured_output"
+            except Exception:
+                parse_error = True
                 parsed = {}
 
+        output_failed = parse_error or (isinstance(data, dict) and bool(data.get("error")))
+        diagnostic = (
+            self._analyze_failure(request_meta, "invalid_structured_output")
+            if output_failed
+            else {
+                "request": request_meta,
+                "response": data,
+                "parsed": parsed,
+            }
+        )
+
         response = {
-            "request": request_meta,
-            "response": data,
-            "parsed": parsed,
+            **diagnostic,
             "accounting_usage": accounting_usage,
             "accounting_cache_usage": self._accounting_cache_usage(data),
             **accounting_cost,
@@ -590,10 +771,10 @@ class OpenAICompatibleClient(LLMClient):
         await _observe_personal_outcome(
             receipt,
             dispatch_state="response_received",
-            outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+            outcome="failed_output" if output_failed else "succeeded",
             accounting_envelope=response,
         )
-        await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
+        await _record_llm_usage(self.model, success=not output_failed, usage=response.get("usage"))
         return response
 
     async def chat(
@@ -623,6 +804,15 @@ class OpenAICompatibleClient(LLMClient):
         payload.update(kwargs)
 
         timeout = min(float(payload.get("timeout", self.timeout)), 60.0)
+        admission = await _seam_dispatch_attempt(
+            self,
+            purpose=personal_purpose,
+            stage="chat",
+            execution=execution,
+            requested_output_tokens=payload.get("max_tokens"),
+            uses_tools=bool(payload.get("tools")),
+            has_media=_payload_has_media(payload),
+        )
         receipt, dispatch_id = await _personal_admission(
             self,
             payload,
@@ -639,9 +829,12 @@ class OpenAICompatibleClient(LLMClient):
         try:
             if isinstance(diagnostic, dict):
                 diagnostic.update(stage="transport", dispatch_state="possible")
-            async with httpx.AsyncClient() as c:
+            async with provider_http_client() as c:
                 r = await c.post(
-                    f"{self.base_url}/chat/completions", headers=self._headers(), json=payload, timeout=timeout
+                    provider_destination(self.base_url, "/chat/completions"),
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
                 )
                 if isinstance(diagnostic, dict):
                     diagnostic.update(stage="response", dispatch_state="response_received", http_status=r.status_code)
@@ -650,7 +843,7 @@ class OpenAICompatibleClient(LLMClient):
                     except ValueError:
                         diagnostic["response_body"] = r.text
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
                 if isinstance(diagnostic, dict) and not isinstance(data, dict):
                     raise ValueError("Provider response must be a JSON object")
@@ -667,9 +860,12 @@ class OpenAICompatibleClient(LLMClient):
                 response = self._parse_chat(data)
             except Exception:
                 response, parse_error = {
-                    "content": "", "tool_calls": [], "usage": self._usage_block_for_response(0, 0, data)
+                    "content": "",
+                    "tool_calls": [],
+                    "usage": self._usage_block_for_response(0, 0, data),
                 }, True
             response["_personal_dispatch_id"] = dispatch_id
+            response = _seam_chat_response(response, admission, dispatch_id)
             await _observe_personal_outcome(
                 receipt,
                 dispatch_state="response_received",
@@ -678,7 +874,9 @@ class OpenAICompatibleClient(LLMClient):
             )
             await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
             if isinstance(diagnostic, dict):
-                diagnostic.update(stage="complete", accounting_status="confirmed" if receipt is not None else "standard")
+                diagnostic.update(
+                    stage="complete", accounting_status="confirmed" if receipt is not None else "standard"
+                )
             return response
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
@@ -687,28 +885,24 @@ class OpenAICompatibleClient(LLMClient):
             await _observe_personal_failure(receipt)
             await _record_llm_usage(self.model, success=False)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
         except Exception as error:
             from app.services.billing.errors import is_personal_billing_block
 
             if is_personal_billing_block(error):
                 setattr(error, "personal_dispatch_id", dispatch_id)
+                setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
                 raise
             await _observe_personal_failure(receipt)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
 
     # ── internal helpers ─────────────────────────────────────
 
     def _headers(self) -> dict[str, str]:
-        h = {"Content-Type": "application/json"}
-        header_name = self.provider.auth_header or "Authorization: Bearer {key}"
-        if "{key}" in header_name:
-            h["Authorization"] = f"Bearer {self.api_key}"
-        else:
-            k, _, v = header_name.partition(": ")
-            h[k] = v.format(key=self.api_key) if "{key}" in v else v
-        return h
+        return credential_headers(self.provider.auth_header, self.api_key)
 
     def _prepare_analyze(self, prompt: str, media_urls: Optional[list[str]], **kwargs) -> dict[str, Any]:
         messages: list[dict[str, Any]] = [
@@ -753,9 +947,7 @@ class OpenAICompatibleClient(LLMClient):
                 {"id": tc.get("id") or fn.get("name", ""), "name": fn.get("name", ""), "arguments": parsed}
             )
         usage = data.get("usage") or {}
-        block = self._usage_block_for_response(
-            usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), data
-        )
+        block = self._usage_block_for_response(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0), data)
         block["total_tokens"] = usage.get("total_tokens", 0) or block["total_tokens"]
         return {
             "content": msg.get("content"),
@@ -805,6 +997,15 @@ class AnthropicClient(LLMClient):
         request_meta = self._analysis_request_meta(prompt)
         execution = kwargs.pop("personal_billing_execution", None)
         stage = kwargs.pop("personal_billing_stage", "text_analysis")
+        await _seam_dispatch_attempt(
+            self,
+            purpose="analysis",
+            stage=stage,
+            execution=execution,
+            has_media=bool(media_urls),
+            requested_output_tokens=payload.get("max_tokens"),
+            dispatch_id=request_meta["dispatch_id"],
+        )
         receipt, reserved_dispatch_id = await _personal_admission(
             self, payload, purpose="analysis", stage=stage, execution=execution, has_media=bool(media_urls)
         )
@@ -813,24 +1014,23 @@ class AnthropicClient(LLMClient):
             request_meta["dispatch_id"] = reserved_dispatch_id
         await _revalidate_personal_dispatch_before_http(self, receipt)
         try:
-            async with httpx.AsyncClient() as c:
-                r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
+            async with provider_http_client() as c:
+                r = await c.post(
+                    provider_destination(self.base_url, "/messages"),
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
+                )
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
             raise
-        except httpx.TimeoutException:
+        except Exception as error:
             await _observe_personal_failure(receipt)
-            logger.error(f"Anthropic timeout after {timeout}s")
             await _record_llm_usage(self.model, success=False)
-            return {"request": request_meta, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
-        except Exception as e:
-            await _observe_personal_failure(receipt)
-            logger.error(f"Anthropic error: {e}")
-            await _record_llm_usage(self.model, success=False)
-            return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
+            return self._analyze_failure(request_meta, self._analyze_transport_error(error))
 
         accounting_usage = self._accounting_usage(data, "input_tokens", "output_tokens")
         accounting_cost = self._accounting_cost(data)
@@ -843,15 +1043,23 @@ class AnthropicClient(LLMClient):
         if pydantic_model is not None:
             try:
                 parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
-            except Exception as exc:
-                logger.warning("Pydantic validation failed for Anthropic %s: %s", self.provider.name, exc)
-                data["error"] = "invalid_structured_output"
+            except Exception:
+                parse_error = True
                 parsed = {}
 
+        output_failed = parse_error or (isinstance(data, dict) and bool(data.get("error")))
+        diagnostic = (
+            self._analyze_failure(request_meta, "invalid_structured_output")
+            if output_failed
+            else {
+                "request": request_meta,
+                "response": data,
+                "parsed": parsed,
+            }
+        )
+
         response = {
-            "request": request_meta,
-            "response": data,
-            "parsed": parsed,
+            **diagnostic,
             "accounting_usage": accounting_usage,
             "accounting_cache_usage": self._accounting_cache_usage(data),
             **accounting_cost,
@@ -862,10 +1070,10 @@ class AnthropicClient(LLMClient):
         await _observe_personal_outcome(
             receipt,
             dispatch_state="response_received",
-            outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+            outcome="failed_output" if output_failed else "succeeded",
             accounting_envelope=response,
         )
-        await _record_llm_usage(self.model, success=not bool(data.get("error")), usage=response.get("usage"))
+        await _record_llm_usage(self.model, success=not output_failed, usage=response.get("usage"))
         return response
 
     async def chat(
@@ -875,8 +1083,12 @@ class AnthropicClient(LLMClient):
             raise ValueError(f"API key not set for {self.provider.name}")
         await self._rate_limit()
 
-        system = "\n".join(m["content"] for m in messages if m["role"] == "system")
-        chat_msgs = [{"role": m["role"], "content": m["content"]} for m in messages if m["role"] != "system"]
+        system = "\n".join(str(m["content"]) for m in messages if m["role"] == "system")
+        chat_msgs = [
+            {"role": m["role"], "content": _normalize_anthropic_message_content(m["content"])}
+            for m in messages
+            if m["role"] != "system"
+        ]
 
         payload: dict[str, Any] = {
             "model": self.model_name,
@@ -900,6 +1112,15 @@ class AnthropicClient(LLMClient):
         timeout = min(self.timeout, 60.0)
         execution = kwargs.pop("personal_billing_execution", None)
         personal_purpose = kwargs.pop("personal_billing_purpose", "agent_chat")
+        admission = await _seam_dispatch_attempt(
+            self,
+            purpose=personal_purpose,
+            stage="chat",
+            execution=execution,
+            requested_output_tokens=payload.get("max_tokens"),
+            uses_tools=bool(payload.get("tools")),
+            has_media=_payload_has_media(payload),
+        )
         receipt, dispatch_id = await _personal_admission(
             self,
             payload,
@@ -911,10 +1132,15 @@ class AnthropicClient(LLMClient):
         await _verify_personal_dispatch_day(receipt)
         await _revalidate_personal_dispatch_before_http(self, receipt)
         try:
-            async with httpx.AsyncClient() as c:
-                r = await c.post(f"{self.base_url}/messages", headers=self._headers(), json=payload, timeout=timeout)
+            async with provider_http_client() as c:
+                r = await c.post(
+                    provider_destination(self.base_url, "/messages"),
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
+                )
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
 
             accounting = {
@@ -927,9 +1153,12 @@ class AnthropicClient(LLMClient):
                 response = self._parse_chat(data)
             except Exception:
                 response, parse_error = {
-                    "content": "", "tool_calls": [], "usage": self._usage_block_for_response(0, 0, data)
+                    "content": "",
+                    "tool_calls": [],
+                    "usage": self._usage_block_for_response(0, 0, data),
                 }, True
             response["_personal_dispatch_id"] = dispatch_id
+            response = _seam_chat_response(response, admission, dispatch_id)
             await _observe_personal_outcome(
                 receipt,
                 dispatch_state="response_received",
@@ -945,15 +1174,18 @@ class AnthropicClient(LLMClient):
             await _observe_personal_failure(receipt)
             await _record_llm_usage(self.model, success=False)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
         except Exception as error:
             from app.services.billing.errors import is_personal_billing_block
 
             if is_personal_billing_block(error):
                 setattr(error, "personal_dispatch_id", dispatch_id)
+                setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
                 raise
             await _observe_personal_failure(receipt)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
 
     def _parse_chat(self, data: dict) -> dict[str, Any]:
@@ -969,9 +1201,7 @@ class AnthropicClient(LLMClient):
         return {
             "content": "\n".join(content_parts) or None,
             "tool_calls": tool_calls,
-            "usage": self._usage_block_for_response(
-                usage.get("input_tokens", 0), usage.get("output_tokens", 0), data
-            ),
+            "usage": self._usage_block_for_response(usage.get("input_tokens", 0), usage.get("output_tokens", 0), data),
             "finish_reason": data.get("stop_reason"),
             "raw": data,
         }
@@ -1002,6 +1232,15 @@ class CustomClient(LLMClient):
 
         timeout = min(self.timeout, 60.0)
         request_meta = {**self._analysis_request_meta(prompt), "endpoint": endpoint}
+        await _seam_dispatch_attempt(
+            self,
+            purpose="analysis",
+            stage=stage,
+            execution=execution,
+            has_media=bool(media_urls),
+            requested_output_tokens=payload.get("max_tokens"),
+            dispatch_id=request_meta["dispatch_id"],
+        )
         receipt, reserved_dispatch_id = await _personal_admission(
             self, payload, purpose="analysis", stage=stage, execution=execution, has_media=bool(media_urls)
         )
@@ -1011,24 +1250,23 @@ class CustomClient(LLMClient):
         await _revalidate_personal_dispatch_before_http(self, receipt)
 
         try:
-            async with httpx.AsyncClient() as c:
-                r = await c.post(f"{self.base_url}{endpoint}", headers=self._headers(), json=payload, timeout=timeout)
+            async with provider_http_client() as c:
+                r = await c.post(
+                    provider_destination(self.base_url, endpoint),
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
+                )
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
         except asyncio.CancelledError:
             await _observe_cancelled_personal(receipt)
             raise
-        except httpx.TimeoutException:
+        except Exception as error:
             await _observe_personal_failure(receipt)
-            logger.error(f"Custom endpoint timeout for {self.provider.name} after {timeout}s")
             await _record_llm_usage(self.model, success=False)
-            return {"request": request_meta, "response": {"error": "timeout"}, "parsed": {"analysis": "Timeout"}}
-        except Exception as e:
-            await _observe_personal_failure(receipt)
-            logger.error(f"Custom endpoint error for {self.provider.name}: {e}")
-            await _record_llm_usage(self.model, success=False)
-            return {"request": request_meta, "response": {"error": str(e)}, "parsed": {"analysis": f"Error: {e}"}}
+            return self._analyze_failure(request_meta, self._analyze_transport_error(error))
 
         accounting_usage = self._accounting_usage(data)
         accounting_cost = self._accounting_cost(data)
@@ -1041,15 +1279,23 @@ class CustomClient(LLMClient):
         if pydantic_model is not None:
             try:
                 parsed = validate_with_pydantic(parsed, pydantic_model, strict=True)
-            except Exception as exc:
-                logger.warning("Pydantic validation failed for custom %s: %s", self.provider.name, exc)
-                data["error"] = "invalid_structured_output"
+            except Exception:
+                parse_error = True
                 parsed = {}
 
+        output_failed = parse_error or (isinstance(data, dict) and bool(data.get("error")))
+        diagnostic = (
+            self._analyze_failure(request_meta, "invalid_structured_output")
+            if output_failed
+            else {
+                "request": request_meta,
+                "response": data,
+                "parsed": parsed,
+            }
+        )
+
         response = {
-            "request": request_meta,
-            "response": data,
-            "parsed": parsed,
+            **diagnostic,
             "accounting_usage": accounting_usage,
             "accounting_cache_usage": self._accounting_cache_usage(data),
             **accounting_cost,
@@ -1058,10 +1304,10 @@ class CustomClient(LLMClient):
         await _observe_personal_outcome(
             receipt,
             dispatch_state="response_received",
-            outcome="failed_output" if data.get("error") or parse_error else "succeeded",
+            outcome="failed_output" if output_failed else "succeeded",
             accounting_envelope=response,
         )
-        await _record_llm_usage(self.model, success=not bool(data.get("error")))
+        await _record_llm_usage(self.model, success=not output_failed)
         return response
 
     async def chat(
@@ -1088,6 +1334,15 @@ class CustomClient(LLMClient):
             "provider": self.provider.name.lower(),
             "endpoint": endpoint,
         }
+        admission = await _seam_dispatch_attempt(
+            self,
+            purpose=personal_purpose,
+            stage="chat",
+            execution=execution,
+            requested_output_tokens=payload.get("max_tokens"),
+            uses_tools=bool(payload.get("tools")),
+            has_media=_payload_has_media(payload),
+        )
         receipt, dispatch_id = await _personal_admission(
             self,
             payload,
@@ -1100,10 +1355,15 @@ class CustomClient(LLMClient):
         await _revalidate_personal_dispatch_before_http(self, receipt)
 
         try:
-            async with httpx.AsyncClient() as c:
-                r = await c.post(f"{self.base_url}{endpoint}", headers=self._headers(), json=payload, timeout=timeout)
+            async with provider_http_client() as c:
+                r = await c.post(
+                    provider_destination(self.base_url, endpoint),
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=timeout,
+                )
                 if r.status_code != 200:
-                    raise httpx.HTTPStatusError(f"{r.status_code}: {r.text}", request=r.request, response=r)
+                    raise httpx.HTTPStatusError("Provider HTTP failure", request=r.request, response=r)
                 data = r.json()
 
             accounting = {
@@ -1123,9 +1383,12 @@ class CustomClient(LLMClient):
                 }
             except Exception:
                 response, parse_error = {
-                    "content": "", "tool_calls": [], "usage": self._usage_block_for_response(0, 0, data)
+                    "content": "",
+                    "tool_calls": [],
+                    "usage": self._usage_block_for_response(0, 0, data),
                 }, True
             response["_personal_dispatch_id"] = dispatch_id
+            response = _seam_chat_response(response, admission, dispatch_id)
             await _observe_personal_outcome(
                 receipt,
                 dispatch_state="response_received",
@@ -1141,26 +1404,22 @@ class CustomClient(LLMClient):
             await _observe_personal_failure(receipt)
             await _record_llm_usage(self.model, success=False)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
         except Exception as error:
             from app.services.billing.errors import is_personal_billing_block
 
             if is_personal_billing_block(error):
                 setattr(error, "personal_dispatch_id", dispatch_id)
+                setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
                 raise
             await _observe_personal_failure(receipt)
             setattr(error, "personal_dispatch_id", dispatch_id)
+            setattr(error, "dispatch_id", dispatch_id or _dispatch_identifier(admission))
             raise
 
     def _headers(self) -> dict[str, str]:
-        h = {"Content-Type": "application/json"}
-        header_name = self.provider.auth_header or "Authorization: Bearer {key}"
-        if "{key}" in header_name:
-            h["Authorization"] = f"Bearer {self.api_key}"
-        else:
-            k, _, v = header_name.partition(": ")
-            h[k] = v.format(key=self.api_key) if "{key}" in v else v
-        return h
+        return credential_headers(self.provider.auth_header, self.api_key)
 
 
 def _extract_custom_content(data: dict) -> Any:
@@ -1221,10 +1480,22 @@ async def journal_chat_attempt(
     message/digest/job cost projections are unchanged. Pre-dispatch refusals
     (no API key, custom model without endpoint) are not paid attempts.
     """
+    # Consume metadata even if the legacy journal cannot persist this route.
+    response_identity = getattr(response, "dispatch_id", None)
+    if response_identity is not None:
+        delattr(response, "dispatch_id")
+    dispatch_id = dispatch_id or response_identity
     if not getattr(client, "api_key", None):
         return
     if isinstance(client, CustomClient) and not getattr(client.model, "custom_endpoint_path", None):
         return
+    # AST-source suites exec this function alone: resolve the key from the
+    # executing scope, so a scope without the seam keeps today's behaviour.
+    seam_key_loader = globals().get("_seam_chat_key")
+    seam_key = seam_key_loader() if seam_key_loader is not None else None
+    if isinstance(response, dict) and seam_key:
+        private_id = response.pop(seam_key, None)
+        dispatch_id = dispatch_id or private_id
     try:
         from app.services.ai.attempt_journal import STAGE_CHAT, chat_attempt_envelope, journal_scoped_attempts
 
@@ -1245,9 +1516,13 @@ async def journal_chat_attempt(
 
 
 async def chat_with_fallback(
-    messages: list[dict[str, Any]], tools: Optional[list[dict[str, Any]]] = None,
-    preferred_model: Optional[LLMModel] = None, *, budget: Optional[float] = None,
-    failures: Optional[list[dict[str, Any]]] = None, **kwargs
+    messages: list[dict[str, Any]],
+    tools: Optional[list[dict[str, Any]]] = None,
+    preferred_model: Optional[LLMModel] = None,
+    *,
+    budget: Optional[float] = None,
+    failures: Optional[list[dict[str, Any]]] = None,
+    **kwargs,
 ) -> Optional[dict[str, Any]]:
     """One chat turn across the eligible fleet: the preferred model first, then the rest.
 
@@ -1270,23 +1545,55 @@ async def chat_with_fallback(
     # Accounting label only, never sent to the provider.
     accounting_purpose = kwargs.pop("accounting_purpose", "chat")
     kwargs.setdefault("personal_billing_purpose", accounting_purpose)
-    models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
+    loader = globals().get("_catalog_read_scope")
+    scope = loader() if loader else None
+    if scope is None:
+        models = await _llm_models(LLMModel.objects.filter(is_active=True).order_by(LLMModel.id))
+    else:
+        required = {"text", "image"} if _payload_has_media(messages) else {"text"}
+        if preferred_model is not None:
+            await scope.models(capabilities=required, model_id=preferred_model.id)
+        models = await scope.models(capabilities=required)
 
     allowed_types = await _allowed_model_types()
     # The same eligibility gate as automatic resolution: capability lists,
     # the full tier subset and an active provider all precede preference.
-    text_models = [m for m in models if _eligible_text_model(m, allowed_types)]
+    require_image = _payload_has_media(messages)
+    if require_image and allowed_types is not None and "image" not in allowed_types:
+        raise ValueError("Workspace plan does not allow image-capable models")
+    text_models = [
+        m
+        for m in models
+        if _eligible_text_model(m, allowed_types) and (not require_image or "image" in (m.capabilities or ()))
+    ]
+    if require_image and not text_models:
+        raise ValueError("No active image-capable LLM model available for this workspace")
     if not text_models and allowed_types is not None:
         logger.warning("Workspace tier allows only %s models; none is active", sorted(allowed_types))
-    text_models.sort(key=lambda m: (
-        m.id != getattr(preferred_model, "id", None),
-        -_model_proven_score(m),
-        -_model_last_seen(m),
-        default_model_sort_key(m),
-    ))
+    if scope is not None:
+        from app.services.ai.dispatch_seam import CODE_ADMISSION_UNAVAILABLE, DispatchDenial
+
+        raise DispatchDenial(CODE_ADMISSION_UNAVAILABLE, "step8_admission")
+    text_models.sort(
+        key=lambda m: (
+            m.id != getattr(preferred_model, "id", None),
+            -_model_proven_score(m),
+            -_model_last_seen(m),
+            default_model_sort_key(m),
+        )
+    )
 
     last_err: Optional[Exception] = None
     blocked_paid = False
+    # AST-source suites exec this function alone: the seam helpers are resolved
+    # from the executing scope, so a scope without them skips the seam logic
+    # instead of failing with a NameError.
+    seam_loader = globals().get("_seam_module")
+    seam = seam_loader() if seam_loader is not None else None
+    denial_type = getattr(seam, "DispatchDenial", None)
+    funding_check = getattr(seam, "require_same_funding_class", None)
+    fallback_rule = globals().get("_require_fallback_compatibility")
+    previous_model = None
     for model in text_models:
         # A paid try must fit in what is left; free rows never touch the cap.
         price = _model_price_floor(model)
@@ -1295,6 +1602,9 @@ async def chat_with_fallback(
             if failures is not None:
                 failures.append({"model": model.model_id, "provider": model.provider.name, "reason": "budget"})
             continue
+        if previous_model is not None and funding_check is not None and fallback_rule is not None:
+            fallback_rule(previous_model, model, funding_check)
+        previous_model = model
         try:
             client = LLMClientFactory.create(model)
             # Usage is recorded inside client.chat (single recording point).
@@ -1304,23 +1614,28 @@ async def chat_with_fallback(
             except Exception as error:
                 from app.services.billing.errors import raise_personal_billing_block
 
+                # A dispatch denial ends the turn: never another model, payer or class.
+                if denial_type is not None and isinstance(error, denial_type):
+                    raise
                 raise_personal_billing_block(error)
                 # Personal reservation attempts already own a durable dispatch identity.
                 await journal_chat_attempt(
                     client,
                     accounting_purpose,
                     None,
-                    dispatch_id=getattr(error, "personal_dispatch_id", None),
+                    dispatch_id=getattr(error, "personal_dispatch_id", None) or getattr(error, "dispatch_id", None),
                 )
                 raise
+            dispatch_id = response.pop("_personal_dispatch_id", None) if isinstance(response, dict) else None
+            await journal_chat_attempt(client, accounting_purpose, response, dispatch_id=dispatch_id)
             if not _chat_response_usable(response):
                 reason = _empty_reply_reason(response)
-                logger.warning("%s/%s returned an empty reply (%s), trying next", model.provider.name, model.model_id, reason)
+                logger.warning(
+                    "%s/%s returned an empty reply (%s), trying next", model.provider.name, model.model_id, reason
+                )
                 _record_failure(failures, model, reason, limit=getattr(model, "max_tokens", None))
                 last_err = RuntimeError(f"empty_reply:{reason}")
                 continue
-            dispatch_id = response.pop("_personal_dispatch_id", None)
-            await journal_chat_attempt(client, accounting_purpose, response, dispatch_id=dispatch_id)
             if failures is not None:
                 response["_model_failures"] = failures
             return response
@@ -1356,15 +1671,46 @@ async def chat_with_fallback(
     raise last_err or RuntimeError("No LLM models available")
 
 
+def _fallback_funding_owner_id() -> Optional[int]:
+    """Acting catalog owner for the fallback class check; None when unprovable.
+
+    Resolved defensively: an unbound catalog must skip the check, never turn a
+    working fallback into a new error.
+    """
+    try:
+        from app.core.personal_catalog_context import current_catalog_owner_id
+
+        owner = current_catalog_owner_id()
+    except Exception:
+        return None
+    return owner if type(owner) is int and owner > 0 else None
+
+
+def _require_fallback_compatibility(previous, following, check) -> None:
+    """Refuse a fallback that would switch the funding class or the payer (§5)."""
+    owner = _fallback_funding_owner_id()
+    if owner is None:
+        return
+    try:
+        from app.core.tenant_context import current_tenant_id
+
+        tenant_id = current_tenant_id()
+    except Exception:
+        tenant_id = None
+    check(
+        previous,
+        following,
+        catalog_owner_id=owner,
+        payer=f"tenant:{tenant_id}" if tenant_id is not None else None,
+    )
+
+
 def _model_price_floor(model: LLMModel) -> float:
     """Return a comparable USD/1M tariff signal, including configured cache rates."""
-    from app.services.ai.cache_pricing import canonical_decimal, model_pricing_token_unit, CACHE_RATE_FIELDS
+    from app.services.ai.cache_pricing import CACHE_RATE_FIELDS, canonical_decimal, model_pricing_token_unit
 
     unit = model_pricing_token_unit(model)
-    ordinary = [
-        canonical_decimal(getattr(model, field, None))
-        for field in ("input_cost_per_1k", "output_cost_per_1k")
-    ]
+    ordinary = [canonical_decimal(getattr(model, field, None)) for field in ("input_cost_per_1k", "output_cost_per_1k")]
     prices = [float(rate * Decimal(1_000_000) / unit) for rate in ordinary if rate is not None]
     prices.extend(
         float(rate)
@@ -1466,6 +1812,11 @@ def _is_tools_not_supported_error(e: httpx.HTTPStatusError) -> bool:
 
 
 async def resolve_model() -> Optional[LLMModel]:
+    loader = globals().get("_catalog_read_scope")
+    scope = loader() if loader else None
+    if scope is not None:
+        models = await scope.models(capabilities={"text"}, model_name=settings.AGENT_MODEL or None)
+        return models[0] if models else None
     if settings.AGENT_MODEL:
         m = await _llm_models(LLMModel.objects.filter(name=settings.AGENT_MODEL))
         m = m[0] if m else None
@@ -1508,90 +1859,19 @@ def _system_prompt(has_media: bool) -> str:
 
 
 def _try_json(text: str) -> dict[str, Any]:
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        # Reject ambiguity before decoding loses duplicate keys. Let this
+        # content-free failure reach analyze's failed-output boundary rather
+        # than turning the rejected document into a plain-text analysis.
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("invalid_structured_output")
+            result[key] = value
+        return result
+
     try:
-        parsed = json.loads(text)
+        parsed = json.loads(text, object_pairs_hook=unique_object)
     except (json.JSONDecodeError, TypeError):
         return {"analysis": text}
     return parsed if isinstance(parsed, dict) else {"analysis": text}
-
-
-def _num(value: Any) -> Optional[float]:
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        s = value.strip().replace("$", "").replace("USD", "").strip().lower()
-        try:
-            return float(s)
-        except ValueError:
-            return None
-    return None
-
-
-def extract_cost_info(raw_response: Any) -> dict[str, Any]:
-    """Extract token usage and reported dollar costs from a raw LLM API response.
-
-    Understands OpenAI/Anthropic usage plus common provider cost extensions
-    (OpenRouter `cost`, LiteLLM proxy `prompt_cost`/`completion_cost`/`total_cost`).
-
-    Returns:
-        tokens:      {"input": int, "output": int, "total": int}
-        cost:        {"input": float|None, "output": float|None, "total": float|None}
-        price_per_1k: {"input": float|None, "output": float|None}  (derived from cost/tokens)
-        has_cost_report: bool
-    """
-    empty = {
-        "tokens": {"input": 0, "output": 0, "total": 0},
-        "cost": {"input": None, "output": None, "total": None},
-        "price_per_1k": {"input": None, "output": None},
-        "has_cost_report": False,
-    }
-    if not isinstance(raw_response, dict):
-        return empty
-
-    usage = raw_response.get("usage")
-    if not isinstance(usage, dict) or not usage:
-        # Some providers report cost at the top level of the response
-        if _num(raw_response.get("total_cost")) is not None or _num(raw_response.get("cost")) is not None:
-            return {
-                "tokens": {"input": 0, "output": 0, "total": 0},
-                "cost": {
-                    "input": None,
-                    "output": None,
-                    "total": _num(raw_response.get("total_cost") or raw_response.get("cost")),
-                },
-                "price_per_1k": {"input": None, "output": None},
-                "has_cost_report": True,
-            }
-        return empty
-
-    input_tokens = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
-    output_tokens = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
-
-    input_cost = _num(usage.get("prompt_cost") or usage.get("input_cost"))
-    output_cost = _num(usage.get("completion_cost") or usage.get("output_cost"))
-    total_cost = _num(usage.get("total_cost") or usage.get("cost"))
-    if total_cost is None:
-        total_cost = _num(raw_response.get("total_cost") or raw_response.get("cost"))
-
-    has_report = any(v is not None for v in (input_cost, output_cost, total_cost))
-
-    def per_1k(cost: Optional[float], tokens: int) -> Optional[float]:
-        if cost is None or tokens <= 0:
-            return None
-        return round(cost / tokens * 1000, 10)
-
-    return {
-        "tokens": {
-            "input": input_tokens,
-            "output": output_tokens,
-            "total": input_tokens + output_tokens,
-        },
-        "cost": {"input": input_cost, "output": output_cost, "total": total_cost},
-        "price_per_1k": {
-            "input": per_1k(input_cost, input_tokens),
-            "output": per_1k(output_cost, output_tokens),
-        },
-        "has_cost_report": has_report,
-    }

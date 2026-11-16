@@ -116,10 +116,11 @@ async def test_execute_job_failure_updates_task_and_notifies(_tenant):
     with tenant_scope(bypass=True):
         job = await Job.objects.get(id=job.id)
         assert job.status == "failed"
-        assert job.error == "kaboom"
+        assert job.error.endswith("runtime_error")
+        assert "kaboom" not in job.error
         task = await AgentTask.objects.get(id=task.id)
         assert task.last_status == "failed"
-        assert task.last_error == "kaboom"
+        assert task.last_error == job.error
         notes = await Notification.objects.filter(
             related_entity_type="task", related_entity_id=task.id, notification_type="API_ERROR"
         )

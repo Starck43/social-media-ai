@@ -14,9 +14,13 @@ import json
 import os
 import subprocess
 import tempfile
+import tomllib
 from email.parser import Parser
 from pathlib import Path
 from zipfile import ZipFile
+
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 # Runs under the installed environment's Python -I, not the checkout interpreter.
 INSTALLED_CHECK = r"""
@@ -69,9 +73,20 @@ allowed = {
     "app",
     "app.core",
     "app.core.config",
+    "app.core.settings_views",
     "app.core.database",
+    "app.services",
+    "app.services.collection",
+    "app.services.collection.intent",
+    "app.services.social",
+    "app.services.social.vk_access",
+    "app.services.task_plans",
+    "app.services.task_contracts",
+    "app.services.task_preparation",
+    "app.services.task_creation",
     "app.utils",
     "app.utils.crypto",
+    "app.utils.identifiers",
     "app.jobs",
     "app.jobs.progress",
     "app.jobs.progress_metrics",
@@ -124,12 +139,98 @@ modules = (
     "app.utils.crypto",
     "app.jobs.progress",
     "app.types.enums",
-    "cli.commands.llm",
     "app.core.database",
+    # This is a narrow import-time check for the extracted plan/contract core.
+    # It does not classify all of app.agent or app.core as a particular layer.
+    "app.services.task_plans",
+    "app.services.task_contracts",
+    "app.services.task_preparation",
+    "app.services.task_creation",
+    "cli.commands.llm",
 )
 for name in modules:
     module = importlib.import_module(name)
     assert Path(module.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()), name
+
+assert {
+    "app.models",
+    "app.agent",
+    "app.channels",
+    "app.api",
+    "app.web",
+    "app.admin",
+}.isdisjoint(sys.modules), "Task-plan imports loaded an unreviewed model or adapter graph"
+
+# Import the compatibility shell without exercising its lazy persistence paths.
+# Existing adapters must keep the same pure functions/classes by identity.
+from app.services import task_creation, task_preparation
+
+for name in (
+    "TaskPlanCreate", "TaskPlanCreateConflict", "resolve_task_plan_create",
+    "project_task_plan_create", "prepare_task_plan_create",
+):
+    assert getattr(task_creation, name) is getattr(task_preparation, name), name
+
+# Exercise the real installed core, not mocks: selected/all/discovery, recurring
+# and one-off triggers, payload context and legacy-field conflict ordering.
+raw = {
+    "version": 1, "platforms": ["vk"], "source_scope": "selected", "source_ids": [4],
+    "collection": {"queries": ["repair"]}, "window": {"type": "rolling", "days": 3},
+    "trigger": {"type": "schedule", "cron": "0 9 * * *", "timezone": "UTC"},
+}
+for scope in ("selected", "all", "discovery"):
+    ids = [4] if scope == "selected" else []
+    prepared = task_preparation.prepare_task_plan_create(
+        {"payer_receipt": {"id": 99}}, dict(raw, source_scope=scope, source_ids=ids),
+        job_type="analyze", requested_source_ids=ids, enforce_source_match=True,
+    )
+    assert prepared.source_scope == scope and prepared.source_ids == tuple(ids)
+    assert prepared.payload["payer_receipt"] == {"id": 99}
+    assert prepared.cron_expr == "0 9 * * *"
+    assert prepared.payload["task_plan"]["window"] == {"type": "rolling", "days": 3}
+once = task_creation.prepare_task_plan_create({}, dict(raw, trigger={"type": "once"}), job_type="collect")
+assert once.cron_expr == "@once" and once.payload["task_plan"]["trigger"] == {"type": "once"}
+try:
+    task_preparation.prepare_task_plan_create(
+        {}, raw, job_type="collect", requested_cron="0 8 * * *", requested_source_ids=[],
+        enforce_source_match=True, conflict_order=("source_ids", "cron_expr", "scenario_id"),
+    )
+except task_preparation.TaskPlanCreateConflict as error:
+    assert error.field == "source_ids"
+else:
+    raise AssertionError("Task-create legacy conflict was not preserved")
+from app.services.task_plans import TaskPlanError
+
+fixed = task_preparation.prepare_task_plan_create(
+    {}, dict(raw, window={"type": "fixed", "start": "2026-01-02", "end": "2026-01-04"}),
+    job_type="collect",
+)
+assert fixed.payload["cli_dates"] == {"start_date": "2026-01-02", "end_date": "2026-01-04"}
+for kwargs, field in (
+    ({"requested_cron": "0 8 * * *"}, "cron_expr"),
+    ({"requested_scenario_id": 7}, "scenario_id"),
+    ({"requested_source_ids": [], "enforce_source_match": True}, "source_ids"),
+):
+    try:
+        task_preparation.prepare_task_plan_create({}, raw, job_type="collect", **kwargs)
+    except task_preparation.TaskPlanCreateConflict as error:
+        assert error.field == field
+    else:
+        raise AssertionError(f"Missing legacy conflict: {field}")
+try:
+    task_preparation.prepare_task_plan_create({}, dict(raw, source_ids=[]), job_type="collect")
+except TaskPlanError as error:
+    assert error.code == "task_plan_selected_sources_required"
+else:
+    raise AssertionError("Empty selected source scope was accepted")
+resolved = task_preparation.resolve_task_plan_create(raw, requested_cron="0 9 * * *")
+try:
+    task_preparation.project_task_plan_create({}, resolved, job_type="digest")
+except TaskPlanError as error:
+    assert error.code == "task_plan_requires_collect_or_analyze"
+else:
+    raise AssertionError("Invalid job type was accepted at projection")
+assert {"app.models", "app.agent", "app.channels", "app.api", "app.web", "app.admin"}.isdisjoint(sys.modules)
 
 from app.utils.crypto import decrypt_secret, encrypt_secret
 
@@ -186,6 +287,10 @@ def reject_provider_construction(frame, event, arg):
 
 sys.setprofile(reject_provider_construction)
 application = importlib.import_module("app.main")
+assert application.app.version == importlib.metadata.version("social-media-ai")
+assert application.app.title == "AI Assistant"
+cli_main = importlib.import_module("cli.main")
+assert cli_main.app.info.help == "Privileged operator-only administration; not a customer or end-user CLI."
 web = importlib.import_module("app.web.deps")
 admin = importlib.import_module("app.admin.setup")
 from app.core.config import Settings, settings
@@ -219,7 +324,10 @@ else:
 assert list(Path.cwd().iterdir()) == [], "Application import wrote into empty CWD"
 assert (
     not connection_attempts and not execution_attempts and not external_attempts
-), f"Forbidden execution attempted: DB={connection_attempts}, runtime={execution_attempts}, external={external_attempts}"
+), (
+    "Forbidden execution attempted: "
+    f"DB={connection_attempts}, runtime={execution_attempts}, external={external_attempts}"
+)
 assert {"app.runtime", "app.worker"}.isdisjoint(sys.modules)
 
 print(
@@ -272,10 +380,34 @@ def main() -> None:
         assert not any(n.startswith(("tests/", "docs/", ".agents/", "docker/", ".env")) for n in names)
         (metadata_name,) = (n for n in names if n.endswith(".dist-info/METADATA"))
         metadata = Parser().parsestr(wheel.read(metadata_name).decode())
-        assert "cryptography>=42.0.0" in metadata.get_all("Requires-Dist", []), "Encryption must be runtime, not extra"
+        assert any(
+            Requirement(r).name == "cryptography" and Requirement(r).marker is None
+            for r in metadata.get_all("Requires-Dist", [])
+        ), "Encryption must be runtime, not extra"
         requirements = metadata.get_all("Requires-Dist", [])
-        assert "sqlalchemy[asyncio]>=2.0.0" in requirements, "SQLAlchemy asyncio support must be runtime"
-        assert "psycopg[binary]>=3.1.0" in requirements, "Default PostgreSQL driver must be runtime"
+        declaration = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+
+        def normalized(value):
+            requirement = Requirement(value)
+            requirement.name = canonicalize_name(requirement.name)
+            return str(requirement)
+
+        expected_requirements = {normalized(value) for value in declaration["dependencies"]}
+        for extra, values in declaration["optional-dependencies"].items():
+            expected_requirements.update(normalized(f"{value}; extra == '{extra}'") for value in values)
+        assert {
+            normalized(value) for value in requirements
+        } == expected_requirements, "Wheel/source dependency metadata differs"
+        assert any(
+            Requirement(r).name.lower() == "sqlalchemy"
+            and "asyncio" in Requirement(r).extras
+            and Requirement(r).marker is None
+            for r in requirements
+        ), "SQLAlchemy asyncio support must be runtime"
+        assert any(
+            Requirement(r).name == "psycopg" and "binary" in Requirement(r).extras and Requirement(r).marker is None
+            for r in requirements
+        ), "Default PostgreSQL driver must be runtime"
         (entry_points_name,) = (n for n in names if n.endswith(".dist-info/entry_points.txt"))
         assert "cli = cli.main:app" in wheel.read(entry_points_name).decode()
     # Do not inherit owner credentials, DB URLs, PYTHONPATH or dotenv files.

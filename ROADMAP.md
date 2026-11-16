@@ -67,7 +67,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
-- [P11-T38](docs/tasks/p11-t38.md) CI secret-candidate drift triage — **TODO** · unassigned · reproduced 2026-11-16 on `dev` `6d7305fb`: new candidates against `.ci/secret-baseline.json` on untouched files, untriaged; a real-secret finding escalates to the owner, a baseline refresh needs a reason per entry · `P2` · `C2`
+- [P11-T38](docs/tasks/p11-t38.md) CI secret-candidate drift triage — **IN_PROGRESS** · opencode-p11-t38 · reproduced 2026-11-16 on `dev` `6d7305fb`: new candidates against `.ci/secret-baseline.json` on untouched files, untriaged; a real-secret finding escalates to the owner, a baseline refresh needs a reason per entry · `P2` · `C2`
 - [P11-T39](docs/tasks/p11-t39.md) Pre-existing red check inventory re-verification — **TODO** · unassigned · replaces the unportable 2026-11-13 scratch list; each entry either reproduces into its own row, becomes a recorded environment gate, or is dropped · `P2` · `C2`
 
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):

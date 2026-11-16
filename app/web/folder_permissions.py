@@ -1,5 +1,9 @@
 """Default-off folder restriction editor on the existing personal file workspace."""
 
+import hashlib
+import hmac
+import json
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.exc import DBAPIError
@@ -23,8 +27,13 @@ def _args(request, connection_id):
     return {**args, "connection_id": connection_id}
 
 
-def _token(request, args):
-    return action_token(request.session, "folder-policy:" + settings.SECRET_KEY, **args, object_id=1)
+def _token(request, args, *, path, access, revision):
+    key = "folder-policy:" + settings.SECRET_KEY
+    base = action_token(request.session, key, **args, object_id=1)
+    payload = json.dumps([path, access, revision], ensure_ascii=True, separators=(",", ":"))
+    return hmac.new(
+        key.encode(), ("folder-policy-form-v1:" + base + ":" + payload).encode(), hashlib.sha256
+    ).hexdigest()
 
 
 def _error(code):
@@ -48,7 +57,11 @@ async def folder_permissions_page(
         raise _error(400) from None
     except DBAPIError:
         raise _error(503) from None
-    return _render_catalog(request, "web/folder_permissions.html", policy=view, policy_csrf=_token(request, args))
+    tokens = {
+        access: _token(request, args, path=view["path"], access=access, revision=view["revision"])
+        for access in ("none", "read_only")
+    }
+    return _render_catalog(request, "web/folder_permissions.html", policy=view, policy_csrf=tokens)
 
 
 @router.post("/{connection_id}/permissions")
@@ -57,7 +70,19 @@ async def folder_permissions_save(request: Request, connection_id: int):
     if not 1 <= connection_id <= 2147483647 or request.query_params:
         raise _error(400)
     try:
-        form = await action_form(request, {"_csrf", "path", "access", "revision"}, _token(request, args))
+        # The submitted action is fixed by its form; each token also binds the
+        # exact path and policy fingerprint displayed when that form was rendered.
+        form = await action_form(
+            request,
+            {"_csrf", "path", "access", "revision"},
+            lambda fields: _token(
+                request,
+                args,
+                path=fields["path"],
+                access=fields["access"],
+                revision=fields["revision"],
+            ),
+        )
     except (ValueError, UnicodeError):
         raise _error(403) from None
     try:

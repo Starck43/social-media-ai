@@ -187,9 +187,13 @@ async def web(data, monkeypatch):
         yield client, login
 
 
-def form_values(response):
+def form_values(response, access):
     html = BeautifulSoup(response.text, "html.parser")
-    form = html.select_one('[data-folder-permissions] form[method="post"]')
+    form = next(
+        form
+        for form in html.select('[data-folder-permissions] form[method="post"]')
+        if form.select_one('input[name="access"]')["value"] == access
+    )
     return {item["name"]: item.get("value", "") for item in form.select("input[name]")}
 
 
@@ -200,15 +204,18 @@ async def test_authenticated_editor_csrf_stale_form_and_foreign_owner(data, web,
     assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
     assert "Создание, изменение и удаление файлов выключены" in response.text
     assert "p12t12-synthetic-token" not in response.text
-    values = {**form_values(response), "access": "none"}
+    values = form_values(response, "none")
     assert (await client.post(url, data={**values, "_csrf": "bad"})).status_code == 403
+    assert (await client.post(url, data={**values, "access": "read_only"})).status_code == 403
+    assert (await client.post(url, data={**values, "path": "/work/other"})).status_code == 403
+    assert (await client.post(url, data={**values, "revision": "0" * 64})).status_code == 403
     assert (await client.post(url, data={**values, "delete": "1"})).status_code == 403
     assert (await client.post(url, data=values)).status_code == 303
     assert (await client.post(url, data=values)).status_code == 409
     denied = await client.get(url)
     assert denied.status_code == 200 and "запрещён" in denied.text
     # A root denial must not prevent the owner from recovering through settings.
-    restore = {**form_values(denied), "access": "read_only"}
+    restore = form_values(denied, "read_only")
     assert (await client.post(url, data=restore)).status_code == 303
     await login(1)
     assert (await client.get(url)).status_code == 404

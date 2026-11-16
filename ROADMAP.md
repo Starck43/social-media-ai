@@ -40,7 +40,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
 
-- [P21-T15](docs/tasks/p21-t15.md) Atomic LLM admission and quota reservation wiring — **IN_PROGRESS** · gemini-p21-t15 · `feat/p21-t15-atomic-admission` from `dev` `ee74559d`; applet `b1a15877-1d17-4a31-b12a-2b65ae818942` · depends on P21-T14/P2-T17 allowance policy; no cutover · `P1` · `C4`
+- [P21-T15](docs/tasks/p21-t15.md) Atomic LLM admission and quota reservation wiring — **IN_PROGRESS** · codex-p21-t15 · `feat/p21-t15-atomic-admission` from `origin/dev` `4cc0db41`; `codex resume 01a1e4db-c4b6-7521-936b-42e5bcfce587` · depends on P21-T14/P2-T17 allowance policy; no cutover · `P1` · `C4`
 - [P21-T16](docs/tasks/p21-t16.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T15; integrated mocked phase checks; feeds P2-T09 · `P1` · `C4`
 
 ### Priority P1

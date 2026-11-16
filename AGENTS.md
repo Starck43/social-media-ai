@@ -79,7 +79,8 @@ carry only task-specific additions, not copies of these common rules.
 - One `python -m app.runtime` owner; Celery/Redis and Streamlit stay frozen.
   Registry-only publication above does not authorize code pushes, force-push,
   deployment, production mutation or publication of unrelated local commits.
-- Only Codex may invoke third-party agents; others use native children. Preserve
+- Any agent may invoke third-party agents, Perch first; native children are the
+  fallback. Preserve
   handoff evidence in the task card/PR; `.agents/tmp` and `/tmp` are scratch,
   never portable evidence. Acceptance authorizes the merge it covers; any other
   merge or deferral asks the owner first and preserves the resume branch/PR.

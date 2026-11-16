@@ -66,8 +66,16 @@ Three strings describe "the same" model; only the first is an input to Perch:
 | String | Where it belongs |
 | --- | --- |
 | `deepseek-v4.1-flash-1017` | **only this one** goes into `perch --model` |
-| `deepseek/deepseek-v4.1-flash-1017` | `contextSnapshot.modelId` in the JSON reply — evidence, never an input |
+| `deepseek/deepseek-v4.1-flash` + label `DeepSeek V4.1 Flash (1017)` | `contextSnapshot.modelId` / `modelLabel` in the JSON reply — evidence, never an input |
 | `river/deepseek-ai/DeepSeek-V4.1-Flash-1017` | OpenCode's own provider model — required there, invalid for Perch |
+
+`modelId` is the **upstream provider slug**, not an echo of the `--model`
+argument: it drops the catalog suffix and varies by provider (`kimi-3` reports
+`azure_foundry` / `fw-kimi-k3`, `glm-5.3` reports `openrouter` / `z-ai/glm-5.3`).
+So never assert that `modelId` equals the string you passed — it cannot. Confirm
+the pin from `modelLabel` (it carries the catalog name, e.g. `(1017)`) together
+with `provider`, and treat a `modelLabel` outside the requested build as the
+finding.
 
 Perch: a provider prefix (`deepseek/…`, `openrouter/…`, `river/…`) makes the call
 fail before any work — exit code 1, **empty stdout**, and `Unknown model: <arg>`
@@ -80,8 +88,9 @@ OpenCode the other way round: a bare id is rejected as `Invalid model reference`
 never strip the `river/` prefix from OpenCode's own model settings.
 
 `--model auto` is valid and picks Roost's own choice (Standard), so it is not
-evidence for the pin: confirm `contextSnapshot.modelId` is the DeepSeek 4.1 Flash
-1017 build and treat anything else as a finding, not a pass.
+evidence for the pin: confirm `contextSnapshot.modelLabel` is the DeepSeek 4.1
+Flash 1017 build (and `modelId` is its upstream slug, `deepseek/deepseek-v4.1-flash`)
+and treat anything else as a finding, not a pass.
 
 ## Roles
 
@@ -89,7 +98,7 @@ Declare this skill at session start. Resolve the task card and repository from
 the task ID; read AGENTS and only linked contracts needed. Use a task-ID branch
 and assigned paths. Route claim/status updates through the shared registry
 custodian. For testing, load test-runner. Record the actual docs read, source
-revision, exact `perch` command, `status`, `modelId` and checks in the card/PR
+revision, exact `perch` command, `status`, `modelLabel`/`modelId` and checks in the card/PR
 body; report READY only when required checks pass, otherwise task-related
 BLOCKED with the exact JSON error and next step. Preserve the JSON receipt, then
 delete child sessions and Perch threads you started.

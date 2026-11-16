@@ -78,7 +78,7 @@ rich==15.0.0
 shellingham==1.5.4
 six==1.17.0
 slowapi==0.1.10
-soupsieve==3.0.4
+soupsieve==4.0
 sqladmin==0.32.0
 sqlalchemy==2.1.4
 starlette==1.8.0

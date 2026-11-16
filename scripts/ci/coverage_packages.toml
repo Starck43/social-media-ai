@@ -77,5 +77,5 @@ tests = [
 ]
 
 [[package]]
-path = "app/services/ai"
+path = "app/services/ai/rate_limits.py"
 tests = ["tests/ai/test_p21_t14_rate_limits.py", "tests/ai/test_p21_t14_rate_limits_pg.py"]

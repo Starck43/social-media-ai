@@ -188,7 +188,7 @@ async def web(data, monkeypatch):
 
 def form_values(response):
     html = BeautifulSoup(response.text, "html.parser")
-    form = html.select_one('form[method="post"]')
+    form = html.select_one('[data-folder-permissions] form[method="post"]')
     return {item["name"]: item.get("value", "") for item in form.select("input[name]")}
 
 

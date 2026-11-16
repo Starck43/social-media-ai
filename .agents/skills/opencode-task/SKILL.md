@@ -10,12 +10,11 @@ source of truth for claiming, branch/worktree, statuses, evidence and merge rule
 Apply only the deltas below on top of it.
 
 - Delegate one bounded unit of work in the order defined by `task`
-  (`perch` → `free-pi` → `river`), using native children for the two OpenCode
-  routes. Use OpenCode V2 `subagent`, never V1 `task`, and never start the
-  configured tester as the parent agent.
+  (`perch` → `free-pi`), using native children for the OpenCode route. Use
+  OpenCode V2 `subagent`, never V1 `task`, and never start the configured tester
+  as the parent agent.
 - Tests: load `test-runner`. The configured `build` parent owns preflight and
-  cleanup, then invokes `tester` in subagent mode and keeps its configured River
-  model. Tester runs only the supplied command and reports output; it does not
-  edit source or add tests.
+  cleanup, then invokes `tester` in subagent mode. Tester runs only the supplied
+  command and reports output; it does not edit source or add tests.
 - Preserve evidence, then stop/delete owned child sessions after the dialogue.
   Cleanup failure is housekeeping, not a task blocker.

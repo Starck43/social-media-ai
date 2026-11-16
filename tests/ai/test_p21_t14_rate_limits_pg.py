@@ -54,14 +54,17 @@ def _alembic_config() -> Config:
     return config
 
 
-def _run_alembic(to_revision: str) -> None:
+def _run_alembic(to_revision: str, *, downgrade: bool = False) -> None:
     # alembic env.py overrides sqlalchemy.url from settings.POSTGRES_URL;
     # temporarily point it at a sync driver URL so engine_from_config works.
     saved_url = settings.POSTGRES_URL
     try:
         settings.POSTGRES_URL = _alembic_url()
         config = _alembic_config()
-        command.upgrade(config, to_revision)
+        if downgrade:
+            command.downgrade(config, to_revision)
+        else:
+            command.upgrade(config, to_revision)
     finally:
         settings.POSTGRES_URL = saved_url
 
@@ -155,7 +158,7 @@ async def schema():
     """Upgrade to p21t14_rate_limits, yield, then downgrade back."""
     _run_alembic(REVISION_TO)
     yield
-    _run_alembic(REVISION_FROM)
+    _run_alembic(REVISION_FROM, downgrade=True)
 
 
 @pytest.mark.asyncio
@@ -186,13 +189,13 @@ async def test_capacity_denial(schema):
             unit="request",
             family=None,
             capacity=1,
-            refill=0.0,
+            refill=0.5,
             available=1,
             updated=now,
         )
         await session.commit()
 
-    request = _make_request(dispatch_id="d1")
+    request = _make_request()
     context = _make_context(credential_ref="cred-x")
     settings.LLM_RATE_RPM = 60
     settings.LLM_RATE_CONCURRENCY = 0
@@ -236,7 +239,7 @@ async def test_concurrency_ceiling_two_sessions(schema):
         )
         await session.commit()
 
-    request = _make_request(dispatch_id="new-dispatch")
+    request = _make_request()
     context = _make_context(credential_ref="cred-y")
     settings.LLM_RATE_CONCURRENCY = 1
     try:
@@ -272,7 +275,7 @@ async def test_retry_after_floor_never_shortened(schema):
         )
         await session.commit()
 
-    request = _make_request(dispatch_id="d3")
+    request = _make_request()
     context = _make_context(credential_ref="cred-z")
     settings.LLM_RATE_RPM = 60
     try:
@@ -305,7 +308,7 @@ async def test_reclaim_expired_lease(schema):
         )
         await session.commit()
 
-    request = _make_request(dispatch_id="d4")
+    request = _make_request()
     context = _make_context(credential_ref="cred-w")
     settings.LLM_RATE_CONCURRENCY = 1
     try:

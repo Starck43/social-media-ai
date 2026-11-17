@@ -373,7 +373,7 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
     from cryptography.fernet import Fernet
 
     from app.core.config import settings
-    from app.models import FilePrivateInsight
+    from app.models import FilePrivateInsight, LLMCatalog
     from app.utils.crypto import decrypt_secret, encrypt_secret
     from scripts.ops.rotate_credentials_key import RotationError, rotate_in_transaction
 
@@ -382,6 +382,7 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
     store.cipher = PrivateCipher(old_key)
 
     provider_id = None
+    provider_catalog_id = None
     try:
         with actor(data) as args:
             object_id = await setup(store, args)
@@ -402,6 +403,9 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
                 session.add(provider)
                 await session.flush()
                 provider_id = provider.id
+                provider_catalog_id = await session.scalar(
+                    select(LLMProvider.catalog_id).where(LLMProvider.id == provider_id)
+                )
 
             with engine.begin() as connection:
                 dry_run = rotate_in_transaction(
@@ -489,3 +493,5 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
         if provider_id is not None:
             async with async_session_maker() as session, session.begin():
                 await session.execute(delete(LLMProvider).where(LLMProvider.id == provider_id))
+                if provider_catalog_id is not None:
+                    await session.execute(delete(LLMCatalog).where(LLMCatalog.id == provider_catalog_id))

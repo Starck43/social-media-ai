@@ -62,7 +62,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: contract ownership and gated remainder after the accepted increment (byte authority/original-open with deferred P8-T34, local-only execution with P18, mutations per D21) — **TODO** (gate: owner activation / P8-T34 resume / consumer contract request; not claimable before it; re-scoped 2026-11-11, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · unassigned · [re-scope record](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) · [increment audit](docs/audit/p12/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`
-- [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **IN_PROGRESS** · codex-p12-t15 · C-2 corrected: one editable path, two actions, revision-bound CSRF; 35 focused tests passed, awaits independent re-audit · [PR #500](https://github.com/Starck43/social-media-ai/pull/500) · `P2` · `C4`
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
@@ -73,6 +72,7 @@ Registered tooling follow-ups (not phase work; repo-level hygiene):
 - [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **TODO** · unassigned · reproduced: `VerificationFailure('preparation-content-drift')` in the byte-pin coherence suite · `P2` · `C2`
 - [P11-T43](docs/tasks/p11-t43.md) Shared test_schema is behind the dev model metadata — **TODO** · unassigned · reproduced: `llm_dispatch_leases`, `llm_rate_buckets` missing; conftest suites stop before test bodies, 374 knowledge setup errors; shared-schema repair needs owner authorization · `P2` · `C3`
 - [P11-T44](docs/tasks/p11-t44.md) Formatting baseline drift on untouched files — **TODO** · unassigned · inherited 31 Black/isort findings surfaced while closing P11-T38 · `P2` · `C2`
+- [P11-T45](docs/tasks/p11-t45.md) Credential rotation refuses the current migration head — **TODO** · unassigned · reproduced on `dev` `8c96f961` and on P12-T15's accepted revision: `RotationError: … use a supported single head` because `scripts/ops/rotate_credentials_key.py` stops at `0153`; the test also hard-codes `schema="test_schema"` · `P2` · `C2`
 
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):
 

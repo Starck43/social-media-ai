@@ -61,7 +61,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
-- [P11-T40](docs/tasks/p11-t40.md) Offline tool profile has DB packages installed — **READY** · freepi-p11-t40 · documented clean tool-only profile (venv + hashed `.ci/requirements.txt`) re-run at `f1ed1bba`: its own gate PASS, 159 passed / 3 failed, count matches the planted set; remaining red is the P11-T24 parser hole for helper-built guards, registered as P11-T46; assertion, runner and lock untouched · branch `feat/p11-t40-offline-tool-profile` · `P2` · `C2`
 - [P11-T41](docs/tasks/p11-t41.md) Operations admin writer lost the shared plan-create seam — **TODO** · unassigned · reproduced: `operations.py::on_model_change` subtest fails under the documented source-only route; fix the writer, not the assertion · `P2` · `C2`
 - [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **TODO** · unassigned · reproduced: `VerificationFailure('preparation-content-drift')` in the byte-pin coherence suite · `P2` · `C2`
 - [P11-T44](docs/tasks/p11-t44.md) Formatting baseline drift on untouched files — **TODO** · unassigned · inherited 31 Black/isort findings surfaced while closing P11-T38 · `P2` · `C2`

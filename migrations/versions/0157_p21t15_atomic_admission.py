@@ -1,6 +1,7 @@
 """P21-T15 token allowance pools and joint admission state.
 
-The revision is intentionally named until merge-time numbering. Settlement
+Revision 0157 is assigned at integration; its tested placeholder was
+`p21t15_atomic_admission`. Settlement
 state is mutable and event/reservation evidence is immutable; P21-T16 owns the
 state transitions and reconciliation worker.
 """
@@ -10,7 +11,7 @@ from alembic import op
 
 from app.core.config import settings
 
-revision = "p21t15_atomic_admission"
+revision = "0157"
 down_revision = "p21t14_rate_limits"
 branch_labels = None
 depends_on = None

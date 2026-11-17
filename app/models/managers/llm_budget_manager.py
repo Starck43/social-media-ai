@@ -28,13 +28,19 @@ class LLMBudgetManager(BaseManager):
         super().__init__(LLMBudgetReservation)
 
     async def reserve_receipt(
-        self, record: Mapping[str, Any], *, ceiling_usd: Decimal | None, bound_version: str | None = None
+        self,
+        record: Mapping[str, Any],
+        *,
+        ceiling_usd: Decimal | None,
+        bound_version: str | None = None,
+        session: Any = None,
     ) -> bool:
-        """True only after a fresh receipt/reservation/balance commit is acknowledged.
+        """True for a fresh receipt/reservation/balance in the selected transaction.
 
         False is exact historical replay, NEVER permission to resend. Exceptions,
         including ambiguous commit acknowledgement, cannot authorize dispatch.
-        Missing/frozen baseline fails closed. No external session is accepted.
+        Missing/frozen baseline fails closed. With a supplied session, the caller
+        must commit before acknowledging admission or starting HTTP.
         """
         from app.services.ai.budget_admission import (
             PLAN_FIELDS,
@@ -59,7 +65,10 @@ class LLMBudgetManager(BaseManager):
             raise TenantContextError("Reservation payer differs from trusted scope")
         plan = reservation_plan(value, ceiling_usd, bound_version)
         created = False
-        async with self._get_owned_session() as session:
+        # A caller-owned session composes this primitive into the P21-T15
+        # token/USD UOW. This manager never commits a supplied transaction.
+        session_scope = self._get_owned_session(session) if session is not None else self._get_owned_session()
+        async with session_scope as session:
             guards = (
                 await session.execute(
                     text(

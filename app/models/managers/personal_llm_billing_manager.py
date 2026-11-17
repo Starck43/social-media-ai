@@ -142,6 +142,9 @@ class PersonalLLMBillingManager(BaseManager):
         stage: str,
         execution: Mapping[str, Any] | None = None,
         request_shape: Mapping[str, Any] | None = None,
+        dispatch_id: str | None = None,
+        session: Any = None,
+        undefined_outside_cap: bool = False,
     ) -> Mapping[str, Any]:
         """Atomically store the legacy receipt and personal reservation before transport."""
         from ..billing.billing import PersonalBillingAccount, TaskBillingPayer
@@ -176,8 +179,15 @@ class PersonalLLMBillingManager(BaseManager):
         if initiated_by_id is not None and (type(initiated_by_id) is not int or initiated_by_id <= 0):
             raise PersonalBillingError("Invalid trusted task initiator identity")
         now = None
-        dispatch_id = uuid4().hex
-        async with self._get_owned_session() as session:
+        dispatch_id = dispatch_id or uuid4().hex
+        if (
+            type(dispatch_id) is not str
+            or len(dispatch_id) != 32
+            or any(c not in "0123456789abcdef" for c in dispatch_id)
+        ):
+            raise PersonalBillingError("Invalid dispatch identity")
+        session_scope = self._get_owned_session(session) if session is not None else self._get_owned_session()
+        async with session_scope as session:
             workspace = (
                 await session.execute(
                     select(Tenant).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)).with_for_update()
@@ -410,7 +420,7 @@ class PersonalLLMBillingManager(BaseManager):
                 cap_snapshot = None
             else:
                 cap_snapshot = cap
-                if ceiling_state in {"undefined", "unbounded"}:
+                if ceiling_state == "unbounded" or (ceiling_state == "undefined" and not undefined_outside_cap):
                     raise BudgetAdmissionDenied("Capped payer requires a reviewed provider/model request bound")
 
             day = now.date()
@@ -468,13 +478,14 @@ class PersonalLLMBillingManager(BaseManager):
                 int(previous_open[2]),
                 int(previous_open[3]),
             )
-            if cap_snapshot is not None and previous_count:
-                if previous_unbounded or previous_undefined:
+            cap_applies = cap_snapshot is not None and not (undefined_outside_cap and ceiling_state == "undefined")
+            if cap_applies and previous_count:
+                if previous_unbounded or (previous_undefined and not undefined_outside_cap):
                     raise BudgetAdmissionDenied("Prior-day unresolved unknown liability blocks capped admission")
                 if previous_reserved + budget_day.settled_usd + budget_day.reserved_usd + (ceiling or 0) > cap_snapshot:
                     raise BudgetAdmissionDenied("Prior-day unresolved liability consumes capped capacity")
-            if cap_snapshot is not None:
-                if budget_day.unbounded_count or budget_day.undefined_count:
+            if cap_applies:
+                if budget_day.unbounded_count or (budget_day.undefined_count and not undefined_outside_cap):
                     raise BudgetAdmissionDenied("Current-day unresolved unknown liability blocks capped admission")
                 if budget_day.settled_usd + budget_day.reserved_usd + previous_reserved + (ceiling or 0) > cap_snapshot:
                     raise BudgetAdmissionDenied("Personal daily limit would be exceeded")

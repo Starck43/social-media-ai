@@ -9,9 +9,8 @@ reference and never restate it. The accepted result is
  [P2-T17](SERVICE_PLANS.md#holder-and-policy-interface).
 
 This document describes what a provider attempt *must* look like. It does not
-authorize activation: the target dispatch stays disabled, no schema change is
-part of it and no migration, personal-billing cutover or production admission
-is enabled by it.
+authorize activation: the target dispatch stays disabled, and no migration,
+personal-billing cutover or production admission is enabled by it.
 
 ## 1. The one seam
 
@@ -141,6 +140,7 @@ message, its log line or its evidence.
 | `params_invalid` | the request parameters are not valid for the route |
 | `capability_unfit` | the row cannot serve the capability the route needs |
 | `allowance_unavailable` | the shared allowance policy is missing or denies |
+| `token_allowance_exhausted` | the holder's finite active token cycle cannot cover the reserved ceiling |
 | `capacity_unavailable` | the provider rate capacity could not be acquired |
 | `admission_unavailable` | the durable reservation/receipt could not be committed |
 | `fallback_funding_class_mismatch` | the next try would switch the credential funding class |
@@ -222,10 +222,68 @@ follows, and neither existing receipt family supplies all of them today:
 | `plan_policy_version` | the holder's plan policy version | P2-T17 |
 | `delegation_consent_version` | the delegated-use consent record | P21-T12/T13, still missing |
 | funding class and payer | the dispatch receipt and the payer binding | P21-T15 |
+| holder, workspace, actor, model/catalog, credential and consent versions | immutable token reservation | P21-T15 |
+| cycle window and reserved billable-token ceiling | immutable token reservation plus its owner/pool cycle | P21-T15 |
 
 The immutable personal and workspace receipt families keep their own tables.
 Overlapping snapshot columns are not a reason to merge them; a new relation is
 only justified by named consumers, constraints, migration and rollback.
+
+### P21-T15 reservation and P21-T16 settlement state
+
+P21-T15 implements `AtomicLLMAdmissionService`. `check_allowance` is an early,
+read-only gate; `reserve` repeats the holder-policy and pool checks inside one
+owned transaction. For each dispatch, the transaction inserts the receipt and
+the applicable USD reservation through a session-aware primitive, then adds the
+token reservation and its state/event before commit. A token denial or any
+failure rolls back all three. No transaction or row lock survives into HTTP.
+
+`llm_token_allowance_cycles` is keyed by `(plan_holder_user_id, allowance_pool,
+cycle_started_at)`. The only current pool is
+`provider_reported_billable_tokens`; it spans the holder's workspaces and
+sponsored invitees. A cycle begins at first consumption and ends 30 days later.
+After expiry, the first subsequent consumption starts a fresh 30-day cycle, with
+no rollover or proration. A plan change updates the active cycle's policy
+version/limit while retaining its consumed and reserved totals. `NULL` is an
+explicit unlimited limit; zero denies with `token_allowance_exhausted`; missing
+policy denies as `allowance_unavailable`.
+
+`llm_token_allowance_reservations` is immutable, unique by `dispatch_id`, and
+binds the holder, workspace, actor, model/catalog, funding/payer, credential
+and consent versions, policy version, pool/cycle and reserved token ceiling.
+It is a token-unit record; USD values remain in the selected existing ledger.
+The ceiling is the model's total context window, which bounds text and tool
+context plus output under the provider's context-window enforcement. Media is
+denied until its non-token billing dimensions have a reviewed envelope. The USD
+ceiling separately prices the total token ceiling at the maximum immutable input,
+output and cache tariff rate; a known tariff with incomplete price inputs is
+unbounded and is denied for a capped USD payer. FREE and UNDEFINED keep their
+separate zero-basis states; zero USD is never inferred from a missing price.
+Strict personal admission explicitly selects the owner's UNDEFINED-outside-cap
+policy via `undefined_outside_cap=True`: the immutable undefined classification
+and counter remain, while this attempt and prior undefined counters do not
+consume or block the finite USD cap. An unbounded known tariff still denies
+capped admission. The legacy personal entry point keeps its existing default.
+The trusted payer references are `tenant:<tenant_id>` for the workspace USD
+ledger and `personal:<payer_user_id>` for personal billing; the latter is
+rechecked against the immutable personal dispatch binding inside the same UOW.
+
+`llm_dispatch_reservation_states` is mutable and unique by dispatch, with a
+bounded `lease_until` for P21-T16 orphan discovery. `llm_dispatch_reservation_events`
+is append-only, unique by `(dispatch_id, event_key)`, and records separate token
+and USD actuals plus an optional evidence fingerprint. P21-T16 owns transitions
+among `reserved`, `dispatched`, `not_dispatched`, `settled` and `unresolved`.
+For platform funding, this state supplies the missing tenant USD settlement
+state. For personal funding, `PersonalLLMReservationState` and its ledger remain
+the USD authority; the new state is used for token accounting only. P21-T16 must
+not sum or replay the duplicate `actual_usd` event field as a second ledger.
+
+Admission lock order is user rows in ascending ID, workspace, the one selected
+USD payer/day state (and personal account when applicable), then the holder's
+token cycle. P21-T14 leases/buckets are acquired and committed before this UOW,
+so their lock order (lease rows, then rate buckets) never overlaps the
+reservation transaction. Lease expiry frees capacity only and never releases
+token or USD liability.
 
 ## 9. Activation, compatibility and rollback
 

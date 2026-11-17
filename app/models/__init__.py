@@ -76,10 +76,14 @@ from .llm import (
     LLMCatalog,
     LLMDispatchLease,
     LLMDispatchReceipt,
+    LLMDispatchReservationEvent,
+    LLMDispatchReservationState,
     LLMModel,
     LLMOutcomeEvent,
     LLMProvider,
     LLMRateBucket,
+    LLMTokenAllowanceCycle,
+    LLMTokenAllowanceReservation,
     PlanModelGrant,
 )
 from .notifications import DigestRun, Notification, NotificationDelivery, NotificationPreference, NotificationReceipt
@@ -200,8 +204,12 @@ __all__ = [
     "LLMBudgetReservation",
     "LLMDispatchLease",
     "LLMDispatchReceipt",
+    "LLMDispatchReservationState",
+    "LLMDispatchReservationEvent",
     "LLMOutcomeEvent",
     "LLMRateBucket",
+    "LLMTokenAllowanceCycle",
+    "LLMTokenAllowanceReservation",
     # Task runner / jobs
     "AgentTask",
     "Job",

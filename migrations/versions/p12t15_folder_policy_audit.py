@@ -6,7 +6,7 @@ from alembic import op
 from app.core.config import settings
 
 revision = "p12t15_policy_audit"
-down_revision = "p21t14_rate_limits"
+down_revision = "0157"
 branch_labels = None
 depends_on = None
 

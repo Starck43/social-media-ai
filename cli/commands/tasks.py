@@ -290,7 +290,7 @@ def task_vk_search_categories_cmd():
 
     from .task_output import task_print as rprint
 
-    catalog = {"categories": category_catalog(), "gate": "docs/tasks/q-5.md"}
+    catalog = {"categories": category_catalog(), "gate": "docs/audit/q/q-5.md"}
     rprint(json.dumps(catalog, ensure_ascii=False, indent=2))
     return catalog
 

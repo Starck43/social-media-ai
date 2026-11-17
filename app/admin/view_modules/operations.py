@@ -150,7 +150,7 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         actor = self.get_admin_user(request)
         if actor is None or type(getattr(actor, "id", None)) is not int:
             raise HTTPException(status_code=403, detail="workspace_actor_required")
-        return JSONResponse({"categories": category_catalog(), "gate": "docs/tasks/q-5.md"})
+        return JSONResponse({"categories": category_catalog(), "gate": "docs/audit/q/q-5.md"})
 
     name = "Задача"
     name_plural = "Задачи"

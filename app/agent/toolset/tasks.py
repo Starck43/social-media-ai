@@ -1128,7 +1128,7 @@ async def task_vk_search_categories() -> dict[str, Any]:
     """
     from app.services.collection.search_categories import category_catalog
 
-    return {"categories": category_catalog(), "gate": "docs/tasks/q-5.md"}
+    return {"categories": category_catalog(), "gate": "docs/audit/q/q-5.md"}
 
 
 @tool(

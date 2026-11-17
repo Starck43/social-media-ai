@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from app.services.collection.search_categories import CATEGORY_PEOPLE, STATUS_MOCKED
+from app.services.collection.search_categories import CATEGORY_PEOPLE, STATUS_ENABLED
 from tests.shared.vk_search_contracts import no_external_search_io
 
 __source_only__ = True
@@ -85,9 +85,9 @@ async def test_agent_tool_returns_the_shared_catalog_with_honest_status():
     payload = await spec.handler()
     categories = _catalog_payload(payload)
     people = next(entry for entry in categories if entry["id"] == CATEGORY_PEOPLE)
-    assert people["status"] == STATUS_MOCKED
+    assert people["status"] == STATUS_ENABLED
     assert people["status_label"]
     assert people["official_method"] == "users.search"
-    # Mocked is implemented, not available: the tool must not advertise it.
-    assert people["executable"] is False
-    assert people["reason"]
+    # Enabled on the recorded Q-5 evidence: the tool advertises it as available.
+    assert people["executable"] is True
+    assert people["reason"] == ""

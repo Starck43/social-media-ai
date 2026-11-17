@@ -52,7 +52,7 @@ from app.services.communications.triage import (
     TRIAGE_UNCERTAIN,
     detect_prompt_injection,
     evaluate_triage_corpus,
-     get_user_triage_override,
+    get_user_triage_override,
     list_triaged_threads,
     materialize_triage_reply_draft,
     record_user_triage_override,
@@ -432,14 +432,16 @@ async def test_user_correction_stored_as_user_decision_not_model_fact():
 def test_thread_triage_decisions_migration_and_schema_guard_contract(monkeypatch):
     """Verify B1/B6 migration single-head chain invariant, `contact_pii_marker` trigger, and per-user uniqueness."""
     import runpy
+    import sys
     from pathlib import Path
+
     from alembic.config import Config
     from alembic.script import ScriptDirectory
     from sqlalchemy import CheckConstraint, ForeignKeyConstraint, UniqueConstraint
+
     from app.core.config import settings
     from app.models.types.encrypted import EncryptedText
     from cli.commands.pii import REGISTRY
-    import sys
 
     root = Path(__file__).resolve().parents[2]
     if sys.version_info >= (3, 12):
@@ -447,10 +449,13 @@ def test_thread_triage_decisions_migration_and_schema_guard_contract(monkeypatch
     else:
         sg_src = (root / "scripts/schema_guards.py").read_text(encoding="utf-8")
         sg_src = sg_src.replace(
-            'f" OF {\', \'.join(f\'\\"{column}\\"\' for column in self.columns)}"',
-            'f" OF {\', \'.join(chr(34) + column + chr(34) for column in self.columns)}"',
+            "f\" OF {', '.join(f'\\\"{column}\\\"' for column in self.columns)}\"",
+            "f\" OF {', '.join(chr(34) + column + chr(34) for column in self.columns)}\"",
         )
-        sg_ns: dict[str, Any] = {"__name__": "scripts.schema_guards", "__file__": str(root / "scripts/schema_guards.py")}
+        sg_ns: dict[str, Any] = {
+            "__name__": "scripts.schema_guards",
+            "__file__": str(root / "scripts/schema_guards.py"),
+        }
         sys.modules["scripts.schema_guards"] = SimpleNamespace(**sg_ns)  # type: ignore[assignment]
         exec(compile(sg_src, str(root / "scripts/schema_guards.py"), "exec"), sg_ns)
         GUARD_TRIGGERS = sg_ns["GUARD_TRIGGERS"]
@@ -688,6 +693,7 @@ async def test_today_awaiting_reply_and_web_override_surfaces():
                         reason_encrypted="Моё решение",
                     )
                 ]
+
             return _coro()
 
     class _FakeThreadQS:
@@ -697,6 +703,7 @@ async def test_today_awaiting_reply_and_web_override_surfaces():
         def limit(self, _n: int):
             async def _coro():
                 return [SimpleNamespace(id=21, tenant_id=1, is_archived=False, unread_count=1)]
+
             return _coro()
 
     with (
@@ -795,6 +802,7 @@ async def test_today_awaiting_reply_and_web_override_surfaces():
 async def test_communications_page_renders_non_empty_csrf_in_both_forms():
     """Verify B3: `communications_page` renders the real `{{ csrf }}` token in both override and reply-draft forms."""
     from starlette.requests import Request
+
     from app.web.communications import communications_page
 
     scope = {
@@ -816,12 +824,14 @@ async def test_communications_page_renders_non_empty_csrf_in_both_forms():
                     generate_token=lambda: "real-rendered-csrf-token-98765",
                     verify_token=lambda tok: tok == "real-rendered-csrf-token-98765",
                 )
-            )
+            ),
         ),
     }
     request = Request(scope)
     request.state.tenant_id = 1
-    request.state.web_user = SimpleNamespace(id=10, email="user@example.com", full_name="Тест", is_active=True, has_admin_access=lambda: False)
+    request.state.web_user = SimpleNamespace(
+        id=10, email="user@example.com", full_name="Тест", is_active=True, has_admin_access=lambda: False
+    )
     request.state.web_perms = SimpleNamespace(
         can=lambda r, a="view": True,
         can_open_chat=True,
@@ -921,12 +931,12 @@ async def test_communications_page_renders_non_empty_csrf_in_both_forms():
     assert "data-triage-reply-draft-form" in html
 
     override_form_match = re.search(
-        r'<form[^>]*data-triage-override-form[^>]*>(.*?)</form>',
+        r"<form[^>]*data-triage-override-form[^>]*>(.*?)</form>",
         html,
         re.DOTALL,
     )
     reply_form_match = re.search(
-        r'<form[^>]*data-triage-reply-draft-form[^>]*>(.*?)</form>',
+        r"<form[^>]*data-triage-reply-draft-form[^>]*>(.*?)</form>",
         html,
         re.DOTALL,
     )
@@ -1104,7 +1114,9 @@ async def test_chat_workspace_panel_and_api_triage_endpoints():
 @pytest.mark.asyncio
 async def test_triage_thread_async_session_and_attention_item_projection():
     """Verify `triage_thread` loads thread/connection/contact/messages/override with tenant & revocation checks."""
-    th_active = _make_thread(40, tenant_id=1, connection_id=8, contact_id=20, subject="Прошу согласовать КП?", unread_count=1)
+    th_active = _make_thread(
+        40, tenant_id=1, connection_id=8, contact_id=20, subject="Прошу согласовать КП?", unread_count=1
+    )
     active_conn = SimpleNamespace(id=8, tenant_id=1, is_active=True, status="active", revoked_at=None)
     contact = SimpleNamespace(id=20, tenant_id=1, display_name_encrypted="ООО Альфа")
     msg = _make_message(801, tenant_id=1, thread_id=40)
@@ -1123,7 +1135,9 @@ async def test_triage_thread_async_session_and_attention_item_projection():
     assert result_dict["connection_status"] == "active"
 
     # Attention item projection
-    att = triage_thread_record(th_active, tenant_id=1, user_id=10, messages=[msg], contact_display_name="ООО Альфа").to_attention_item()
+    att = triage_thread_record(
+        th_active, tenant_id=1, user_id=10, messages=[msg], contact_display_name="ООО Альфа"
+    ).to_attention_item()
     assert att["provider"] == "communications.inbox_triage"
     assert att["triage_category"] == TRIAGE_NEEDS_REPLY
     assert att["authoritative_ref"] == "communication_thread:40"

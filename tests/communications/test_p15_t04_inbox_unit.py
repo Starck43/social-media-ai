@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import base64
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi import HTTPException
 
 from app.api.v1.conventions import validate_business_routes
 from app.api.v1.endpoints import communication as communication_api
 from app.core.access_catalog import workspace_grants
+from app.core.config import settings
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.models.communications.message import (
@@ -31,9 +34,6 @@ from app.services.communications.inbox import (
     list_inbox_threads,
     mark_thread_read,
 )
-from cryptography.fernet import Fernet
-import base64
-from app.core.config import settings
 
 __source_only__ = True
 
@@ -43,7 +43,6 @@ def _pii_keys(monkeypatch):
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode(), raising=False)
     monkeypatch.setattr(settings, "PII_INDEX_KEY", base64.urlsafe_b64encode(b"u" * 32).decode(), raising=False)
     monkeypatch.setattr(settings, "CREDENTIALS_KEY", Fernet.generate_key().decode(), raising=False)
-
 
 
 class _FakeScalarResult:
@@ -721,4 +720,3 @@ async def test_n3_and_n4_mark_read_all_hidden_and_web_403_propagation(monkeypatc
             await web_merge.contacts_merge_page(SimpleNamespace(state=SimpleNamespace()))
         assert exc_merge.value.status_code == 403
         assert isinstance(ActionType.VIEW, ActionType)
-

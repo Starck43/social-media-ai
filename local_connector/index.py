@@ -161,7 +161,8 @@ class IndexStore:
             raise PermissionError("connector cache directory must not contain a symbolic link")
 
     def _create_schema(self) -> None:
-        self.connection.executescript("""
+        self.connection.executescript(
+            """
             CREATE TABLE IF NOT EXISTS files (
                 path_hash TEXT PRIMARY KEY,
                 root_hash TEXT NOT NULL,
@@ -211,7 +212,8 @@ class IndexStore:
                 device INTEGER NOT NULL,
                 inode INTEGER NOT NULL
             );
-            """)
+            """
+        )
         self._upgrade_file_columns()
         self.connection.commit()
 

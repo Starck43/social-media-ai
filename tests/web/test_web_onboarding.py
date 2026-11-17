@@ -538,5 +538,3 @@ def _dashboard(kpis, *, show_welcome: bool, scenarios_count: int) -> str:
             ("sources", "add_source", "add_scenario", "tasks", "add_task", "digests", "analytics"), True
         ),
     )
-
-

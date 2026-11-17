@@ -283,9 +283,7 @@ def test_information_register_period_filter_and_literal_edge_cases():
         select_fields=("Period", "Номенклатура_Key", "Цена"),
         period=date(2026, 4, 15),
         item_key="11111111-2222-3333-4444-555555555555",
-        filters=(
-            OneCFilterPredicate("Period", "ge", "2026-04-01T00:00:00Z"),
-        ),
+        filters=(OneCFilterPredicate("Period", "ge", "2026-04-01T00:00:00Z"),),
         top=10,
     )
     validated = build_odata_query_target(plan, catalog, allowed_entity_sets=ALLOWED_ALL)
@@ -329,4 +327,3 @@ def test_information_register_period_filter_and_literal_edge_cases():
             json.dumps({"value": [{"Ref_Key": "1", "DeletionMark": "not-a-bool"}]}).encode("utf-8"),
             cat_val,
         )
-

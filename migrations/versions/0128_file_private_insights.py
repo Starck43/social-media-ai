@@ -140,7 +140,8 @@ def upgrade():
     op.create_index("ix_file_private_insight_expiry", "file_private_insights", ["tenant_id", "expires_at"], schema=s)
     # Trigger changes are in the SAME transaction as the underlying revocation.
     # Parent row locks taken by existing authority serialize active admissions.
-    op.execute(f"""
+    op.execute(
+        f"""
     CREATE FUNCTION "{s}".invalidate_file_insights(t integer, o integer, c integer)
     RETURNS void LANGUAGE plpgsql AS $$
     DECLARE r record;
@@ -192,7 +193,8 @@ def upgrade():
       DELETE FROM "{s}".file_insight_attempts WHERE object_id=OLD.id;
       RETURN NULL;
     END; $$;
-    """)
+    """
+    )
     hooks = {
         "workspace_connections": "AFTER UPDATE OF tenant_id,owner_user_id,config,account_key,is_active,state,provider_id,platform,auth_method,schema_version",
         "workspace_connection_secrets": "AFTER INSERT OR UPDATE OR DELETE",

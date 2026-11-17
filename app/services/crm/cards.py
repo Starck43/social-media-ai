@@ -326,9 +326,7 @@ class CrmContactCardService:
             .scalars()
             .all()
         )
-        portal_by_conn = {
-            c.id: str((c.config or {}).get("portal_domain") or c.account_key) for c in conn_rows
-        }
+        portal_by_conn = {c.id: str((c.config or {}).get("portal_domain") or c.account_key) for c in conn_rows}
         portal_domain = portal_by_conn.get(target.connection_id)
 
         contact_rows = list(
@@ -337,11 +335,7 @@ class CrmContactCardService:
         contacts_by_id = {c.id: c for c in contact_rows}
 
         identity_rows = list(
-            (
-                await session.execute(
-                    select(ContactIdentity).where(ContactIdentity.tenant_id == tenant_id)
-                )
-            )
+            (await session.execute(select(ContactIdentity).where(ContactIdentity.tenant_id == tenant_id)))
             .scalars()
             .all()
         )
@@ -451,9 +445,7 @@ class CrmContactCardService:
             "anniversary_read_only": True,
             "read_only_dates": True,
             "personal_fields": {
-                k: v
-                for k, v in p_fields.items()
-                if k not in {"email_blind_indexes", "phone_blind_indexes"}
+                k: v for k, v in p_fields.items() if k not in {"email_blind_indexes", "phone_blind_indexes"}
             },
             "custom_fields": target.custom_fields,
             "portal_url": build_portal_entity_url(portal_domain, target.entity_kind, target.external_id),

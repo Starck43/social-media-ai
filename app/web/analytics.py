@@ -978,8 +978,8 @@ async def analytics_retry(
     from app.core.tenant_context import tenant_scope
     from app.jobs.source_activity import SourceJobBusy
     from app.models import AIAnalytics, CollectedItem
-    from app.models.managers.job_manager import JobManager
     from app.models.managers.agent_scenario_manager import AgentScenarioManager
+    from app.models.managers.job_manager import JobManager
     from app.services.ai.analysis_retry import parse_staged_window
     from app.web.sources import _source_has_running_job
 
@@ -1007,9 +1007,7 @@ async def analytics_retry(
                 {"start_date": display["content_window_start"], "end_date": display["content_window_end"]}
             )
         except ValueError:
-            add_flash(
-                request, "info", "Период анализа не сохранён. Проверьте период задачи анализа."
-            )
+            add_flash(request, "info", "Период анализа не сохранён. Проверьте период задачи анализа.")
             return RedirectResponse(back, status_code=302)
         running = await _source_has_running_job(row.source_id)
         if running["collect"] or running["analyze"]:
@@ -1200,9 +1198,7 @@ async def _analysis_retry_context(
     with tenant_scope(tenant_id):
         if inspect_source_activity:
             if window is not None and context["can_retry"]:
-                context["available"] = bool(
-                    await CollectedItem.objects.count_for_source(row.source_id, **window)
-                )
+                context["available"] = bool(await CollectedItem.objects.count_for_source(row.source_id, **window))
             active_jobs = await JobManager().source_progress_jobs(row.source_id, limit=20)
             manager = JobManager()
             for job in active_jobs:
@@ -1295,9 +1291,7 @@ async def _analysis_retry_context(
                             and entry.period_type == row.period_type
                             and entry_window == window
                         ),
-                        "url": _analytics_url(
-                            request, f"/app/analytics/{entry.id}", days_key="all", return_to=origin
-                        ),
+                        "url": _analytics_url(request, f"/app/analytics/{entry.id}", days_key="all", return_to=origin),
                     }
                 )
     return context
@@ -1307,6 +1301,7 @@ async def _analysis_retry_context(
 async def analytics_retry_status(request: Request, analysis_id: int, retry_job_id: int | None = None):
     """Poll one exact retry Job or the current active source run, without side effects."""
     from fastapi.responses import HTMLResponse
+
     from app.core.tenant_context import tenant_scope
     from app.models import AIAnalytics
 
@@ -1330,10 +1325,15 @@ async def analytics_retry_status(request: Request, analysis_id: int, retry_job_i
     except LookupError:
         return HTMLResponse("", status_code=404)
     response = render(request, "web/analytics_retry_status.html", analysis=row, retry=retry)
-    active = bool(retry["poll_url"]) if retry_job_id is None else retry["status"] in (
-        "pending",
-        "running",
-        "unconfirmed",
+    active = (
+        bool(retry["poll_url"])
+        if retry_job_id is None
+        else retry["status"]
+        in (
+            "pending",
+            "running",
+            "unconfirmed",
+        )
     )
     if not active:
         saved = retry.get("saved_analyses") or []
@@ -1371,7 +1371,7 @@ async def analytics_resume_pending_retry(
     if type(tenant_id) is not int or tenant_id <= 0:
         return render(request, "web/not_found.html", status_code=404)
     from app.core.permissions import get_current_user
-    from app.core.tenant_context import is_bypass, current_tenant_id, tenant_scope
+    from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
     from app.models import AIAnalytics
     from app.models.managers.job_manager import JobManager
     from app.services.ai.analysis_retry import parse_staged_window

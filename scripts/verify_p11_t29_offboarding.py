@@ -129,12 +129,14 @@ def inventory(schema: str, env: dict[str, str]) -> dict:
 
 def assert_no_other_sessions(conn) -> None:
     with conn.cursor() as cur:
-        cur.execute("""SELECT backend_type, coalesce(state, 'unknown'), count(*)
+        cur.execute(
+            """SELECT backend_type, coalesce(state, 'unknown'), count(*)
                  FROM pg_stat_activity
                 WHERE datname = current_database() AND pid <> pg_backend_pid()
                   AND backend_type = 'client backend'
                 GROUP BY backend_type, coalesce(state, 'unknown')
-                ORDER BY backend_type, coalesce(state, 'unknown')""")
+                ORDER BY backend_type, coalesce(state, 'unknown')"""
+        )
         sessions = cur.fetchall()
     if sessions:
         raise RuntimeError(f"STOP: other DB client sessions are active (backend type/state/count): {sessions}")

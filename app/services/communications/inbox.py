@@ -175,15 +175,7 @@ async def list_inbox_threads(
     if not threads:
         return {"items": [], "next_before_id": None}
 
-    contacts = list(
-        (
-            await session.execute(
-                select(Contact).where(Contact.tenant_id == tenant_id)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    contacts = list((await session.execute(select(Contact).where(Contact.tenant_id == tenant_id))).scalars().all())
     contact_names = {c.id: c.display_name_encrypted for c in contacts}
 
     # Optional message-level metadata filters (direction, date range, or sender/recipient metadata search)
@@ -191,13 +183,7 @@ async def list_inbox_threads(
     messages_by_thread: dict[int, list[UnifiedMessage]] = {}
     if need_msg_scan:
         msg_rows = list(
-            (
-                await session.execute(
-                    select(UnifiedMessage).where(UnifiedMessage.tenant_id == tenant_id)
-                )
-            )
-            .scalars()
-            .all()
+            (await session.execute(select(UnifiedMessage).where(UnifiedMessage.tenant_id == tenant_id))).scalars().all()
         )
         for m in msg_rows:
             if not m.is_hidden and m.thread_id is not None:
@@ -394,9 +380,7 @@ async def list_contact_messages(
     filtered = [
         m
         for m in rows
-        if not m.is_hidden
-        and (channel is None or m.channel == channel)
-        and (before_id is None or m.id < before_id)
+        if not m.is_hidden and (channel is None or m.channel == channel) and (before_id is None or m.id < before_id)
     ]
     filtered.sort(key=lambda m: (m.sent_at, m.id))
     sliced = filtered[:limit]

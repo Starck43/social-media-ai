@@ -94,10 +94,7 @@ def test_p14_t03_build_portal_entity_url() -> None:
         build_portal_entity_url("acme.bitrix24.ru", "contact", "42")
         == "https://acme.bitrix24.ru/crm/contact/details/42/"
     )
-    assert (
-        build_portal_entity_url("acme.bitrix24.ru", "deal", "99")
-        == "https://acme.bitrix24.ru/crm/deal/details/99/"
-    )
+    assert build_portal_entity_url("acme.bitrix24.ru", "deal", "99") == "https://acme.bitrix24.ru/crm/deal/details/99/"
     assert build_portal_entity_url("", "contact", "42") is None
     assert build_portal_entity_url("acme.bitrix24.ru", "contact", "") is None
 

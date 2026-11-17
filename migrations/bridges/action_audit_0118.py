@@ -121,15 +121,21 @@ def upgrade():
     workspace_roles = f"{schema}.workspace_roles"
     role_permissions = f"{schema}.workspace_role_permission"
     action_type = f"{schema}.action_type"
-    op.execute(sa.text(f"""
+    op.execute(
+        sa.text(
+            f"""
             INSERT INTO {model_types}
                 (model_name, table_name, description, is_managed, resource_key, created_at, updated_at)
             VALUES
                 ('actionauditevent', 'action_audit_events',
                  'Tenant-scoped action audit evidence', true, 'audit.action_audit', now(), now())
             ON CONFLICT (resource_key) DO NOTHING
-        """))
-    op.execute(sa.text(f"""
+        """
+        )
+    )
+    op.execute(
+        sa.text(
+            f"""
             INSERT INTO {permissions}
                 (name, action_type, model_type_id, created_at, updated_at)
             SELECT seed.name, CAST(seed.action AS {action_type}), mt.id, now(), now()
@@ -140,8 +146,12 @@ def upgrade():
               ) AS seed(name, action)
              WHERE mt.resource_key = 'audit.action_audit'
             ON CONFLICT (model_type_id, action_type) DO NOTHING
-        """))
-    op.execute(sa.text(f"""
+        """
+        )
+    )
+    op.execute(
+        sa.text(
+            f"""
             INSERT INTO {role_permissions} (role_id, permission_id)
             SELECT wr.id, p.id
               FROM {workspace_roles} AS wr
@@ -150,7 +160,9 @@ def upgrade():
              WHERE wr.codename IN ('owner', 'admin')
                AND p.action_type::text IN ('VIEW', 'EXPORT')
             ON CONFLICT DO NOTHING
-        """))
+        """
+        )
+    )
 
 
 def downgrade():

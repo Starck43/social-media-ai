@@ -37,8 +37,8 @@ from sqlalchemy import select
 
 from app.core.permissions import get_current_user, has_permission
 from app.core.tenant_context import current_tenant_id
-from app.models.communications.message import MessageThread, ThreadTriageDecision, UnifiedMessage
 from app.models import WorkspaceConnection
+from app.models.communications.message import MessageThread, ThreadTriageDecision, UnifiedMessage
 from app.services.communications.followups import create_followup_item
 from app.services.communications.inbox import (
     CHANNEL_BADGES,
@@ -85,9 +85,7 @@ PROPOSAL_KINDS: tuple[str, ...] = (
     PROPOSAL_DOCUMENT_DRAFT,
 )
 
-REVOKED_CONNECTION_STATUSES = frozenset(
-    {"revoked", "disabled", "disconnected", "error", "deleted", "unauthorized"}
-)
+REVOKED_CONNECTION_STATUSES = frozenset({"revoked", "disabled", "disconnected", "error", "deleted", "unauthorized"})
 
 PROMPT_INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"ignore\s+(?:all\s+|previous\s+|prior\s+|above\s+)?instructions", re.IGNORECASE),
@@ -323,7 +321,11 @@ class ThreadTriageResult:
             "channel": self.channel,
             "title": self.subject,
             "summary": f"{self.category_label}: {self.reason} · Канал: {self.channel_label} · Непрочитанных: {self.unread_count}",
-            "status_label": self.category_label if self.unread_count <= 0 else f"{self.category_label} ({self.unread_count} непрочит.)",
+            "status_label": (
+                self.category_label
+                if self.unread_count <= 0
+                else f"{self.category_label} ({self.unread_count} непрочит.)"
+            ),
             "triage_category": self.category,
             "triage_label": self.category_label,
             "triage_reason": self.reason,
@@ -340,9 +342,7 @@ class ThreadTriageResult:
             "created_at": self.last_message_at or "",
             "stale_or_unavailable": self.stale_or_unavailable,
             "marker_label": (
-                "Источник недоступен (только метаданные)"
-                if self.stale_or_unavailable
-                else (self.model_notice or "")
+                "Источник недоступен (только метаданные)" if self.stale_or_unavailable else (self.model_notice or "")
             ),
             "allowed_actions": [
                 {"kind": "open_thread", "label": "Открыть диалог", "href": self.authoritative_url},
@@ -354,16 +354,8 @@ class ThreadTriageResult:
 
 def _extract_assignee(thread: Any) -> tuple[dict[str, Any] | None, bool]:
     """Expose assignee only when the inbox thread record actually carries one."""
-    assignee_id = (
-        thread.get("assignee_id")
-        if isinstance(thread, dict)
-        else getattr(thread, "assignee_id", None)
-    )
-    assignee_name = (
-        thread.get("assignee_name")
-        if isinstance(thread, dict)
-        else getattr(thread, "assignee_name", None)
-    )
+    assignee_id = thread.get("assignee_id") if isinstance(thread, dict) else getattr(thread, "assignee_id", None)
+    assignee_name = thread.get("assignee_name") if isinstance(thread, dict) else getattr(thread, "assignee_name", None)
     if _positive_int(assignee_id) or (isinstance(assignee_name, str) and assignee_name.strip()):
         return (
             {
@@ -667,7 +659,11 @@ def _normalize_override_record(
     )
     if _positive_int(fallback_user_id) and _positive_int(decided_by) and int(decided_by) != int(fallback_user_id):
         return None
-    eff_user_id = int(decided_by) if _positive_int(decided_by) else (int(fallback_user_id) if _positive_int(fallback_user_id) else 0)
+    eff_user_id = (
+        int(decided_by)
+        if _positive_int(decided_by)
+        else (int(fallback_user_id) if _positive_int(fallback_user_id) else 0)
+    )
     raw_updated = override.get("updated_at") if isinstance(override, dict) else getattr(override, "updated_at", None)
     if isinstance(raw_updated, datetime):
         dt = raw_updated if raw_updated.tzinfo else raw_updated.replace(tzinfo=timezone.utc)
@@ -773,9 +769,7 @@ def _is_connection_revoked(connection: Any, thread: Any = None) -> bool:
     """Return True if the workspace connection or thread indicates revoked/disabled access."""
     if thread is not None:
         th_conn_status = (
-            thread.get("connection_status")
-            if isinstance(thread, dict)
-            else getattr(thread, "connection_status", None)
+            thread.get("connection_status") if isinstance(thread, dict) else getattr(thread, "connection_status", None)
         )
         if isinstance(th_conn_status, str) and th_conn_status.strip().lower() in REVOKED_CONNECTION_STATUSES:
             return True
@@ -788,22 +782,19 @@ def _is_connection_revoked(connection: Any, thread: Any = None) -> bool:
     if connection is None:
         return False
     is_active = (
-        connection.get("is_active", True)
-        if isinstance(connection, dict)
-        else getattr(connection, "is_active", True)
+        connection.get("is_active", True) if isinstance(connection, dict) else getattr(connection, "is_active", True)
     )
     if is_active is False:
         return True
-    status = str(
-        (connection.get("status") if isinstance(connection, dict) else getattr(connection, "status", ""))
-        or ""
-    ).strip().lower()
+    status = (
+        str((connection.get("status") if isinstance(connection, dict) else getattr(connection, "status", "")) or "")
+        .strip()
+        .lower()
+    )
     if status in REVOKED_CONNECTION_STATUSES:
         return True
     revoked_at = (
-        connection.get("revoked_at")
-        if isinstance(connection, dict)
-        else getattr(connection, "revoked_at", None)
+        connection.get("revoked_at") if isinstance(connection, dict) else getattr(connection, "revoked_at", None)
     )
     return revoked_at is not None
 
@@ -826,18 +817,14 @@ def triage_thread_record(
     override: dict[str, Any] | Any | None = None,
 ) -> ThreadTriageResult:
     """Pure/in-memory triage evaluation of a validated thread record with D3/D11/budget guards."""
-    th_tenant = (
-        thread.get("tenant_id") if isinstance(thread, dict) else getattr(thread, "tenant_id", None)
-    )
+    th_tenant = thread.get("tenant_id") if isinstance(thread, dict) else getattr(thread, "tenant_id", None)
     th_id = thread.get("id") if isinstance(thread, dict) else getattr(thread, "id", None)
     if not _positive_int(tenant_id) or th_tenant != tenant_id or not _positive_int(th_id):
         raise InboxItemUnavailable("Thread unavailable")
 
     if connection is not None:
         conn_tenant = (
-            connection.get("tenant_id")
-            if isinstance(connection, dict)
-            else getattr(connection, "tenant_id", tenant_id)
+            connection.get("tenant_id") if isinstance(connection, dict) else getattr(connection, "tenant_id", tenant_id)
         )
         if conn_tenant != tenant_id:
             raise InboxItemUnavailable("Thread connection unavailable")
@@ -846,8 +833,7 @@ def triage_thread_record(
         raise InboxItemUnavailable("Thread connection revoked")
 
     channel = str(
-        (thread.get("channel") if isinstance(thread, dict) else getattr(thread, "channel", "email"))
-        or "email"
+        (thread.get("channel") if isinstance(thread, dict) else getattr(thread, "channel", "email")) or "email"
     )
     badge = CHANNEL_BADGES.get(channel, {"code": channel, "label": channel.upper(), "badge_class": "badge-default"})
     channel_label = badge["label"]
@@ -859,9 +845,7 @@ def triage_thread_record(
     )
     safe_subject = sanitize_untrusted_text(str(raw_subject or ""), max_length=200) or f"Диалог #{th_id}"
 
-    contact_id = (
-        thread.get("contact_id") if isinstance(thread, dict) else getattr(thread, "contact_id", None)
-    )
+    contact_id = thread.get("contact_id") if isinstance(thread, dict) else getattr(thread, "contact_id", None)
     effective_contact_name = (
         sanitize_untrusted_text(contact_display_name, max_length=120)
         if (can_view_contact and contact_display_name)
@@ -870,10 +854,7 @@ def triage_thread_record(
 
     unread_count = max(
         0,
-        int(
-            (thread.get("unread_count") if isinstance(thread, dict) else getattr(thread, "unread_count", 0))
-            or 0
-        ),
+        int((thread.get("unread_count") if isinstance(thread, dict) else getattr(thread, "unread_count", 0)) or 0),
     )
     message_count = max(
         0,
@@ -899,9 +880,7 @@ def triage_thread_record(
     )
 
     for m in visible_msgs:
-        direction = (
-            m.get("direction") if isinstance(m, dict) else getattr(m, "direction", None)
-        )
+        direction = m.get("direction") if isinstance(m, dict) else getattr(m, "direction", None)
         m_id = m.get("id") if isinstance(m, dict) else getattr(m, "id", None)
         m_unavail = bool(
             (m.get("is_unavailable") if isinstance(m, dict) else getattr(m, "is_unavailable", False))
@@ -922,9 +901,7 @@ def triage_thread_record(
                 last_sender = str(sender_val)
 
     last_msg_raw = (
-        thread.get("last_message_at")
-        if isinstance(thread, dict)
-        else getattr(thread, "last_message_at", None)
+        thread.get("last_message_at") if isinstance(thread, dict) else getattr(thread, "last_message_at", None)
     )
     if isinstance(last_msg_raw, datetime):
         dt = last_msg_raw if last_msg_raw.tzinfo else last_msg_raw.replace(tzinfo=timezone.utc)
@@ -985,9 +962,7 @@ def triage_thread_record(
         elif not budget_allowed or (budget_remaining is not None and budget_remaining <= 0):
             budget_denied = True
             model_status = "budget_denied"
-            model_notice = (
-                "Лимит бюджета модели исчерпан; применён детерминированный базовый классификатор."
-            )
+            model_notice = "Лимит бюджета модели исчерпан; применён детерминированный базовый классификатор."
         else:
             try:
                 model_input = {

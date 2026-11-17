@@ -35,14 +35,16 @@ def _add_registry() -> None:
     schema = _schema()
     action_type = f'{schema}."action_type"'
     op.get_bind().execute(
-        sa.text(f"""
+        sa.text(
+            f"""
             INSERT INTO {schema}."model_types"
                 (resource_key, model_name, table_name, description, is_managed, created_at, updated_at)
             VALUES
                 (:resource_key, :model_name, :table_name,
                  'Immutable platform workspace offboarding evidence', true, now(), now())
             ON CONFLICT (resource_key) DO NOTHING
-            """),
+            """
+        ),
         {
             "resource_key": RESOURCE_KEY,
             "model_name": MODEL_NAME,
@@ -50,7 +52,8 @@ def _add_registry() -> None:
         },
     )
     op.get_bind().execute(
-        sa.text(f"""
+        sa.text(
+            f"""
             INSERT INTO {schema}."permissions"
                 (name, action_type, model_type_id, created_at, updated_at)
             SELECT seed.name, CAST(seed.action AS {action_type}), mt.id, now(), now()
@@ -61,7 +64,8 @@ def _add_registry() -> None:
               ) AS seed(name, action)
              WHERE mt.resource_key = :resource_key
             ON CONFLICT (model_type_id, action_type) DO NOTHING
-            """),
+            """
+        ),
         {"resource_key": RESOURCE_KEY},
     )
 
@@ -155,32 +159,38 @@ def downgrade() -> None:
 
     # Remove only this resource's permission links and reference rows.
     op.get_bind().execute(
-        sa.text(f"""
+        sa.text(
+            f"""
             DELETE FROM {schema}."role_permission" rp
              USING {schema}."permissions" p, {schema}."model_types" mt
              WHERE rp.permission_id = p.id AND p.model_type_id = mt.id
                AND mt.resource_key = :resource_key
                AND p.action_type::text IN ('VIEW', 'EXPORT')
-            """),
+            """
+        ),
         {"resource_key": RESOURCE_KEY},
     )
     op.get_bind().execute(
-        sa.text(f"""
+        sa.text(
+            f"""
             DELETE FROM {schema}."workspace_role_permission" wrp
              USING {schema}."permissions" p, {schema}."model_types" mt
              WHERE wrp.permission_id = p.id AND p.model_type_id = mt.id
                AND mt.resource_key = :resource_key
                AND p.action_type::text IN ('VIEW', 'EXPORT')
-            """),
+            """
+        ),
         {"resource_key": RESOURCE_KEY},
     )
     op.get_bind().execute(
-        sa.text(f"""
+        sa.text(
+            f"""
             DELETE FROM {schema}."permissions" p
              USING {schema}."model_types" mt
              WHERE p.model_type_id = mt.id AND mt.resource_key = :resource_key
                AND p.action_type::text IN ('VIEW', 'EXPORT')
-            """),
+            """
+        ),
         {"resource_key": RESOURCE_KEY},
     )
     op.get_bind().execute(

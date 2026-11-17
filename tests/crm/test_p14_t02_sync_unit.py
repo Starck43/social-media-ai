@@ -428,9 +428,7 @@ async def test_p14_t02_interrupted_sync_resumes_from_cursor_and_reconciles_delet
     client = FakeBitrixClient()
     # Page 1 returns next=50; Page 2 raises rate limit!
     client.responses[(2, "crm.contact.list", 0)] = {
-        "result": [
-            {"ID": "10", "NAME": "Петр", "LAST_NAME": "Петров", "DATE_MODIFY": "2026-11-04T11:00:00+00:00"}
-        ],
+        "result": [{"ID": "10", "NAME": "Петр", "LAST_NAME": "Петров", "DATE_MODIFY": "2026-11-04T11:00:00+00:00"}],
         "next": 50,
     }
     client.responses[(2, "crm.contact.list", 50)] = Bitrix24RateLimitError()

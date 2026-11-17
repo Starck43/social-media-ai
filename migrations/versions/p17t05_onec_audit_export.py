@@ -52,9 +52,11 @@ def _catalog(*, add: bool) -> None:
     if add:
         for key, model, table, actions in CAPABILITY_RESOURCES:
             bind.execute(
-                sa.text(f"""INSERT INTO {schema}.model_types
+                sa.text(
+                    f"""INSERT INTO {schema}.model_types
                 (resource_key, model_name, table_name, description, is_managed, created_at, updated_at)
-                VALUES (:key, :model, :table, 'OneC workspace capability', true, now(), now())"""),
+                VALUES (:key, :model, :table, 'OneC workspace capability', true, now(), now())"""
+                ),
                 {"key": key, "model": model, "table": table},
             )
             for action in actions:
@@ -69,24 +71,30 @@ def _catalog(*, add: bool) -> None:
         for role, pairs in CAPABILITY_GRANTS.items():
             for key, action in pairs:
                 bind.execute(
-                    sa.text(f"""INSERT INTO {schema}.workspace_role_permission (role_id, permission_id)
+                    sa.text(
+                        f"""INSERT INTO {schema}.workspace_role_permission (role_id, permission_id)
                     SELECT wr.id, p.id FROM {schema}.workspace_roles wr
                     JOIN {schema}.permissions p ON p.action_type = CAST(:action AS {schema}.action_type)
                     JOIN {schema}.model_types mt ON mt.id = p.model_type_id
-                    WHERE wr.codename = :role AND mt.resource_key = :key"""),
+                    WHERE wr.codename = :role AND mt.resource_key = :key"""
+                    ),
                     {"role": role, "key": key, "action": action},
                 )
     else:
         for key, _model, _table, _actions in CAPABILITY_RESOURCES:
             for link in ("role_permission", "workspace_role_permission"):
                 bind.execute(
-                    sa.text(f"""DELETE FROM {schema}.{link} l USING {schema}.permissions p, {schema}.model_types m
-                    WHERE l.permission_id = p.id AND p.model_type_id = m.id AND m.resource_key = :key"""),
+                    sa.text(
+                        f"""DELETE FROM {schema}.{link} l USING {schema}.permissions p, {schema}.model_types m
+                    WHERE l.permission_id = p.id AND p.model_type_id = m.id AND m.resource_key = :key"""
+                    ),
                     {"key": key},
                 )
             bind.execute(
-                sa.text(f"""DELETE FROM {schema}.permissions p USING {schema}.model_types m
-                WHERE p.model_type_id = m.id AND m.resource_key = :key"""),
+                sa.text(
+                    f"""DELETE FROM {schema}.permissions p USING {schema}.model_types m
+                WHERE p.model_type_id = m.id AND m.resource_key = :key"""
+                ),
                 {"key": key},
             )
             bind.execute(sa.text(f"DELETE FROM {schema}.model_types WHERE resource_key = :key"), {"key": key})

@@ -17,40 +17,48 @@ def _registry(add: bool) -> None:
     resource_key = "integrations.local_connector"
     if add:
         bind.execute(
-            sa.text(f"""
+            sa.text(
+                f"""
                 INSERT INTO {schema}.model_types
                     (resource_key, model_name, table_name, description, is_managed, created_at, updated_at)
                 VALUES (:resource_key, 'localconnector', 'local_connectors',
                         'Tenant-owned local connector device', true, now(), now())
                 ON CONFLICT (resource_key) DO NOTHING
-                """),
+                """
+            ),
             {"resource_key": resource_key},
         )
         for action in ("VIEW", "CREATE", "DELETE", "CONFIGURE"):
             bind.execute(
-                sa.text(f"""
+                sa.text(
+                    f"""
                     INSERT INTO {schema}.permissions (name, action_type, model_type_id, created_at, updated_at)
                     SELECT :name, CAST(:action AS {schema}.action_type), id, now(), now()
                     FROM {schema}.model_types WHERE resource_key = :resource_key
                     ON CONFLICT (model_type_id, action_type) DO NOTHING
-                    """),
+                    """
+                ),
                 {"name": "Local connector: " + action.lower(), "action": action, "resource_key": resource_key},
             )
         return
 
     for link in ("role_permission", "workspace_role_permission"):
         bind.execute(
-            sa.text(f"""
+            sa.text(
+                f"""
                 DELETE FROM {schema}.{link} l USING {schema}.permissions p, {schema}.model_types m
                 WHERE l.permission_id = p.id AND p.model_type_id = m.id AND m.resource_key = :resource_key
-                """),
+                """
+            ),
             {"resource_key": resource_key},
         )
     bind.execute(
-        sa.text(f"""
+        sa.text(
+            f"""
             DELETE FROM {schema}.permissions p USING {schema}.model_types m
             WHERE p.model_type_id = m.id AND m.resource_key = :resource_key
-            """),
+            """
+        ),
         {"resource_key": resource_key},
     )
     bind.execute(

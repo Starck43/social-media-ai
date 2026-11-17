@@ -56,10 +56,7 @@ _UID_RE = re.compile(rb"UID\s+(\d+)", re.IGNORECASE)
 _FLAGS_RE = re.compile(rb"FLAGS\s+\(([^)]*)\)", re.IGNORECASE)
 _UIDVALIDITY_RE = re.compile(r"UIDVALIDITY\s+(\d+)", re.IGNORECASE)
 
-FETCH_SPEC = (
-    "(UID FLAGS BODY.PEEK[HEADER.FIELDS "
-    "(FROM TO CC SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES)])"
-)
+FETCH_SPEC = "(UID FLAGS BODY.PEEK[HEADER.FIELDS " "(FROM TO CC SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES)])"
 
 
 class ImapSyncError(RuntimeError):
@@ -111,9 +108,7 @@ def _open_pinned_imap_client(provider_id: str, login: str, password: str) -> _Pi
     try:
         client = _PinnedIMAP(host, address)
         auth_login = (
-            login.split("@", 1)[0]
-            if provider_id == "yandex_mail" and login.lower().endswith("@yandex.ru")
-            else login
+            login.split("@", 1)[0] if provider_id == "yandex_mail" and login.lower().endswith("@yandex.ru") else login
         )
         client.login(auth_login, password)
         return client
@@ -504,9 +499,7 @@ class ImapSyncService:
         selected_folders = validate_folder_list(folders) if folders is not None else get_imap_folders(conn)
         sync_state: dict[str, Any] = dict(config.get("imap_sync_state") or {})
 
-        def _poll_all_folders() -> dict[
-            str, tuple[int, bool, list[tuple[list[ImapEnvelope], int]], set[int], bool]
-        ]:
+        def _poll_all_folders() -> dict[str, tuple[int, bool, list[tuple[list[ImapEnvelope], int]], set[int], bool]]:
             client = self._client_factory(conn.provider_id, account_login, password)
             try:
                 out: dict[str, tuple[int, bool, list[tuple[list[ImapEnvelope], int]], set[int], bool]] = {}
@@ -594,11 +587,7 @@ class ImapSyncService:
                     "uidvalidity": current_uv,
                     "last_uid": highest_uid,
                     "last_synced_at": datetime.now(timezone.utc).isoformat(),
-                    **(
-                        {"uidvalidity_reset_pending": True}
-                        if (uv_reset and not all_batches_ok)
-                        else {}
-                    ),
+                    **({"uidvalidity_reset_pending": True} if (uv_reset and not all_batches_ok) else {}),
                 }
                 config["imap_sync_state"] = dict(sync_state)
                 conn.config = dict(config)
@@ -615,14 +604,18 @@ class ImapSyncService:
 
             # Detect messages expunged from this folder on the IMAP server (B-6)
             stored_messages = (
-                await session.execute(
-                    select(UnifiedMessage).where(
-                        UnifiedMessage.tenant_id == tenant_id,
-                        UnifiedMessage.connection_id == conn.id,
-                        UnifiedMessage.channel == "email",
+                (
+                    await session.execute(
+                        select(UnifiedMessage).where(
+                            UnifiedMessage.tenant_id == tenant_id,
+                            UnifiedMessage.connection_id == conn.id,
+                            UnifiedMessage.channel == "email",
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             folder_prefix = f"{folder}:"
             for stored_msg in stored_messages:
                 if stored_msg.unavailable_at is not None:
@@ -642,9 +635,7 @@ class ImapSyncService:
                     and msg_uid <= highest_uid
                     and msg_uid not in present_uids
                 )
-                is_missing_after_reset = (
-                    uv_reset and all_batches_ok and msg_uv_str != str(current_uv)
-                )
+                is_missing_after_reset = uv_reset and all_batches_ok and msg_uv_str != str(current_uv)
                 if is_expunged_in_current_uv or is_missing_after_reset:
                     marked = await mark_message_unavailable(
                         session,

@@ -426,7 +426,10 @@ async def post_communication_contact_unmerge(
 
 
 from typing import Any
+
 from app.core.tenant_context import current_tenant_id
+from app.services.communications.outbox_store import OutboxConflict
+from app.services.communications.reply import ReplyUnavailable
 from app.services.communications.triage import (
     TRIAGE_CATEGORIES,
     evaluate_triage_corpus,
@@ -435,8 +438,6 @@ from app.services.communications.triage import (
     record_user_triage_override,
     triage_thread,
 )
-from app.services.communications.outbox_store import OutboxConflict
-from app.services.communications.reply import ReplyUnavailable
 
 
 class TriageProposalOut(BusinessSchema):
@@ -661,4 +662,3 @@ async def post_communication_thread_triage_reply_draft(
 
 
 validate_business_routes(router)
-

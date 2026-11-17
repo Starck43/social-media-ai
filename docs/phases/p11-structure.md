@@ -54,3 +54,5 @@ Final accepted source: `ae2c877dd3e467dbaa1cea4b0ecad6d2d7399c01` (commit date
 - P11-T43 — CLOSED 2026-11-18 as resolved by environment: `test_schema` advanced to `p21t14_rate_limits` during the P21-T15/T16 integration, both rate tables present, `tests/knowledge` 372 passed / 2 skipped. No executor work and no drift guard; evidence in [the P11-T39 audit](../audit/p11/p11-t39.md).
 
 - [P11-T40](../audit/p11/p11-t40.md) — DONE 2026-11-18: clean hash-locked tool profile verified; accepted `c8ae9fb0`. Offline parser failures remain tracked by P11-T46.
+
+- [P11-T46](../audit/p11/p11-t46.md) — DONE 2026-11-18: quoted triggers and SQL string-literal guard bodies are compared; offline manifest 163 passed. Accepted `29c8b5fc`.

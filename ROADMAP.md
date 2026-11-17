@@ -38,7 +38,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 
-- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
+- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **IN_PROGRESS** · opencode-q-5 · branch `docs/q-5-live-evidence` from `origin/dev` `440b6c17`; owner-authorized bounded live probe 2026-11-17: `users.search`/`groups.search`/`newsfeed.search` ok on a fresh personal VK ID token (app `54798450`), `video.search` 15; evidence being recorded · `P0` · `C3`
 
 
 ### Priority P1

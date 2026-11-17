@@ -62,7 +62,14 @@ def test_non_json_body_is_reported_without_echoing_it():
 
 def test_requests_carry_one_page_and_never_fan_out():
     specs = {spec["method"]: spec["params"] for spec in method_specs(owner_id=-7)}
-    assert set(specs) == {"users.search", "video.search", "apps.getCatalog", "market.search"}
+    assert set(specs) == {
+        "users.search",
+        "groups.search",
+        "newsfeed.search",
+        "video.search",
+        "apps.getCatalog",
+        "market.search",
+    }
     assert all(params["count"] == 1 for params in specs.values())
     assert specs["apps.getCatalog"]["platform"] == "web"
     assert specs["market.search"]["owner_id"] == -7
@@ -76,7 +83,7 @@ def test_report_marks_failures_and_token_stays_out_of_the_output():
     assert run(method_specs(), token="secret-token", api_version="5.199", transport=transport, out=buffer) is True
     text = buffer.getvalue()
     assert "secret-token" not in text
-    assert text.count("items=1") == 3
+    assert text.count("items=1") == 5
     assert all(call[1]["access_token"] == "secret-token" for call in transport.calls)
 
 

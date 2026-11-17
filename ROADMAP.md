@@ -38,7 +38,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 
-- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **READY** · opencode-q-5 · live probe 2026-11-17 answers it: Web app `54798450` + fresh personal VK ID token (`vkid.personal_info`) calls `users.search`/`groups.search`/`newsfeed.search`; no Standalone change; `video.search` 15, `market.search` not granted; evidence in card · `P0` · `C3`
+- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **READY** · opencode-q-5 · live probe 2026-11-17 answers it: Web app `54798450` + fresh personal VK ID token (`vkid.personal_info`) calls `users.search`/`groups.search`/`newsfeed.search`; no Standalone change; `video.search` 15, `market.search` not granted; evidence in card · [PR #505](https://github.com/Starck43/social-media-ai/pull/505) · `P0` · `C3`
 
 
 ### Priority P1

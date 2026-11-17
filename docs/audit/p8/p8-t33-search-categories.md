@@ -8,7 +8,7 @@
   [#298](https://github.com/Starck43/social-media-ai/pull/298) merge `8a687f4f` (video, apps,
   market mocked contracts); both merge commits verified ancestors of `origin/dev`.
 - **Status:** accepted as the mocked slice; all four rows removed from [ROADMAP](../../../ROADMAP.md).
-  Live enablement is owned by [Q-5](../../tasks/q-5.md) and is **not** accepted here.
+  Live enablement is owned by [Q-5](../q/q-5.md) and is **not** accepted here.
 
 ## What is accepted
 

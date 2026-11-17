@@ -323,6 +323,7 @@ dates with that run. The generated report is a preview in task results; delivery
 remains separate and needs the existing fresh recipient permission and explicit
 confirmation. Run history distinguishes collection, analysis, generation, and
 delivery outcomes. Unknown or partial upstream coverage stays visible and cannot
-be reported as a complete digest. Q-5's global-search capability remains
-unverified; focused collection checks use mocked VK responses until support
-clarifies the available API methods.
+be reported as a complete digest. Q-5's global-search capability is verified for
+`newsfeed.search`, `groups.search` and `users.search` on a fresh personal VK ID
+token ([audit](../audit/q/q-5.md)); other methods stay mocked. Focused collection
+checks use mocked VK responses unless a recorded live probe covers the method.

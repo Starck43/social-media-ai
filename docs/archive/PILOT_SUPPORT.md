@@ -17,7 +17,7 @@ a support integration, a delivery feature or production-readiness acceptance.
   Unlisted workspaces/tasks are outside this contract, not silently included.
 - Use existing supported collection/analysis/digest paths and existing permissions.
   An operationally unverified VK search method does not become supported through
-  this document. [Q-5](../tasks/q-5.md) and release gates remain independent.
+  this document. [Q-5](../audit/q/q-5.md) and release gates remain independent.
 - Proposed service hours: Monday–Friday, 09:00–18:00 **Europe/Kirov** (UTC+03:00),
   without an implied holiday or 24/7 rota. Outside those hours, record the event;
   the response clock resumes at the next service opening. Safety restrictions

@@ -176,9 +176,11 @@ Bound discovery, pages, work and spend; rate-limit all lanes together. Deduplica
 Distinguish empty, partial, limit-reached, authorization and unsupported results.
 Return readable walls even when search is unavailable.
 
-[Q-5](../tasks/q-5.md) records historical profile error 1051. Reconnection is not
-a proven fix. Live bounded search evidence is required before operational search
-readiness; automated tests mock platform calls. Attached media is not claimed
+[Q-5](../audit/q/q-5.md) recorded historical profile error 1051; the
+2026-11-17 live probe resolved it for `newsfeed.search`, `groups.search` and
+`users.search` on a fresh personal VK ID token. Live bounded search evidence is
+required before operational search readiness for any other method; automated
+tests mock platform calls. Attached media is not claimed
 analysed merely because its URL is present.
 
 ### Compatibility, documentation and acceptance

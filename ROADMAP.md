@@ -38,9 +38,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 
-- [Q-5](docs/tasks/q-5.md) VK application profile for global search — **READY** · opencode-q-5 · live probe 2026-11-17 answers it: Web app `54798450` + fresh personal VK ID token (`vkid.personal_info`) calls `users.search`/`groups.search`/`newsfeed.search`; no Standalone change; `video.search` 15, `market.search` not granted; evidence in card · [PR #505](https://github.com/Starck43/social-media-ai/pull/505) · `P0` · `C3`
-
-
 ### Priority P1
 
 
@@ -171,8 +168,9 @@ Model catalogs, plan grants and dispatch-safety review; implementation is not ac
 
 ## Questions
 
-Q-2/Q-5 are ordered in the execution queue; Q-12 remains owner-deferred. Q-18 is closed
-(owner decisions D1–D9, [record](docs/audit/q/q-18-owner-decisions.md)).
+Q-2 is ordered in the execution queue; Q-12 remains owner-deferred. Q-18 is closed
+(owner decisions D1–D9, [record](docs/audit/q/q-18-owner-decisions.md)); Q-5 is
+closed with [live VK search evidence](docs/audit/q/q-5.md).
 - [Q-19](docs/tasks/q-19.md) Local connector protocol: second-party security review and real-device evidence — **TODO** · open
   The P18-T01 protocol is accepted as a design; no line of it has been exercised by a running system. Tracked so acceptance is
   never read as verification.

@@ -1,12 +1,13 @@
 # VK: a Standalone application for the search family
 
-Status: open — a historical deployment probe reported VK global search refusal
-with a web application. These observations do not establish current credentials
-or prove that a different application profile will resolve the restriction.
+Status: answered 2026-11-17 — the 2026-10-21 refusal below is historical. A
+freshly authorized personal VK ID token on the same Web application profile now
+calls `newsfeed.search`, `groups.search` and `users.search`; no Standalone
+profile change is needed. Evidence: [Q-5 audit](../audit/q/q-5.md).
 
-## What is refused, and why
+## The historical refusal (2026-10-21)
 
-A read-only probe of the live credentials (2026-10-21) answered:
+A read-only probe of the then-live credentials answered:
 
 | method | VK profile | service key | personal token |
 | --- | --- | --- | --- |
@@ -16,44 +17,51 @@ A read-only probe of the live credentials (2026-10-21) answered:
 | `newsfeed.search`, `groups.search`, `users.search`, `database.getCities`, `utils.resolveScreenName` | user only | 1051 | 1051 |
 
 `28` is the platform's own answer for a community token on a user method.
-`1051` ("method is unavailable with current profile type") is the answer for
-**both** credentials of this deployment — the gate is the *application profile*,
-not the token. The vk.ru web search is a different thing entirely: it is the
-site's own internal search over the logged-in session, not the public API, so
-it working says nothing about API access.
+`1051` ("method is unavailable with current profile type") was the answer for
+**both** credentials of the deployment at that time. That observation led to the
+Standalone-profile hypothesis; it is superseded below.
 
 Only three public API methods can find entities at all: `groups.search`,
 `users.search` and `newsfeed.search`. The web UI's tabbed search (posts,
 communities, clips, goods, video) has no public equivalent.
 
-## What the owner has to do
+## What resolved it (2026-11-17)
 
-1. Review the current VK documentation and application profile, callback and
-   required grants for the exact methods. A Standalone profile is a hypothesis,
-   not verified evidence that this app's PKCE callback or every method will work.
-2. Configure `VK_APP_ID` in the deployment secret/config store and configure
-   OAuth URLs plus the exact registered callback in shared `Platform.params`.
-   `VK_REDIRECT_URI` is a legacy migration input, not a runtime override. The
-   current exchange does not send `VK_CLIENT_ACCESS_KEY`; retaining that legacy
-   setting is not proof of provider support for any specific profile.
-3. Only after explicit owner authorization, authorize an individual user and run
-   bounded provider checks for each desired method. Record outcomes under Q-5;
-   do not activate categories or describe grants as verified based on mocks.
+VK granted the application extended access. A personal VK ID user token, freshly
+authorized after the grant, calls `newsfeed.search`, `groups.search` and
+`users.search` on the unchanged Web profile. The token carried only
+`vkid.personal_info`, so no OAuth `scope` value was the gate: the grant binds at
+authorization and a token issued earlier keeps the old result. Existing
+connections need re-authorization, not a profile change.
 
-## What changes in the product when it works
+The bounded live run recorded `users.search`, `groups.search` and
+`newsfeed.search` as `ok`, `video.search` with provider error 15 and
+`apps.getCatalog` as `ok`. Evidence and limits: [Q-5 audit](../audit/q/q-5.md).
 
-When the exact methods are authorized and independently verified, the population step can search with the
-declared query, city and kind, turns every found entity into a task-owned
-wall lane and collects those walls in the same run. The named blocker
-(`api_1051`) is replaced by the found population, and the per-lane evidence
-rows on the task page show what was found and collected.
+The service key was not re-probed; the product search path uses a personal user
+token for `groups.search`/`users.search` regardless.
 
-Until then the population is the known sources of the workspace plus whatever
-the operator imports by hand
+## What changes in the product
+
+With a verified connection the population step can search with the declared
+query, city and kind, turns every found entity into a task-owned wall lane and
+collects those walls in the same run. The named blocker (`api_1051`) is replaced
+by the found population, and the per-lane evidence rows on the task page show
+what was found and collected.
+
+Category availability is still decided per category: `people` is backed by the
+proven `users.search`; `video` and `market` stay `mocked` with their own gates.
+Until a category is enabled, the population is the known sources of the workspace
+plus whatever the operator imports by hand
 (`python -m cli.main collection import <task_id> --community … --person …`).
 
-Tracked as [Q-5](../tasks/q-5.md) in [ROADMAP](../../ROADMAP.md#questions).
+Tracked as [Q-5](../audit/q/q-5.md) in [ROADMAP](../../ROADMAP.md#questions).
 
 ## P8-T29 activation evidence
 
-The [universal task contract](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans) requires separate evidence for social API search and known-wall access. Historical profile error 1051 remains tracked in Q-5. Do not assume a Standalone profile change or token refresh resolves it without a bounded real method call. Use official APIs for collection; interactive OAuth authorization is not browser collection.
+The [universal task contract](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans)
+requires separate evidence for social API search and known-wall access.
+Historical profile error 1051 is resolved for the three search methods by the
+2026-11-17 live probe above; that run did not probe wall access and a successful
+search is not proof of it. Use official APIs for collection; interactive OAuth
+authorization is not browser collection.

@@ -34,8 +34,9 @@ work are separate facts; see [P8-T29 history](../audit/p8/p8-t29-history.md).
    P8-T47 apps/games, P8-T48 owner-scoped market —
    all `mocked`, 217 contract checks passed. P8-T49 music is `unsupported`
    ([audit](../audit/p8/p8-t49.md), #469): no public search method since the 2016 audio API shutdown.
-   Clips and channels stay `unsupported`. Live enablement of the four `mocked` categories is
-   [Q-5](../tasks/q-5.md) and nothing else; no category is user-available today.
+   Clips and channels stay `unsupported`. Live enablement of the four `mocked`
+   categories waited on [Q-5](../audit/q/q-5.md), now closed; per-category
+   enablement is a separate decision and change.
 
 T38 can proceed from the integrated T29 foundation without waiting for the
 live VK gate. T39 reuses the accepted shared execution-scope/mutation policy in

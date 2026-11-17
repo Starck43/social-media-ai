@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Probe the four VK search methods Q-5 still gates, with one read-only request each.
+"""Probe the VK search methods gated by Q-5 and the mocked P8 categories, one request each.
 
-The category registry (``app/services/collection/search_categories.py``) keeps
+Q-5 names `newsfeed.search`, `groups.search` and `users.search`. The category
+registry (``app/services/collection/search_categories.py``) additionally keeps
 `people`, `video`, `apps` and `market` at ``mocked`` because no live
-method/profile evidence exists yet. This script turns the support answer into a
-single measured run: it calls each official method once with ``count=1`` and
-prints one bounded verdict per method.
+method/profile evidence exists yet. This script turns a support answer or an
+application grant into a single measured run: it calls each official method once
+with ``count=1`` and prints one bounded verdict per method.
 
 Safety:
 
@@ -40,9 +41,11 @@ ERROR_VERDICTS = {
 
 
 def method_specs(owner_id=None):
-    """The four gated methods with the smallest legal request for each."""
+    """The gated methods with the smallest legal request for each."""
     specs = [
         {"method": "users.search", "params": {"q": "test", "count": 1}},
+        {"method": "groups.search", "params": {"q": "test", "count": 1}},
+        {"method": "newsfeed.search", "params": {"q": "test", "count": 1}},
         {"method": "video.search", "params": {"q": "test", "count": 1, "extended": 1}},
         {"method": "apps.getCatalog", "params": {"q": "test", "count": 1, "extended": 1, "platform": "web"}},
     ]

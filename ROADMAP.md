@@ -58,6 +58,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: contract ownership and gated remainder after the accepted increment (byte authority/original-open with deferred P8-T34, local-only execution with P18, mutations per D21) — **TODO** (gate: owner activation / P8-T34 resume / consumer contract request; not claimable before it; re-scoped 2026-11-11, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · unassigned · [re-scope record](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) · [increment audit](docs/audit/p12/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`
+- [P8-T50](docs/tasks/p8-t50.md) Enable the VK `people` search category on the accepted Q-5 live evidence (owner instruction 2026-11-17: «включить people») — **IN_PROGRESS** · opencode-p8-t50 · — · `P2` · `C2`
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 

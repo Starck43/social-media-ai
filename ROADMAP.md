@@ -40,7 +40,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
 
-- [P21-T15](docs/tasks/p21-t15.md) Atomic LLM admission and quota reservation wiring — **IN_PROGRESS** · codex-p21-t15 · `feat/p21-t15-atomic-admission` from `origin/dev` `4cc0db41`; `codex resume 01a1e4db-c4b6-7521-936b-42e5bcfce587` · depends on P21-T14/P2-T17 allowance policy; PR #503; completing real-PG replay and tenant/personal payer isolation evidence; no cutover · `P1` · `C4`
+- [P21-T15](docs/tasks/p21-t15.md) Atomic LLM admission and quota reservation wiring — **READY** · codex-p21-t15 · `feat/p21-t15-atomic-admission` from `origin/dev` `4cc0db41`; `codex resume 01a1e4db-c4b6-7521-936b-42e5bcfce587` · depends on P21-T14/P2-T17 allowance policy; PR #503, candidate `8ea5fa7b`; 18 focused tests PASS including real-PG replay/payer isolation; isolated schema removed; no cutover · `P1` · `C4`
 - [P21-T16](docs/tasks/p21-t16.md) LLM settlement, reconciliation and liability closure — **READY** · codex-p21-t16 · `feat/p21-t16-settlement` at `8708418b`; `codex resume 01a1e5b8-fce9-7670-afb3-ccd815e1db42` · 177 PASS, 2 baseline exclusions; isolated schema removed; stacked on unaccepted P21-T15 by owner choice; no activation · `P1` · `C4`
 
 ### Priority P1

@@ -5,14 +5,14 @@ from unittest.mock import AsyncMock
 
 from app.services.collection.context import build_collection_context
 from app.services.monitoring import collector
-from app.types import SourceType
+from app.types import PlatformType, SourceType
 
 __source_only__ = True
 
 
 async def test_empty_budgeted_collection_returns_known_zero_and_preserves_source_params(monkeypatch):
     original = {"mode": "user"}
-    platform = SimpleNamespace(id=1, params={})
+    platform = SimpleNamespace(id=1, params={}, platform_type=PlatformType.VK)
     source = SimpleNamespace(
         id=10,
         name="Search",
@@ -39,7 +39,7 @@ async def test_legacy_empty_collection_retains_its_return_contract(monkeypatch):
         id=10,
         name="Search",
         platform_id=1,
-        platform=SimpleNamespace(params={}),
+        platform=SimpleNamespace(params={}, platform_type=PlatformType.VK),
         source_type=SourceType.SEARCH,
         params={},
         last_checked=None,

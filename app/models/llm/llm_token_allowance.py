@@ -13,11 +13,13 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     Numeric,
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped
 
@@ -134,6 +136,12 @@ class LLMDispatchReservationState(Base):
     __tablename__ = "llm_dispatch_reservation_states"
     __table_args__ = (
         UniqueConstraint("dispatch_id", name="uq_llm_dispatch_reservation_state_dispatch"),
+        Index(
+            "ix_llm_dispatch_reservation_states_reconcile",
+            "lease_until",
+            "dispatch_id",
+            postgresql_where=text("status IN ('reserved', 'dispatched', 'unresolved') AND lease_until IS NOT NULL"),
+        ),
         CheckConstraint(
             "status IN ('reserved', 'dispatched', 'not_dispatched', 'settled', 'unresolved')",
             name="ck_llm_dispatch_reservation_state_status",

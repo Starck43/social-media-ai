@@ -547,7 +547,7 @@ class PersonalLLMBillingManager(BaseManager):
                 admission["__personal_max_output_tokens"] = policy.max_output_tokens
             return admission
 
-    async def observe_event(self, *, tenant_id: int, event_id: str) -> bool:
+    async def observe_event(self, *, tenant_id: int, event_id: str, session: Any = None) -> bool:
         """Settle only a persisted receipt-bound event; never accept caller costs."""
         from ..billing.dispatch import PersonalLLMDispatch
         from ..billing.ledger import (
@@ -562,7 +562,8 @@ class PersonalLLMBillingManager(BaseManager):
 
         if type(tenant_id) is not int or tenant_id <= 0 or type(event_id) is not str or len(event_id) != 32:
             raise ValueError("Explicit event and workspace identities are required")
-        async with self._get_owned_session() as session:
+        caller_owns_transaction = session is not None
+        async with self._get_owned_session(session) as session:
             event = (
                 await session.execute(
                     select(LLMOutcomeEvent).where(
@@ -650,8 +651,8 @@ class PersonalLLMBillingManager(BaseManager):
                 if (
                     event.event_kind == "reconciliation"
                     and state.status == "settled"
-                    and event.dispatch_state == "response_received"
-                    and event.outcome in {"succeeded", "failed_output"}
+                    and event.dispatch_state in {"response_received", "possible"}
+                    and event.outcome != "not_dispatched"
                     and event.cost_certainty in {"priced", "free"}
                     and event.cost_usd is not None
                 ):
@@ -703,7 +704,10 @@ class PersonalLLMBillingManager(BaseManager):
                     )
                 ).scalar_one_or_none()
                 if existing_incident is not None:
-                    await session.commit()
+                    if caller_owns_transaction:
+                        await session.flush()
+                    else:
+                        await session.commit()
                     return False
                 session.add(
                     PersonalLLMBillingIncident(
@@ -717,7 +721,10 @@ class PersonalLLMBillingManager(BaseManager):
                     )
                 )
                 await session.flush()
-                await session.commit()
+                if caller_owns_transaction:
+                    await session.flush()
+                else:
+                    await session.commit()
                 raise PersonalDispatchConflict("Terminal billing state requires explicit reconciliation")
             if state.latest_observed_at is not None and event.observed_at < state.latest_observed_at:
                 raise PersonalDispatchConflict("Outcome event predates the latest accepted observation")
@@ -729,8 +736,8 @@ class PersonalLLMBillingManager(BaseManager):
                 kind = "release"
                 resolved = True
             elif (
-                event.dispatch_state == "response_received"
-                and event.outcome in {"succeeded", "failed_output"}
+                event.dispatch_state in {"response_received", "possible"}
+                and event.outcome != "not_dispatched"
                 and event.cost_certainty in {"priced", "free"}
                 and event.cost_usd is not None
             ):

@@ -55,6 +55,7 @@ class LLMBudgetManager(BaseManager):
         from app.services.tenancy.resolver import resolved_daily_cost_limit
 
         from ..llm.llm_budget import LLMBudgetDay
+        from ..llm.llm_token_allowance import LLMDispatchReservationState
         from ..tenancy.tenant import Tenant
 
         payer = current_tenant_id()
@@ -129,17 +130,22 @@ class LLMBudgetManager(BaseManager):
                     older = (
                         await session.execute(
                             select(self.model.id)
+                            .outerjoin(
+                                LLMDispatchReservationState,
+                                LLMDispatchReservationState.dispatch_id == self.model.dispatch_id,
+                            )
                             .where(
                                 self.model.tenant_id == payer,
                                 self.model.utc_day != value["utc_day"],
                                 self.model.ceiling_state != "undefined",
+                                LLMDispatchReservationState.actual_usd.is_(None),
                             )
                             .limit(1)
                         )
                     ).scalar_one_or_none()
                     if older is not None:
-                        # This slice has no settlement/reconciler. Never assume
-                        # TTL/day rollover releases an earlier liability.
+                        # Only recorded monetary settlement closes old liability.
+                        # Missing state or expired leases cannot prove release.
                         raise BudgetAdmissionDenied("Earlier-day liability requires reconciliation")
                 require_capacity(cap, budget.settled_usd, budget.reserved_usd, budget.unbounded_count, plan)
                 if not await receipts._record_in_session(value, session):

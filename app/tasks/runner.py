@@ -91,6 +91,17 @@ async def run_forever(poll_seconds: int | None = None) -> None:
     )
     while True:
         try:
+            # Accounting repair shares the existing runtime scheduler owner.
+            # It observes durable evidence only; it never retries provider HTTP.
+            if getattr(settings, "LLM_DISPATCH_SEAM_ENABLED", False):
+                from app.services.ai.settlement import LLMSettlementService
+
+                try:
+                    await LLMSettlementService().reconcile_once()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.warning("llm_dispatch_reconcile_failed")
             stats = await tick()
             if stats["enqueued"] or stats["failed"]:
                 logger.info(f"Task runner tick: {stats}")

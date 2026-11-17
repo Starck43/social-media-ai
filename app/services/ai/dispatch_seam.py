@@ -45,6 +45,7 @@ CODE_PAYER_UNRESOLVED = "payer_unresolved"
 CODE_PARAMS_INVALID = "params_invalid"
 CODE_CAPABILITY_UNFIT = "capability_unfit"
 CODE_ALLOWANCE_UNAVAILABLE = "allowance_unavailable"
+CODE_TOKEN_ALLOWANCE_EXHAUSTED = "token_allowance_exhausted"
 CODE_CAPACITY_UNAVAILABLE = "capacity_unavailable"
 CODE_ADMISSION_UNAVAILABLE = "admission_unavailable"
 CODE_FALLBACK_FUNDING_CLASS_MISMATCH = "fallback_funding_class_mismatch"
@@ -65,6 +66,7 @@ DENIAL_CODES = frozenset(
         CODE_PARAMS_INVALID,
         CODE_CAPABILITY_UNFIT,
         CODE_ALLOWANCE_UNAVAILABLE,
+        CODE_TOKEN_ALLOWANCE_EXHAUSTED,
         CODE_CAPACITY_UNAVAILABLE,
         CODE_ADMISSION_UNAVAILABLE,
         CODE_FALLBACK_FUNDING_CLASS_MISMATCH,
@@ -95,6 +97,7 @@ _DENIAL_DETAILS = frozenset(
         "step7_output_tokens",
         "step7_capability",
         "step7_allowance",
+        "token_allowance_exhausted",
         "step7_rate",
         "step8_admission",
         "step8_version",
@@ -683,7 +686,7 @@ def seam_enabled() -> bool:
 
 
 def _compat_foundation() -> Optional[DispatchFoundation]:
-    """The injected foundations; only the rate acquirer is wired by P21-T14.
+    """Dormant default wiring for the P21-T14/P21-T15 services.
 
     Kept as the single wiring point so P21-T13...P21-T16 only have to populate
     it. Absent entries stay absent and are therefore denials in strict mode.
@@ -692,12 +695,14 @@ def _compat_foundation() -> Optional[DispatchFoundation]:
     foundations before any bucket is touched, so no provider request is
     newly admitted by this task alone.
     """
-    rate = None
+    rate = admission = None
     if seam_enabled():
+        from .atomic_admission import AtomicLLMAdmissionService
         from .rate_limits import RateAcquirer
 
         rate = RateAcquirer()
-    return DispatchFoundation(rate=rate)
+        admission = AtomicLLMAdmissionService()
+    return DispatchFoundation(rate=rate, admission=admission)
 
 
 def _compat_route_capabilities(

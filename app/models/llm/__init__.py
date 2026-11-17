@@ -9,6 +9,12 @@ from .llm_model import LLMModel
 from .llm_outcome_event import LLMOutcomeEvent
 from .llm_provider import LLMProvider
 from .llm_rate_bucket import LLMRateBucket
+from .llm_token_allowance import (
+    LLMDispatchReservationEvent,
+    LLMDispatchReservationState,
+    LLMTokenAllowanceCycle,
+    LLMTokenAllowanceReservation,
+)
 from .plan_model_grant import PlanModelGrant
 
 __all__ = [
@@ -22,5 +28,9 @@ __all__ = [
     "LLMOutcomeEvent",
     "LLMProvider",
     "LLMRateBucket",
+    "LLMTokenAllowanceCycle",
+    "LLMTokenAllowanceReservation",
+    "LLMDispatchReservationState",
+    "LLMDispatchReservationEvent",
     "PlanModelGrant",
 ]

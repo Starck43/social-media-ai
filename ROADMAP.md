@@ -40,8 +40,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
 
-- [P21-T15](docs/tasks/p21-t15.md) Atomic LLM admission and quota reservation wiring — **IN_PROGRESS** · codex-p21-t15 · `feat/p21-t15-atomic-admission` from `origin/dev` `4cc0db41`; `codex resume 01a1e4db-c4b6-7521-936b-42e5bcfce587` · depends on P21-T14/P2-T17 allowance policy; no cutover · `P1` · `C4`
-- [P21-T16](docs/tasks/p21-t16.md) LLM settlement, reconciliation and liability closure — **TODO** · unassigned · depends on P21-T15; integrated mocked phase checks; feeds P2-T09 · `P1` · `C4`
+- [P21-T16](docs/tasks/p21-t16.md) LLM settlement, reconciliation and liability closure — **READY** · codex-p21-t16 · `feat/p21-t16-settlement` at `8708418b`; `codex resume 01a1e5b8-fce9-7670-afb3-ccd815e1db42` · 177 PASS, 2 baseline exclusions; isolated schema removed; P21-T15 integrated as 0157; rebase migration dependency before integration; no activation · `P1` · `C4`
 
 ### Priority P1
 
@@ -63,12 +62,17 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: contract ownership and gated remainder after the accepted increment (byte authority/original-open with deferred P8-T34, local-only execution with P18, mutations per D21) — **TODO** (gate: owner activation / P8-T34 resume / consumer contract request; not claimable before it; re-scoped 2026-11-11, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · unassigned · [re-scope record](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) · [increment audit](docs/audit/p12/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`
-- [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **IN_PROGRESS** · codex-p12-t15 · Follow-up to audit B-2: CSRF now binds path/action/revision; 14 focused tests pass at base `19b83ce6`, follow-up PR #500 head `d820074f` awaits independent re-audit · [PR #500](https://github.com/Starck43/social-media-ai/pull/500) · `P2` · `C4`
+- [P12-T15](docs/tasks/p12-t15.md) User-managed folder permissions and safe file actions — **IN_PROGRESS** · codex-p12-t15 · C-2 corrected: one editable path, two actions, revision-bound CSRF; 35 focused tests passed, awaits independent re-audit · [PR #500](https://github.com/Starck43/social-media-ai/pull/500) · `P2` · `C4`
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
-- [P11-T38](docs/tasks/p11-t38.md) CI secret-candidate drift triage — **IN_PROGRESS** · opencode-p11-t38 · reproduced 2026-11-16 on `dev` `6d7305fb`: new candidates against `.ci/secret-baseline.json` on untouched files, untriaged; a real-secret finding escalates to the owner, a baseline refresh needs a reason per entry · `P2` · `C2`
-- [P11-T39](docs/tasks/p11-t39.md) Pre-existing red check inventory re-verification — **TODO** · unassigned · replaces the unportable 2026-11-13 scratch list; each entry either reproduces into its own row, becomes a recorded environment gate, or is dropped · `P2` · `C2`
+- [P11-T38](docs/tasks/p11-t38.md) CI secret-candidate drift triage — **READY** · opencode-p11-t38 · baseline extended by 94 reviewed per-fingerprint rationales, gate re-verified: 0 secret failures (31 unrelated pre-existing formatting findings left as a separate follow-up); solution branch `fix/p11-t38-secret-drift` (d40f029b) awaits owner merge choice · `P2` · `C2`
+- [P11-T39](docs/tasks/p11-t39.md) Pre-existing red check inventory re-verification — **READY** · opencode-p11-t39 · five entries reproduced on `53d2b533`: two real product failures, two environment gates, one green (dropped); five follow-up rows below carry the debt, no schema residue, delegation routes unavailable (billing/provider) so checks ran locally · `P2` · `C2`
+- [P11-T40](docs/tasks/p11-t40.md) Offline tool profile has DB packages installed — **TODO** · unassigned · reproduced: `scripts/ci/run_offline.py` 1 failed / 161 passed / 37 subtests on `test_no_database_packages_in_tool_profile`; environment gate, not a reason to weaken the assertion · `P2` · `C2`
+- [P11-T41](docs/tasks/p11-t41.md) Operations admin writer lost the shared plan-create seam — **TODO** · unassigned · reproduced: `operations.py::on_model_change` subtest fails under the documented source-only route; fix the writer, not the assertion · `P2` · `C2`
+- [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **TODO** · unassigned · reproduced: `VerificationFailure('preparation-content-drift')` in the byte-pin coherence suite · `P2` · `C2`
+- [P11-T43](docs/tasks/p11-t43.md) Shared test_schema is behind the dev model metadata — **TODO** · unassigned · reproduced: `llm_dispatch_leases`, `llm_rate_buckets` missing; conftest suites stop before test bodies, 374 knowledge setup errors; shared-schema repair needs owner authorization · `P2` · `C3`
+- [P11-T44](docs/tasks/p11-t44.md) Formatting baseline drift on untouched files — **TODO** · unassigned · inherited 31 Black/isort findings surfaced while closing P11-T38 · `P2` · `C2`
 
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):
 

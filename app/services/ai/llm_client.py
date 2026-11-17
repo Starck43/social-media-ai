@@ -83,8 +83,13 @@ async def _personal_admission(
     execution: dict[str, Any] | None = None,
     has_media: bool = False,
     uses_tools: bool = False,
+    seam_admission: Any = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Reserve one trusted provider envelope before HTTP when personal billing is active."""
+    if getattr(seam_admission, "reserved", False):
+        # P21-T15 owns the receipt and both token/USD reservations for a strict
+        # attempt. Never compose the legacy personal ledger as a second commit.
+        return None, _dispatch_identifier(seam_admission)
     from app.services.ai.generation_policy import requested_output_limit
     from app.services.ai.personal_dispatch import validate_personal_dispatch
 
@@ -160,6 +165,12 @@ async def _seam_dispatch_attempt(client: Any, **kwargs: Any) -> Any:
     A strict deployment without the seam module fails closed: the attempt is
     refused before HTTP instead of running unadmitted.
     """
+    payload = kwargs.pop("payload", None)
+    if isinstance(payload, dict) and "max_tokens" in payload:
+        from app.services.ai.generation_policy import requested_output_limit
+
+        payload["max_tokens"] = requested_output_limit(client.model, requested=payload["max_tokens"])
+        kwargs["requested_output_tokens"] = payload["max_tokens"]
     seam = _seam_module()
     if seam is None:
         if _seam_flag_enabled():
@@ -218,8 +229,17 @@ async def _verify_personal_dispatch_day(receipt: dict[str, Any] | None) -> None:
         raise PersonalBillingUnavailable("UTC billing day changed after reservation; retry under the new day")
 
 
-async def _revalidate_personal_dispatch_before_http(client: Any, receipt: dict[str, Any] | None) -> None:
+async def _revalidate_personal_dispatch_before_http(
+    client: Any, receipt: dict[str, Any] | None, *, seam_admission: Any = None
+) -> None:
     """Reject changed provider credentials after admission and before HTTP send."""
+    if getattr(seam_admission, "reserved", False):
+        from app.services.ai.credential_boundary import require_current_credential_version
+
+        expected = getattr(getattr(seam_admission, "context", None), "credential_version", None)
+        require_current_credential_version(expected, client.credential_version)
+        return
+
     from app.services.ai.personal_dispatch import validate_personal_dispatch
 
     try:
@@ -698,8 +718,9 @@ class OpenAICompatibleClient(LLMClient):
         payload = self._prepare_analyze(prompt, media_urls, **kwargs)
         timeout = min(self.timeout, 60.0)
         request_meta = self._analysis_request_meta(prompt)
-        await _seam_dispatch_attempt(
+        admission = await _seam_dispatch_attempt(
             self,
+            payload=payload,
             purpose="analysis",
             stage=stage,
             execution=execution,
@@ -708,12 +729,18 @@ class OpenAICompatibleClient(LLMClient):
             dispatch_id=request_meta["dispatch_id"],
         )
         receipt, reserved_dispatch_id = await _personal_admission(
-            self, payload, purpose="analysis", stage=stage, execution=execution, has_media=bool(media_urls)
+            self,
+            payload,
+            seam_admission=admission,
+            purpose="analysis",
+            stage=stage,
+            execution=execution,
+            has_media=bool(media_urls),
         )
         await _verify_personal_dispatch_day(receipt)
         if receipt is not None:
             request_meta["dispatch_id"] = reserved_dispatch_id
-        await _revalidate_personal_dispatch_before_http(self, receipt)
+        await _revalidate_personal_dispatch_before_http(self, receipt, seam_admission=admission)
 
         try:
             async with provider_http_client() as c:
@@ -806,6 +833,7 @@ class OpenAICompatibleClient(LLMClient):
         timeout = min(float(payload.get("timeout", self.timeout)), 60.0)
         admission = await _seam_dispatch_attempt(
             self,
+            payload=payload,
             purpose=personal_purpose,
             stage="chat",
             execution=execution,
@@ -816,6 +844,7 @@ class OpenAICompatibleClient(LLMClient):
         receipt, dispatch_id = await _personal_admission(
             self,
             payload,
+            seam_admission=admission,
             purpose=personal_purpose,
             stage="chat",
             execution=execution,
@@ -824,7 +853,7 @@ class OpenAICompatibleClient(LLMClient):
         if isinstance(diagnostic, dict):
             diagnostic["effective_max_tokens"] = payload["max_tokens"]
         await _verify_personal_dispatch_day(receipt)
-        await _revalidate_personal_dispatch_before_http(self, receipt)
+        await _revalidate_personal_dispatch_before_http(self, receipt, seam_admission=admission)
 
         try:
             if isinstance(diagnostic, dict):
@@ -997,8 +1026,9 @@ class AnthropicClient(LLMClient):
         request_meta = self._analysis_request_meta(prompt)
         execution = kwargs.pop("personal_billing_execution", None)
         stage = kwargs.pop("personal_billing_stage", "text_analysis")
-        await _seam_dispatch_attempt(
+        admission = await _seam_dispatch_attempt(
             self,
+            payload=payload,
             purpose="analysis",
             stage=stage,
             execution=execution,
@@ -1007,12 +1037,18 @@ class AnthropicClient(LLMClient):
             dispatch_id=request_meta["dispatch_id"],
         )
         receipt, reserved_dispatch_id = await _personal_admission(
-            self, payload, purpose="analysis", stage=stage, execution=execution, has_media=bool(media_urls)
+            self,
+            payload,
+            seam_admission=admission,
+            purpose="analysis",
+            stage=stage,
+            execution=execution,
+            has_media=bool(media_urls),
         )
         await _verify_personal_dispatch_day(receipt)
         if receipt is not None:
             request_meta["dispatch_id"] = reserved_dispatch_id
-        await _revalidate_personal_dispatch_before_http(self, receipt)
+        await _revalidate_personal_dispatch_before_http(self, receipt, seam_admission=admission)
         try:
             async with provider_http_client() as c:
                 r = await c.post(
@@ -1114,6 +1150,7 @@ class AnthropicClient(LLMClient):
         personal_purpose = kwargs.pop("personal_billing_purpose", "agent_chat")
         admission = await _seam_dispatch_attempt(
             self,
+            payload=payload,
             purpose=personal_purpose,
             stage="chat",
             execution=execution,
@@ -1124,13 +1161,14 @@ class AnthropicClient(LLMClient):
         receipt, dispatch_id = await _personal_admission(
             self,
             payload,
+            seam_admission=admission,
             purpose=personal_purpose,
             stage="chat",
             execution=execution,
             uses_tools=bool(tools),
         )
         await _verify_personal_dispatch_day(receipt)
-        await _revalidate_personal_dispatch_before_http(self, receipt)
+        await _revalidate_personal_dispatch_before_http(self, receipt, seam_admission=admission)
         try:
             async with provider_http_client() as c:
                 r = await c.post(
@@ -1232,8 +1270,9 @@ class CustomClient(LLMClient):
 
         timeout = min(self.timeout, 60.0)
         request_meta = {**self._analysis_request_meta(prompt), "endpoint": endpoint}
-        await _seam_dispatch_attempt(
+        admission = await _seam_dispatch_attempt(
             self,
+            payload=payload,
             purpose="analysis",
             stage=stage,
             execution=execution,
@@ -1242,12 +1281,18 @@ class CustomClient(LLMClient):
             dispatch_id=request_meta["dispatch_id"],
         )
         receipt, reserved_dispatch_id = await _personal_admission(
-            self, payload, purpose="analysis", stage=stage, execution=execution, has_media=bool(media_urls)
+            self,
+            payload,
+            seam_admission=admission,
+            purpose="analysis",
+            stage=stage,
+            execution=execution,
+            has_media=bool(media_urls),
         )
         await _verify_personal_dispatch_day(receipt)
         if receipt is not None:
             request_meta["dispatch_id"] = reserved_dispatch_id
-        await _revalidate_personal_dispatch_before_http(self, receipt)
+        await _revalidate_personal_dispatch_before_http(self, receipt, seam_admission=admission)
 
         try:
             async with provider_http_client() as c:
@@ -1336,6 +1381,7 @@ class CustomClient(LLMClient):
         }
         admission = await _seam_dispatch_attempt(
             self,
+            payload=payload,
             purpose=personal_purpose,
             stage="chat",
             execution=execution,
@@ -1346,13 +1392,14 @@ class CustomClient(LLMClient):
         receipt, dispatch_id = await _personal_admission(
             self,
             payload,
+            seam_admission=admission,
             purpose=personal_purpose,
             stage="chat",
             execution=execution,
             uses_tools=bool(tools),
         )
         await _verify_personal_dispatch_day(receipt)
-        await _revalidate_personal_dispatch_before_http(self, receipt)
+        await _revalidate_personal_dispatch_before_http(self, receipt, seam_admission=admission)
 
         try:
             async with provider_http_client() as c:

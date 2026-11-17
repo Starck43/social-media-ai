@@ -43,7 +43,7 @@ deliverable must exist before the dependent consumers.
 | 4. [P21-T13](../audit/p21/p21-t13.md) Catalog/grants — DONE 2026-11-15; accepted `305a00d3` | T12 contract and P2-T17 tariff storage | Dormant catalog custody, per-capability plan grants, holder-scoped grant resolution and owner-only management; dispatch stays off. |
 | 5. [P21-T14](../audit/p21/p21-t14.md) Shared rate control — DONE 2026-11-16; accepted `73a3c7a4` | T12 seam, T13 provider/catalog identity | Stable quota pools, leases, cancellation policy and admission lock order; dormant seam wiring, verified on a live schema. |
 | 6. [P21-T15](../audit/p21/p21-t15.md) Atomic admission — DONE 2026-11-17 | T14 handoff, P2-T17 allowance policy | Token/USD reservation UOW, immutable evidence and settlement-state contract. |
-| 7. [P21-T16](../tasks/p21-t16.md) Settlement/reconciliation | T15 admission storage and contracts | Idempotent accounting, crash recovery and integrated mocked phase check. |
+| 7. [P21-T16](../audit/p21/p21-t16.md) Settlement/reconciliation — DONE 2026-11-17; accepted `7f72ab3d` | T15 admission storage and contracts | Idempotent token/USD settlement, retained unknown liability, bounded runtime reconciliation and mocked integrated route evidence; settlement/provider activation stays outside this acceptance. |
 
 Storage/contract acceptance never depends on later production activation. T12
 tests later services through explicit fakes; T13 does not activate managed

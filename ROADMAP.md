@@ -40,7 +40,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [Q-5](docs/tasks/q-5.md) VK application profile for global search — **OPEN** · owner (VK support requested app/access/scenario/site/community details; method/profile availability remains unconfirmed — **this is the only gate left for the mocked P8-T33/T46/T47/T48 categories**) · — · `P0` · `C3`
 
-- [P21-T16](docs/tasks/p21-t16.md) LLM settlement, reconciliation and liability closure — **READY** · codex-p21-t16 · `feat/p21-t16-settlement` at `8708418b`; `codex resume 01a1e5b8-fce9-7670-afb3-ccd815e1db42` · 177 PASS, 2 baseline exclusions; isolated schema removed; P21-T15 integrated as 0157; **audit review PASS 2026-11-17 (review only)** — rebase onto `dev`, then PR and verified merge; no activation · `P1` · `C4`
 
 ### Priority P1
 

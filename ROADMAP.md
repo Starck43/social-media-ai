@@ -62,12 +62,9 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
-- [P11-T38](docs/tasks/p11-t38.md) CI secret-candidate drift triage — **READY** · opencode-p11-t38 · baseline extended by 94 reviewed per-fingerprint rationales, gate re-verified: 0 secret failures (31 unrelated pre-existing formatting findings left as a separate follow-up); solution branch `fix/p11-t38-secret-drift` (d40f029b) awaits owner merge choice · `P2` · `C2`
-- [P11-T39](docs/tasks/p11-t39.md) Pre-existing red check inventory re-verification — **READY** · opencode-p11-t39 · five entries reproduced on `53d2b533`: two real product failures, two environment gates, one green (dropped); five follow-up rows below carry the debt, no schema residue, delegation routes unavailable (billing/provider) so checks ran locally · `P2` · `C2`
 - [P11-T40](docs/tasks/p11-t40.md) Offline tool profile has DB packages installed — **TODO** · unassigned · reproduced: `scripts/ci/run_offline.py` 1 failed / 161 passed / 37 subtests on `test_no_database_packages_in_tool_profile`; environment gate, not a reason to weaken the assertion · `P2` · `C2`
 - [P11-T41](docs/tasks/p11-t41.md) Operations admin writer lost the shared plan-create seam — **TODO** · unassigned · reproduced: `operations.py::on_model_change` subtest fails under the documented source-only route; fix the writer, not the assertion · `P2` · `C2`
 - [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **TODO** · unassigned · reproduced: `VerificationFailure('preparation-content-drift')` in the byte-pin coherence suite · `P2` · `C2`
-- [P11-T43](docs/tasks/p11-t43.md) Shared test_schema is behind the dev model metadata — **TODO** · unassigned · reproduced: `llm_dispatch_leases`, `llm_rate_buckets` missing; conftest suites stop before test bodies, 374 knowledge setup errors; shared-schema repair needs owner authorization · `P2` · `C3`
 - [P11-T44](docs/tasks/p11-t44.md) Formatting baseline drift on untouched files — **TODO** · unassigned · inherited 31 Black/isort findings surfaced while closing P11-T38 · `P2` · `C2`
 - [P11-T45](docs/tasks/p11-t45.md) Credential rotation refuses the current migration head — **TODO** · unassigned · reproduced on `dev` `8c96f961` and on P12-T15's accepted revision: `RotationError: … use a supported single head` because `scripts/ops/rotate_credentials_key.py` stops at `0153`; the test also hard-codes `schema="test_schema"` · `P2` · `C2`
 

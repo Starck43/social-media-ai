@@ -24,6 +24,10 @@ How a migration's guard SQL is read (nothing is executed):
   row (0154's ``for event, level in (("UPDATE OR DELETE", "ROW"), ...)``). An
   equality of a bound name with a literal (``'service_plan_...' if level == "ROW"
   else ...``) is a literal boolean, so every row renders its own statement.
+* Quoting does not hide an object: ``CREATE TRIGGER "stem_immutable"`` is the
+  same pair as the unquoted form, and a function body written as a SQL string
+  literal (``AS 'BEGIN RAISE EXCEPTION ''...''; END;'``, 0157) is read with its
+  doubled quotes unescaped.
 """
 
 import ast
@@ -49,12 +53,15 @@ SPEC.loader.exec_module(GUARDS)
 
 # Bulk-guarded tables and the guard each ``{table}_validate`` trigger executes.
 # Mirrors the module's ``_validate`` triggers one-for-one; the equality test
-# checks both directions. Receipt/action/offboarding journals carry their own
-# immutable/no-truncate guards instead.
+# checks both directions. Receipt/action/offboarding journals and the 0157
+# reservation evidence tables carry their own immutable/no-truncate guards
+# without a ``_validate`` trigger instead.
 ONE_OFF_TABLES = {
     "llm_dispatch_receipts",
     "llm_outcome_events",
     "llm_budget_reservations",
+    "llm_token_allowance_reservations",
+    "llm_dispatch_reservation_events",
     "action_audit_events",
     "workspace_offboarding_events",
 }
@@ -78,7 +85,7 @@ _SCHEMA = "x"
 assert _SCHEMA.isidentifier()
 
 _CREATE_FUNCTION = re.compile(
-    r"CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>[A-Za-z_][\w.]*)\s*\([^)]*\)\s*RETURNS\s+[A-Za-z_]+",
+    r'CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>"?[A-Za-z_][\w$]*"?(?:\."?[A-Za-z_][\w$]*"?)?)\s*\([^)]*\)',
     re.IGNORECASE,
 )
 _FUNCTION_DEFINITION = re.compile(
@@ -87,7 +94,21 @@ _FUNCTION_DEFINITION = re.compile(
     r"(?P<tag>\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$)(?P<body>.*?)(?P=tag)",
     re.IGNORECASE | re.DOTALL,
 )
-_CREATE_TRIGGER = re.compile(r"CREATE\s+TRIGGER\s+(?P<name>[A-Za-z_]\w*)\s+(?P<rest>.*)", re.IGNORECASE | re.DOTALL)
+# 0157 creates its guards through a helper that writes the body as a SQL string
+# literal (``AS 'BEGIN RAISE EXCEPTION ''...''; END;'``), where a doubled quote is
+# the escape. The dollar-quoted form above cannot read it, so the body is taken
+# from the single-quoted literal and unescaped.
+_FUNCTION_DEFINITION_STRING = re.compile(
+    r'CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(?P<name>"?[A-Za-z_][\w$]*"?(?:\."?[A-Za-z_][\w$]*"?)?)\s*\([^)]*\)'
+    r"\s*RETURNS\s+[A-Za-z_][\w]*(?:\s*\([^)]*\))?(?:\s+LANGUAGE\s+[A-Za-z_][\w]*)?\s+AS\s+"
+    r"'(?P<body>(?:[^']|'')*)'",
+    re.IGNORECASE | re.DOTALL,
+)
+# A migration may quote the trigger name (``CREATE TRIGGER "x_immutable"``);
+# the quote stays outside the group so the pair matches the module names.
+_CREATE_TRIGGER = re.compile(
+    r'CREATE\s+TRIGGER\s+"?(?P<name>[A-Za-z_][\w$]*)"?\s+(?P<rest>.*)', re.IGNORECASE | re.DOTALL
+)
 # Identifiers are ``[\w$]``: a bare word would stop at the first underscore.
 _TRIGGER_ON = re.compile(r"\bON\s+(?P<table>[A-Za-z_][\w$.]*)\s+FOR\s+EACH\b", re.IGNORECASE)
 _TRIGGER_EVENTS = re.compile(r"\b(?:BEFORE|AFTER)\s+(.+?)\s+ON\s+(?:[A-Za-z_][\w$.]*)", re.IGNORECASE | re.DOTALL)
@@ -758,10 +779,7 @@ def migration_trigger_pairs():
 def migration_function_names():
     names = set()
     for _path, statement in migration_statements():
-        names.update(
-            match.group("name").replace('"', "").rsplit(".", 1)[-1]
-            for match in _FUNCTION_DEFINITION.finditer(statement)
-        )
+        names.update(name for name, _body in _function_definitions(statement))
     return names
 
 
@@ -773,10 +791,19 @@ def migration_function_bodies():
     """
     bodies = {}
     for path, statement in migration_statements():
-        for match in _FUNCTION_DEFINITION.finditer(statement):
-            name = match.group("name").replace('"', "").rsplit(".", 1)[-1]
-            bodies[name] = (path.name, match.group("body"))
+        for name, body in _function_definitions(statement):
+            bodies[name] = (path.name, body)
     return bodies
+
+
+def _function_definitions(statement):
+    """``(bare function name, body)`` for every function one statement creates."""
+    for pattern in (_FUNCTION_DEFINITION, _FUNCTION_DEFINITION_STRING):
+        for match in pattern.finditer(statement):
+            body = match.group("body")
+            if pattern is _FUNCTION_DEFINITION_STRING:
+                body = body.replace("''", "'")
+            yield match.group("name").replace('"', "").rsplit(".", 1)[-1], body
 
 
 def migration_trigger_statements():
@@ -1136,6 +1163,25 @@ BEGIN UPDATE x.file_insight_object_states SET epoch='next'; RETURN NULL; END; $b
     assert ["PERFORM 1;" in match.group("body") for match in matches] == [True, False, False]
     assert "PERFORM x.invalidate_file_insights(NULL,NULL,NULL);" in matches[1].group("body")
     assert "UPDATE x.file_insight_object_states" in matches[2].group("body")
+
+
+def test_quoted_trigger_names_and_string_literal_bodies_are_read():
+    """0157 builds its guards from a helper; quotes must not hide them (P11-T46)."""
+    function = (
+        'CREATE FUNCTION "x".reject_evidence_mutation() RETURNS trigger LANGUAGE plpgsql AS '
+        "'BEGIN RAISE EXCEPTION ''Evidence is immutable'' USING ERRCODE = ''55000''; END;'"
+    )
+    trigger = (
+        'CREATE TRIGGER "evidence_immutable" BEFORE UPDATE OR DELETE ON "x"."evidence" '
+        'FOR EACH ROW EXECUTE FUNCTION "x".reject_evidence_mutation()'
+    )
+    assert dict(_function_definitions(function)) == {
+        "reject_evidence_mutation": "BEGIN RAISE EXCEPTION 'Evidence is immutable' USING ERRCODE = '55000'; END;"
+    }
+    match = _CREATE_TRIGGER.match(trigger)
+    assert match and match.group("name") == "evidence_immutable"
+    assert _table_of(trigger) == "evidence"
+    assert not _run_time_only(trigger)
 
 
 def test_rendered_ddl_is_schema_qualified_and_idempotent():

@@ -406,7 +406,7 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
             with engine.begin() as connection:
                 dry_run = rotate_in_transaction(
                     connection,
-                    schema="test_schema",
+                    schema=settings.DB_SCHEMA,
                     old_key=old_key,
                     new_key=new_key,
                     apply=False,
@@ -420,7 +420,7 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
                 with engine.begin() as connection:
                     rotate_in_transaction(
                         connection,
-                        schema="test_schema",
+                        schema=settings.DB_SCHEMA,
                         old_key=old_key,
                         new_key=new_key,
                         apply=True,
@@ -444,7 +444,7 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
                 with engine.begin() as connection:
                     rotate_in_transaction(
                         connection,
-                        schema="test_schema",
+                        schema=settings.DB_SCHEMA,
                         old_key=old_key,
                         new_key=new_key,
                         apply=True,
@@ -467,7 +467,7 @@ async def test_credential_rotation_requires_explicit_private_result_purge_and_ro
             with engine.begin() as connection:
                 applied = rotate_in_transaction(
                     connection,
-                    schema="test_schema",
+                    schema=settings.DB_SCHEMA,
                     old_key=old_key,
                     new_key=new_key,
                     apply=True,

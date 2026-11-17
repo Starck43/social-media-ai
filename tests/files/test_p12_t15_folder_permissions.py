@@ -189,12 +189,12 @@ async def web(data, monkeypatch):
 
 def form_values(response, access):
     html = BeautifulSoup(response.text, "html.parser")
-    form = next(
-        form
-        for form in html.select('[data-folder-permissions] form[method="post"]')
-        if form.select_one('input[name="access"]')["value"] == access
-    )
-    return {item["name"]: item.get("value", "") for item in form.select("input[name]")}
+    forms = html.select('[data-folder-permissions] form[method="post"]')
+    assert len(forms) == 1
+    form = forms[0]
+    assert len(form.select('input[name="path"]')) == 1
+    assert form.select_one(f'button[name="access"][value="{access}"]')
+    return {**{item["name"]: item.get("value", "") for item in form.select("input[name]")}, "access": access}
 
 
 async def test_authenticated_editor_csrf_stale_form_and_foreign_owner(data, web, monkeypatch):
@@ -206,8 +206,6 @@ async def test_authenticated_editor_csrf_stale_form_and_foreign_owner(data, web,
     assert "p12t12-synthetic-token" not in response.text
     values = form_values(response, "none")
     assert (await client.post(url, data={**values, "_csrf": "bad"})).status_code == 403
-    assert (await client.post(url, data={**values, "access": "read_only"})).status_code == 403
-    assert (await client.post(url, data={**values, "path": "/work/other"})).status_code == 403
     assert (await client.post(url, data={**values, "revision": "0" * 64})).status_code == 403
     assert (await client.post(url, data={**values, "delete": "1"})).status_code == 403
     assert (await client.post(url, data=values)).status_code == 303
@@ -223,6 +221,31 @@ async def test_authenticated_editor_csrf_stale_form_and_foreign_owner(data, web,
     monkeypatch.setattr(settings, "FILE_CATALOG_UI_ENABLED", False)
     assert (await client.get(url)).status_code == 404
     assert (await client.post(url, data=restore)).status_code == 404
+
+
+async def test_editable_subfolder_path_and_both_actions(data, web):
+    client, _ = web
+    url = f"/app/knowledge/folders/{data.connections[0]}/permissions"
+    response = await client.get(url)
+    deny = form_values(response, "none")
+    # Normal user input: edit the visible path without a separate inspection GET.
+    assert deny["path"] == "disk:/work"
+    assert (await client.post(url, data={**deny, "path": "/elsewhere"})).status_code == 400
+    assert (await client.post(url, data={**deny, "access": "delete"})).status_code == 400
+    assert (await client.post(url, data={**deny, "path": "/work/private"})).status_code == 303
+    with actor(data) as args:
+        private = await service.get_folder_permissions(**args, path="/work/private")
+        sibling = await service.get_folder_permissions(**args, path="/work/public")
+    assert not private["list_allowed"] and not private["read_allowed"]
+    assert sibling["list_allowed"] and sibling["read_allowed"]
+    # The old rendered revision must not admit another edit.
+    assert (await client.post(url, data={**deny, "path": "/work/public"})).status_code == 409
+    response = await client.get(url)
+    restore = form_values(response, "read_only")
+    assert (await client.post(url, data={**restore, "path": "/work/private"})).status_code == 303
+    with actor(data) as args:
+        private = await service.get_folder_permissions(**args, path="/work/private")
+    assert private["list_allowed"] and private["read_allowed"]
 
 
 async def test_audit_prevents_lossy_downgrade_and_uses_plan_retention(data):

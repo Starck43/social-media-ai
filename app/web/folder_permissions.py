@@ -2,7 +2,6 @@
 
 import hashlib
 import hmac
-import json
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
@@ -27,12 +26,11 @@ def _args(request, connection_id):
     return {**args, "connection_id": connection_id}
 
 
-def _token(request, args, *, path, access, revision):
+def _token(request, args, *, revision):
     key = "folder-policy:" + settings.SECRET_KEY
     base = action_token(request.session, key, **args, object_id=1)
-    payload = json.dumps([path, access, revision], ensure_ascii=True, separators=(",", ":"))
     return hmac.new(
-        key.encode(), ("folder-policy-form-v1:" + base + ":" + payload).encode(), hashlib.sha256
+        key.encode(), ("folder-policy-form-v2:" + base + ":" + revision).encode(), hashlib.sha256
     ).hexdigest()
 
 
@@ -57,11 +55,12 @@ async def folder_permissions_page(
         raise _error(400) from None
     except DBAPIError:
         raise _error(503) from None
-    tokens = {
-        access: _token(request, args, path=view["path"], access=access, revision=view["revision"])
-        for access in ("none", "read_only")
-    }
-    return _render_catalog(request, "web/folder_permissions.html", policy=view, policy_csrf=tokens)
+    return _render_catalog(
+        request,
+        "web/folder_permissions.html",
+        policy=view,
+        policy_csrf=_token(request, args, revision=view["revision"]),
+    )
 
 
 @router.post("/{connection_id}/permissions")
@@ -70,18 +69,12 @@ async def folder_permissions_save(request: Request, connection_id: int):
     if not 1 <= connection_id <= 2147483647 or request.query_params:
         raise _error(400)
     try:
-        # The submitted action is fixed by its form; each token also binds the
-        # exact path and policy fingerprint displayed when that form was rendered.
+        # Path and action are editable inputs, validated by the owner-bound
+        # service. Bind CSRF to the rendered policy revision, not those inputs.
         form = await action_form(
             request,
             {"_csrf", "path", "access", "revision"},
-            lambda fields: _token(
-                request,
-                args,
-                path=fields["path"],
-                access=fields["access"],
-                revision=fields["revision"],
-            ),
+            lambda fields: _token(request, args, revision=fields["revision"]),
         )
     except (ValueError, UnicodeError):
         raise _error(403) from None

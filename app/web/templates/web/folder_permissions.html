@@ -19,20 +19,12 @@
     {% for path in paths %}<p>Запрет {{ 'просмотра списка' if operation == 'list' else 'чтения' }} унаследован от правила {{ path }}.</p>{% endfor %}
     {% endfor %}
     <form method="post" action="/app/knowledge/folders/{{ policy.connection_id }}/permissions">
-        <input type="hidden" name="_csrf" value="{{ policy_csrf.none }}">
+        <input type="hidden" name="_csrf" value="{{ policy_csrf }}">
         <input type="hidden" name="revision" value="{{ policy.revision }}">
-        <input type="hidden" name="access" value="none">
-        <label for="policy-path-none">Папка внутри выбранной папки</label>
-        <input id="policy-path-none" name="path" value="{{ policy.path }}" maxlength="1024" required class="ui-control">
-        <button class="ui-control">Запретить доступ к папке</button>
-    </form>
-    <form method="post" action="/app/knowledge/folders/{{ policy.connection_id }}/permissions">
-        <input type="hidden" name="_csrf" value="{{ policy_csrf.read_only }}">
-        <input type="hidden" name="revision" value="{{ policy.revision }}">
-        <input type="hidden" name="access" value="read_only">
-        <label for="policy-path-read">Папка внутри выбранной папки</label>
-        <input id="policy-path-read" name="path" value="{{ policy.path }}" maxlength="1024" required class="ui-control">
-        <button class="ui-control">Разрешить только чтение</button>
+        <label for="policy-path">Папка внутри выбранной папки</label>
+        <input id="policy-path" name="path" value="{{ policy.path }}" maxlength="1024" required class="ui-control">
+        <button class="ui-control" type="submit" name="access" value="none">Запретить доступ к папке</button>
+        <button class="ui-control" type="submit" name="access" value="read_only">Разрешить только чтение</button>
     </form>
     <p>Запрет родителя сохраняется. Снятие правила этой папки не отменяет запреты родителей или потомков. Правила применяются к сохранённым сведениям и очереди; после изменения обход может потребовать перезапуска.</p>
     <h3>Сохранённые ограничения</h3>

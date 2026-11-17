@@ -958,7 +958,8 @@ def test_unresolved_guard_ddl_without_call_bindings_fails_closed():
 
 
 def test_guard_inventory_resolves_literal_mapping_items_loop():
-    tree = ast.parse("""
+    tree = ast.parse(
+        """
 hooks = {
     "workspace_connections": "AFTER UPDATE OF tenant_id",
     "workspace_roles": "AFTER UPDATE OR DELETE",
@@ -970,7 +971,8 @@ def upgrade():
             f'CREATE TRIGGER file_insight_revoke {events} ON "{s}"."{table}" '
             'FOR EACH ROW EXECUTE FUNCTION "x".file_insight_revoke_hook()'
         )
-""")
+"""
+    )
     statements = set()
     for function, sql, unresolved in _executes(tree):
         statements.update(_statements(sql, unresolved, function, tree))
@@ -1038,12 +1040,14 @@ def test_guard_inventory_maps_each_pair_row_to_its_own_trigger_and_event():
 
 
 def test_guard_inventory_reads_equality_but_not_unknown_comparisons():
-    tree = ast.parse("""
+    tree = ast.parse(
+        """
 def upgrade():
     for level in ("ROW", "STATEMENT"):
         trigger = "row_name" if level == "ROW" else "other_name"
         op.execute(f"CREATE TRIGGER {trigger} ON x.t FOR EACH {level}")
-""")
+"""
+    )
     statements = set()
     for function, sql, unresolved in _executes(tree):
         statements.update(statement.strip() for statement in _statements(sql, unresolved, function, tree))
@@ -1059,12 +1063,14 @@ def upgrade():
 
 
 def test_guard_inventory_refuses_unreadable_pair_rows():
-    tree = ast.parse("""
+    tree = ast.parse(
+        """
 def upgrade():
     for event, level in PAIRS:
         trigger = "a" if level == "ROW" else "b"
         op.execute(f"CREATE TRIGGER {trigger} BEFORE {event} ON x.t FOR EACH {level}")
-""")
+"""
+    )
     for function, sql, unresolved in _executes(tree):
         try:
             _statements(sql, unresolved, function, tree)
@@ -1076,7 +1082,8 @@ def upgrade():
 
 def test_guard_inventory_resolves_tuple_loop_with_equality_conditional():
     """P11-T37's regression, kept here so one parser copy owns both lanes' cases."""
-    tree = ast.parse("""
+    tree = ast.parse(
+        """
 def upgrade():
     schema = settings.DB_SCHEMA
     quoted = op.get_context().dialect.identifier_preparer.quote_schema(schema)
@@ -1087,7 +1094,8 @@ def upgrade():
             ON {quoted}.service_plan_backfill_resolutions FOR EACH {level}
             EXECUTE FUNCTION {quoted}.service_plan_policy_immutable()
         \"\"\"))
-""")
+"""
+    )
     statements = set()
     for function, sql, unresolved in _executes(tree):
         statements.update(_statements(sql, unresolved, function, tree))
@@ -1101,12 +1109,14 @@ def upgrade():
 
 
 def test_p21_t13_nested_loop_binding_preserves_correlated_outer_values():
-    tree = ast.parse("""
+    tree = ast.parse(
+        """
 def upgrade():
     for table in ("a", "b"):
         for event, level in (("UPDATE", "ROW"), ("TRUNCATE", "STATEMENT")):
             op.execute(f"CREATE TRIGGER guard_{table}_{level} BEFORE {event} ON x.{table} FOR EACH {level}")
-""")
+"""
+    )
     statements = set()
     for function, sql, unresolved in _executes(tree):
         statements.update(statement.strip() for statement in _statements(sql, unresolved, function, tree))
@@ -1125,14 +1135,16 @@ def test_p21_t13_enumerate_start_is_not_silently_treated_as_zero():
 
 
 def test_p21_t13_named_guard_body_format_preserves_literal_sql():
-    tree = ast.parse("""
+    tree = ast.parse(
+        """
 GUARDS = (("guard_a", "BEGIN SELECT id FROM {s}.a; RETURN NEW; END"),)
 def upgrade():
     s = settings.DB_SCHEMA
     for name, body in GUARDS:
         rendered = body.format(s=s)
         op.execute(f"CREATE FUNCTION {s}.{name}() RETURNS trigger AS $$ {rendered} $$ LANGUAGE plpgsql")
-""")
+"""
+    )
     statements = set()
     for function, sql, unresolved in _executes(tree):
         statements.update(_statements(sql, unresolved, function, tree))

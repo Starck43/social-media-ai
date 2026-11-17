@@ -246,19 +246,20 @@ async def test_music_cannot_dispatch_even_with_a_test_only_binding(monkeypatch):
     operation.assert_not_awaited()
 
 
-def test_catalog_keeps_official_apps_method_and_all_gates_closed():
+def test_catalog_keeps_official_apps_method_and_only_people_enabled():
     selection = registry.resolve_categories("all")
-    assert selection.selected == ()
+    assert [category.category_id for category in selection.selected] == ["people"]
     catalog = {entry["id"]: entry for entry in registry.category_catalog()}
     for category in ("video", "apps", "market"):
         assert catalog[category]["status"] == "mocked"
         assert catalog[category]["official_method"] == METHODS[category]
         assert catalog[category]["reason"] == "vk_method_profile_unverified"
-        assert catalog[category]["evidence_ref"] == "docs/tasks/q-5.md"
+        assert catalog[category]["evidence_ref"] == "docs/audit/q/q-5.md"
     assert catalog["music"]["status"] == "unsupported"
     assert catalog["music"]["reason"] == "no_promised_public_search_method"
     assert catalog["music"]["official_method"] is None and catalog["music"]["executable"] is False
-    assert not any(entry["executable"] for entry in catalog.values())
+    enabled = [entry["id"] for entry in catalog.values() if entry["executable"]]
+    assert enabled == ["people"]
 
 
 @pytest.mark.parametrize("category", CATEGORIES)

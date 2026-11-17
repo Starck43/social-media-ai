@@ -310,14 +310,19 @@ refresh tokens, device IDs, arbitrary provider metadata or encrypted secrets.
 categories as an explicit, evidence-gated registry: each category records its
 official API method, result kind, status (`enabled`, `mocked`, `deferred`,
 `unsupported`) and a bounded reason. Only `people` (official `users.search`)
-is selected in the T33 slice; it dispatches through the collection adapter's
-existing `search_people`, returns typed people results (never Sources) stamped
-with category provenance, and stays `mocked` — contract-tested only — while
-Q-5 owns live method/profile evidence. Video, apps/games and owner-scoped market
-items are `mocked` with their own task cards, each gated by the same Q-5 evidence;
-music, clips and channels are `unsupported` with explicit reasons (music has no
-public search method since VK disabled the public audio API in 2016 — the
-`audio` access right still exists, but no documented search method uses it). Only `enabled` categories may
+is `enabled`: it dispatches through the collection adapter's existing
+`search_people`, returns typed people results (never Sources) stamped with
+category provenance, and was enabled by the owner on the recorded Q-5 live
+probe (2026-11-17: `users.search` ok on a fresh personal VK ID token for the
+Web application `54798450`; see the [Q-5 audit](../audit/q/q-5.md)). Video,
+apps/games and owner-scoped market items stay `mocked` with their own archived
+cards and the same evidence gate: the same probe measured `video.search`
+refused (code 15), `apps.getCatalog` answering with an empty `q=test` page and
+`market.search` not granted; enabling them is a separate owner decision.
+Music, clips and channels are `unsupported` with explicit reasons (music has
+no public search method since VK disabled the public audio API in 2016 — the
+`audio` access right still exists, but no documented search method uses it).
+Only `enabled` categories may
 execute: `resolve_categories` aggregates only enabled categories for `all`,
 returns the rest as unavailable with their reasons and fails closed on unknown
 ids; a refused or unavailable category raises a bounded error instead of

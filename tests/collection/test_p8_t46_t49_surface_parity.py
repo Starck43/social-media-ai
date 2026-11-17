@@ -52,17 +52,20 @@ async def test_all_five_handlers_return_identical_catalog_and_rights_gates(monke
         "admin": json.loads((await AgentTaskAdmin.vk_search_categories(admin, request())).body),
         "agent": await tool.handler(),
     }
-    expected = {"categories": category_catalog(), "gate": "docs/tasks/q-5.md"}
+    expected = {"categories": category_catalog(), "gate": "docs/audit/q/q-5.md"}
     for surface, payload in payloads.items():
         assert payload == expected, surface
         entries = {entry["id"]: entry for entry in payload["categories"]}
         for category in ("video", "apps", "market"):
             assert entries[category]["status"] == "mocked", surface
             assert entries[category]["reason"] == "vk_method_profile_unverified", surface
+        assert entries["people"]["status"] == "enabled", surface
+        assert entries["people"]["executable"] is True, surface
         assert entries["apps"]["official_method"] == "apps.getCatalog", surface
         assert entries["music"]["status"] == "unsupported", surface
         assert entries["music"]["reason"] == "no_promised_public_search_method", surface
-        assert not any(entry["executable"] for entry in entries.values()), surface
+        enabled = [entry["id"] for entry in entries.values() if entry["executable"]]
+        assert enabled == ["people"], surface
     assert guard_calls == [("agenttask", "view", "/app/tasks")]
 
 

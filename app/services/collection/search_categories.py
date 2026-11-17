@@ -9,7 +9,7 @@ adapter operations.
 
 Availability is honest by construction: a category with only mocked contract
 verification is ``mocked`` — implemented, but not enabled for users. Live
-enablement requires the method/profile evidence owned by Q-5; no category here
+enablement requires recorded method/profile evidence; no category here
 may become ``enabled`` from code alone. Deferred or unsupported categories keep
 an explicit bounded reason so closing P8-T33 cannot silently drop them.
 
@@ -61,7 +61,7 @@ REASON_METHOD_UNVERIFIED = "official_method_unverified"
 REASON_NO_PUBLIC_METHOD = "no_promised_public_search_method"
 REASON_PARTIAL_VIA_COMMUNITIES = "partially_represented_by_communities"
 
-Q5_EVIDENCE_REF = "docs/tasks/q-5.md"
+Q5_EVIDENCE_REF = "docs/audit/q/q-5.md"
 T33_CARD_REF = "docs/archive/tasks/p8-t33.md"
 T46_CARD_REF = "docs/archive/tasks/p8-t46.md"
 T47_CARD_REF = "docs/archive/tasks/p8-t47.md"
@@ -131,18 +131,21 @@ class CategorySelection:
         }
 
 
-# The P8-T33 registry. Only `people` is selected for this slice; it executes
-# through the existing adapter `search_people` operation over the official
-# `users.search` method and stays `mocked` while Q-5 owns live profile evidence.
-# Every other requested category keeps an explicit status and reason.
+# The P8-T33 registry. `people` is enabled on the recorded Q-5 live evidence
+# (docs/audit/q/q-5.md: users.search ok on a fresh personal VK ID token for the
+# Web app 54798450); it executes through the existing adapter `search_people`
+# operation. Every other requested category keeps an explicit status and reason.
 VK_SEARCH_CATEGORIES: tuple[SearchCategory, ...] = (
     SearchCategory(
         category_id=CATEGORY_PEOPLE,
         platform="vk",
         label="Люди",
         result_kind="person",
-        status=STATUS_MOCKED,
-        reason=REASON_PROFILE_UNVERIFIED,
+        # Enabled by the owner on the Q-5 live probe (2026-11-17), not by code.
+        # The status label carries availability; a non-enabled category keeps
+        # its bounded reason instead.
+        status=STATUS_ENABLED,
+        reason="",
         official_method="users.search",
         adapter_operation="search_people",
         evidence_ref=Q5_EVIDENCE_REF,

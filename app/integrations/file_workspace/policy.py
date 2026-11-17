@@ -7,6 +7,7 @@ policy persistence or settings UI are implemented by this module.
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 from enum import Enum
@@ -66,7 +67,10 @@ class ReadOnlyFolderPolicy:
     vice versa. Treat authorization changes as invalidating cached decisions.
     """
 
-    def __init__(self, root: str, restrictions: tuple[FolderRestriction, ...] = ()):
+    def __init__(self, root: str, restrictions: tuple[FolderRestriction, ...] = (), *, epoch: str = ""):
+        if type(epoch) is not str or (epoch and re.fullmatch(r"[0-9a-f]{32}", epoch) is None):
+            raise ValueError("invalid policy epoch")
+        self._epoch = epoch
         self._root = _components(root)
         compiled = []
         for restriction in restrictions:
@@ -91,6 +95,8 @@ class ReadOnlyFolderPolicy:
         parts = ["disk:/" + "/".join(self._root)]
         for folder, denied in self._restrictions:
             parts.append("disk:/" + "/".join(folder) + ":" + ",".join(sorted(op.value for op in denied)))
+        if self._epoch:
+            parts.append("epoch:" + self._epoch)
         return "|".join(parts)
 
     def permits(self, path: str, operation: FileOperation) -> bool:

@@ -110,6 +110,8 @@ def on_version_apply(
         # Account tariffs are private policy/history, not generic CRUD resources.
         "0154",
         "0155",
+        # Restrictive folder policy audit adds no generic resource grants.
+        "p12t15_policy_audit",
     }:
         return
     from scripts.migrations.register_model_types import register_model_types

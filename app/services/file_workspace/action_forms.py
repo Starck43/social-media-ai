@@ -59,6 +59,7 @@ async def action_form(request, allowed, expected_token):
     if set(result) != set(allowed) or len(result) != len(pairs):
         raise ValueError
     token = result.get("_csrf", "")
-    if not token.isascii() or len(token) != 64 or not hmac.compare_digest(token, expected_token):
+    expected = expected_token(result) if callable(expected_token) else expected_token
+    if not token.isascii() or len(token) != 64 or not hmac.compare_digest(token, expected):
         raise ValueError
     return result

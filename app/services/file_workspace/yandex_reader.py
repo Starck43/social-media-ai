@@ -8,6 +8,7 @@ No share policy is supported in this first slice.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import replace
 
 import httpx
@@ -33,11 +34,17 @@ def _stored_policy(config: object) -> ReadOnlyFolderPolicy:
         if not isinstance(config, dict):
             raise ValueError
         data = config.get("file_policy")
-        if not isinstance(data, dict) or set(data) != {"version", "root", "restrictions"}:
+        if not isinstance(data, dict) or set(data) not in (
+            {"version", "root", "restrictions"},
+            {"version", "root", "restrictions", "epoch"},
+        ):
             raise ValueError
         if type(data["version"]) is not int or data["version"] != 1 or not isinstance(data["restrictions"], list):
             raise ValueError
         if len(data["restrictions"]) > _MAX_RESTRICTIONS:
+            raise ValueError
+        epoch = data.get("epoch", "")
+        if "epoch" in data and (type(epoch) is not str or re.fullmatch(r"[0-9a-f]{32}", epoch) is None):
             raise ValueError
         restrictions = []
         for item in data["restrictions"]:
@@ -49,7 +56,7 @@ def _stored_policy(config: object) -> ReadOnlyFolderPolicy:
             if len(set(denied)) != len(denied):
                 raise ValueError
             restrictions.append(FolderRestriction(item["path"], frozenset(FileOperation(value) for value in denied)))
-        return ReadOnlyFolderPolicy(data["root"], tuple(restrictions))
+        return ReadOnlyFolderPolicy(data["root"], tuple(restrictions), epoch=epoch)
     except (ValueError, TypeError, KeyError):
         raise ConnectionDenied() from None
 

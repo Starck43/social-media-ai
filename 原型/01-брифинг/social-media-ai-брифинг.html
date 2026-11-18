@@ -1,0 +1,1010 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Assistant · Макет · Направление 1 «Брифинг»</title>
+<script>
+(function(){
+  try{var t=localStorage.getItem('t1');if(!t){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme='light';}
+})();
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f5f5f1;--sur:#fbfaf7;--sur2:#eeeDE5;--tx:#201f1c;--tx2:#5c5a52;--line:#d9d6cb;
+  --acc:#2f4d8f;--accsoft:#e9edf7;--ok:#2e7d4f;--bad:#b3372c;--warn:#8a5c17;
+  --serif:Georgia,'Times New Roman',serif;
+  --sans:-apple-system,'Segoe UI',system-ui,Roboto,'Helvetica Neue',Arial,sans-serif;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace;
+}
+[data-theme=dark]{
+  --bg:#17181d;--sur:#1e2027;--sur2:#262833;--tx:#e9e7df;--tx2:#a8a598;--line:#33363f;
+  --acc:#8fa7e8;--accsoft:#232a3d;--ok:#5dbd8a;--bad:#e2837a;--warn:#d8b26a;
+}
+html{background:var(--bg)}
+body{font:400 14.5px/1.55 var(--sans);color:var(--tx);-webkit-font-smoothing:antialiased}
+[hidden]{display:none!important}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:2px}
+.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.mono{font-family:var(--mono);font-size:12px;color:var(--tx2);font-variant-numeric:tabular-nums}
+h1,h2,h3{font-family:var(--serif);font-weight:600;line-height:1.2}
+
+/* Служебная панель макета */
+.pbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:7px 16px;background:var(--sur2);border-bottom:1px solid var(--line)}
+.pbar .pt{font:600 11px/1.5 var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.demo{border:1px dashed var(--tx2);color:var(--tx2);padding:1px 9px;font:500 11px/1.6 var(--mono)}
+.ptabs{display:flex;gap:2px;margin:0 auto}
+.ptab{padding:4px 13px;font:500 12.5px/1.5 var(--sans);color:var(--tx2);border:1px solid transparent;border-radius:2px}
+.ptab:hover{color:var(--tx)}
+.ptab[aria-selected=true]{color:var(--acc);background:var(--bg);border-color:var(--line);font-weight:600}
+.thbtn{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid var(--line);border-radius:2px;color:var(--tx2)}
+.thbtn:hover{color:var(--acc);border-color:var(--acc)}
+
+/* Каркас */
+.frame{display:grid;grid-template-columns:232px minmax(0,1fr)}
+.side{border-right:1px solid var(--line);padding:22px 14px 30px;position:sticky;top:0;height:calc(100vh - 36px);overflow:auto}
+.brand{display:flex;align-items:center;gap:9px;font:600 15px var(--serif);padding:0 8px 16px}
+.brand .lg{width:26px;height:26px;border:1.5px solid var(--tx);border-radius:50%;display:grid;place-items:center}
+.brand .lg .ic{width:14px;height:14px}
+.grp{margin:0 0 18px}
+.grp h3{font:600 10.5px/1.4 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--tx2);padding:0 8px 6px;font-family:var(--sans)}
+.itm{display:flex;align-items:center;gap:9px;width:100%;padding:6px 8px;border-radius:2px;font-size:13.8px;color:var(--tx2);text-align:left}
+.itm:hover{color:var(--tx)}
+.itm.on{color:var(--acc);background:var(--accsoft);font-weight:600}
+.itm.off{opacity:.5;cursor:default}
+.maincol{min-width:0}
+.ptop{display:flex;align-items:center;gap:12px;padding:10px 28px;border-bottom:1px solid var(--line)}
+.burger{display:none}
+.pws{font:600 13.5px var(--sans)}
+.prole{color:var(--tx2);font-size:12.5px}
+.pright{margin-left:auto;display:flex;align-items:center;gap:12px}
+.pbadge{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--warn);color:var(--warn);padding:3px 11px;font:500 12px var(--mono);border-radius:2px}
+.av{width:32px;height:32px;border-radius:50%;background:var(--accsoft);color:var(--acc);display:grid;place-items:center;font:600 12px var(--sans)}
+main{padding:0 28px 56px}
+
+/* Сегодня */
+.wrap{max-width:1120px;margin:0 auto}
+.todaygrid{display:grid;grid-template-columns:minmax(0,1fr) 236px;gap:44px;padding-top:30px}
+.lead .datebar{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:20px}
+.lead h1{font-size:31px;letter-spacing:-.01em}
+.lead .stand{font-family:var(--serif);font-size:16.5px;color:var(--tx2);max-width:62ch;margin:10px 0 12px}
+.leadlinks{display:flex;gap:18px}
+.tbtn{color:var(--acc);font:600 13.5px var(--sans);text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px}
+.tbtn:hover{text-decoration:none}
+.sect{border-top:1px solid var(--line);margin-top:30px;padding-top:20px}
+.rubric{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.rubric h2{font-size:20px}
+.cnt{font:500 12px var(--mono);color:var(--tx2);border:1px solid var(--line);padding:1px 7px;border-radius:2px}
+.stamp{display:inline-block;border:1px solid currentColor;padding:1px 8px;font:600 10.5px/1.7 var(--sans);letter-spacing:.09em;text-transform:uppercase;border-radius:1px}
+.stamp.ok{color:var(--ok)}.stamp.bad{color:var(--bad)}.stamp.wait{color:var(--warn)}.stamp.acc{color:var(--acc)}
+.dec{border-left:2px solid var(--acc);background:var(--sur);padding:14px 18px;margin-bottom:12px}
+.dectop{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.dec h3{font-size:17.5px;margin-bottom:5px}
+.dec p{color:var(--tx2);max-width:68ch}
+.acts{display:flex;gap:10px;align-items:center;margin-top:11px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--sur);padding:6px 14px;border-radius:2px;font:500 13.5px var(--sans)}
+.btn:hover{border-color:var(--acc);color:var(--acc)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:var(--bg);font-weight:600}
+.btn.pri:hover{color:var(--bg);opacity:.92}
+.plan{list-style:none}
+.task{display:flex;gap:13px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line)}
+.task:last-child{border-bottom:0}
+.cb{width:17px;height:17px;border:1.5px solid var(--tx2);border-radius:2px;flex:none;margin-top:3px;display:grid;place-items:center}
+.cb:hover{border-color:var(--acc);color:var(--acc)}
+.cb[aria-pressed=true]{background:var(--acc);border-color:var(--acc);color:var(--bg)}
+.cb .ic{width:12px;height:12px;stroke-width:2.2}
+.tbody{flex:1;min-width:0}
+.tbody p{font-weight:500}
+.meta{margin-top:3px;font-family:var(--mono);font-size:11.5px;color:var(--tx2);font-variant-numeric:tabular-nums}
+.overdue .tbody p{color:var(--bad)}
+.warn{border:1px solid var(--line);border-left:2px solid var(--bad);background:var(--sur);padding:12px 16px;margin-bottom:10px}
+.warn.unknown{border-left-color:var(--tx2);border-style:dashed;border-left-style:solid}
+.warn h4{font:600 14.5px var(--sans);margin-bottom:3px}
+.warn p{color:var(--tx2);font-size:13.5px}
+.warn .acts{margin-top:8px}
+.collapsed{border:1px dashed var(--line);border-radius:2px;background:transparent}
+.collapsed summary{list-style:none;cursor:pointer;padding:9px 14px;font-size:13px;color:var(--tx2);display:flex;align-items:center;gap:9px}
+.collapsed summary::-webkit-details-marker{display:none}
+.collapsed summary:hover{color:var(--tx)}
+.collapsed .body{padding:0 14px 11px;color:var(--tx2);font-size:13px}
+.res{border:1px solid var(--line);background:var(--sur);padding:13px 16px;margin-bottom:10px}
+.res h4{font-size:16px;margin:7px 0 4px}
+.res p{color:var(--tx2);font-size:13.5px;max-width:70ch}
+.cov{display:flex;gap:16px;flex-wrap:wrap;margin-top:9px}
+.cov .cr{display:flex;align-items:center;gap:8px;font:500 12px var(--mono)}
+.bar{width:90px;height:4px;background:var(--sur2);position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--acc)}
+.bar.z i{background:repeating-linear-gradient(90deg,var(--tx2) 0 3px,transparent 3px 6px)}
+.taside{padding-top:30px}
+.abk{border-top:2px solid var(--tx);padding:10px 0 20px}
+.abk h3{font:600 11px/1.4 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--tx2);font-family:var(--sans);margin-bottom:10px}
+.abk dl{display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:12.5px}
+.abk dt{color:var(--tx2)}
+.abk dd{text-align:right;font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
+
+/* Чат */
+.chatgrid{display:grid;grid-template-columns:minmax(0,1fr) 312px;min-height:calc(100vh - 118px)}
+.chatmain{display:flex;flex-direction:column;max-width:820px;margin:0 auto;width:100%;min-width:0;padding-top:24px}
+.chead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.chead h1{font-size:23px}
+.chacts{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.badge-model{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--acc);color:var(--acc);padding:3px 10px;font:600 11.5px var(--mono);border-radius:2px}
+.badge-model .ic{width:13px;height:13px}
+.ibtn{display:inline-grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:2px;color:var(--tx2)}
+.ibtn:hover{color:var(--acc);border-color:var(--acc)}
+.transcript{flex:1;padding:22px 0;overflow:visible}
+.msg{max-width:72ch;margin-bottom:20px}
+.msg .who{font:600 10.5px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--tx2);margin-bottom:5px;display:flex;gap:8px;align-items:center}
+.msg.agent{border-left:2px solid var(--line);padding-left:16px}
+.msg.agent .txt{font-family:var(--serif);font-size:16px;line-height:1.6}
+.msg.user{margin-left:auto;text-align:right}
+.msg.user .txt{display:inline-block;text-align:left;background:var(--sur2);padding:9px 14px;border-radius:2px;font-size:14.5px}
+.clip{border:1px solid var(--line);background:var(--sur);margin:12px 0 6px;padding:13px 16px;text-align:left}
+.clip h4{font-size:15.5px;margin:7px 0 5px}
+.clip p{font-family:var(--sans);font-size:13.5px;color:var(--tx2)}
+.evi{font:400 11.5px var(--mono);color:var(--tx2);margin-top:8px;border-top:1px dashed var(--line);padding-top:8px}
+.pbar2{height:4px;background:var(--sur2);margin:9px 0 3px;position:relative}
+.pbar2 i{position:absolute;inset:0 auto 0 0;background:var(--acc)}
+.quote{border-left:2px solid var(--acc);padding:6px 12px;margin:9px 0;font-family:var(--serif);font-style:italic;color:var(--tx);font-size:14.5px;background:var(--accsoft)}
+.composer{border:1px solid var(--line);background:var(--sur);padding:11px 14px;margin-bottom:8px}
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--bg);padding:3px 6px 3px 10px;font:400 12px var(--mono);border-radius:2px}
+.chip .cx{display:inline-grid;place-items:center;width:16px;height:16px;color:var(--tx2)}
+.chip .cx:hover{color:var(--bad)}
+.crow{display:flex;align-items:center;gap:10px}
+.cinput{flex:1;min-width:0;border:0;background:transparent;color:var(--tx);font:400 14.5px var(--sans);padding:8px 2px}
+.cinput::placeholder{color:var(--tx2)}
+.cinput:focus{outline:none}
+.quick{display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-top:1px dashed var(--line);margin-top:9px;padding-top:9px}
+
+/* Правая панель */
+.rp{border-left:1px solid var(--line);padding:18px 16px;background:var(--bg);position:sticky;top:0;height:calc(100vh - 118px);overflow:auto}
+.rphead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.rphead h2{font-size:17px}
+.rtabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.rtab{padding:6px 10px;font:500 12.5px var(--sans);color:var(--tx2);border-bottom:2px solid transparent}
+.rtab:hover{color:var(--tx)}
+.rtab[aria-selected=true]{color:var(--acc);border-bottom-color:var(--acc);font-weight:600}
+.rsec h4{font:600 13.5px var(--sans);margin-bottom:8px}
+.ritem{border:1px solid var(--line);background:var(--sur);padding:10px 12px;margin-bottom:9px}
+.ritem p{font-size:13px;color:var(--tx2)}
+.ritem .acts{margin-top:8px}
+.mlist{list-style:none}
+.mlist li{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+.mlist .ic{width:15px;height:15px;color:var(--tx2)}
+
+/* Входящие */
+.ibgrid{display:grid;grid-template-columns:330px minmax(0,1fr);gap:0;padding-top:24px;align-items:start}
+.ibside{border-right:1px solid var(--line);padding-right:18px}
+.pagehead{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;padding-top:28px;max-width:1120px;margin:0 auto}
+.pagehead h1{font-size:26px}
+.pagehead .sub{color:var(--tx2);margin-top:4px}
+.phacts{display:flex;gap:9px;flex-wrap:wrap}
+.fbar{display:flex;gap:2px;flex-wrap:wrap;margin:16px 0 6px}
+.fbtn{padding:4px 11px;font:500 12.5px var(--sans);color:var(--tx2);border:1px solid transparent;border-radius:2px}
+.fbtn:hover{color:var(--tx)}
+.fbtn[aria-pressed=true]{color:var(--acc);border-color:var(--line);background:var(--bg);font-weight:600}
+.thread{display:block;width:100%;text-align:left;padding:11px 10px;border-bottom:1px solid var(--line);border-radius:2px}
+.thread:hover{background:var(--sur)}
+.thread.on{background:var(--accsoft)}
+.tr1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.tr1 b{font-weight:600;font-size:13.5px}
+.tm{font:400 11px var(--mono);color:var(--tx2)}
+.tr2{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-top:3px}
+.tr2 span{color:var(--tx2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stmini{flex:none;border:1px solid currentColor;padding:0 7px;font:600 9.5px/1.7 var(--sans);letter-spacing:.08em;text-transform:uppercase}
+.readpane{padding:6px 0 6px 24px;min-width:0}
+.letterhead{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:16px}
+.letterhead h2{font-size:20px;margin-top:6px}
+.letterhead .from{color:var(--tx2);font-size:13px;margin-top:4px}
+.lmsg{max-width:70ch;margin-bottom:18px}
+.lmsg .mh{display:flex;gap:10px;align-items:baseline;margin-bottom:5px}
+.lmsg .mh b{font-size:13.5px}
+.lmsg p{font-family:var(--serif);font-size:15.5px;line-height:1.6}
+.lmsg.out .mh{justify-content:flex-end}
+.lmsg.out p{background:var(--sur2);display:inline-block;padding:9px 14px;font-family:var(--sans);font-size:14.5px}
+.dstat{font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;margin-left:10px}
+.dstat.ok{color:var(--ok)}.dstat.bad{color:var(--bad)}.dstat.wait{color:var(--tx2)}
+.agentdraft{border:1px solid var(--line);border-left:2px solid var(--acc);background:var(--accsoft);padding:13px 16px;max-width:70ch}
+.agentdraft h4{font:600 13.5px var(--sans);margin-bottom:7px;display:flex;gap:9px;align-items:center}
+.agentdraft p{font-size:14px}
+.reason{font:400 11.5px var(--mono);color:var(--tx2);margin-top:6px}
+
+/* Задачи */
+.seg2{display:inline-flex;border:1px solid var(--line);border-radius:2px;overflow:hidden}
+.seg2 button{padding:5px 13px;font:500 12.5px var(--sans);color:var(--tx2)}
+.seg2 button[aria-pressed=true]{background:var(--accsoft);color:var(--acc);font-weight:600}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:20px 0 4px;flex-wrap:wrap}
+.tab{padding:8px 14px;font:500 14px var(--sans);color:var(--tx2);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:var(--tx)}
+.tab[aria-selected=true]{color:var(--acc);border-bottom-color:var(--acc);font-weight:600}
+.tgroup h3{font:600 11px/1.4 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--tx2);font-family:var(--sans);margin:18px 0 4px}
+.agentcard{border:1px solid var(--line);background:var(--sur);padding:15px 17px;margin-bottom:13px;max-width:860px}
+.agentcard h3{font-size:18px;margin-bottom:5px}
+.agentcard .arow{display:flex;gap:12px;align-items:flex-start;margin-top:10px}
+.hist{font:400 11.5px/1.9 var(--mono);color:var(--tx2);border-top:1px dashed var(--line);margin-top:10px;padding-top:8px}
+#cal{border:1px solid var(--line);max-width:860px;background:var(--sur)}
+.calh{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--line)}
+.calh div{padding:6px 8px;font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--tx2);border-right:1px solid var(--line)}
+.calh div:last-child{border-right:0}
+.calb{display:grid;grid-template-columns:repeat(7,1fr)}
+.day{min-height:86px;border-top:1px solid var(--line);border-right:1px solid var(--line);padding:6px 7px}
+.day:nth-child(7n){border-right:0}
+.day .dn{font:500 12px var(--mono);color:var(--tx2)}
+.day.out .dn{opacity:.4}
+.day.today{background:var(--accsoft)}
+.day.today .dn{color:var(--acc);font-weight:600}
+.ev{margin-top:5px;font-size:10.5px;line-height:1.4;border-left:2px solid var(--acc);padding-left:6px;color:var(--tx)}
+.ev.bad{border-left-color:var(--bad)}
+.caleg{display:flex;gap:16px;margin-top:10px;flex-wrap:wrap;font:400 11.5px var(--mono);color:var(--tx2)}
+
+/* Сценарии */
+.subnav{display:flex;gap:4px;margin:18px 0 22px;flex-wrap:wrap;max-width:1120px}
+.snl{padding:5px 12px;font:500 13px var(--mono);color:var(--tx2);border:1px solid transparent;border-radius:2px}
+.snl:hover{color:var(--tx)}
+.snl.on{color:var(--acc);border-color:var(--line);background:var(--bg);font-weight:600}
+.scngrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;max-width:1120px}
+.scn{border:1px solid var(--line);background:var(--sur);padding:16px 18px}
+.scn header{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.scn h3{font-size:17.5px}
+.scn .sched{font:400 11.5px var(--mono);color:var(--tx2);margin-top:8px}
+.srcov{margin-top:11px;border-top:1px dashed var(--line);padding-top:10px;display:grid;gap:7px}
+.srow{display:grid;grid-template-columns:130px 1fr 64px;gap:10px;align-items:center;font:400 11.5px var(--mono);color:var(--tx2)}
+.spark{margin-top:12px}
+.spark svg{width:100%;height:44px;display:block}
+.spark polyline{fill:none;stroke:var(--acc);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+/* Мобильный слой */
+.mbar{display:none}
+.drw{position:fixed;inset:0;z-index:60;background:rgba(12,12,14,.4)}
+.drw .panel{position:absolute;top:0;left:0;bottom:0;width:286px;background:var(--bg);border-right:1px solid var(--line);padding:16px;overflow:auto}
+.drw .drhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.drw .itm{padding:9px 8px;font-size:14.5px}
+
+@media (max-width:1023px){
+  .rp{position:fixed;top:0;right:0;bottom:0;width:min(360px,92vw);z-index:55;transform:translateX(105%);transition:transform .22s ease;border-left:1px solid var(--line);box-shadow:-12px 0 30px rgba(10,10,12,.18);height:100dvh}
+  .rp.open{transform:none}
+}
+@media (max-width:768px){
+  .frame{grid-template-columns:1fr}
+  .side{display:none}
+  .burger{display:inline-grid}
+  .ptop{padding:10px 16px}
+  main{padding:0 16px 96px}
+  .todaygrid{grid-template-columns:1fr;gap:0}
+  .taside{border-top:1px solid var(--line);margin-top:8px;padding-top:18px}
+  .chatgrid{grid-template-columns:1fr}
+  .ibgrid{grid-template-columns:1fr;gap:14px}
+  .ibside{border-right:0;padding-right:0}
+  .readpane{padding-left:0;border-top:1px solid var(--line);padding-top:14px}
+  .scngrid{grid-template-columns:1fr}
+  .lead h1{font-size:25px}
+  .mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:50;background:var(--sur);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom))}
+  .mbar a,.mbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font:500 10px var(--sans);color:var(--tx2);padding:4px 0}
+  .mbar .on{color:var(--acc)}
+  .day{min-height:64px}
+  .srow{grid-template-columns:96px 1fr 52px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{transition:none!important;animation:none!important;scroll-behavior:auto!important}
+}
+.view{animation:fadein .16s ease}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+</style>
+</head>
+<body>
+<svg hidden aria-hidden="true" xmlns=""><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.7 12 3.5l9 7.2"/><path d="M5.5 9.5V20a.5.5 0 0 0 .5.5h12a.5.5 0 0 0 .5-.5V9.5"/></symbol>
+<symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.5 8.5 0 0 1-12.4 7.5L3.5 20.5l1.5-4.9A8.5 8.5 0 1 1 21 11.5Z"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4.7 13.5 6.6 5h10.8l1.9 8.5"/><path d="M3 13.5h5.2l1.5 2.6h4.6l1.5-2.6H21"/><path d="M3 13.5V19a.5.5 0 0 0 .5.5h17a.5.5 0 0 0 .5-.5v-5.5"/></symbol>
+<symbol id="i-cal" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="14.5" rx="1.2"/><path d="M8 3.5v4M16 3.5v4M4 10.5h16"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3.5 8.5 4.7L12 12.9 3.5 8.2 12 3.5Z"/><path d="m3.5 12.9 8.5 4.7 8.5-4.7"/><path d="m3.5 16.9 8.5 4.7 8.5-4.7"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8.2" r="3.4"/><path d="M3.5 19.5c.7-3.2 3-5 5.5-5s4.8 1.8 5.5 5"/><circle cx="16.8" cy="9.3" r="2.7"/><path d="M17.3 14.6c2.1.4 3.6 1.8 4.2 4.2"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.6V12l2.8 2"/></symbol>
+<symbol id="i-case" viewBox="0 0 24 24"><rect x="3.5" y="7.5" width="17" height="12.5" rx="1.2"/><path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5M3.5 12.5h17"/></symbol>
+<symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5.6" rx="7.5" ry="2.6"/><path d="M4.5 5.6v12.8c0 1.4 3.4 2.6 7.5 2.6s7.5-1.2 7.5-2.6V5.6"/><path d="M4.5 12c0 1.4 3.4 2.6 7.5 2.6s7.5-1.2 7.5-2.6"/></symbol>
+<symbol id="i-doc" viewBox="0 0 24 24"><path d="M7 3.5h6.5L19 9v11a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 7 20V3.5Z"/><path d="M13.5 3.5V9H19M10 13h6M10 16.5h6"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 6.5A.5.5 0 0 1 4 6h4.8l2 2.4H20a.5.5 0 0 1 .5.5v9.6a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V6.5Z"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M4.5 20v-7M10.5 20V5.5M16.5 20v-9M3 20h18"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M8.5 6.5H20M8.5 12H20M8.5 17.5H20M4 6.5h.01M4 12h.01M4 17.5h.01"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.8v2M12 19.2v2M2.8 12h2M19.2 12h2M5.5 5.5l1.4 1.4M17.1 17.1l1.4 1.4M18.5 5.5l-1.4 1.4M6.9 17.1l-1.4 1.4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 13.6A8.1 8.1 0 1 1 10.4 4a6.3 6.3 0 0 0 9.6 9.6Z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.8 4.4 4.4L19 7.6"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.8 2.8 19.8h18.4L12 3.8Z"/><path d="M12 9.8v4.4M12 16.9h.01"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="M20.5 3.5 3.5 10.8l6.7 2.9 2.9 6.7 7.4-16.9Z"/><path d="M20.5 3.5 10.2 13.7"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><path d="m20.5 11.5-8.2 8.2a4.6 4.6 0 0 1-6.5-6.5l8.7-8.7a3.1 3.1 0 0 1 4.4 4.4l-8.7 8.7a1.6 1.6 0 0 1-2.2-2.2l7.9-7.9"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 8.5h-5v-5"/><path d="M3.5 15.5h5v5"/><path d="M20 8.5a8.2 8.2 0 0 0-14.6-2M4 15.5a8.2 8.2 0 0 0 14.6 2"/></symbol>
+<symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 3 5 13.5h6L11 21l8-10.5h-6L13 3Z"/></symbol>
+<symbol id="i-panel" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="1.2"/><path d="M14.5 5v14"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="m6.5 9.5 5.5 5.5 5.5-5.5"/></symbol>
+<symbol id="i-task" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.4"/><path d="m8.5 12 2.4 2.4L15.5 9.5"/></symbol>
+<symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.3" r="3.5"/><path d="M5.2 19.6c.8-3.4 3.3-5.2 6.8-5.2s6 1.8 6.8 5.2"/></symbol>
+</defs></svg>
+
+<header class="pbar">
+  <span class="pt">Макет веба · Направление 1 · «Брифинг»</span>
+  <span class="demo">Демо-данные</span>
+  <nav class="ptabs" role="tablist" aria-label="Страницы макета">
+    <button class="ptab" role="tab" data-view-tab="today" aria-selected="true">Сегодня</button>
+    <button class="ptab" role="tab" data-view-tab="chat" aria-selected="false">Чат</button>
+    <button class="ptab" role="tab" data-view-tab="inbox" aria-selected="false">Входящие</button>
+    <button class="ptab" role="tab" data-view-tab="tasks" aria-selected="false">Задачи</button>
+    <button class="ptab" role="tab" data-view-tab="scenarios" aria-selected="false">Сценарии</button>
+  </nav>
+  <button class="thbtn" id="themeBtn" aria-label="Переключить тему">
+    <svg class="ic" id="tSun"><use href="#i-sun"/></svg><svg class="ic" id="tMoon" hidden><use href="#i-moon"/></svg>
+    <span id="tLabel">Светлая</span>
+  </button>
+</header>
+
+<div class="frame">
+  <aside class="side" aria-label="Навигация по разделам">
+    <div class="brand"><span class="lg"><svg class="ic"><use href="#i-zap"/></svg></span>AI Assistant</div>
+    <nav id="navTree">
+      <div class="grp"><h3>Работа</h3>
+        <button class="itm on" data-go="today"><svg class="ic"><use href="#i-home"/></svg>Сегодня</button>
+        <button class="itm" data-go="chat"><svg class="ic"><use href="#i-chat"/></svg>Чат с агентом</button>
+        <button class="itm" data-go="inbox"><svg class="ic"><use href="#i-inbox"/></svg>Входящие</button>
+        <button class="itm" data-go="tasks"><svg class="ic"><use href="#i-cal"/></svg>Задачи</button>
+      </div>
+      <div class="grp"><h3>Клиенты</h3>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-users"/></svg>Контакты</button>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-clock"/></svg>Договорённости</button>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-case"/></svg>Предложения</button>
+      </div>
+      <div class="grp"><h3>Знания</h3>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-db"/></svg>База знаний</button>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-doc"/></svg>Документы</button>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-folder"/></svg>Файлы</button>
+      </div>
+      <div class="grp"><h3>Мониторинг</h3>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-db"/></svg>Источники</button>
+        <button class="itm" data-go="scenarios"><svg class="ic"><use href="#i-layers"/></svg>Сценарии</button>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-chart"/></svg>Аналитика</button>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-doc"/></svg>Дайджесты</button>
+      </div>
+      <div class="grp"><h3>Система</h3>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-task"/></svg>Действия</button>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-list"/></svg>Очередь</button>
+        <button class="itm off" title="Не заполнено в макете"><svg class="ic"><use href="#i-gear"/></svg>Настройки</button>
+      </div>
+    </nav>
+  </aside>
+
+  <div class="maincol">
+    <div class="ptop">
+      <button class="ibtn burger" id="burger" aria-label="Открыть навигацию"><svg class="ic"><use href="#i-menu"/></svg></button>
+      <div><div class="pws">Пространство «Прямая речь»</div><div class="prole">Анна Северова · владелец пространства</div></div>
+      <div class="pright">
+        <button class="pbadge" data-go="today" title="Открыть «Сегодня»"><svg class="ic" style="width:13px;height:13px"><use href="#i-alert"/></svg>Ждут решения · 2</button>
+        <span class="av" title="Анна Северова">АС</span>
+      </div>
+    </div>
+
+<main id="main">
+
+<!-- СЕГОДНЯ -->
+<section class="view" data-view="today" role="tabpanel" aria-label="Сегодня">
+  <div class="wrap todaygrid">
+    <div class="tmain">
+      <div class="lead">
+        <div class="datebar"><span class="mono" style="letter-spacing:.08em;text-transform:uppercase">Среда, 18 ноября 2026</span><span class="mono">данные на 08:45</span></div>
+        <h1>Доброе утро, Анна</h1>
+        <p class="stand">Бриф на день: два решения, три задачи, один источник требует внимания. За ночь у «Смены» 14 новых упоминаний, тон в основном нейтральный.</p>
+        <div class="leadlinks"><button class="tbtn" data-go="chat">Обсудить с агентом</button><button class="tbtn" data-go="tasks">Перейти к задачам</button></div>
+      </div>
+
+      <section class="sect">
+        <div class="rubric"><h2>Ждут решения</h2><span class="cnt">2</span></div>
+        <div class="dec">
+          <div class="dectop"><span class="stamp acc">Решение</span><span class="mono">истекает через 24 ч</span></div>
+          <h3>Запустить сценарий «Отзывы на сезонное меню»</h3>
+          <p>Агент подготовил план: источники VK и Telegram, до 500 запросов, смета 210 руб. Нужна ваша оценка бюджета перед запуском.</p>
+          <div class="acts"><button class="btn pri">Согласовать</button><button class="btn">Отклонить</button><button class="tbtn" data-go="chat">Открыть план в чате</button></div>
+        </div>
+        <div class="dec">
+          <div class="dectop"><span class="stamp acc">Решение</span><span class="mono">до 18:00</span></div>
+          <h3>Ответить Ольге Ким про сроки дайджеста</h3>
+          <p>Агент предложил ответ: дайджест будет готов к 14:00. После согласования письмо уйдет через исходящие.</p>
+          <div class="acts"><button class="btn pri">Согласовать</button><button class="btn">Отклонить</button><button class="tbtn" data-go="inbox">Открыть переписку</button></div>
+        </div>
+      </section>
+
+      <section class="sect">
+        <div class="rubric"><h2>По плану на сегодня</h2><span class="cnt">5</span></div>
+        <ul class="plan">
+          <li class="task overdue">
+            <button class="cb" aria-pressed="false" aria-label="Отметить «Согласовать смету на съёмку» выполненной"><svg class="ic" hidden><use href="#i-check"/></svg></button>
+            <div class="tbody"><p>Согласовать смету на съёмку</p><div class="meta">просрочена на 1 день. приоритет: высокий</div></div>
+          </li>
+          <li class="task">
+            <button class="cb" aria-pressed="false" aria-label="Отметить «Отправить дайджест Ольге Ким» выполненной"><svg class="ic" hidden><use href="#i-check"/></svg></button>
+            <div class="tbody"><p>Отправить дайджест Ольге Ким</p><div class="meta">сегодня, 18:00. приоритет: средний. источник: планировщик</div></div>
+            <button class="tbtn" data-go="chat">Поручить агенту</button>
+          </li>
+          <li class="task">
+            <button class="cb" aria-pressed="false" aria-label="Отметить «Проверить цифры в отчёте» выполненной"><svg class="ic" hidden><use href="#i-check"/></svg></button>
+            <div class="tbody"><p>Проверить цифры в отчёте по упоминаниям</p><div class="meta">сегодня, до вечера</div></div>
+          </li>
+          <li class="task">
+            <span class="ibtn" style="border:0;width:26px;height:26px" aria-hidden="true"><svg class="ic"><use href="#i-clock"/></svg></span>
+            <div class="tbody"><p>Созвон с Ольгой Ким</p><div class="meta">сегодня, 15:00. событие календаря</div></div>
+          </li>
+          <li class="task">
+            <span class="ibtn" style="border:0;width:26px;height:26px" aria-hidden="true"><svg class="ic"><use href="#i-zap"/></svg></span>
+            <div class="tbody"><p>«Упоминания "Смены"»: утренний сбор</p><div class="meta">выполнен в 08:30. следующий запуск: завтра, 08:30</div></div>
+            <span class="stamp ok">Успех</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="sect">
+        <div class="rubric"><h2>Ждут ответа</h2><span class="cnt">3</span></div>
+        <ul class="plan">
+          <li class="task" style="cursor:pointer" data-go="inbox">
+            <span class="ibtn" style="border:0;width:26px;height:26px" aria-hidden="true"><svg class="ic"><use href="#i-inbox"/></svg></span>
+            <div class="tbody"><p>Ольга Ким: «Когда будет дайджест?»</p><div class="meta">почта. 09:12. класс: нужен ответ</div></div>
+            <span class="stamp acc">Нужен ответ</span>
+          </li>
+          <li class="task" data-go="inbox">
+            <span class="ibtn" style="border:0;width:26px;height:26px" aria-hidden="true"><svg class="ic"><use href="#i-inbox"/></svg></span>
+            <div class="tbody"><p>Ирина Лебедева: вопрос о комментарии</p><div class="meta">Telegram. 08:50. класс: к сведению</div></div>
+            <span class="stamp">К сведению</span>
+          </li>
+          <li class="task" data-go="inbox">
+            <span class="ibtn" style="border:0;width:26px;height:26px" aria-hidden="true"><svg class="ic"><use href="#i-inbox"/></svg></span>
+            <div class="tbody"><p>Сервис аренды: счёт за ноябрь</p><div class="meta">почта. вчера. класс: подождёт</div></div>
+            <span class="stamp wait">Подождёт</span>
+          </li>
+        </ul>
+        <details class="collapsed" style="margin-top:12px">
+          <summary><svg class="ic" style="width:15px;height:15px"><use href="#i-chev"/></svg>MAX: не подключен, данных нет. Показать причину</summary>
+          <div class="body">Причина: подключение MAX не настроено в пространстве. Настраивается в «Настройках», раздел «Подключения». До подключения сообщения MAX в триаж не попадают.</div>
+        </details>
+      </section>
+
+      <section class="sect">
+        <div class="rubric"><h2>Требует внимания</h2><span class="cnt">3</span></div>
+        <div class="warn">
+          <div class="dectop"><h4>Telegram-источник требует переподключения</h4><span class="stamp bad">Высокий</span></div>
+          <p>Канал «Казань со стороны»: срок действия авторизации истёк. Сценарий «Кофейни центра Казани» считает только 2 источника из 3.</p>
+          <div class="meta">провайдер: Telegram. тип: источник. свежесть: данные на 17 ноября</div>
+          <div class="acts"><button class="btn pri">Переподключить</button><button class="tbtn" data-go="scenarios">Открыть сценарий</button></div>
+        </div>
+        <div class="warn unknown">
+          <div class="dectop"><h4>Доставка дайджеста: статус неизвестен</h4><span class="stamp">Средний</span></div>
+          <p>Дайджест для Ольги Ким от 17 ноября: подтверждения доставки нет. Канал доставки Telegram, получатель не ответил.</p>
+          <div class="meta">провайдер: доставка. тип: дайджест. свежесть: проверено в 08:30</div>
+          <div class="acts"><button class="btn">Открыть тред доставки</button></div>
+        </div>
+        <div class="warn" style="border-left-color:var(--warn)">
+          <div class="dectop"><h4>Бюджет моделей: 82% месячного лимита</h4><span class="stamp wait">Средний</span></div>
+          <p>Прогноз: лимит закончится к 25 ноября при текущем темпе запусков. Дорогой шаг: разбор вложений в сценарии «Конкуренты».</p>
+          <div class="meta">провайдер: биллинг. тип: лимит. свежесть: пересчитано в 08:00</div>
+          <div class="acts"><button class="btn">Открыть настройки лимитов</button></div>
+        </div>
+      </section>
+
+      <section class="sect">
+        <div class="rubric"><h2>Последние результаты</h2><span class="cnt">2</span></div>
+        <div class="res">
+          <span class="stamp ok">Успех</span>
+          <h4>«Упоминания "Смены" в VK и Telegram»</h4>
+          <p>14 упоминаний за сутки, тон нейтральный. Три вопроса касаются сезонного меню: стоит подготовить ответ бренда.</p>
+          <div class="cov">
+            <span class="cr">VK<div class="bar"><i style="width:100%"></i></div>100%</span>
+            <span class="cr">Telegram<div class="bar"><i style="width:90%"></i></div>90%</span>
+          </div>
+          <div class="acts"><button class="tbtn" data-go="scenarios">Открыть результат</button></div>
+        </div>
+        <div class="res">
+          <span class="stamp wait">Частично</span>
+          <h4>«Кофейни центра Казани: конкуренты»</h4>
+          <p>Данные неполные: источники VK и Telegram собраны, канал «Казань со стороны» недоступен и в расчёт не попал.</p>
+          <div class="cov">
+            <span class="cr">VK<div class="bar"><i style="width:100%"></i></div>100%</span>
+            <span class="cr">«Казань со стороны»<div class="bar z"><i style="width:100%"></i></div>нет покрытия</span>
+          </div>
+          <div class="acts"><button class="tbtn" data-go="scenarios">Открыть результат</button></div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="taside">
+      <div class="abk">
+        <h3>Вкратце</h3>
+        <dl>
+          <dt>Пространство</dt><dd>Прямая речь</dd>
+          <dt>Роль</dt><dd>владелец</dd>
+          <dt>Источники</dt><dd>5 из 6</dd>
+          <dt>Дайджест</dt><dd>завтра, 09:00</dd>
+          <dt>Бюджет моделей</dt><dd>82%</dd>
+        </dl>
+      </div>
+      <div class="abk">
+        <h3>Свежесть данных</h3>
+        <dl>
+          <dt>VK</dt><dd>08:30</dd>
+          <dt>Telegram</dt><dd>08:41</dd>
+          <dt>Почта</dt><dd>08:12</dd>
+          <dt>MAX</dt><dd>нет данных</dd>
+        </dl>
+      </div>
+      <div class="abk">
+        <h3>На связи</h3>
+        <dl><dt>Агент</dt><dd>на связи</dd></dl>
+        <p style="font-size:12.5px;color:var(--tx2);margin-top:8px">Агент собирает данные по расписанию и ждёт решений. Граница модели в чате: облачная.</p>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ЧАТ -->
+<section class="view" data-view="chat" role="tabpanel" aria-label="Чат" hidden>
+  <div class="chatgrid">
+    <div class="chatmain">
+      <div class="chead">
+        <div><h1>Чат с агентом</h1><p class="prole">Пространство «Прямая речь» · Анна Северова, владелец</p></div>
+        <div class="chacts">
+          <span class="badge-model" title="Следующее сообщение увидит облачная модель"><svg class="ic"><use href="#i-zap"/></svg>Модель: облачная</span>
+          <button class="tbtn">Очистить историю</button>
+          <button class="ibtn" id="rpOpen" aria-label="Открыть рабочий контекст"><svg class="ic"><use href="#i-panel"/></svg></button>
+        </div>
+      </div>
+
+      <div class="transcript">
+        <div class="msg agent">
+          <div class="who">Агент · 08:45</div>
+          <div class="txt">Доброе утро, Анна. Собрала бриф: за сутки 14 упоминаний «Смены», два решения ждут согласования, канал «Казань со стороны» требует переподключения. Разберём по порядку?</div>
+        </div>
+        <div class="msg user">
+          <div class="who">Вы · 08:46</div>
+          <div class="txt">Что случилось со «Сменой» за ночь?</div>
+        </div>
+        <div class="msg agent">
+          <div class="who">Агент · 08:46</div>
+          <div class="txt">Ничего тревожного. Объём в норме, тон нейтральный. Собрала сводку с доказательствами и ограничениями:</div>
+          <div class="clip">
+            <span class="stamp ok">Результат</span>
+            <h4>«Упоминания "Смены"»: утренний сбор</h4>
+            <p>14 упоминаний за сутки. Три вопроса о сезонном меню, один запрос на сотрудничество, остальное нейтральные отзывы.</p>
+            <div class="cov">
+              <span class="cr">VK<div class="bar"><i style="width:100%"></i></div>100%</span>
+              <span class="cr">Telegram<div class="bar"><i style="width:90%"></i></div>90%</span>
+            </div>
+            <div class="evi">доказательства: VK, 12 записей · Telegram, 2 канала. ограничения: канал «Казань со стороны» недоступен, по нему данные на 17 ноября</div>
+            <div class="acts"><button class="tbtn" data-go="scenarios">Открыть результат</button></div>
+          </div>
+        </div>
+        <div class="msg user">
+          <div class="who">Вы · 08:47</div>
+          <div class="txt">Подготовь запуск сбора отзывов на сезонное меню</div>
+        </div>
+        <div class="msg agent">
+          <div class="who">Агент · 08:47</div>
+          <div class="txt">Готово. План перед запуском, нужно ваше решение:</div>
+          <div class="clip">
+            <span class="stamp acc">План</span>
+            <h4>Отзывы на сезонное меню</h4>
+            <p>1. Собрать отзывы: VK и Telegram. 2. Сгруппировать по темам: вкус, цена, сервис. 3. Подготовить черновик выводов для Ольги.</p>
+            <div class="evi">смета: до 500 запросов, около 210 руб. время: около 40 минут</div>
+            <div class="acts"><button class="btn pri">Запустить</button><button class="btn">Изменить</button></div>
+          </div>
+          <div class="clip">
+            <span class="stamp acc">Решение</span>
+            <h4>Согласовать запуск</h4>
+            <p>Нагрузка: 2 источника, до 500 запросов, 210 руб. Решение действительно 24 часа, потом план соберётся заново.</p>
+            <div class="acts"><button class="btn pri">Согласовать</button><button class="btn">Отклонить</button></div>
+          </div>
+        </div>
+        <div class="msg agent">
+          <div class="who">Агент · 08:30</div>
+          <div class="txt">Параллельно идёт утренний сбор по расписанию:</div>
+          <div class="clip">
+            <span class="stamp wait">Прогресс</span>
+            <h4>Утренний сбор упоминаний</h4>
+            <p>Фаза 2 из 4: разбор сообщений Telegram. Начало в 08:30.</p>
+            <div class="pbar2"><i style="width:60%"></i></div>
+            <div class="evi">прогресс: 60%. оценка завершения: 08:55</div>
+            <div class="acts"><button class="btn">Отменить</button></div>
+          </div>
+        </div>
+        <div class="msg agent">
+          <div class="who">Агент · 08:40</div>
+          <div class="txt">И черновик для Ольги, он же ждёт вашего решения на «Сегодня»:</div>
+          <div class="clip">
+            <span class="stamp acc">Черновик</span>
+            <h4>Ответ Ольге Ким</h4>
+            <div class="quote">Доброе утро, Ольга. Дайджест по «Смене» будет готов к 14:00, пришлю до встречи. Приложу сравнение с прошлой неделей.</div>
+            <div class="acts"><button class="btn pri">Согласовать</button><button class="tbtn">Открыть в редакторе</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="chips">
+          <span class="chip">Задача: проверить цифры<button class="cx" aria-label="Убрать контекст «Задача»"><svg class="ic" style="width:11px;height:11px"><use href="#i-x"/></svg></button></span>
+          <span class="chip">Переписка: Ольга Ким<button class="cx" aria-label="Убрать контекст «Переписка»"><svg class="ic" style="width:11px;height:11px"><use href="#i-x"/></svg></button></span>
+          <span class="chip">Контакт: Ольга Ким<button class="cx" aria-label="Убрать контекст «Контакт»"><svg class="ic" style="width:11px;height:11px"><use href="#i-x"/></svg></button></span>
+          <span class="chip">Документ: отчёт по упоминаниям<button class="cx" aria-label="Убрать контекст «Документ»"><svg class="ic" style="width:11px;height:11px"><use href="#i-x"/></svg></button></span>
+          <span class="chip">Кейс: сезонное меню<button class="cx" aria-label="Убрать контекст «Кейс»"><svg class="ic" style="width:11px;height:11px"><use href="#i-x"/></svg></button></span>
+        </div>
+        <div class="crow">
+          <button class="ibtn" aria-label="Прикрепить файл"><svg class="ic"><use href="#i-clip"/></svg></button>
+          <input class="cinput" placeholder="Напишите сообщение агенту..." aria-label="Сообщение агенту">
+          <button class="ibtn" aria-label="Отправить" style="color:var(--acc);border-color:var(--acc)"><svg class="ic"><use href="#i-send"/></svg></button>
+        </div>
+        <div class="quick">
+          <span class="mono">быстрые действия:</span>
+          <button class="tbtn">Подготовить задачу</button>
+          <button class="tbtn">Разобрать результат</button>
+          <button class="tbtn">Что дальше?</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="rp" id="rp" aria-label="Рабочий контекст">
+      <div class="rphead"><h2>Рабочий контекст</h2><button class="ibtn" id="rpClose" aria-label="Закрыть панель"><svg class="ic"><use href="#i-x"/></svg></button></div>
+      <div class="rtabs" role="tablist" aria-label="Табы рабочего контекста">
+        <button class="rtab" role="tab" data-rtab="ctx" aria-selected="true">Контекст</button>
+        <button class="rtab" role="tab" data-rtab="dec" aria-selected="false">Ждут решения</button>
+        <button class="rtab" role="tab" data-rtab="run" aria-selected="false">В работе</button>
+        <button class="rtab" role="tab" data-rtab="mat" aria-selected="false">Материалы</button>
+      </div>
+      <div class="rsec" data-rsec="ctx">
+        <div class="ritem">
+          <h4 style="font:600 14px var(--sans)">Переписка: Ольга Ким</h4>
+          <p>Почта, 2 письма сегодня. Открытый вопрос: сроки дайджеста. Созвон в 15:00.</p>
+          <div class="acts"><button class="btn" data-go="inbox">Открыть страницу</button></div>
+        </div>
+        <div class="ritem">
+          <h4 style="font:600 14px var(--sans)">Задача: проверить цифры</h4>
+          <p>Отчёт по упоминаниям за 17 ноября. Источник: «Сегодня».</p>
+          <div class="acts"><button class="btn" data-go="tasks">Открыть страницу</button></div>
+        </div>
+      </div>
+      <div class="rsec" data-rsec="dec" hidden>
+        <div class="ritem"><span class="stamp acc">Решение</span><h4 style="font-size:14px;margin-top:8px">Запуск «Отзывы на сезонное меню»</h4><p>2 источника, 500 запросов, 210 руб. Истекает через 24 ч.</p><div class="acts"><button class="tbtn">Согласовать</button><button class="tbtn" style="color:var(--tx2)">Отклонить</button></div></div>
+        <div class="ritem"><span class="stamp acc">Решение</span><h4 style="font-size:14px;margin-top:8px">Ответ Ольге Ким</h4><p>Черновик готов. Истекает в 18:00.</p><div class="acts"><button class="tbtn">Согласовать</button><button class="tbtn" style="color:var(--tx2)">Отклонить</button></div></div>
+      </div>
+      <div class="rsec" data-rsec="run" hidden>
+        <div class="ritem"><h4 style="font-size:14px">Утренний сбор упоминаний</h4><p>Фаза 2 из 4: разбор Telegram.</p><div class="pbar2"><i style="width:60%"></i></div><div class="acts"><button class="tbtn" style="color:var(--bad)">Отменить</button></div></div>
+        <div class="ritem"><h4 style="font-size:14px">«Кофейни центра Казани»</h4><p>Ожидание: источник «Казань со стороны» требует переподключения.</p><div class="meta" style="margin-top:6px">состояние: ожидание</div></div>
+      </div>
+      <div class="rsec" data-rsec="mat" hidden>
+        <ul class="mlist">
+          <li><svg class="ic"><use href="#i-doc"/></svg>Результат: «Упоминания "Смены"», 08:30<button class="tbtn" style="margin-left:auto" data-go="scenarios">Открыть</button></li>
+          <li><svg class="ic"><use href="#i-doc"/></svg>Отчёт по упоминаниям<button class="tbtn" style="margin-left:auto">Открыть</button></li>
+          <li><svg class="ic"><use href="#i-doc"/></svg>Черновик ответа Ольге Ким<button class="tbtn" style="margin-left:auto">Открыть</button></li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ВХОДЯЩИЕ -->
+<section class="view" data-view="inbox" role="tabpanel" aria-label="Входящие" hidden>
+  <div class="pagehead">
+    <div><h1>Входящие</h1><p class="sub">Почта и мессенджеры в одном списке. Триаж выставляет агент, решение за вами.</p></div>
+    <div class="phacts"><button class="btn" data-go="chat"><svg class="ic" style="width:15px;height:15px"><use href="#i-zap"/></svg>Спросить агента</button></div>
+  </div>
+  <div class="wrap ibgrid">
+    <div class="ibside">
+      <div class="fbar" role="group" aria-label="Фильтр триажа">
+        <button class="fbtn" data-f="all" aria-pressed="true">Все · 7</button>
+        <button class="fbtn" data-f="ans" aria-pressed="false">Нужен ответ · 1</button>
+        <button class="fbtn" data-f="info" aria-pressed="false">К сведению · 1</button>
+        <button class="fbtn" data-f="wait" aria-pressed="false">Подождёт · 1</button>
+        <button class="fbtn" data-f="uns" aria-pressed="false">Не уверен · 1</button>
+      </div>
+      <div id="tlist">
+        <button class="thread on" data-f="ans" data-tp="t1"><div class="tr1"><b>Ольга Ким</b><span class="tm">09:12</span></div><div class="tr2"><span>Когда будет дайджест?</span><span class="stmini acc">Нужен ответ</span></div></button>
+        <button class="thread" data-f="info" data-tp="t2"><div class="tr1"><b>Ирина Лебедева</b><span class="tm">08:50</span></div><div class="tr2"><span>Вопрос о комментарии</span><span class="stmini">К сведению</span></div></button>
+        <button class="thread" data-f="wait" data-tp="t3"><div class="tr1"><b>Сервис аренды</b><span class="tm">вчера</span></div><div class="tr2"><span>Счёт за ноябрь</span><span class="stmini wait">Подождёт</span></div></button>
+        <button class="thread" data-f="uns" data-tp="t4"><div class="tr1"><b>Отправитель не определён</b><span class="tm">17.11</span></div><div class="tr2"><span>Предложение о сотрудничестве</span><span class="stmini" style="border-style:dashed">Не уверен</span></div></button>
+        <button class="thread" data-tp="t5"><div class="tr1"><b>Ольга Ким</b><span class="tm">14.11</span></div><div class="tr2"><span>Дайджест за октябрь</span><span class="dstat ok">Доставлено</span></div></button>
+        <button class="thread" data-tp="t6"><div class="tr1"><b>Ольга Ким</b><span class="tm">13.11</span></div><div class="tr2"><span>Дайджест: тестовая отправка</span><span class="dstat bad">Не доставлено</span></div></button>
+        <button class="thread" data-tp="t7"><div class="tr1"><b>Команда</b><span class="tm">12.11</span></div><div class="tr2"><span>Краткая сводка для Марата</span><span class="dstat wait">Неизвестно</span></div></button>
+      </div>
+    </div>
+    <div class="readpane" id="readpane">
+      <div class="letterhead">
+        <span class="stamp acc">Нужен ответ</span>
+        <h2>Когда будет дайджест?</h2>
+        <div class="from">Ольга Ким · почта · olga.kim@smena.example · сегодня, 09:12</div>
+      </div>
+      <div class="lmsg">
+        <div class="mh"><b>Ольга Ким</b><span class="tm">09:12</span></div>
+        <p>Доброе утро, Анна. Когда будет дайджест по «Смене»? Он нужен до встречи в 16:00, я готовлю цифры для презентации. Ольга</p>
+      </div>
+      <div class="lmsg out">
+        <div class="mh"><b>Вы</b><span class="dstat ok">Доставлено</span><span class="tm">09:20</span></div>
+        <p>Добрый день, Ольга. Готовлю дайджест, пришлю к 14:00, до встречи.</p>
+      </div>
+      <div class="agentdraft">
+        <h4><svg class="ic" style="width:15px;height:15px;color:var(--acc)"><use href="#i-zap"/></svg>Агент предлагает ответ</h4>
+        <p>Доброе утро, Ольга. Дайджест будет готов к 14:00, пришлю до встречи. Приложу сравнение с прошлой неделей, так цифры для презентации будут нагляднее.</p>
+        <div class="reason">черновик учитывает: встреча в 16:00, запрос сравнения в октябрьском письме</div>
+        <div class="acts"><button class="btn pri">Согласовать</button><button class="btn">Изменить</button><button class="tbtn" data-go="chat">Открыть в чате</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ЗАДАЧИ -->
+<section class="view" data-view="tasks" role="tabpanel" aria-label="Задачи" hidden>
+  <div class="pagehead">
+    <div><h1>Задачи</h1><p class="sub">Личные дела и поручения агенту в одном хабе.</p></div>
+    <div class="phacts">
+      <div class="seg2" role="group" aria-label="Область задач">
+        <button id="myBtn" aria-pressed="true">Моё</button>
+        <button id="teamBtn" aria-pressed="false">Команда</button>
+      </div>
+      <button class="btn pri">Новая задача</button>
+    </div>
+  </div>
+  <div class="wrap" style="max-width:920px">
+    <div class="tabs" role="tablist" aria-label="Разделы задач">
+      <button class="tab" role="tab" data-ttab="my" aria-selected="true">Мои дела</button>
+      <button class="tab" role="tab" data-ttab="agent" aria-selected="false">Поручения агенту</button>
+      <button class="tab" role="tab" data-ttab="cal" aria-selected="false">Календарь</button>
+    </div>
+
+    <div data-tsec="my">
+      <div class="tgroup">
+        <h3>Просрочено</h3>
+        <ul class="plan">
+          <li class="task overdue">
+            <button class="cb" aria-pressed="false" aria-label="Отметить выполненной"><svg class="ic" hidden><use href="#i-check"/></svg></button>
+            <div class="tbody"><p>Согласовать смету на съёмку</p><div class="meta">просрочена на 1 день. приоритет: высокий. связь: кейс «Съёмка меню»</div></div>
+          </li>
+        </ul>
+      </div>
+      <div class="tgroup">
+        <h3>Сегодня</h3>
+        <ul class="plan">
+          <li class="task">
+            <button class="cb" aria-pressed="false" aria-label="Отметить выполненной"><svg class="ic" hidden><use href="#i-check"/></svg></button>
+            <div class="tbody"><p>Отправить дайджест Ольге Ким</p><div class="meta">сегодня, 18:00. приоритет: средний. источник: «Сегодня»</div></div>
+            <button class="tbtn" data-go="chat">Поручить агенту</button>
+          </li>
+          <li class="task">
+            <button class="cb" aria-pressed="false" aria-label="Отметить выполненной"><svg class="ic" hidden><use href="#i-check"/></svg></button>
+            <div class="tbody"><p>Проверить цифры в отчёте по упоминаниям</p><div class="meta">сегодня, до вечера. контекст: документ «Отчёт»</div></div>
+            <button class="tbtn" data-go="chat">Поручить агенту</button>
+          </li>
+        </ul>
+      </div>
+      <div class="tgroup">
+        <h3>Скоро</h3>
+        <ul class="plan">
+          <li class="task">
+            <button class="cb" aria-pressed="false" aria-label="Отметить выполненной"><svg class="ic" hidden><use href="#i-check"/></svg></button>
+            <div class="tbody"><p>Подготовить пост про сезонное меню</p><div class="meta">20 ноября. черновик: у агента</div></div>
+          </li>
+        </ul>
+      </div>
+      <div class="tgroup" id="teamGroup" hidden>
+        <h3>Из команды</h3>
+        <ul class="plan">
+          <li class="task">
+            <span class="av" style="width:26px;height:26px;font-size:10.5px">МГ</span>
+            <div class="tbody"><p>Согласовать контент-план на декабрь</p><div class="meta">Марат Гусев. до 21 ноября. область: команда</div></div>
+          </li>
+          <li class="task">
+            <span class="av" style="width:26px;height:26px;font-size:10.5px">МГ</span>
+            <div class="tbody"><p>Обновить прайс в базе знаний</p><div class="meta">Марат Гусев. на этой неделе. область: команда</div></div>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div data-tsec="agent" hidden>
+      <div class="agentcard">
+        <div class="dectop"><h3>Упоминания «Смены» в VK и Telegram</h3><span class="stamp ok">Успех</span></div>
+        <p style="color:var(--tx2)">Регулярный сбор с группировкой по темам. Результаты попадают в «Последние результаты» и в дайджест.</p>
+        <div class="arow">
+          <div class="meta">расписание: ежедневно, 08:30</div>
+          <div class="meta">последний запуск: сегодня, 08:30, 14 упоминаний</div>
+        </div>
+        <div class="hist">18.11 · успех · 08:30 · 14 упоминаний<br>17.11 · успех · 08:30 · 11 упоминаний<br>16.11 · успех · 08:30 · 9 упоминаний</div>
+        <div class="acts"><button class="btn pri">Запустить</button><button class="btn">Открыть</button></div>
+      </div>
+      <div class="agentcard">
+        <div class="dectop"><h3>Кофейни центра Казани: конкуренты</h3><span class="stamp bad">Сбой</span></div>
+        <p style="color:var(--tx2)">Последний запуск завершился с ошибкой: источник «Казань со стороны» недоступен. Собрано 2 источника из 3, данные помечены как неполные.</p>
+        <div class="meta" style="margin-top:8px">покрытие: 2 из 3 источников. следующий запуск: сегодня, 20:00</div>
+        <div class="acts"><button class="btn">Переподключить источник</button><button class="btn">Открыть</button></div>
+      </div>
+      <div class="agentcard">
+        <div class="dectop"><h3>Отзывы на сезонное меню</h3><span class="stamp acc">Ожидание</span></div>
+        <p style="color:var(--tx2)">План готов и ждёт вашего решения о запуске. Смета: 2 источника, 500 запросов, 210 руб. Решение действительно 24 часа.</p>
+        <div class="acts"><button class="btn" data-go="chat">Открыть план в чате</button></div>
+      </div>
+    </div>
+
+    <div data-tsec="cal" hidden>
+      <p class="mono" style="margin:14px 0 10px">Ноябрь 2026 · плановые задачи, события календаря и запуски агента в одной сетке</p>
+      <div id="cal"></div>
+      <div class="caleg"><span>задача</span><span style="color:var(--acc)">событие</span><span style="color:var(--bad)">просрочено</span><span>запуск агента</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- СЦЕНАРИИ -->
+<section class="view" data-view="scenarios" role="tabpanel" aria-label="Сценарии" hidden>
+  <div class="pagehead">
+    <div><h1>Сценарии</h1><p class="sub">Регулярный мониторинг: что собираем, когда и с каким покрытием.</p></div>
+    <div class="phacts">
+      <button class="btn" data-go="chat"><svg class="ic" style="width:15px;height:15px"><use href="#i-zap"/></svg>Спросить агента</button>
+      <button class="btn pri">Новый сценарий</button>
+    </div>
+  </div>
+  <div class="wrap">
+    <nav class="subnav" aria-label="Мониторинг">
+      <button class="snl off" style="opacity:.5;cursor:default" title="Не заполнено в макете">Источники</button>
+      <button class="snl on" aria-current="page">Сценарии</button>
+      <button class="snl off" style="opacity:.5;cursor:default" title="Не заполнено в макете">Аналитика</button>
+      <button class="snl off" style="opacity:.5;cursor:default" title="Не заполнено в макете">Дайджесты</button>
+    </nav>
+    <div class="scngrid">
+      <div class="scn">
+        <header><h3>Упоминания «Смены» в VK и Telegram</h3><span class="stamp ok">Успех</span></header>
+        <div class="sched">расписание: ежедневно, 08:30 · последний запуск: сегодня, 08:30 · следующий: завтра, 08:30</div>
+        <div class="spark" aria-hidden="true"><svg viewBox="0 0 120 36" preserveAspectRatio="none"><polyline points="2,26 10,24 18,27 26,20 34,22 42,16 50,19 58,12 66,15 74,10 82,13 90,8 98,11 106,6"/></svg></div>
+        <div class="srcov">
+          <div class="srow"><span>VK</span><div class="bar"><i style="width:100%"></i></div><span>100%</span></div>
+          <div class="srow"><span>Telegram</span><div class="bar"><i style="width:90%"></i></div><span>90%</span></div>
+        </div>
+        <div class="sched">дайджест: 2 новых выпуска за неделю</div>
+        <div class="acts"><button class="btn pri">Запустить</button><button class="btn">Открыть</button></div>
+      </div>
+      <div class="scn">
+        <header><h3>Кофейни центра Казани: конкуренты</h3><span class="stamp bad">Сбой</span></header>
+        <div class="sched">расписание: ежедневно, 20:00 · последний запуск: вчера, 20:00, завершился с ошибкой</div>
+        <div class="srcov">
+          <div class="srow"><span>VK</span><div class="bar"><i style="width:100%"></i></div><span>100%</span></div>
+          <div class="srow"><span>Telegram</span><div class="bar"><i style="width:100%"></i></div><span>100%</span></div>
+          <div class="srow"><span>«Казань со стороны»</span><div class="bar z"><i style="width:100%"></i></div><span>нет покрытия</span></div>
+        </div>
+        <div class="sched">причина: авторизация источника истекла. данные неполные, в отчётах помечены</div>
+        <div class="acts"><button class="btn">Переподключить источник</button><button class="btn">Открыть</button></div>
+      </div>
+      <div class="scn">
+        <header><h3>Отзывы на сезонное меню</h3><span class="stamp acc">Ожидание</span></header>
+        <div class="sched">запуск: после вашего решения · смета: 2 источника, 500 запросов, 210 руб</div>
+        <p style="color:var(--tx2);font-size:13.5px;margin-top:10px">Агент подготовил план: сбор отзывов в VK и Telegram, группировка по темам, черновик выводов для клиента. План ждёт согласования в чате и на «Сегодня».</p>
+        <div class="acts"><button class="btn" data-go="chat">Открыть план в чате</button></div>
+      </div>
+      <details class="collapsed" style="align-self:start">
+        <summary><svg class="ic" style="width:15px;height:15px"><use href="#i-chev"/></svg>Сценарий в MAX: нет покрытия. Показать причину</summary>
+        <div class="body">Причина: подключение MAX не настроено в пространстве. Сценарий создан, но источники недоступны, запуски не планировались.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+</main>
+  </div>
+</div>
+
+<nav class="mbar" aria-label="Мобильная навигация">
+  <button class="on" data-go="today"><svg class="ic"><use href="#i-home"/></svg><span>Сегодня</span></button>
+  <button data-go="chat"><svg class="ic"><use href="#i-chat"/></svg><span>Чат</span></button>
+  <button data-go="inbox"><svg class="ic"><use href="#i-inbox"/></svg><span>Входящие</span></button>
+  <button data-go="tasks"><svg class="ic"><use href="#i-cal"/></svg><span>Задачи</span></button>
+  <button id="moreBtn"><svg class="ic"><use href="#i-menu"/></svg><span>Ещё</span></button>
+</nav>
+
+<div class="drw" id="drw" hidden>
+  <div class="panel" role="dialog" aria-label="Навигация">
+    <div class="drhead"><b style="font:600 15px var(--serif)">AI Assistant</b><button class="ibtn" id="drwClose" aria-label="Закрыть"><svg class="ic"><use href="#i-x"/></svg></button></div>
+    <div id="drwNav"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  var VIEWS=['today','chat','inbox','tasks','scenarios'];
+  function setTheme(t){root.dataset.theme=t;try{localStorage.setItem('t1',t);}catch(e){}
+    document.getElementById('tSun').hidden=(t==='dark');
+    document.getElementById('tMoon').hidden=(t!=='dark');
+    document.getElementById('tLabel').textContent=(t==='dark'?'Тёмная':'Светлая');}
+  document.getElementById('themeBtn').addEventListener('click',function(){setTheme(root.dataset.theme==='dark'?'light':'dark');});
+  setTheme(root.dataset.theme);
+
+  var views={};VIEWS.forEach(function(v){views[v]=document.querySelector('.view[data-view="'+v+'"]');});
+  var tabs=document.querySelectorAll('[data-view-tab]');
+  var sideItms=document.querySelectorAll('#navTree .itm[data-go]');
+  function go(v){
+    VIEWS.forEach(function(k){views[k].hidden=(k!==v);});
+    tabs.forEach(function(t){t.setAttribute('aria-selected',String(t.dataset.viewTab===v));});
+    sideItms.forEach(function(i){i.classList.toggle('on',i.dataset.go===v);});
+    document.querySelectorAll('.mbar [data-go]').forEach(function(b){b.classList.toggle('on',b.dataset.go===v);});
+    closeDrw();document.getElementById('rp')&&document.getElementById('rp').classList.remove('open');
+    window.scrollTo(0,0);
+  }
+  document.addEventListener('click',function(e){
+    var el=e.target.closest('[data-go]');
+    if(el){go(el.dataset.go);return;}
+    var vt=e.target.closest('[data-view-tab]');
+    if(vt){go(vt.dataset.viewTab);return;}
+    var cb=e.target.closest('.cb');
+    if(cb){var on=cb.getAttribute('aria-pressed')==='true';cb.setAttribute('aria-pressed',String(!on));
+      cb.querySelector('.ic')&&(cb.querySelector('.ic').hidden=on);return;}
+  });
+
+  var rp=document.getElementById('rp');
+  if(rp){
+    document.getElementById('rpOpen').addEventListener('click',function(){rp.classList.add('open');});
+    document.getElementById('rpClose').addEventListener('click',function(){rp.classList.remove('open');});
+    var rsec=document.querySelectorAll('.rsec');
+    document.querySelectorAll('.rtab').forEach(function(t){
+      t.addEventListener('click',function(){
+        document.querySelectorAll('.rtab').forEach(function(x){x.setAttribute('aria-selected',String(x===t));});
+        rsec.forEach(function(s){s.hidden=(s.dataset.rsec!==t.dataset.rtab);});
+      });
+    });
+  }
+
+  var tsec=document.querySelectorAll('[data-tsec]');
+  document.querySelectorAll('.tab[data-ttab]').forEach(function(t){
+    t.addEventListener('click',function(){
+      document.querySelectorAll('.tab[data-ttab]').forEach(function(x){x.setAttribute('aria-selected',String(x===t));});
+      tsec.forEach(function(s){s.hidden=(s.dataset.tsec!==t.dataset.ttab);});
+    });
+  });
+
+  var my=document.getElementById('myBtn'),team=document.getElementById('teamBtn'),tg=document.getElementById('teamGroup');
+  if(my){my.addEventListener('click',function(){my.setAttribute('aria-pressed','true');team.setAttribute('aria-pressed','false');tg.hidden=true;});
+    team.addEventListener('click',function(){team.setAttribute('aria-pressed','true');my.setAttribute('aria-pressed','false');tg.hidden=false;});}
+
+  document.querySelectorAll('.fbtn[data-f]').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('.fbtn[data-f]').forEach(function(x){x.setAttribute('aria-pressed',String(x===b));});
+      document.querySelectorAll('#tlist .thread').forEach(function(th){
+        th.hidden=!(b.dataset.f==='all'||th.dataset.f===b.dataset.f||!th.dataset.f);
+      });
+    });
+  });
+
+  var drw=document.getElementById('drw');
+  var navClone=document.getElementById('navTree').cloneNode(true);
+  navClone.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){go(b.dataset.go);});});
+  document.getElementById('drwNav').appendChild(navClone);
+  function closeDrw(){drw.hidden=true;}
+  document.getElementById('burger').addEventListener('click',function(){drw.hidden=false;});
+  document.getElementById('moreBtn').addEventListener('click',function(){drw.hidden=false;});
+  document.getElementById('drwClose').addEventListener('click',closeDrw);
+  drw.addEventListener('click',function(e){if(e.target===drw)closeDrw();});
+
+  var cal=document.getElementById('cal');
+  if(cal){
+    var ev={'17':[['смета: съёмка','bad']], '18':[['18:00 дайджест',''],['15:00 созвон','acc'],['08:30 сбор','']], '19':[['08:30 сбор',''],['20:00 конкуренты','']], '20':[['пост про меню','acc']], '23':[['09:00 синк','acc']]};
+    var h='<div class="calh">'+['пн','вт','ср','чт','пт','сб','вс'].map(function(d){return '<div>'+d+'</div>';}).join('')+'</div><div class="calb">';
+    var first=new Date(2026,10,1);
+    var start=(first.getDay()+6)%7;
+    var cells=start+30;while(cells%7)cells++;
+    for(var i=0;i<cells;i++){
+      var dnum=i-start+1;
+      if(dnum<1){h+='<div class="day out"><span class="dn">'+(31+dnum)+'</span></div>';continue;}
+      if(dnum>30){h+='<div class="day out"><span class="dn">'+(dnum-30)+'</span></div>';continue;}
+      var cls='day'+(dnum===18?' today':'');
+      h+='<div class="'+cls+'"><span class="dn">'+dnum+'</span>';
+      (ev[String(dnum)]||[]).forEach(function(ev2){h+='<div class="ev '+ev2[1]+'">'+ev2[0]+'</div>';});
+      h+='</div>';
+    }
+    h+='</div>';
+    cal.innerHTML=h;
+  }
+})();
+</script>
+</body>
+</html>

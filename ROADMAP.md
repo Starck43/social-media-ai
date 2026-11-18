@@ -41,7 +41,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P1
 
 
-- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **IN_PROGRESS** (recovery recheck 2026-11-18 at `4c454ea4`: guarded check 45/45 OK, 11 DB/P8-T38 paths 103 passed, but 11 contract paths 20 failed/3 errors from tests stale against current source — not READY at `4c454ea4`; P8-T54 contract checks now green at `eb591b0d`, integration + independent audit pending; earlier audit did not accept at `e6767991`, [diagnostic](docs/audit/p8/p8-t41-diagnostic.md)) · opencode · — · `test/p8-t41-integrated-journey` from `c1ab6807` · `P1` · `C4`
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
@@ -53,7 +52,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`
-- [P8-T54](docs/tasks/p8-t54.md) Refresh stale contract tests for the P8-T41 acceptance gate — **READY** (all required checks PASS at `eb591b0d`: guarded 45/45, 11 DB paths 103 passed, 11 contract paths 119 passed/3 xfailed/0 failed/0 errors; evidence in card; solution branch unmerged) · opencode · ses_e129114edffemkcy9i8NKHjlO6 · `type/p8-t54-contract-tests-refresh` · `P1` · `C3`
 
 - [P20-T14](docs/tasks/p20-t14.md) Web shell restyle toward the console direction with the base palette preserved in variables — **IN_PROGRESS** · autoclaw-p20-t14 · owner approved the console direction from three mockups (2026-11-18); increment 1 is a scoped CSS overlay (console.css + one shell link), base color files stay untouched · [PR #507](https://github.com/Starck43/social-media-ai/pull/507) · branch `feat/p20-t14-web-console-ui` · `P2` · `C2`
 

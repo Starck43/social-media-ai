@@ -29,8 +29,11 @@ work are separate facts; see [P8-T29 history](../audit/p8/p8-t29-history.md).
 4. [P8-T40](../audit/p8/p8-t40.md) — DONE 2026-10-28: composed collect/analyze/digest
    runs and schedules, separate report windows and confirmed frozen-report delivery;
    accepted `f66795cf0242200a53853bb2b1e9b01da595394d`, PR #271.
-5. [P8-T41](../tasks/p8-t41.md) — accept one bounded, evidence-linked
-   VK research-to-digest journey at the exact integrated revision.
+5. [P8-T41](../audit/p8/p8-t41.md) — **DONE 2026-11-18**: one bounded,
+   evidence-linked VK research-to-digest journey accepted at the re-baselined
+   integrated revision `fd88af42` (delivered source `aa470623`, direct merge
+   `e6767991`); digest preview only, no send. Contract-test refresh support task
+   [P8-T54](../audit/p8/p8-t54.md) closed with it.
 6. **VK search-result categories — mocked slice accepted 2026-11-11**
    ([audit](../audit/p8/p8-t33-search-categories.md), [#295](https://github.com/Starck43/social-media-ai/pull/295)
    `9857f411` + [#298](https://github.com/Starck43/social-media-ai/pull/298) `8a687f4f`):
@@ -49,7 +52,7 @@ live VK gate. T39 reuses the accepted shared execution-scope/mutation policy in
 P8-T37. T40 depends on T39, uses
 existing payer/quota controls, applies P2-T15 entitlements if available, and
 can build against mocked VK data while Q-5 is open. T41's live method evidence
-waits on Q-5. T41 is the integrated
+came from Q-5, now closed. T41 was the integrated
 journey gate, not a way to rename or retroactively accept P8-T29.
 
 7. [P8-T42](../audit/p8/p8-t42.md) — DONE 2026-10-31: contextual chat actions,
@@ -113,6 +116,7 @@ Yandex Disk read-only pilot. It is not a P8 social release gate.
 - [P8-T51](../audit/p8/p8-t51.md) — widen `job_type` to `varchar(64)` so the bootstrap creates every default task · 2026-11-18 · `f1efe064`
 - [P8-T52](../audit/p8/p8-t52.md) — VK wall photos keep a fetchable provider CDN reference (owner choice B); live A/B 0/8 → 8/8 · 2026-11-18 · `6cd2b02b` (PR #509, merge `1db32e48`)
 - [P8-T53](../audit/p8/p8-t53.md) — reviewed rotation-head layout for the widened `job_type` head; offline lane green · 2026-11-18 · `40dd11b3` (PR #510, merge `49859ca8`)
+- [P8-T54](../audit/p8/p8-t54.md) — contract-test refresh supporting the P8-T41 acceptance gate · 2026-11-18 · `eb591b0d` (direct merge `8267b8e3`)
 
 **Phase status:** Active phase; close only after active plan items are accepted.
 P8-T34 was transferred to P12 by owner selection; existing diagnostic/support

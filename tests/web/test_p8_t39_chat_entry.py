@@ -10,7 +10,7 @@ from app.web.deps import templates
 from app.web.nav import NAV_ITEMS
 
 
-def test_chat_entry_explains_task_inputs_and_keeps_direct_management_links():
+def test_chat_entry_explains_task_inputs_and_surfaces_ready_sections():
     env = Environment(
         loader=ChoiceLoader(
             [
@@ -34,9 +34,11 @@ def test_chat_entry_explains_task_inputs_and_keeps_direct_management_links():
         static_v=lambda path: "/static/" + path,
     )
 
-    for href in ("/app/sources", "/app/scenarios", "/app/tasks", "/app/digests"):
-        assert f'href="{href}"' in html
-    assert 'aria-label="Управление данными и задачами"' in html
+    # Management links moved into the shell navigation; the chat workspace
+    # surfaces the caller's permitted sections through the panel instead.
+    assert "Источники для задачи" in html
+    assert "Сценарии обработки" in html
+    assert "data-chat-task-picker" in html, "the task picker is part of the permitted surface"
     for group in (
         "цель",
         "данные и источники",
@@ -55,7 +57,7 @@ def test_chat_entry_explains_task_inputs_and_keeps_direct_management_links():
     assert "Сначала уточни источники, период и ограничения" in starter_script
 
 
-def test_chat_management_links_only_render_sections_in_permission_filtered_navigation():
+def test_chat_workspace_surfaces_only_permission_filtered_sections():
     env = Environment(
         loader=ChoiceLoader(
             [
@@ -70,7 +72,7 @@ def test_chat_management_links_only_render_sections_in_permission_filtered_navig
         )
     )
     # The shell supplies this already filtered navigation from the active
-    # workspace membership. A denied section therefore cannot be linked here.
+    # workspace membership. A denied section therefore cannot be surfaced here.
     allowed = tuple(item for item in NAV_ITEMS if item.key in {"sources", "tasks"})
     html = env.get_template("web/chat.html").render(
         messages=[],
@@ -81,7 +83,7 @@ def test_chat_management_links_only_render_sections_in_permission_filtered_navig
         url_for=lambda name, **kwargs: "/static/" + kwargs["path"],
         static_v=lambda path: "/static/" + path,
     )
-    assert 'href="/app/sources"' in html
-    assert 'href="/app/tasks"' in html
-    assert 'href="/app/scenarios"' not in html
+    assert "Источники для задачи" in html
+    assert "Сценарии обработки" not in html
+    assert "data-chat-task-picker" in html, "tasks are allowed, so the picker renders"
     assert 'href="/app/digests"' not in html

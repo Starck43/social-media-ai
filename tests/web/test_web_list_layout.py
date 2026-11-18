@@ -71,9 +71,11 @@ async def test_the_sources_list_leaves_the_mode_to_the_detail_page() -> None:
             assert "Личный аккаунт" not in table, "nor the badge it used to carry"
 
             # ...and it is still reachable, with its explanation, one click in.
+            # The detail block's heading is «Сбор и доступ»; the mode label and
+            # its sentence render inside that block.
             detail = await client.get(f"/app/sources/{source_id}")
             assert detail.status_code == 200
-            assert "Как собирается" in detail.text
+            assert "Сбор и доступ" in detail.text
             assert "Личный аккаунт" in detail.text, "the detail page names the mode"
         finally:
             await _drop_source(source_id)
@@ -216,8 +218,12 @@ async def _drop_task(task_id: int | None) -> None:
 
 
 @pytest.mark.tenancy
-async def test_the_task_name_opens_the_editor() -> None:
-    """The pencil column is gone; the name links to the editor page."""
+async def test_the_task_name_opens_the_task_page() -> None:
+    """The pencil column is gone; the name links to the task's own page.
+
+    The detail page (P20-T10) carries the «Редактировать» control, so the list
+    name leads there rather than straight to the editor.
+    """
     task_id = None
     async with await _client() as client:
         user, tenant_id = await _register(client, "TaskNameLink")
@@ -229,7 +235,7 @@ async def test_the_task_name_opens_the_editor() -> None:
 
             assert 'aria-label="Настроить задачу"' not in page.text
             row = next(r for r in _table_rows(page.text) if "byname" in r)
-            assert f'href="/app/tasks/{task_id}/edit"' in row, "the name must link to the editor page"
+            assert f'href="/app/tasks/{task_id}"' in row, "the name must link to the task page"
         finally:
             await _drop_task(task_id)
             await _drop(user, tenant_id)
@@ -257,7 +263,10 @@ async def test_the_editor_is_addressable_by_url() -> None:
 
             page = await client.get("/app/tasks")
             assert page.status_code == 200
-            assert f'href="/app/tasks/{task_id}/edit"' in page.text, "the name links to the editor page"
+            assert f'href="/app/tasks/{task_id}"' in page.text, "the name links to the task page"
+            detail = await client.get(f"/app/tasks/{task_id}")
+            assert detail.status_code == 200
+            assert f'href="/app/tasks/{task_id}/edit"' in detail.text, "the task page links to the editor"
 
             # The old `?task_id=` deep link still works — it redirects to the page.
             deep = await client.get(f"/app/tasks?task_id={task_id}")

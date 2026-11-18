@@ -69,7 +69,12 @@ def _dashboard(can_open_chat: bool) -> str:
             pipeline=None,
             _tz="Europe/Kirov",
             request=request,
-            perms=SimpleNamespace(can_manage_workspace=lambda target: False, is_owner=False, workspace_role="VIEWER"),
+            perms=SimpleNamespace(
+                can=lambda *args, **kwargs: False,
+                can_manage_workspace=lambda target: False,
+                is_owner=False,
+                workspace_role="VIEWER",
+            ),
             member_level=None,
         )
     )

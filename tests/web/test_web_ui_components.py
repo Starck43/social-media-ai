@@ -112,36 +112,49 @@ def test_flash_status_has_contrasting_text_in_both_themes():
 def test_auth_and_app_share_theme_controller_without_duplicate_flashes():
     for name in ("base.html", "auth_base.html"):
         template = Path("app/web/templates/web", name).read_text()
-        assert "js/theme.js" in template and "data-theme-select" in template
+        assert "js/theme.js" in template
         assert "themeManager()" not in template and "localStorage" not in template
-        for mode in ("light", "dark", "system"):
-            assert f'value="{mode}"' in template
+    # The app shell selects the mode through the shared popover widget
+    # (base.html includes _shell_theme.html, whose loop emits a button per
+    # mode); the auth page keeps the plain select. Both carry the same modes.
+    shell_theme = Path("app/web/templates/web/_shell_theme.html").read_text()
+    assert 'data-theme-choice="{{ value }}"' in shell_theme
+    for mode in ("system", "light", "dark"):
+        assert f"'{mode}'" in shell_theme
+    assert "_shell_theme" in Path("app/web/templates/web/base.html").read_text()
+    auth = Path("app/web/templates/web/auth_base.html").read_text()
+    assert "data-theme-select" in auth
+    for mode in ("light", "dark", "system"):
+        assert f'value="{mode}"' in auth
     scenarios = Path("app/web/templates/web/scenarios.html").read_text()
     assert "for flash in flashes" not in scenarios
 
 
-def test_native_choice_labels_are_plain_and_settings_use_shared_segments():
+def test_native_choice_labels_are_plain_and_settings_tabs_are_plain_links():
     from app.web.deps import human_choice_label
 
     assert human_choice_label("📋 Дайджест") == "Дайджест"
     assert human_choice_label("🔄 Сбор данных") == "Сбор данных"
     assert human_choice_label("Анализ 2–3 дня") == "Анализ 2–3 дня"
     template = Path("app/web/templates/web/settings.html").read_text()
-    assert "ui-segments" in template and "segment('/app/settings?tab='" in template
+    assert "settings-nav" in template and "/app/settings?tab=" in template
 
 
 def test_chat_and_notification_presentation_contracts():
     chat = Path("app/web/templates/web/chat.html").read_text()
     js = Path("app/static/js/chat.js").read_text()
-    base = Path("app/web/templates/web/base.html").read_text()
     assert 'class="chat-composer"' in chat and 'class="chat-suggestions"' in chat
     assert 'message.role !== \'user\' && message.id' in chat  # one delete action per side
     assert 'requestConfirmation' in js and 'confirm(' not in js and 'alert(' not in js
-    assert 'if (!text || this.pending) return' in js
+    assert '(!rawText && !readyAtts.length) || this.pending' in js
     assert 'safeMarkdown(html)' in js and 'el.removeAttribute(attr.name)' in js
-    assert '<template x-teleport="body">' in base and '@click.self="close()"' in base
-    assert 'aria-modal="true"' in base and 'trapFocus($event)' in base
-    assert 'document.body.style.overflow = "hidden"' in base
+    # The shell dialog lives in the notifications panel include; the task modal
+    # carries aria-modal, and shell.js locks the body scroll while it is open.
+    notifications = Path("app/web/templates/web/_shell_notifications.html").read_text()
+    assert '<template x-teleport="body">' in notifications and '@click.self="close()"' in notifications
+    assert "trapFocus($event)" in notifications
+    assert 'aria-modal="true"' in Path("app/web/templates/web/tasks.html").read_text()
+    assert "document.body.style.overflow = 'hidden'" in Path("app/static/js/shell.js").read_text()
     for path in Path("app/templates").rglob("*.html"):
         assert 'alert(' not in path.read_text(), path
 

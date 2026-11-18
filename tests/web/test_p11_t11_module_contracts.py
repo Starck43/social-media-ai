@@ -27,6 +27,7 @@ def test_task_router_has_stable_methods_paths_and_handler_order():
     expected = [
         ("POST", "/tasks", "task_create"),
         ("GET", "/tasks/vk-connections", "web_vk_connections"),
+        ("GET", "/tasks/vk-search-categories", "web_vk_search_categories"),
         ("GET", "/tasks/", "tasks_list"),
         ("GET", "/tasks", "tasks_list"),
         ("GET", "/tasks/{task_id}", "task_detail"),
@@ -47,7 +48,7 @@ def test_task_router_has_stable_methods_paths_and_handler_order():
         for method in sorted(route.methods or ())
     ]
     assert actual == expected
-    assert len({endpoint for _, _, endpoint in expected}) == 14
+    assert len({endpoint for _, _, endpoint in expected}) == 15
 
 
 def test_route_modules_register_into_the_facade_router_once():

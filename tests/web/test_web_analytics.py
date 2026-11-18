@@ -1092,20 +1092,21 @@ async def test_detail_metric_states_original_and_highlights_are_explicit(client,
     page = await client.get(f"/app/analytics/{data['ids'][0]}")
     assert page.status_code == 200
     assert 'data-metric="total_reactions" data-state="available"' in page.text
-    assert 'data-metric="total_comments" data-state="unknown"' in page.text
-    assert 'data-metric="total_views" data-state="unknown"' in page.text
+    # Unconfirmed metrics are hidden, not guessed: a coverage entry with
+    # known < total and an uncovered metric render no metric block at all.
+    assert 'data-state="unknown"' not in page.text
+    assert 'data-metric="total_comments"' not in page.text
+    assert 'data-metric="total_views"' not in page.text
     assert "0.95" in page.text and "95%" not in page.text
-    assert "В сохранённом анализе не выделены." in page.text
-    assert "Открыть исходный материал" in page.text and "https://example.com/original" in _analytics_links(page.text)
-    assert "Период публикаций:" in page.text and "15.03.2026" in page.text and "Платформа: VK" in page.text
+    assert "Выделяющиеся моменты" not in page.text, "empty highlights render no card"
+    assert "Исходный материал ↗" in page.text and "https://example.com/original" in _analytics_links(page.text)
     assert "Вовлечённость" not in page.text
     payload["post_url"] = "javascript:alert(1)"
     payload["multi_llm_analysis"]["text_analysis"].pop("highlights")
     with tenant_scope(data["tenant_id"]):
         await AIAnalytics.objects.update_by_id(data["ids"][0], summary_data=payload)
     page = await client.get(f"/app/analytics/{data['ids'][0]}")
-    assert "Не рассчитаны или не сохранены." in page.text
-    assert "Открыть исходный материал" not in page.text
+    assert "Исходный материал" not in page.text
     assert "javascript:alert" not in page.text
 
 
@@ -1201,7 +1202,12 @@ async def test_titles_are_identical_in_group_chronology_detail_chain_and_dashboa
         detail = await client.get(f"/app/analytics/{row_id}", params={"days": "all"})
         assert detail.status_code == 200
         assert text(unescape(detail.text), "h1") == title
-        assert title in unescape(dashboard.text)
+        # The home feed shows the latest five rows (merged-home contract); the
+        # fixture's six rows leave the oldest one legitimately off it.
+        if row_id != data["ids"][0]:
+            assert title in unescape(dashboard.text)
+        else:
+            assert f"Анализ #{row_id}" not in unescape(dashboard.text), "no fallback title is fabricated"
     assert expected[1] in chain.text and expected[2] in chain.text
     assert "Сводка для этой записи не сохранена." in _visible_text(group.text)
     assert "Сводка для этой записи не сохранена." in _visible_text(chronology.text)

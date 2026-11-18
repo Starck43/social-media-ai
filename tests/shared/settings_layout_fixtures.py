@@ -89,6 +89,9 @@ def context(mode):
     return dict(
         section="settings",
         tab=tab,
+        # The shared render() context always carries this flag (deps.py); the
+        # fixture mirrors the production default.
+        file_catalog_enabled=False,
         tenant=tenant if workspace else None,
         user=shell_user(
             id=101,

@@ -19,6 +19,7 @@ from app.core.permissions import operator_permission_scope
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import Role, User
+from app.services.tenancy import limits as tenancy_limits
 
 # isort: on
 
@@ -73,7 +74,11 @@ async def test_workspace_owner_with_platform_user_role_cannot_enter_admin(home, 
 
 
 @pytest.mark.asyncio
-async def test_operator_and_admin_enter_while_resource_grants_stay_independent(home, existing_target):
+async def test_operator_and_admin_enter_while_resource_grants_stay_independent(home, existing_target, monkeypatch):
+    # Three members are required here; raise the deployment pilot ceiling
+    # (default 2) for this scenario — the rule itself is covered by
+    # tests/ai/test_plan_tiers.py and the settings contract.
+    monkeypatch.setattr(tenancy_limits.settings, "MAX_WORKSPACE_MEMBERS", 3)
     operator = await actor(home, "viewer")
     await _set_platform_identity(operator, "operator")
     administrator = await actor(home, "admin")

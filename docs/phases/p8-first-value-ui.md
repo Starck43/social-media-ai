@@ -111,6 +111,8 @@ Yandex Disk read-only pilot. It is not a P8 social release gate.
 - [P8-T32](../audit/p8/p8-t32.md) — collapsed related rows and permission-aware links; accepted; date not recorded; source `9534f9a`.
 
 - [P8-T51](../audit/p8/p8-t51.md) — widen `job_type` to `varchar(64)` so the bootstrap creates every default task · 2026-11-18 · `f1efe064`
+- [P8-T52](../audit/p8/p8-t52.md) — VK wall photos keep a fetchable provider CDN reference (owner choice B); live A/B 0/8 → 8/8 · 2026-11-18 · `6cd2b02b` (PR #509, merge `1db32e48`)
+- [P8-T53](../audit/p8/p8-t53.md) — reviewed rotation-head layout for the widened `job_type` head; offline lane green · 2026-11-18 · `40dd11b3` (PR #510, merge `49859ca8`)
 
 **Phase status:** Active phase; close only after active plan items are accepted.
 P8-T34 was transferred to P12 by owner selection; existing diagnostic/support

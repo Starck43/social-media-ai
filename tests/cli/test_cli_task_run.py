@@ -5,14 +5,17 @@ from contextlib import nullcontext
 
 import pytest
 import typer
+from sqlalchemy import delete, text
 
+from app.core.database import async_session_maker
 from app.core.permissions import has_permission, operator_permission_scope, permission_scope, service_permission_scope
 from app.core.tenant_context import current_tenant_id, is_bypass, tenant_scope
-from app.models import AgentTask, Job, Notification, Platform, Source, Tenant
+from app.models import ActionAuditEvent, AgentTask, Job, Notification, Platform, Source, Tenant
 from app.models.managers.job_manager import JobManager
 from app.models.managers.tenant_manager import tenants
 from app.types.enums.platform_types import SourceType
 from cli.main import _add_task, _remove_task, _run_task
+from tests.p11_t12_audit_cleanup import purge_tenant_audit_events
 
 # These tests call private task use-case helpers under the trusted operator
 # scope, then verify their explicit workspace targets and actual job effects.
@@ -71,6 +74,20 @@ async def _ids(model) -> set[int]:
     return {row.id for row in rows}
 
 
+async def _drop_events(event_ids: set[int]) -> None:
+    """Remove only this fixture's admission evidence via the retention marker."""
+    if not event_ids:
+        return
+    async with async_session_maker() as session:
+        async with session.begin():
+            await session.execute(text("SELECT set_config('app.action_audit_retention', 'on', true)"))
+            await session.execute(
+                delete(ActionAuditEvent)
+                .where(ActionAuditEvent.id.in_(event_ids))
+                .execution_options(synchronize_session=False)
+            )
+
+
 @pytest.fixture(autouse=True)
 async def clean_created_rows():
     """Remove only rows this test added to the serialized test schema."""
@@ -81,13 +98,32 @@ async def clean_created_rows():
             Source: await _ids(Source),
             Notification: await _ids(Notification),
             Tenant: await _ids(Tenant),
+            ActionAuditEvent: await _ids(ActionAuditEvent),
         }
     yield
     with tenant_scope(bypass=True), operator_permission_scope():
         # Jobs can outlive tasks, and tasks can retain source references.
+        created = {model: await _ids(model) - before[model] for model in (Job, AgentTask, Source, Notification, Tenant)}
+        for row_id in created[Tenant]:
+            # P11-T12: admission writes action_audit_events with an
+            # ON DELETE RESTRICT FK to the workspace. Expire this fixture's
+            # own evidence through the supported retention path first.
+            await purge_tenant_audit_events(row_id)
+        # One-off runs in the bootstrap workspace leave admission evidence
+        # there instead; remove only the rows tied to this fixture's tasks.
+        task_ids = {str(row_id) for row_id in created[AgentTask]}
+        event_ids = {
+            event.id
+            for event in await ActionAuditEvent.objects.all()
+            if event.id not in before[ActionAuditEvent]
+            and (
+                event.tenant_id in created[Tenant]
+                or (event.resource_kind == "agent_task" and event.resource_id in task_ids)
+            )
+        }
+        await _drop_events(event_ids)
         for model in (Job, AgentTask, Source, Notification, Tenant):
-            after_ids = await _ids(model)
-            for row_id in after_ids - before[model]:
+            for row_id in created[model]:
                 if model is Tenant:
                     await tenants.delete_by_id(row_id)
                 else:

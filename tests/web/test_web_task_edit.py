@@ -92,8 +92,11 @@ async def _delete(task: AgentTask, scenario: AgentScenario, user: User, tenant_i
     with tenant_scope(bypass=True):
         await AgentTask.objects.delete(id=task.id)
         await AgentScenario.objects.delete(id=scenario.id)
-    await User.objects.delete_user(user.id)
+    # Registration makes the account the workspace's plan holder. Remove the
+    # workspace first: the manager refuses to delete a user while any workspace
+    # or tariff history still references it (HTTP 409).
     await tenants.delete_by_id(tenant_id)
+    await User.objects.delete_user(user.id)
 
 
 @pytest.fixture
@@ -329,8 +332,8 @@ async def test_tasks_page_add_modal_offers_targets_and_digest_params(client: Asy
         if scenario is not None:
             with tenant_scope(bypass=True):
                 await AgentScenario.objects.delete(id=scenario.id)
-        await User.objects.delete_user(user.id)
         await tenants.delete_by_id(tenant_id)
+        await User.objects.delete_user(user.id)
 
 
 @pytest.mark.tenancy
@@ -383,8 +386,8 @@ async def test_create_stores_targets_for_the_bound_scenario(client: AsyncClient)
             with tenant_scope(bypass=True):
                 await AgentScenario.objects.delete(id=scenario.id)
         with tenant_scope(bypass=True):
-            await User.objects.delete_user(user.id)
             await tenants.delete_by_id(tenant_id)
+            await User.objects.delete_user(user.id)
 
 
 @pytest.mark.tenancy
@@ -424,8 +427,8 @@ async def test_legacy_collect_creation_becomes_unified_analysis_and_warns(client
             with tenant_scope(bypass=True):
                 await AgentScenario.objects.delete(id=scenario.id)
         with tenant_scope(bypass=True):
-            await User.objects.delete_user(user.id)
             await tenants.delete_by_id(tenant_id)
+            await User.objects.delete_user(user.id)
 
 
 @pytest.mark.tenancy
@@ -466,8 +469,8 @@ async def test_create_digest_task_stores_grouping_params(client: AsyncClient) ->
             with tenant_scope(bypass=True):
                 await AgentScenario.objects.delete(id=scenario.id)
         with tenant_scope(bypass=True):
-            await User.objects.delete_user(user.id)
             await tenants.delete_by_id(tenant_id)
+            await User.objects.delete_user(user.id)
 
 
 async def _make_source(tenant_id: int, name: str):
@@ -562,8 +565,8 @@ async def test_a_stale_edit_form_cannot_activate_a_task_whose_source_is_gone(cli
         if scenario is not None:
             with tenant_scope(bypass=True):
                 await AgentScenario.objects.delete(id=scenario.id)
-        await User.objects.delete_user(user.id)
         await tenants.delete_by_id(tenant_id)
+        await User.objects.delete_user(user.id)
 
 
 async def test_the_task_row_rolls_back_when_only_the_link_write_fails(
@@ -632,5 +635,5 @@ async def test_the_task_row_rolls_back_when_only_the_link_write_fails(
         if scenario is not None:
             with tenant_scope(bypass=True):
                 await AgentScenario.objects.delete(id=scenario.id)
-        await User.objects.delete_user(user.id)
         await tenants.delete_by_id(tenant_id)
+        await User.objects.delete_user(user.id)

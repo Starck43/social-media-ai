@@ -37,6 +37,7 @@ RUNTIME = ROOT / "app" / "agent" / "runtime.py"
 TASKS = ROOT / "app" / "agent" / "toolset" / "tasks.py"
 TOOLS = ROOT / "app" / "agent" / "tools.py"
 TOOLSET = ROOT / "app" / "agent" / "toolset"
+TASK_CONTRACTS = ROOT / "app" / "services" / "task_contracts.py"
 ENTRY = ROOT / "app" / "api" / "v1" / "entry.py"
 CREDENTIALS = ROOT / "app" / "api" / "v1" / "endpoints" / "credentials.py"
 PROVIDER = ROOT / "app" / "models" / "llm" / "llm_provider.py"
@@ -99,16 +100,56 @@ def _tool_contract(path, name):
     raise AssertionError(f"missing tool handler {name} in {path}")
 
 
+def _model_schema_properties(model_name):
+    """Property names of a Pydantic contract, read from its source without imports.
+
+    A tool may declare `parameters={**Model.model_json_schema()}` (P11-T06)
+    instead of a literal `properties` map. The JSON property names are the
+    model's annotated fields; an alias would rename them, so refuse one rather
+    than silently checking the wrong names.
+    """
+    tree = _tree(TASK_CONTRACTS)
+    model = next(
+        (node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == model_name),
+        None,
+    )
+    assert model is not None, f"missing contract model {model_name} in {TASK_CONTRACTS}"
+    names = []
+    for field in model.body:
+        if not isinstance(field, ast.AnnAssign) or not isinstance(field.target, ast.Name):
+            continue
+        assert not field.target.id.startswith("_")
+        assert not ast.unparse(field.annotation).startswith("ClassVar")
+        if isinstance(field.value, ast.Call) and isinstance(field.value.func, ast.Attribute):
+            assert field.value.func.attr == "Field", f"unsupported field factory in {model_name}"
+            assert not any(keyword.arg == "alias" for keyword in field.value.keywords), (
+                f"{model_name}.{field.target.id} aliases its JSON property"
+            )
+        names.append(ast.Constant(value=field.target.id))
+    assert names, f"no declared JSON properties in {model_name}"
+    return ast.Dict(keys=names, values=[ast.Constant(value={}) for _ in names])
+
+
 def _properties(decorator_keywords):
     parameters = decorator_keywords["parameters"]
     assert isinstance(parameters, ast.Dict)
-    props = next(
-        value
-        for key, value in zip(parameters.keys, parameters.values)
-        if key is not None and ast.literal_eval(key) == "properties"
+    literal = next(
+        (
+            value
+            for key, value in zip(parameters.keys, parameters.values)
+            if key is not None and ast.literal_eval(key) == "properties"
+        ),
+        None,
     )
-    assert isinstance(props, ast.Dict)
-    return props
+    if literal is not None:
+        assert isinstance(literal, ast.Dict)
+        return literal
+    spread = [value for key, value in zip(parameters.keys, parameters.values) if key is None]
+    assert len(spread) == 1, "parameters need a literal properties map or one model JSON schema"
+    call = spread[0]
+    assert isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+    assert call.func.attr == "model_json_schema" and not call.args and not call.keywords
+    return _model_schema_properties(ast.unparse(call.func.value))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -421,6 +462,9 @@ def _runtime_scope():
     )
     fallback = AsyncMock(return_value={"content": "fixture"})
     eligible = Mock(return_value=True)
+    # P8-T44: `_chat` classifies attachments through llm_client before choosing
+    # the model, so the isolated slice must declare that collaborator too.
+    media_probe = Mock(return_value=False)
     scope = _slice(
         RUNTIME,
         {"_chat", "_preferred_agent_model"},
@@ -436,10 +480,13 @@ def _runtime_scope():
             "app.services.ai.personal_catalog": NS(
                 eligible_chat_model=eligible,
             ),
-            "app.services.ai.llm_client": NS(chat_with_fallback=fallback),
+            "app.services.ai.llm_client": NS(
+                chat_with_fallback=fallback,
+                _payload_has_media=media_probe,
+            ),
         },
     )
-    return scope, chosen, query, resolver, fallback, eligible
+    return scope, chosen, query, resolver, fallback, eligible, media_probe
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -568,10 +615,11 @@ def test_cli_catalog_commands_require_actor_and_mock_hides_foreign_models():
 
 
 def test_workspace_model_override_reaches_chat_selection():
-    scope, chosen, query, resolver, fallback, eligible = _runtime_scope()
+    scope, chosen, query, resolver, fallback, eligible, media_probe = _runtime_scope()
     with _no_app_imports():
         asyncio.run(scope["_chat"]([], []))
     assert resolver.await_count == 0
+    assert media_probe.call_args.args == ([],)
     assert query.get.await_args.kwargs == {"id": 2, "is_active": True}
     assert eligible.call_args.kwargs == {"user_id": 7, "allowed_types": ["text"]}
     assert fallback.await_args.kwargs["preferred_model"] is chosen
@@ -690,6 +738,8 @@ def test_task_list_resolves_agent_task_symbol():
     assert rows == [
         {
             "name": task.name,
+            "id": task.id,
+            "task_url": f"/app/tasks/{task.id}",
             "cron": task.cron_expr,
             "job_type": task.job_type,
             "active": task.is_active,
@@ -725,7 +775,8 @@ def test_api_docs_records_actual_credential_disable_route():
         "/api/v1/credentials/{credential_id}/disable",
         "/api/v1/credentials/credentials/{credential_id}/disable",
     }
-    documentation = (ROOT / "docs" / "API.md").read_text(encoding="utf-8")
+    # af564a4c grouped the docs by subject; the API contract now lives here.
+    documentation = (ROOT / "docs" / "platform" / "API.md").read_text(encoding="utf-8")
     assert all(route in documentation for route in mounted)
 
 

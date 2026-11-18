@@ -43,6 +43,7 @@ def _load_modules():
     credentials = _module(
         "app.services.social.credentials",
         AuthorizationRequired=type("AuthorizationRequired", (RuntimeError,), {}),
+        NarrowedAccess=lambda **kwargs: types.SimpleNamespace(**kwargs),
         resolve_token=AsyncMock(),
     )
     imports = {

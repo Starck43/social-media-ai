@@ -2,7 +2,7 @@
 
 ## Explicit task plans
 
-Owner-approved direction (2026-10-25), tracked by [P8-T29](../tasks/p8-t29.md) and
+Owner-approved direction (2026-10-25), tracked by the accepted [P8-T29](../audit/p8/p8-t29.md) and
 the sequenced follow-ups in [P8](../phases/p8-first-value-ui.md). This is a target
 contract, not evidence of completed implementation or live VK availability.
 The AI chat is the primary workspace across request, clarification, preview,

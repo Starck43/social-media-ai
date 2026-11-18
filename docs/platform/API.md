@@ -1781,7 +1781,7 @@ payment/delivery receipts. See the
 ## Universal social task parity (P8-T29)
 
 Current chat and task endpoints are part of the shared implementation described
-in [P8-T29](../tasks/p8-t29.md); this documents code surfaces, not completion of the
+in [P8-T29](../audit/p8/p8-t29.md); this documents code surfaces, not completion of the
 product journey. The target is the chat as the primary workspace for
 clarification, preview, execution, progress, results and follow-up, while the
 dedicated management pages remain directly usable. The permitted collect/analyze interaction

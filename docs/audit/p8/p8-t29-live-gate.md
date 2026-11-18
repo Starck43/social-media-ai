@@ -1,76 +1,81 @@
-# P8-T29 — live VK collection-path gate diagnostic (2026-11-18)
+# P8-T29 — bounded live VK collection-path evidence (2026-11-18)
 
-Status: **cannot proceed in this environment**. This is an acceptance-gate
-diagnostic, not an audit acceptance and not a reopening of the resolved Q-5
-profile/method question.
+Status: **PASS** for the card's live collection-path gate. This is executor
+evidence on the exact candidate, not an audit acceptance. It does not re-open or
+duplicate the accepted Q-5 profile/method decision.
 
-Candidate: `f7c309127f27f938563efe3fd35c53e33a3bff24` and its integrated
-descendants through `27bb1250df81ef7b5b5426ec5ad457543b1cd984` on `origin/dev`.
-Owner authorized one bounded live task-path run on 2026-11-18.
+Candidate: `0796ca7492043f186fe905994c084ddfee2b6001` (`origin/dev` at run
+time), worktree `/private/tmp/social-p8-t29-audit`, branch
+`type/p8-t29-exact-revision-audit`. Owner authorized one bounded live run on
+2026-11-18. An initial transport failure (`httpx.ConnectError`) was recorded in
+the earlier revision of this file; after the owner restored network access the
+same path succeeded.
 
-## Passed
+## Method
 
-- Exact-revision source-only batch: 82 passed (10 P8-T29 paths).
-- DB-backed acceptance paths: 69 passed across six files on isolated
-  `test_schema`; synthetic residue verified removed; schema inventory unchanged
-  after the migration baseline was reconciled to `dev` head.
-- Full check commands, counts, pre-existing unrelated failures and the stale
-  fake correction are recorded in [the task card](../../tasks/p8-t29.md).
+One read-only `newsfeed.search` through the real `VKCollectionAdapter` and
+`VKClient` (`SingleRequestVKClient` overrides only `_fetch_page` to perform one
+HTTP call, error-check the response and skip rate-limit retries), with
+`owner_user_id=2` so the real credential resolver loaded the owner's personal
+vault row. No token was printed, logged, persisted or echoed into a task. The
+captured normalized item was written to a local scratch file so subsequent
+staging steps did not repeat the network request; that scratch file is deleted at
+closeout.
 
-## Failed / unrun
+| Field | Value |
+| --- | --- |
+| Method / host | `newsfeed.search`, `https://api.vk.com/method` |
+| API version | `5.199` (from `Platform.params`, not environment) |
+| Bounds | one request, `limit=1`, no retry, no write to VK |
+| Credential | personal VK ID user token, resolved from the owner's vault row; not printed |
+| Result | 1 normalized item, `total_available=3849` |
+| Item identity | `external_id=-149014153_69645` |
+| Provenance | `permalink=https://vk.com/wall-149014153_69645`, `published_at=2026-11-18T09:16:57+00:00`, `content_type=post` |
+| Content prefix | `Сварочные работы системы отопления …` (job post; no provider diagnostics retained) |
 
-- One live `newsfeed.search` through the real `VKCollectionAdapter` and
-  `VKClient` (one request, `count=1`, personal credential resolved from the
-  owner's vault row 19, no token printed or stored) failed at transport:
-  `httpx.ConnectError`. No response, no staged rows, no public-schema write.
-- Network triage from the same machine: `curl --max-time 8` to
-  `https://api.vk.com/method/users.get`, `https://vk.com` and
-  `https://api.vk.ru/method/users.get` all timed out (`http_code=000`), while
-  `https://example.com` returned 200. The paired browse relay was not
-  connected, so no alternative browser network path was available.
-- Consequence: the card's remaining requirement — exact-revision evidence that
-  bounded official-API results feed staging/analysis with honest provenance and
-  coverage — is **unrun**. The historical 2026-10-26 timeouts and this attempt
-  are diagnostic only and are neither PASS nor a claim that VK refused a method.
+## Staging and analysis boundary
 
-## Recommended fix
+A synthetic tenant, user and `SEARCH` source were created in `public` only as
+isolated task-scoped rows. The real `ContentCollector.collect_from_source`
+staged the captured normalized item through `build_staged_rows` /
+`CollectedItem.objects.store_items`; no provider response was mocked at this
+step and there was no second network call. Assertions: one staged row, exact
+`external_id`, exact `permalink`, non-null `published_at`, same text prefix and
+the run id. `CollectedItem.as_agent_item()` was then read at the analysis
+boundary and checked for the same identity and provenance. A saved-result
+double carrying that item's `item_hash` retired exactly one staged row via
+`_retire_staged`; zero rows remained. The paid model and external delivery were
+not called.
 
-Run the same bounded path from a network where VK hosts answer (the network used
-for the accepted Q-5 probe), without changing credentials or scope. The failing
-script was, in full:
+Observed output (abridged):
 
-```python
-import asyncio
-from app.models import Platform
-from app.services.collection.adapters.vk import VKCollectionAdapter
-from app.services.social.vk_client import VKClient
-
-class SingleRequestVKClient(VKClient):
-    async def _fetch_page(self, method, params):
-        response = await self._make_request(method, params)
-        self._raise_api_error(response)
-        return response
-
-async def main():
-    platform = await Platform.objects.filter(platform_type="vk").first()
-    page = await VKCollectionAdapter(SingleRequestVKClient(platform), owner_user_id=2).search_posts(
-        query="ремонт", since=None, until=None, limit=1, cursor=None
-    )
-    print(len(page.items), page.total_available)
-
-asyncio.run(main())
+```
+LIVE method=newsfeed.search api_version=5.199 host=https://api.vk.com/method
+LIVE items=1 total_available=3849
+LIVE item external_id=-149014153_69645 permalink=https://vk.com/wall-149014153_69645
+STAGED rows=1 source_id=3186 run_id=1578861528
+STAGED external_id=-149014153_69645 permalink=https://vk.com/wall-149014153_69645
+ANALYSIS item external_id=-149014153_69645 permalink=https://vk.com/wall-149014153_69645
+ANALYSIS retired=1 remaining=0 (saved result drains only its own hash)
+VERDICT PASS: live official-API item reached staging and the analysis boundary with provenance and coverage
+CLEANUP synthetic tenant/source/user removed
 ```
 
-Run it as `PYTHONPATH=<task worktree> DB_SCHEMA=public .venv/bin/python <script>`
-with the owner's `.env` loaded, then stage the captured normalized items in
-exclusive `test_schema` through the real collector and verify provenance and
-coverage before cleanup. Alternatively connect the browse relay and repeat the
-transport check; if neither is possible, the owner must explicitly descope the
-live gate in the task card before acceptance.
+## Cleanup and limits
 
-## Scope and evidence limits
+All synthetic tenants, users, memberships, sources and staged rows were removed
+through the project's managers and verified absent (`p8t29live-%` rows: tenants
+0, users 0, sources 0; the live `external_id` in `collected_items`: 0). No
+migration was applied to `public`; its revision was observed at
+`p21t14_rate_limits` and was not changed. No digest or external send was run.
+One network, one credential, one run; this is not an independent audit and does
+not certify production availability from a deployment network.
 
-No secrets, sessions or generated data are committed. No public-schema data was
-written. Q-5's accepted profile/method evidence stands and was not re-probed as
-a profile decision. This diagnostic does not accept P8-T29 and does not change
-its separate acceptance criteria.
+## Exact-revision source and DB checks
+
+Recorded in the [acceptance audit](p8-t29.md): 82 source-only tests and 69
+DB-backed tests passed at the candidate; three unrelated suites have
+pre-existing teardown/context failures at current `dev`, with all synthetic
+residue removed. `test_schema` was reconciled from `p21t14_rate_limits` to dev
+head `p12t15_policy_audit` under exclusive ownership with an additive-only
+inventory diff.

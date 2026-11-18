@@ -4,6 +4,11 @@ None means absent/malformed/legacy-unknown; [] means explicitly no attachments.
 Only type + a conservative HTTPS reference survive. Rejected references keep
 an image/video placeholder with url=None, so missing media is not called empty.
 This is syntax validation, not DNS/reachability or provider-media acceptance.
+
+A reference must be a bare URL except on the provider media CDNs listed in
+`_PROVIDER_MEDIA_HOSTS`: their photo/video links always carry a query string
+(`?quality=…&cs=…&u=<opaque access key>`) and it is that query which makes the
+file fetchable, so it is preserved there and nowhere else (P8-T52, owner choice B).
 """
 
 from __future__ import annotations
@@ -68,6 +73,18 @@ def safe_permalink_url(value: Any) -> str | None:
     return value
 
 
+# Provider media CDNs whose links are only usable with their query string.
+# Deliberately not `vk.com`: that host serves pages, not media files.
+_PROVIDER_MEDIA_HOSTS = ("userapi.com", "vkuser.net")
+
+
+def _is_provider_media_host(host: str | None) -> bool:
+    if not host:
+        return False
+    cleaned = host.rstrip(".").lower()
+    return any(cleaned == suffix or cleaned.endswith("." + suffix) for suffix in _PROVIDER_MEDIA_HOSTS)
+
+
 def _staged_media_url(value: Any) -> str | None:
     if (
         type(value) is not str
@@ -85,7 +102,7 @@ def _staged_media_url(value: Any) -> str | None:
             or not host
             or parsed.username is not None
             or parsed.password is not None
-            or parsed.query
+            or (parsed.query and not _is_provider_media_host(host))
             or parsed.fragment
             or parsed.port not in (None, 443)
         ):

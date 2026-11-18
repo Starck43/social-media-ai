@@ -69,8 +69,9 @@ class AgentTask(Base, TenantScopedMixin, TimestampMixin):
     launch_job_id: Mapped[int | None] = Column(Integer, nullable=True)
 
     cron_expr: Mapped[str] = Column(String(100), nullable=False)  # 5-field cron expression
-    # Job type to enqueue: 'collect' | 'digest' | 'prune' | 'analyze' | 'learn' | 'reflect'
-    job_type: Mapped[str] = Column(String(20), nullable=False)
+    # Job type to enqueue: simple names plus dotted dispatch keys such as
+    # 'comms.outbox.dispatch' and 'documents.approvals.expire' (P8-T51).
+    job_type: Mapped[str] = Column(String(64), nullable=False)
     # Job payload: {"period": "week", "tracked_users": ["vk:1"], "keywords_list": [...], ...}
     # Selection (tracked users, text scope) lives here, not on a source or a
     # scenario: docs/connectors/COLLECTION.md#task-selection-contract.

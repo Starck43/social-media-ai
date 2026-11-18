@@ -41,7 +41,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P1
 
 
-- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **IN_PROGRESS** (owner resumed 2026-11-18: Q-5 answered, wall + personal-token search journey authorized on `public` after `0157`/`p12t15`; owner authorized merge on 2026-11-18, integrated revision `aa470623` merged into `dev` as `e6767991`; independent audit 2026-11-18 did **not** accept — required check failed at the accepted revision and required DB paths failed; [diagnostic](docs/audit/p8/p8-t41-diagnostic.md) with remediation) · opencode · — · `test/p8-t41-integrated-journey` from `c1ab6807` · `P1` · `C4`
+- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **IN_PROGRESS** (recovery recheck 2026-11-18 at `4c454ea4`: guarded check 45/45 OK, 11 DB/P8-T38 paths 103 passed, but 11 contract paths 20 failed/3 errors from tests stale against current source — not READY, owner decision needed; earlier audit did not accept at `e6767991`, [diagnostic](docs/audit/p8/p8-t41-diagnostic.md)) · opencode · — · `test/p8-t41-integrated-journey` from `c1ab6807` · `P1` · `C4`
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`

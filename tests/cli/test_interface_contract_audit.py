@@ -122,9 +122,9 @@ def _model_schema_properties(model_name):
         assert not ast.unparse(field.annotation).startswith("ClassVar")
         if isinstance(field.value, ast.Call) and isinstance(field.value.func, ast.Attribute):
             assert field.value.func.attr == "Field", f"unsupported field factory in {model_name}"
-            assert not any(keyword.arg == "alias" for keyword in field.value.keywords), (
-                f"{model_name}.{field.target.id} aliases its JSON property"
-            )
+            assert not any(
+                keyword.arg == "alias" for keyword in field.value.keywords
+            ), f"{model_name}.{field.target.id} aliases its JSON property"
         names.append(ast.Constant(value=field.target.id))
     assert names, f"no declared JSON properties in {model_name}"
     return ast.Dict(keys=names, values=[ast.Constant(value={}) for _ in names])

@@ -41,7 +41,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P1
 
 
-- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **DEFERRED** (owner: park after local mock/DB increment until runtime journey and bounded live VK evidence, 2026-10-29) · notion-ai-p8-t41 · [Closeout](https://github.com/Starck43/social-media-ai/pull/279#issuecomment-6492303448) · resume `dev` at `295268d9` · `P1` · `C4`
+- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **IN_PROGRESS** (owner resumed 2026-11-18: Q-5 answered, wall + personal-token search journey authorized on `public` after `0157`/`p12t15`) · opencode · — · `test/p8-t41-integrated-journey` from `c1ab6807` · `P1` · `C4`
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`

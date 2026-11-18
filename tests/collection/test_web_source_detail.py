@@ -375,11 +375,7 @@ async def test_source_name_is_text_in_list_detail_title_dialog_and_input(read_on
                 self.active["source-link"] = []
             if tag == "input" and attributes.get("name") == "name":
                 self.values.append(attributes.get("value"))
-            if (
-                tag == "form"
-                and attributes.get("action") == self.delete_action
-                and attributes.get("data-confirm")
-            ):
+            if tag == "form" and attributes.get("action") == self.delete_action and attributes.get("data-confirm"):
                 self.confirms.append(attributes["data-confirm"])
 
         def handle_endtag(self, tag):

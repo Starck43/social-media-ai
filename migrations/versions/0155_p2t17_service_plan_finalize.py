@@ -26,13 +26,17 @@ def upgrade():
             f"{quoted}.service_plan_backfill_resolutions IN ACCESS EXCLUSIVE MODE"
         )
     )
-    unresolved = connection.scalar(sa.text(f"""
+    unresolved = connection.scalar(
+        sa.text(
+            f"""
         SELECT count(*) FROM {quoted}.tenants t
         LEFT JOIN {quoted}.user_service_plans p ON p.user_id = t.plan_holder_user_id
         LEFT JOIN {quoted}.service_plan_backfill_resolutions r ON r.tenant_id = t.id
         WHERE t.plan_holder_user_id IS NULL OR p.user_id IS NULL
            OR r.tenant_id IS NULL OR r.holder_user_id <> t.plan_holder_user_id
-    """))
+    """
+        )
+    )
     if unresolved:
         raise RuntimeError("Service-plan finalization refused: unresolved sponsorship or missing backfill evidence")
     op.alter_column("tenants", "plan_holder_user_id", existing_type=sa.Integer, nullable=False, schema=schema)

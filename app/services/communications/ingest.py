@@ -374,7 +374,9 @@ async def _resolve_or_create_contact(
     session.add(new_contact)
     await session.flush()
 
-    bound_conn_id = connection_id if kind in ("bitrix24_contact", "bitrix24_company", "bitrix24_lead") else connection_id
+    bound_conn_id = (
+        connection_id if kind in ("bitrix24_contact", "bitrix24_company", "bitrix24_lead") else connection_id
+    )
     new_identity = ContactIdentity(
         tenant_id=tenant_id,
         contact_id=new_contact.id,
@@ -477,11 +479,14 @@ async def _update_contact_channel_stats(
 ) -> ContactChannelStat:
     stat = (
         await session.execute(
-            select(ContactChannelStat).where(
+            select(ContactChannelStat)
+            .where(
                 ContactChannelStat.tenant_id == tenant_id,
                 ContactChannelStat.contact_id == contact_id,
                 ContactChannelStat.channel == channel,
-            ).with_for_update().execution_options(populate_existing=True)
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
 
@@ -549,9 +554,7 @@ def _select_rebind_candidate(
     if folder_prefix:
         same_folder = [m for m in ordered if str(m.original_id or "").startswith(folder_prefix)]
         if uv_prefix:
-            unrebound_same_folder = [
-                m for m in same_folder if not str(m.original_id or "").startswith(uv_prefix)
-            ]
+            unrebound_same_folder = [m for m in same_folder if not str(m.original_id or "").startswith(uv_prefix)]
             if unrebound_same_folder:
                 return unrebound_same_folder[0]
         if same_folder:
@@ -647,31 +650,39 @@ async def ingest(session, item: IngestMessageInput) -> IngestResult:
         by_hash: UnifiedMessage | None = None
         if ext_msg_hash is not None:
             candidates = (
-                await session.execute(
-                    select(UnifiedMessage)
-                    .where(
-                        UnifiedMessage.tenant_id == tenant_id,
-                        UnifiedMessage.connection_id == item.connection_id,
-                        UnifiedMessage.channel == item.channel,
-                        UnifiedMessage.external_message_id_hash == ext_msg_hash,
+                (
+                    await session.execute(
+                        select(UnifiedMessage)
+                        .where(
+                            UnifiedMessage.tenant_id == tenant_id,
+                            UnifiedMessage.connection_id == item.connection_id,
+                            UnifiedMessage.channel == item.channel,
+                            UnifiedMessage.external_message_id_hash == ext_msg_hash,
+                        )
+                        .order_by(UnifiedMessage.id.asc())
                     )
-                    .order_by(UnifiedMessage.id.asc())
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             by_hash = _select_rebind_candidate(list(candidates), original_id, require_same_folder=False)
         elif content_hash is not None:
             candidates = (
-                await session.execute(
-                    select(UnifiedMessage)
-                    .where(
-                        UnifiedMessage.tenant_id == tenant_id,
-                        UnifiedMessage.connection_id == item.connection_id,
-                        UnifiedMessage.channel == item.channel,
-                        UnifiedMessage.content_hash == content_hash,
+                (
+                    await session.execute(
+                        select(UnifiedMessage)
+                        .where(
+                            UnifiedMessage.tenant_id == tenant_id,
+                            UnifiedMessage.connection_id == item.connection_id,
+                            UnifiedMessage.channel == item.channel,
+                            UnifiedMessage.content_hash == content_hash,
+                        )
+                        .order_by(UnifiedMessage.id.asc())
                     )
-                    .order_by(UnifiedMessage.id.asc())
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             by_hash = _select_rebind_candidate(
                 list(candidates),
                 original_id,
@@ -822,9 +833,7 @@ async def ingest_telegram_update(
         else None
     )
     original_url = (
-        f"https://t.me/c/{str(chat_id).removeprefix('-100')}/{message_id}"
-        if str(chat_id).startswith("-100")
-        else None
+        f"https://t.me/c/{str(chat_id).removeprefix('-100')}/{message_id}" if str(chat_id).startswith("-100") else None
     )
 
     envelope = IngestMessageInput(

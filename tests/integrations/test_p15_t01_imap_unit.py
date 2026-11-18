@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import imaplib
 import ssl
 import sys
@@ -10,7 +11,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from cryptography.fernet import Fernet
 
+from app.core.config import settings
 from app.core.tenant_context import TenantContextError, tenant_scope
 from app.integrations.email import (
     DEFAULT_IMAP_FOLDERS,
@@ -30,9 +33,6 @@ from app.models.communications import ContactChannelStat, MessageThread, Unified
 from app.models.contacts import Contact, ContactIdentity
 from app.models.integrations import WorkspaceConnection, WorkspaceConnectionSecret
 from app.utils.crypto import encrypt_secret
-from cryptography.fernet import Fernet
-import base64
-from app.core.config import settings
 
 __source_only__ = True
 
@@ -42,7 +42,6 @@ def _pii_keys(monkeypatch):
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode(), raising=False)
     monkeypatch.setattr(settings, "PII_INDEX_KEY", base64.urlsafe_b64encode(b"u" * 32).decode(), raising=False)
     monkeypatch.setattr(settings, "CREDENTIALS_KEY", Fernet.generate_key().decode(), raising=False)
-
 
 
 class _FakeResult:
@@ -140,10 +139,7 @@ class _InMemoryImapDbSession:
                 [
                     i
                     for i in self.identities
-                    if i.tenant_id == t_id
-                    and i.kind == kind
-                    and i.blind_index == b_idx
-                    and i.connection_id == conn_id
+                    if i.tenant_id == t_id and i.kind == kind and i.blind_index == b_idx and i.connection_id == conn_id
                 ]
             )
 
@@ -494,8 +490,7 @@ def test_network_policy_and_d13_outbound_seam_isolation(monkeypatch):
     monkeypatch.setattr(
         "app.integrations.email.imap_sync.acquire_outbound_target",
         lambda host, port, *, policy=None, **kw: (
-            seam_calls.append((host, port))
-            or SimpleNamespace(host=host, addresses=("93.158.134.1",))
+            seam_calls.append((host, port)) or SimpleNamespace(host=host, addresses=("93.158.134.1",))
         ),
     )
     host2, addr2 = _resolve_imap_target("mailru_mail")
@@ -761,8 +756,10 @@ async def test_b4_unparseable_fetch_reply_does_not_advance_cursor_past_failed_ui
                 items.append(b")")
             elif u in messages:
                 flags_b, headers_b = messages[u]
-                meta = f"{u} (UID {u} FLAGS ({flags_b.decode('ascii')}) BODY[HEADER.FIELDS] {{{len(headers_b)}}})".encode(
-                    "ascii"
+                meta = (
+                    f"{u} (UID {u} FLAGS ({flags_b.decode('ascii')}) BODY[HEADER.FIELDS] {{{len(headers_b)}}})".encode(
+                        "ascii"
+                    )
                 )
                 items.append((meta, headers_b))
                 items.append(b")")
@@ -1036,4 +1033,3 @@ async def test_b5_b6_dispatcher_bootstrap_registration_and_imap_expunge_marks_un
         assert res_after_delete["total_marked_unavailable"] == 1
         assert msg10.is_unavailable is True
         assert msg11.is_unavailable is False
-

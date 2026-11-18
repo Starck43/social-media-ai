@@ -156,7 +156,8 @@ def test_t03_schema_migration(tmp_path):
     file_fd = os.open(db, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
     os.close(file_fd)
     connection = sqlite3.connect(db)
-    connection.executescript("""
+    connection.executescript(
+        """
         CREATE TABLE files (
             path_hash TEXT PRIMARY KEY,
             root_hash TEXT NOT NULL,
@@ -191,7 +192,8 @@ def test_t03_schema_migration(tmp_path):
             device INTEGER NOT NULL,
             inode INTEGER NOT NULL
         );
-        """)
+        """
+    )
     connection.commit()
     connection.close()
     store = IndexStore(db)

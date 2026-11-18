@@ -49,13 +49,17 @@ def synthetic_schema():
             conn.exec_driver_sql(f'CREATE TABLE "{name}".alembic_version (version_num TEXT NOT NULL)')
             conn.exec_driver_sql(f'CREATE TABLE "{name}".personal_llm_dispatches (dispatch_id TEXT PRIMARY KEY)')
             conn.exec_driver_sql(f"INSERT INTO \"{name}\".alembic_version VALUES ('p17t08_onec_history_status')")
-            conn.exec_driver_sql(f"""CREATE TABLE "{name}".llm_providers (
+            conn.exec_driver_sql(
+                f"""CREATE TABLE "{name}".llm_providers (
                 id INTEGER PRIMARY KEY, owner_user_id INTEGER, encrypted_api_key TEXT,
                 base_url TEXT, auth_header TEXT, api_format TEXT, is_active BOOLEAN,
-                name TEXT, uid TEXT, description TEXT)""")
-            conn.exec_driver_sql(f"""CREATE TABLE "{name}".llm_models (
+                name TEXT, uid TEXT, description TEXT)"""
+            )
+            conn.exec_driver_sql(
+                f"""CREATE TABLE "{name}".llm_models (
                 id INTEGER PRIMARY KEY, provider_id INTEGER, owner_user_id INTEGER,
-                custom_endpoint_path TEXT, model_id TEXT, is_active BOOLEAN)""")
+                custom_endpoint_path TEXT, model_id TEXT, is_active BOOLEAN)"""
+            )
             spec = importlib.util.spec_from_file_location(
                 "_p21t11_migration", ROOT / "migrations/versions/0153_p21t11_credential_version.py"
             )
@@ -69,11 +73,15 @@ def synthetic_schema():
 
 
 def _provider(conn, schema):
-    conn.exec_driver_sql(f"""INSERT INTO "{schema}".llm_providers
+    conn.exec_driver_sql(
+        f"""INSERT INTO "{schema}".llm_providers
         (id, owner_user_id, base_url, api_format, is_active, name)
-        VALUES (1, 2, 'https://example.org/v1', 'openai', true, 'Synthetic')""")
-    conn.exec_driver_sql(f"""INSERT INTO "{schema}".llm_models
-        VALUES (1, 1, 2, '/chat/completions', 'synthetic-model', true)""")
+        VALUES (1, 2, 'https://example.org/v1', 'openai', true, 'Synthetic')"""
+    )
+    conn.exec_driver_sql(
+        f"""INSERT INTO "{schema}".llm_models
+        VALUES (1, 1, 2, '/chat/completions', 'synthetic-model', true)"""
+    )
 
 
 def _version(conn, schema):
@@ -146,11 +154,13 @@ def test_model_endpoint_change_invalidates_provider_version(synthetic_schema):
 
 
 def _rotation_stores(conn, schema, old):
-    conn.exec_driver_sql(f"""CREATE TABLE "{schema}".user_credentials (
+    conn.exec_driver_sql(
+        f"""CREATE TABLE "{schema}".user_credentials (
         id INTEGER PRIMARY KEY, platform TEXT, kind TEXT, meta JSON,
         secret_encrypted TEXT, refresh_secret_encrypted TEXT,
         CONSTRAINT ck_user_credentials_vk_refresh_secret CHECK
-        (platform <> 'vk' OR meta IS NULL OR NOT (meta::jsonb ? 'refresh_token')))""")
+        (platform <> 'vk' OR meta IS NULL OR NOT (meta::jsonb ? 'refresh_token')))"""
+    )
     conn.exec_driver_sql(
         f'CREATE TABLE "{schema}".workspace_connection_secrets (connection_id INTEGER PRIMARY KEY, secret_encrypted TEXT)'
     )

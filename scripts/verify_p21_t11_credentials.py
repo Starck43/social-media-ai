@@ -46,9 +46,17 @@ def main():
         if not conn.execute(text("SELECT pg_try_advisory_lock(1370093)")).scalar_one():
             raise SystemExit("Another DB runner owns the advisory lock")
         try:
-            writers = conn.execute(text("""SELECT pid FROM pg_stat_activity WHERE datname=current_database()
+            writers = (
+                conn.execute(
+                    text(
+                        """SELECT pid FROM pg_stat_activity WHERE datname=current_database()
                 AND pid<>pg_backend_pid() AND state='active'
-                AND query ~* '\\m(insert|update|delete|alter|create|drop|truncate)\\M'""")).scalars().all()
+                AND query ~* '\\m(insert|update|delete|alter|create|drop|truncate)\\M'"""
+                    )
+                )
+                .scalars()
+                .all()
+            )
             if writers:
                 raise SystemExit("Coordinate active database writers before proceeding")
             exists = conn.execute(text("SELECT to_regnamespace(:schema)"), {"schema": schema}).scalar()

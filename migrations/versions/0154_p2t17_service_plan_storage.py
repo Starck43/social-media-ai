@@ -116,29 +116,45 @@ def upgrade():
         "AND plan_policy_version IS NOT NULL AND plan_policy_version > 0)",
         schema=schema,
     )
-    op.execute(sa.text(f"""
+    op.execute(
+        sa.text(
+            f"""
         CREATE FUNCTION {quoted}.service_plan_policy_immutable() RETURNS trigger
         LANGUAGE plpgsql AS $$ BEGIN
             RAISE EXCEPTION 'Service plan policy versions are immutable; insert a new version';
         END $$
-    """))
-    op.execute(sa.text(f"""
+    """
+        )
+    )
+    op.execute(
+        sa.text(
+            f"""
         CREATE TRIGGER service_plan_policy_immutable BEFORE UPDATE OR DELETE
         ON {quoted}.service_plan_policies FOR EACH ROW
         EXECUTE FUNCTION {quoted}.service_plan_policy_immutable()
-    """))
-    op.execute(sa.text(f"""
+    """
+        )
+    )
+    op.execute(
+        sa.text(
+            f"""
         CREATE TRIGGER service_plan_policy_no_truncate BEFORE TRUNCATE
         ON {quoted}.service_plan_policies FOR EACH STATEMENT
         EXECUTE FUNCTION {quoted}.service_plan_policy_immutable()
-    """))
+    """
+        )
+    )
     for event, level in (("UPDATE OR DELETE", "ROW"), ("TRUNCATE", "STATEMENT")):
         trigger = "service_plan_backfill_immutable" if level == "ROW" else "service_plan_backfill_no_truncate"
-        op.execute(sa.text(f"""
+        op.execute(
+            sa.text(
+                f"""
             CREATE TRIGGER {trigger} BEFORE {event}
             ON {quoted}.service_plan_backfill_resolutions FOR EACH {level}
             EXECUTE FUNCTION {quoted}.service_plan_policy_immutable()
-        """))
+        """
+            )
+        )
 
 
 def downgrade():

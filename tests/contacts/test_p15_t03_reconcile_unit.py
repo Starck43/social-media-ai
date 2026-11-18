@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from cryptography.fernet import Fernet
 
+from app.core.config import settings
 from app.core.tenant_context import tenant_scope
 from app.models.communications import ContactChannelStat, MessageThread, UnifiedMessage
 from app.models.contacts import Contact, ContactConsent, ContactIdentity, ContactMergeJournal
@@ -24,9 +27,6 @@ from app.services.contacts.reconcile import (
     suggest_contact_merges,
     unmerge_contacts,
 )
-from cryptography.fernet import Fernet
-import base64
-from app.core.config import settings
 
 __source_only__ = True
 
@@ -36,7 +36,6 @@ def _pii_keys(monkeypatch):
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode(), raising=False)
     monkeypatch.setattr(settings, "PII_INDEX_KEY", base64.urlsafe_b64encode(b"u" * 32).decode(), raising=False)
     monkeypatch.setattr(settings, "CREDENTIALS_KEY", Fernet.generate_key().decode(), raising=False)
-
 
 
 class _FakeResult:
@@ -193,8 +192,12 @@ class _InMemoryReconcileSession:
 async def test_strong_and_weak_merge_suggestions():
     session = _InMemoryReconcileSession()
     # Contact 1 (Email) and Contact 2 (Telegram + same email blind index) -> strong match
-    c1 = Contact(id=1, tenant_id=1, display_name_encrypted="Alice Smith", birthday_encrypted="1990-05-10", birthday_has_year=True)
-    c2 = Contact(id=2, tenant_id=1, display_name_encrypted="A. Smith", birthday_encrypted="1991-05-10", birthday_has_year=True)
+    c1 = Contact(
+        id=1, tenant_id=1, display_name_encrypted="Alice Smith", birthday_encrypted="1990-05-10", birthday_has_year=True
+    )
+    c2 = Contact(
+        id=2, tenant_id=1, display_name_encrypted="A. Smith", birthday_encrypted="1991-05-10", birthday_has_year=True
+    )
     # Contact 3 and Contact 4 share display name and thread 99 -> weak match
     c3 = Contact(id=3, tenant_id=1, display_name_encrypted="Boris Volkov")
     c4 = Contact(id=4, tenant_id=1, display_name_encrypted="  boris   volkov ")
@@ -489,7 +492,7 @@ async def test_contacts_identity_and_workspace_projection_contracts(monkeypatch)
     from app.services.contacts.identity import identity_index, identity_values, normalized_identity, pii_kind
     from app.services.contacts.workspace import (
         ContactPrivacy,
-         consent_dict,
+        consent_dict,
         contact_detail,
         contact_dict,
         identity_dict,
@@ -605,8 +608,12 @@ async def test_b9_cross_connection_merge_and_unmerge_preserves_thread_connection
     t3 = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
 
     # Target contact (id=10) on connection 101, Source contact (id=20) on connection 202
-    c_target = Contact(id=10, tenant_id=1, display_name_encrypted="Target Person", last_active_at=t1, last_active_channel="email")
-    c_source = Contact(id=20, tenant_id=1, display_name_encrypted="Source Person", last_active_at=t3, last_active_channel="telegram")
+    c_target = Contact(
+        id=10, tenant_id=1, display_name_encrypted="Target Person", last_active_at=t1, last_active_channel="email"
+    )
+    c_source = Contact(
+        id=20, tenant_id=1, display_name_encrypted="Source Person", last_active_at=t3, last_active_channel="telegram"
+    )
     session.add(c_target)
     session.add(c_source)
 
@@ -752,5 +759,3 @@ async def test_b9_cross_connection_merge_and_unmerge_preserves_thread_connection
         assert m2.contact_id == 20 and m2.thread_id == 302
         assert m3_unassigned_th.contact_id == 20 and m3_unassigned_th.thread_id == 303
         assert m4_cross_conn.contact_id == 20 and m4_cross_conn.thread_id == 303
-
-

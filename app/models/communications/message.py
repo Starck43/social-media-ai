@@ -254,4 +254,3 @@ class ThreadTriageDecision(Base, TimestampMixin, TenantScopedMixin):
     category: Mapped[str] = mapped_column(String(24), nullable=False)
     reason_encrypted: Mapped[str | None] = mapped_column(EncryptedText(), nullable=True)
     objects: ClassVar = None
-

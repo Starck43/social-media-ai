@@ -44,7 +44,8 @@ def _registry(add: bool) -> None:
         # promote a legacy generic row for this table when one exists; the
         # table-name predicate then prevents a second row on re-entry.
         bind.execute(
-            sa.text(f"""
+            sa.text(
+                f"""
                 UPDATE {schema}.model_types
                 SET resource_key = :resource_key,
                     model_name = 'outboxmessage',
@@ -56,11 +57,13 @@ def _registry(add: bool) -> None:
                   AND NOT EXISTS (
                       SELECT 1 FROM {schema}.model_types WHERE resource_key = :resource_key
                   )
-                """),
+                """
+            ),
             {"resource_key": resource_key},
         )
         bind.execute(
-            sa.text(f"""
+            sa.text(
+                f"""
                 INSERT INTO {schema}.model_types
                     (resource_key, model_name, table_name, description, is_managed, created_at, updated_at)
                 SELECT CAST(:resource_key AS varchar), 'outboxmessage', 'outbox_messages',
@@ -70,24 +73,28 @@ def _registry(add: bool) -> None:
                     WHERE resource_key = :resource_key OR table_name = 'outbox_messages'
                 )
                 ON CONFLICT (resource_key) DO NOTHING
-                """),
+                """
+            ),
             {"resource_key": resource_key},
         )
         for action in ("VIEW", "UPDATE", "CONFIGURE"):
             bind.execute(
-                sa.text(f"""
+                sa.text(
+                    f"""
                     INSERT INTO {schema}.permissions (name, action_type, model_type_id, created_at, updated_at)
                     SELECT CAST(:name AS varchar), CAST(:action AS {schema}.action_type), id, now(), now()
                     FROM {schema}.model_types
                     WHERE resource_key = :resource_key
                     ON CONFLICT (model_type_id, action_type) DO NOTHING
-                    """),
+                    """
+                ),
                 {"name": f"Outbox: {action.lower()}", "action": action, "resource_key": resource_key},
             )
         for codename, actions in WORKSPACE_ROLE_PRESETS.items():
             for action in actions:
                 bind.execute(
-                    sa.text(f"""
+                    sa.text(
+                        f"""
                         INSERT INTO {schema}.workspace_role_permission (role_id, permission_id)
                         SELECT wr.id, p.id
                         FROM {schema}.workspace_roles wr
@@ -97,26 +104,31 @@ def _registry(add: bool) -> None:
                           AND m.resource_key = :resource_key
                           AND p.action_type = CAST(:action AS {schema}.action_type)
                         ON CONFLICT (role_id, permission_id) DO NOTHING
-                        """),
+                        """
+                    ),
                     {"codename": codename, "resource_key": resource_key, "action": action},
                 )
         return
 
     for link in ("role_permission", "workspace_role_permission"):
         bind.execute(
-            sa.text(f"""
+            sa.text(
+                f"""
                 DELETE FROM {schema}.{link} l USING {schema}.permissions p, {schema}.model_types m
                 WHERE l.permission_id = p.id
                   AND p.model_type_id = m.id
                   AND m.resource_key = :resource_key
-                """),
+                """
+            ),
             {"resource_key": resource_key},
         )
     bind.execute(
-        sa.text(f"""
+        sa.text(
+            f"""
             DELETE FROM {schema}.permissions p USING {schema}.model_types m
             WHERE p.model_type_id = m.id AND m.resource_key = :resource_key
-            """),
+            """
+        ),
         {"resource_key": resource_key},
     )
     bind.execute(

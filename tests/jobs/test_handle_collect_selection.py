@@ -94,9 +94,12 @@ def _no_external_calls():
     def panic(*_args, **_kwargs):
         raise AssertionError("handle_collect попытался обратиться к БД или сети")
 
-    with patch.object(sa_engine.Engine, "connect", panic), patch.object(
-        sa_pool.Pool, "connect", panic
-    ), patch.object(asyncpg.Connection, "execute", panic), patch.object(httpx.Client, "send", panic):
+    with (
+        patch.object(sa_engine.Engine, "connect", panic),
+        patch.object(sa_pool.Pool, "connect", panic),
+        patch.object(asyncpg.Connection, "execute", panic),
+        patch.object(httpx.Client, "send", panic),
+    ):
         yield
 
 

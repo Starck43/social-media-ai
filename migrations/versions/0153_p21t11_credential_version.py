@@ -36,7 +36,8 @@ def upgrade():
         "credential_version IS NULL OR credential_version >= 1",
         schema=schema,
     )
-    op.execute(f"""
+    op.execute(
+        f"""
         CREATE FUNCTION {s}.guard_llm_credential_version() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
             IF TG_OP = 'INSERT' THEN
@@ -73,7 +74,8 @@ def upgrade():
         END $$;
         CREATE TRIGGER invalidate_llm_endpoint_version AFTER UPDATE ON {s}.llm_models
             FOR EACH ROW EXECUTE FUNCTION {s}.invalidate_llm_endpoint_version();
-    """)
+    """
+    )
 
 
 def downgrade():

@@ -263,11 +263,13 @@ async def home():
                 await Source.objects.delete_by_id(source.id)
             for source in inactive_sources:
                 await Source.objects.delete_by_id(source.id)
-            for user in users:
-                await User.objects.delete_user(user.id)
             for tenant_id in tenant_ids:
                 await purge_tenant_audit_events(tenant_id)
                 await tenants.delete_by_id(tenant_id)
+            # The lifecycle contract refuses deleting an account that still
+            # sponsors a workspace, so the workspaces above go first.
+            for user in users:
+                await User.objects.delete_user(user.id)
 
 
 async def actor(home, level):

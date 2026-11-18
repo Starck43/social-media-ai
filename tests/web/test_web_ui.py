@@ -40,7 +40,11 @@ async def _csrf(client: AsyncClient, path: str) -> str:
 
 
 async def _delete_user(user_id: int) -> None:
-    await User.objects.delete_user(user_id)
+    # The lifecycle contract (409) refuses deleting an account that still
+    # sponsors a workspace or holds tariff history; resolve both first.
+    from tests.shared.account_cleanup import purge_account
+
+    await purge_account(user_id)
 
 
 async def _default_scenario(tenant_id: int) -> int:

@@ -24,6 +24,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.main import create_application
 from app.models import User
+from tests.shared.account_cleanup import purge_account  # noqa: E402
 from app.models.managers.tenant_manager import TenantUserManager
 from app.types import PlatformRoleType, WorkspaceRoleType
 
@@ -153,7 +154,7 @@ async def _cleanup(*users: User | None) -> None:
     for user in users:
         if user is None:
             continue
-        await User.objects.delete_user(user.id)
+        await purge_account(user.id)
 
 
 async def _drop_workspaces(*tenant_ids: int | None) -> None:

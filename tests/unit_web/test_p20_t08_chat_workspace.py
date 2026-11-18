@@ -312,7 +312,11 @@ def test_object_page_renders_ask_agent_dock_with_boundary_refusal_and_escape():
     assert "initChatDock" in js_src
     assert "event.key === 'Escape'" in js_src
     assert "boundary !== 'cloud'" in js_src
-    assert "(activeLauncher || toggleBtn)?.focus()" in js_src
+    # The dock hands focus into the dock itself on open: the chat input when
+    # sending is enabled, otherwise the close button as the first stop.
+    assert "if (inputEl && !sendBtn?.disabled)" in js_src
+    assert "inputEl.focus()" in js_src
+    assert "dock.querySelector('[data-chat-dock-close]')?.focus()" in js_src
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from httpx import ASGITransport, AsyncClient
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import AIAnalytics, Platform, Role, Source, User
+from tests.shared.account_cleanup import purge_account  # noqa: E402
 from app.models.managers.tenant_manager import TenantUserManager, tenants
 from app.types import PeriodType, PlatformRoleType, SourceType, WorkspaceRoleType
 
@@ -135,7 +136,7 @@ async def _drop(user: User | None, tenant_id: int | None, source_id: int | None)
         with tenant_scope(tenant_id):
             await Source.objects.delete(id=source_id)
     if user is not None:
-        await User.objects.delete_user(user.id)
+        await purge_account(user.id)
     if tenant_id is not None:
         await tenants.delete_by_id(tenant_id)
 
@@ -467,7 +468,7 @@ async def test_viewer_cannot_delete_chain(client: AsyncClient) -> None:
             with tenant_scope(tenant_id):
                 assert await AIAnalytics.objects.get(id=row_id) is not None, "row survives"
     finally:
-        await User.objects.delete_user(member.id)
+        await purge_account(member.id)
         await _drop(owner, tenant_id, source_id)
 
 
@@ -863,7 +864,7 @@ async def test_drilldown_viewer_read_only_and_tenant_isolation(client, drill_rec
                 assert foreign.id not in _drill_ids(response.text) and "Foreign private row" not in response.text
                 assert not re.search(r'action="/app/analytics/[^\"]*/delete"', response.text)
     finally:
-        await User.objects.delete_user(viewer.id)
+        await purge_account(viewer.id)
         if other:
             await _drop(other, other_tenant, foreign_source)
 
@@ -1144,7 +1145,7 @@ async def test_single_analysis_viewer_and_foreign_tenant_are_read_only(client, d
                 denied = await member_client.get(f"/app/analytics/{row.id}?tenant_id={foreign_tenant}")
                 assert denied.status_code == 404 and "Private detail" not in denied.text
     finally:
-        await User.objects.delete_user(viewer.id)
+        await purge_account(viewer.id)
         if foreign_user:
             await _drop(foreign_user, foreign_tenant, foreign_source)
 

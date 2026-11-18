@@ -24,7 +24,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 CODE_PIN = "9dd748cef465e09df74cc98c07ecc65748b41a8c"
-PREPARATION_PIN = "66afb2aec1eb903b93e497f80ca0ce58e0cdea95"
+PREPARATION_PIN = "cd9a9e8bc768b150b965831774d9d66870d42596"
 D = Decimal
 # `revision-0095` keeps the normal Alembic contract unchanged.
 # `isolated-synthetic-fixture` is a separate, explicitly reviewed mode for a

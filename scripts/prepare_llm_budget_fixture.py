@@ -27,10 +27,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-# The revision the definition bytes below were established at. The authorization
-# split changed `tenancy/tenant.py` without moving this pin, so the check read
-# every later run as definition drift; the pin now names the commit the current
-# bytes come from.
+# Historical legacy migration definitions remain byte-pinned at this revision.
+# The separately frozen tenants definition is pinned with the preparation script.
 CODE_PIN = "eb6cad6c56e78768b6482eba312082b849d24712"
 RUN_ID = "7417a3edbb5e42ce990c721c900d682f"
 TARGET_HOST, TARGET_PORT = "localhost", 5432
@@ -41,9 +39,9 @@ FORBIDDEN_SCHEMAS = ("public", "test_schema", "social_manager", "pg_catalog", "i
 WORKDIR = ROOT / ".agent/private-budget-review" / RUN_ID
 SCRIPT_PATH = "scripts/prepare_llm_budget_fixture.py"
 RUNNER_PATH = "tests/acceptance/test_llm_budget_pg.py"
+FROZEN_TENANTS_PATH = "scripts/migrations/legacy_definitions/budget_fixture_tenants.py"
 DEFINITION_PATHS = (
-    "app/models/tenancy/tenant.py",
-    "app/models/base.py",
+    FROZEN_TENANTS_PATH,
     "scripts/migrations/legacy_definitions/0093_add_llm_dispatch_receipts.py",
     "scripts/migrations/legacy_definitions/0094_add_llm_outcome_events.py",
     "scripts/migrations/legacy_definitions/0095_add_llm_budget_reservations.py",
@@ -166,8 +164,10 @@ def verify_script_pin(pin):
     require(git_bytes("show", f"{pin}:{SCRIPT_PATH}") == (ROOT / SCRIPT_PATH).read_bytes(), "preparation-content-drift")
     for path in DEFINITION_PATHS:
         source_path = LEGACY_ALEMBIC_PATHS.get(path, path)
+        definition_pin = pin if path == FROZEN_TENANTS_PATH else CODE_PIN
         require(
-            git_bytes("show", f"{CODE_PIN}:{source_path}") == (ROOT / path).read_bytes(), "definition-content-drift"
+            git_bytes("show", f"{definition_pin}:{source_path}") == (ROOT / path).read_bytes(),
+            "definition-content-drift",
         )
 
 
@@ -616,17 +616,24 @@ def load_revision(name):
     return module
 
 
+def frozen_tenant_table():
+    """Load the byte-pinned fixture definition without importing live Tenant/Base."""
+    spec = importlib.util.spec_from_file_location("_budget_fixture_tenants", ROOT / FROZEN_TENANTS_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.tenant_table(TARGET_SCHEMA)
+
+
 def apply_definitions(connection):
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     from sqlalchemy.schema import CreateIndex, CreateTable
 
-    from app.models.tenancy.tenant import Tenant
-
-    require(Tenant.__table__.schema == TARGET_SCHEMA, "model-schema")
+    tenants = frozen_tenant_table()
+    require(tenants.schema == TARGET_SCHEMA, "model-schema")
     sql(connection, 'CREATE SCHEMA "' + TARGET_SCHEMA + '" AUTHORIZATION "' + DDL_OWNER + '"')
-    connection.execute(CreateTable(Tenant.__table__))
-    for index in sorted(Tenant.__table__.indexes, key=lambda item: item.name):
+    connection.execute(CreateTable(tenants))
+    for index in sorted(tenants.indexes, key=lambda item: item.name):
         connection.execute(CreateIndex(index))
     for number, predecessor, name in (
         ("0093", "0092", "0093_add_llm_dispatch_receipts.py"),

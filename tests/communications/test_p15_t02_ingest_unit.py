@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import runpy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -9,7 +10,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from cryptography.fernet import Fernet
 
+from app.core.config import settings
 from app.core.tenant_context import TenantContextError, tenant_scope
 from app.models.communications import ContactChannelStat, MessageThread, UnifiedMessage
 from app.models.contacts import Contact, ContactIdentity
@@ -36,9 +39,6 @@ from app.services.communications.ingest import (
     prune_expired_messages,
 )
 from cli.commands.pii import REGISTRY
-from cryptography.fernet import Fernet
-import base64
-from app.core.config import settings
 
 __source_only__ = True
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,7 +49,6 @@ def _pii_keys(monkeypatch):
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode(), raising=False)
     monkeypatch.setattr(settings, "PII_INDEX_KEY", base64.urlsafe_b64encode(b"u" * 32).decode(), raising=False)
     monkeypatch.setattr(settings, "CREDENTIALS_KEY", Fernet.generate_key().decode(), raising=False)
-
 
 
 class _FakeResult:
@@ -230,11 +229,7 @@ class _InMemoryCommsSession:
             c_id = params.get("contact_id_1")
             channel = params.get("channel_1")
             return _FakeResult(
-                [
-                    s
-                    for s in self.stats
-                    if s.tenant_id == t_id and s.contact_id == c_id and s.channel == channel
-                ]
+                [s for s in self.stats if s.tenant_id == t_id and s.contact_id == c_id and s.channel == channel]
             )
 
         return _FakeResult([])
@@ -1049,5 +1044,3 @@ async def test_b2_b3_n2_b6_duplicate_message_id_null_message_id_read_sync_and_de
             update={"update_type": "message_removed", "message_id": "m-99", "chat_id": 800},
         )
         assert max_res.message.is_unavailable is True
-
-

@@ -105,11 +105,7 @@ class FakeGreetingsSession:
 
         if "contacts" in tables:
             cid = params.get("id_1")
-            rows = [
-                c
-                for c in self.contacts.values()
-                if c.tenant_id == tid and (cid is None or c.id == cid)
-            ]
+            rows = [c for c in self.contacts.values() if c.tenant_id == tid and (cid is None or c.id == cid)]
             return _ScalarResult(rows)
 
         if "crm_entities" in tables:

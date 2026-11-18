@@ -379,7 +379,7 @@ gates intact. Chat can collect without analysis via
 request bounded progress/results via `task_result`; see the
 [field mapping and lifecycle](AGENT_TASKS_PLAN.md#chat-task-journey-p8-t39).
 The integrated foundation and its evidence are in
-[P8-T29](../tasks/p8-t29.md).
+[P8-T29](../audit/p8/p8-t29.md).
 
 ## General action ledger (P9-T08)
 

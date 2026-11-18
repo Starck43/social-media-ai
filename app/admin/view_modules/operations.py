@@ -311,8 +311,29 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         otherwise never become due. Compute it from the cron expression so
         admin-created tasks actually fire (a @once task is scheduled ~1 min out).
         """
+        from app.services.collection.intent import CollectionIntentError, collection_error_message
+        from app.services.task_creation import project_task_plan_create, resolve_task_plan_create
+        from app.services.task_plans import apply_task_plan, parse_task_plan, validate_vk_access_retained
+
         job_type = data.get("job_type") or getattr(model, "job_type", "") or ""
-        data["payload"] = self._prepare_task_payload(data, model, is_created, job_type)
+        try:
+            payload = self._prepare_collection_payload(data, model, job_type)
+            if "task_plan" in payload:
+                plan_raw = payload["task_plan"]
+                if is_created:
+                    creation = resolve_task_plan_create(plan_raw)
+                    self._validate_task_plan_fields(data, model, creation.plan)
+                    payload = project_task_plan_create(payload, creation, job_type=job_type).payload
+                else:
+                    plan = parse_task_plan(plan_raw)
+                    self._validate_task_plan_fields(data, model, plan)
+                    payload = apply_task_plan(payload, plan_raw, job_type=job_type)
+            validate_vk_access_retained(getattr(model, "payload", None), payload, job_type=job_type)
+            data["payload"] = payload
+        except CollectionIntentError as exc:
+            raise ValueError(collection_error_message(str(exc))) from None
+        except ValueError as exc:
+            raise ValueError(str(exc)) from None
         active = self._hold_new_task_plan_for_owner_activation(data, model, is_created, request)
         tenant_id = self._task_tenant_id(data, model)
         await self._validate_active_task_sources(data, active, job_type, tenant_id)
@@ -321,65 +342,39 @@ class AgentTaskAdmin(BaseAdmin, model=AgentTask):
         await super().on_model_change(data, model, is_created, request)
 
     @staticmethod
-    def _prepare_task_payload(data: dict, model: Any, is_created: bool, job_type: str) -> dict:
-        """Validate and canonicalize the collection and task-plan form fields."""
-        # The payload is a JSON column, so the form can hand back any JSON value
-        # (a list, a string, a number). The collection limits inside it are
-        # parsed by the shared writer on every other write surface (web, API,
-        # CLI, chat); the admin used to store them unchecked, so a malformed
-        # limit reached the runner. Validate and canonicalise before any query.
+    def _prepare_collection_payload(data: dict, model: Any, job_type: str) -> dict:
+        """Validate the form's JSON object and canonicalize collection fields."""
         from collections.abc import Mapping
 
-        from app.services.collection.intent import CollectionIntentError, apply_collection, collection_error_message
+        from app.services.collection.intent import apply_collection
 
         raw_payload = data["payload"] if "payload" in data else getattr(model, "payload", None)
         if raw_payload is None:
             raw_payload = {}
         if not isinstance(raw_payload, Mapping):
             raise ValueError('Параметры задачи: нужен JSON-объект, например {"period": "day"}')
-        try:
-            payload = apply_collection(dict(raw_payload), raw_payload.get("collection"), job_type=job_type)
-            if "task_plan" in raw_payload:
-                from app.services.task_plans import TaskPlanError, apply_task_plan, parse_task_plan
+        return apply_collection(dict(raw_payload), raw_payload.get("collection"), job_type=job_type)
 
-                plan_raw = raw_payload["task_plan"]
-                if is_created:
-                    from app.services.task_creation import resolve_task_plan_create
+    @staticmethod
+    def _validate_task_plan_fields(data: dict, model: Any, plan: Any) -> None:
+        """Keep form schedule, selected sources and scenario consistent with the plan."""
+        from app.services.task_plans import TaskPlanError
 
-                    creation = resolve_task_plan_create(plan_raw)
-                    plan = creation.plan
-                else:
-                    plan = parse_task_plan(plan_raw)
-                planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
-                cron_value = data.get("cron_expr") or getattr(model, "cron_expr", None)
-                if cron_value != planned_cron:
-                    raise TaskPlanError("cron_expr must match task_plan.trigger")
-                raw_sources = data.get("sources")
-                if plan.source_scope == "selected" and raw_sources is not None:
-                    linked_ids = sorted(getattr(source, "id", source) for source in raw_sources)
-                    if linked_ids != sorted(plan.source_ids):
-                        raise TaskPlanError("Admin source selection must match task_plan.source_scope")
-                raw_scenario = data.get("agent_scenario")
-                selected_scenario = getattr(raw_scenario, "id", raw_scenario)
-                if selected_scenario is not None and selected_scenario != plan.scenario_id:
-                    raise TaskPlanError("Admin scenario must match task_plan.scenario_id")
-                if plan.source_scope != "selected":
-                    data["sources"] = []
-                if is_created:
-                    from app.services.task_creation import project_task_plan_create
-
-                    payload = project_task_plan_create(payload, creation, job_type=job_type).payload
-                else:
-                    payload = apply_task_plan(payload, plan_raw, job_type=job_type)
-            from app.services.task_plans import validate_vk_access_retained
-
-            validate_vk_access_retained(getattr(model, "payload", None), payload, job_type=job_type)
-            data["payload"] = payload
-        except CollectionIntentError as exc:
-            raise ValueError(collection_error_message(str(exc))) from None
-        except ValueError as exc:
-            raise ValueError(str(exc)) from None
-        return payload
+        planned_cron = "@once" if plan.trigger.type == "once" else plan.trigger.cron
+        cron_value = data.get("cron_expr") or getattr(model, "cron_expr", None)
+        if cron_value != planned_cron:
+            raise TaskPlanError("cron_expr must match task_plan.trigger")
+        raw_sources = data.get("sources")
+        if plan.source_scope == "selected" and raw_sources is not None:
+            linked_ids = sorted(getattr(source, "id", source) for source in raw_sources)
+            if linked_ids != sorted(plan.source_ids):
+                raise TaskPlanError("Admin source selection must match task_plan.source_scope")
+        raw_scenario = data.get("agent_scenario")
+        selected_scenario = getattr(raw_scenario, "id", raw_scenario)
+        if selected_scenario is not None and selected_scenario != plan.scenario_id:
+            raise TaskPlanError("Admin scenario must match task_plan.scenario_id")
+        if plan.source_scope != "selected":
+            data["sources"] = []
 
     @staticmethod
     def _hold_new_task_plan_for_owner_activation(data: dict, model: Any, is_created: bool, request: Any) -> bool:

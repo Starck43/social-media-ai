@@ -280,9 +280,7 @@ async def suggest_contact_merges(
     identities = list(
         (
             await session.execute(
-                select(ContactIdentity)
-                .where(ContactIdentity.tenant_id == tenant_id)
-                .order_by(ContactIdentity.id.asc())
+                select(ContactIdentity).where(ContactIdentity.tenant_id == tenant_id).order_by(ContactIdentity.id.asc())
             )
         )
         .scalars()
@@ -435,9 +433,7 @@ async def merge_contacts(
     for cid in sorted((source_contact_id, target_contact_id)):
         row = (
             await session.execute(
-                select(Contact)
-                .where(Contact.tenant_id == tenant_id, Contact.id == cid)
-                .with_for_update()
+                select(Contact).where(Contact.tenant_id == tenant_id, Contact.id == cid).with_for_update()
             )
         ).scalar_one_or_none()
         if row is None:
@@ -775,9 +771,7 @@ async def merge_contacts(
     if choices.get("anniversary") == "source" or (not target.anniversary_encrypted and source.anniversary_encrypted):
         target.anniversary_encrypted = source.anniversary_encrypted
         target.anniversary_has_year = source.anniversary_has_year
-    if choices.get("preferred_channel") == "source" or (
-        not target.preferred_channel and source.preferred_channel
-    ):
+    if choices.get("preferred_channel") == "source" or (not target.preferred_channel and source.preferred_channel):
         target.preferred_channel = source.preferred_channel
     if source.last_active_at and (target.last_active_at is None or source.last_active_at > target.last_active_at):
         target.last_active_at = source.last_active_at
@@ -872,9 +866,7 @@ async def unmerge_contacts(
     for cid in sorted((source_id, target_id)):
         row = (
             await session.execute(
-                select(Contact)
-                .where(Contact.tenant_id == tenant_id, Contact.id == cid)
-                .with_for_update()
+                select(Contact).where(Contact.tenant_id == tenant_id, Contact.id == cid).with_for_update()
             )
         ).scalar_one_or_none()
         if row is None:

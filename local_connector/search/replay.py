@@ -122,7 +122,8 @@ class ReplayLedger:
             raise
 
     def _create_schema(self) -> None:
-        self.connection.executescript("""
+        self.connection.executescript(
+            """
             CREATE TABLE IF NOT EXISTS command_replay_ledger (
                 device_id INTEGER NOT NULL,
                 request_id TEXT NOT NULL,
@@ -144,7 +145,8 @@ class ReplayLedger:
                 device_id INTEGER PRIMARY KEY,
                 last_wall_time INTEGER NOT NULL
             );
-            """)
+            """
+        )
 
     def close(self) -> None:
         with self.lock:

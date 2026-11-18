@@ -41,8 +41,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P1
 
 
-- [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **IN_PROGRESS** · opencode-p8-t29 · — · `P1` · `C4`
-- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **DEFERRED** (owner: park after local mock/DB increment until runtime journey and bounded live VK evidence, 2026-10-29) · notion-ai-p8-t41 · [Closeout](https://github.com/Starck43/social-media-ai/pull/279#issuecomment-6492303448) · resume `dev` at `295268d9` · `P1` · `C4`
+- [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **IN_PROGRESS** (recovery recheck 2026-11-18 at `4c454ea4`: guarded check 45/45 OK, 11 DB/P8-T38 paths 103 passed, but 11 contract paths 20 failed/3 errors from tests stale against current source — not READY, owner decision needed; earlier audit did not accept at `e6767991`, [diagnostic](docs/audit/p8/p8-t41-diagnostic.md)) · opencode · — · `test/p8-t41-integrated-journey` from `c1ab6807` · `P1` · `C4`
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
@@ -54,18 +53,19 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`
-- [Q-2](docs/tasks/q-2.md) VK source 2939 origin and missing media — **OPEN** · codex-vk-raw-audit · — · `P2` · `C3`
+- [P8-T52](docs/tasks/p8-t52.md) VK wall collection loses photo media URLs and legacy permalinks — **READY** (`6cd2b02b`; owner chose option B: provider CDN queries kept for `userapi.com`/`vkuser.net`, bare-URL rule elsewhere; live A/B on the same 20 posts 0/8 → 8/8 stored photo URLs; new tooling+collection tests pass, offline lane 168 passed with the pre-existing rotation-head failure tracked as P8-T53; awaiting audit) · pi · `pi --session 01a1ee7e-eb8c-76ce-b15d-0f392fdd1878` · `fix/p8-t52-vk-media-urls` · `P2` · `C3`
+- [P8-T53](docs/tasks/p8-t53.md) Reviewed rotation-head layout for the widened `job_type` head — **READY** (`40dd11b3`; `p8t51_job_type_width` added to the reviewed layouts and the versioned set; rotation-head test 2 passed, offline lane 166 passed / 0 failed on the branch vs 165/1 on `dev`; awaiting audit) · pi · `pi --session 01a1ee7e-eb8c-76ce-b15d-0f392fdd1878` · `fix/p8-t53-rotation-head-layout` · `P1` · `C3`
+- [P8-T54](docs/tasks/p8-t54.md) Refresh stale contract tests for the P8-T41 acceptance gate — **IN_PROGRESS** (owner authorized 2026-11-18 after the 11 contract paths failed at `4c454ea4`) · opencode · ses_e129114edffemkcy9i8NKHjlO6 · `type/p8-t54-contract-tests-refresh` · `P1` · `C3`
+
+- [P20-T14](docs/tasks/p20-t14.md) Web shell restyle toward the console direction with the base palette preserved in variables — **IN_PROGRESS** · autoclaw-p20-t14 · owner approved the console direction from three mockups (2026-11-18); increment 1 is a scoped CSS overlay (console.css + one shell link), base color files stay untouched · [PR #507](https://github.com/Starck43/social-media-ai/pull/507) · branch `feat/p20-t14-web-console-ui` · `P2` · `C2`
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: contract ownership and gated remainder after the accepted increment (byte authority/original-open with deferred P8-T34, local-only execution with P18, mutations per D21) — **TODO** (gate: owner activation / P8-T34 resume / consumer contract request; not claimable before it; re-scoped 2026-11-11, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · unassigned · [re-scope record](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) · [increment audit](docs/audit/p12/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
-- [P11-T41](docs/tasks/p11-t41.md) Operations admin writer lost the shared plan-create seam — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · reproduced: `operations.py::on_model_change` subtest fails under the documented source-only route; fix the writer, not the assertion · `P2` · `C2`
-- [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · reproduced: `VerificationFailure('preparation-content-drift')` in the byte-pin coherence suite · `P2` · `C2`
-- [P11-T44](docs/tasks/p11-t44.md) Formatting baseline drift on untouched files — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · inherited 31 Black/isort findings surfaced while closing P11-T38 · `P2` · `C2`
-- [P11-T45](docs/tasks/p11-t45.md) Credential rotation refuses the current migration head — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · reproduced on `dev` `8c96f961` and on P12-T15's accepted revision: `RotationError: … use a supported single head` because `scripts/ops/rotate_credentials_key.py` stops at `0153`; the test also hard-codes `schema="test_schema"` · `P2` · `C2`
-- [P11-T47](docs/tasks/p11-t47.md) Broken relative links in archived cards and audit records — **IN_PROGRESS** · freepi-p11-t47 · 16 `missing target` lines on `dev` `7359da9b` from cards archived one directory deeper and audit records pointing at moved cards; archive depth gets an offline gate · branch `feat/p11-t47-markdown-links` · `P2` · `C1`
+- [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t42-followup` (`18fe2d2a`); pin fixed, coherence 1 FAIL/10 PASS exposes Tenant definition drift; owner contract choice pending · `P2` · `C2`
+- [P11-T48](docs/tasks/p11-t48.md) Secret baseline drift makes the CI gate exit non-zero — **READY** (`ec1cee51`; `checks` exit 0 with 384 candidates and no new line, `run_offline` 166 passed; awaiting audit) · pi · `pi --session 01a1ee7e-eb8c-76ce-b15d-0f392fdd1878` · reproduced on `dev` `f2fc677b` and `49b98ea3`: the ten `detect-secrets` candidates absent from the former 381-entry baseline (`docs/archive/tasks/p11-t38.md` ×2, `docs/audit/p21/p21-t15-perch-test.json`, `tests/ai/test_p21_t15_*_pg.py` ×3, `tests/ai/test_p21_t16_*_pg.py` ×4), so every task sees a red required check · `P2` · `C1`
 
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):
 
@@ -165,9 +165,10 @@ Model catalogs, plan grants and dispatch-safety review; implementation is not ac
 
 ## Questions
 
-Q-2 is ordered in the execution queue; Q-12 remains owner-deferred. Q-18 is closed
-(owner decisions D1–D9, [record](docs/audit/q/q-18-owner-decisions.md)); Q-5 is
-closed with [live VK search evidence](docs/audit/q/q-5.md).
+Q-12 remains owner-deferred. Q-18 is closed (owner decisions D1–D9,
+[record](docs/audit/q/q-18-owner-decisions.md)); Q-5 is closed with
+[live VK search evidence](docs/audit/q/q-5.md); Q-2 is closed with
+[live wall-origin and media evidence](docs/audit/q/q-2.md).
 - [Q-19](docs/tasks/q-19.md) Local connector protocol: second-party security review and real-device evidence — **TODO** · open
   The P18-T01 protocol is accepted as a design; no line of it has been exercised by a running system. Tracked so acceptance is
   never read as verification.

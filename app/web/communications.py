@@ -65,9 +65,7 @@ async def communications_page(
     triage_counts: dict[str, int] = {cat: 0 for cat in TRIAGE_CATEGORIES}
     merge_suggestions: list[dict[str, Any]] = []
 
-    norm_triage_cat = (
-        triage_category if triage_category in TRIAGE_CATEGORIES else None
-    )
+    norm_triage_cat = triage_category if triage_category in TRIAGE_CATEGORIES else None
 
     if current_tenant_id() is not None:
         try:
@@ -102,9 +100,7 @@ async def communications_page(
                     logger.warning("Failed to list triaged threads on communications page", exc_info=True)
 
                 if norm_triage_cat is not None:
-                    inbox_threads = [
-                        th for th in inbox_threads if th.get("id") in triage_by_thread
-                    ]
+                    inbox_threads = [th for th in inbox_threads if th.get("id") in triage_by_thread]
 
                 active_thread_id = thread_id or (inbox_threads[0]["id"] if inbox_threads else None)
                 if active_thread_id is not None:

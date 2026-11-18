@@ -40,6 +40,22 @@ def _task_read_error(code: str) -> dict[str, str]:
     return {"error": _TASK_READ_ERRORS[code], "code": code}
 
 
+def _json_preview(preview: Any) -> Any:
+    """Entitlement previews are dataclass dicts whose sequences are tuples.
+
+    Tool results are validated against a JSON schema, and a tuple fails it,
+    which surfaced as "Invalid tool result" for every valid plan.
+    """
+    if not isinstance(preview, dict):
+        return preview
+    result = dict(preview)
+    for key in ("required", "denials"):
+        value = result.get(key)
+        if isinstance(value, tuple):
+            result[key] = list(value)
+    return result
+
+
 def _missing_task_fields(
     *,
     cron: str,
@@ -1047,16 +1063,18 @@ async def search_plan(
             return {"error": "Некорректный выбор подключения ВКонтакте", "code": "vk_access_selection_invalid"}
     from app.services.collection.entitlement_policy import preview_entitlements
 
-    entitlement_preview = await preview_entitlements(
-        {
-            "task_plan": {
-                "platforms": [platform],
-                "source_scope": source_scope,
-                "source_ids": ids,
+    entitlement_preview = _json_preview(
+        await preview_entitlements(
+            {
+                "task_plan": {
+                    "platforms": [platform],
+                    "source_scope": source_scope,
+                    "source_ids": ids,
+                    "collection": {"queries": queries},
+                },
                 "collection": {"queries": queries},
-            },
-            "collection": {"queries": queries},
-        }
+            }
+        )
     )
     from app.services.social.vk_task_access import preview_vk_access
 
@@ -1186,7 +1204,9 @@ async def task_plan(plan: dict[str, Any]) -> dict[str, Any]:
             return {"error": "Сценарий не найден или отключён в этом workspace", "code": "scenario_unavailable"}
     from app.services.collection.entitlement_policy import preview_entitlements
 
-    entitlements = await preview_entitlements({"task_plan": normalized, "collection": normalized.get("collection", {})})
+    entitlements = _json_preview(
+        await preview_entitlements({"task_plan": normalized, "collection": normalized.get("collection", {})})
+    )
     from app.services.social.vk_task_access import preview_vk_access
 
     vk_access_preview = await preview_vk_access(normalized)

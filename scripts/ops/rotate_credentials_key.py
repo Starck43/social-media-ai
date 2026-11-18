@@ -17,6 +17,64 @@ import sys
 import sqlalchemy as sa
 from cryptography.fernet import Fernet, InvalidToken
 
+# Reviewed encrypted-store layouts; unknown revisions must continue to fail closed.
+GENERATIONS = {
+    "0124": (False, False, False),
+    "p12t14_accounts": (True, False, False),
+    "p12t14_tg_login": (True, True, False),
+    "p12t14_tg_runtime": (True, True, False),
+    "p12t14_tg_recovery": (True, True, False),
+    "p12t14_tg_retention": (True, True, True),
+    "p12t12_catalog": (True, True, True),
+    "0125": (True, True, True),
+    "0126": (True, True, True),
+    "0127": (True, True, True),
+    "0128": (True, True, True),
+    **dict.fromkeys(
+        (
+            "0129",
+            "0130",
+            "0131",
+            "0132",
+            "0133",
+            "0134",
+            "0135",
+            "0136",
+            "0138",
+            "0139",
+            "0140",
+            "0141",
+            "0142",
+            "0143",
+            "0144",
+            "0145",
+            "0146",
+            "0147",
+            "0148",
+            "0149",
+            "0150",
+            "0151",
+            "0152",
+            "p17t01_workspace_hosts",
+            "p17t03_onec_history",
+            "p17t08_onec_history_status",
+            "0153",
+            "0154",
+            "0155",
+            "0156",
+            "p21t13_catalog_storage",
+            "p21t14_rate_limits",
+            "0157",
+            "p12t15_policy_audit",
+        ),
+        (True, True, True),
+    ),
+}
+
+VERSIONED_GENERATIONS = frozenset(
+    ("0153", "0154", "0155", "0156", "p21t13_catalog_storage", "p21t14_rate_limits", "0157", "p12t15_policy_audit")
+)
+
 
 class RotationError(RuntimeError):
     """A bounded error which never contains key, ciphertext or plaintext."""
@@ -58,58 +116,13 @@ def rotate_in_transaction(
     revisions = conn.exec_driver_sql(f"SELECT version_num FROM {qualified('alembic_version')}").scalars().all()
     # Explicit schema generations: a future migration may add another encrypted
     # store. Never silently rotate only the stores known to an older utility.
-    generations = {
-        "0124": (False, False, False),
-        "p12t14_accounts": (True, False, False),
-        "p12t14_tg_login": (True, True, False),
-        "p12t14_tg_runtime": (True, True, False),
-        "p12t14_tg_recovery": (True, True, False),
-        "p12t14_tg_retention": (True, True, True),
-        "p12t12_catalog": (True, True, True),
-        "0125": (True, True, True),
-        "0126": (True, True, True),
-        "0127": (True, True, True),
-        "0128": (True, True, True),
-        **dict.fromkeys(
-            (
-                "0129",
-                "0130",
-                "0131",
-                "0132",
-                "0133",
-                "0134",
-                "0135",
-                "0136",
-                "0138",
-                "0139",
-                "0140",
-                "0141",
-                "0142",
-                "0143",
-                "0144",
-                "0145",
-                "0146",
-                "0147",
-                "0148",
-                "0149",
-                "0150",
-                "0151",
-                "0152",
-                "p17t01_workspace_hosts",
-                "p17t03_onec_history",
-                "p17t08_onec_history_status",
-                "0153",
-            ),
-            (True, True, True),
-        ),
-    }
-    if len(revisions) != 1 or revisions[0] not in generations:
+    if len(revisions) != 1 or revisions[0] not in GENERATIONS:
         raise RotationError("Apply the reviewed encrypted-refresh migration first and use a supported single head")
     inspector = sa.inspect(conn)
     has_authorizations = inspector.has_table("personal_connector_authorizations", schema=schema)
     has_logins = inspector.has_table("telegram_login_attempts", schema=schema)
     has_keys = inspector.has_table("telegram_login_request_keys", schema=schema)
-    if (has_authorizations, has_logins, has_keys) != generations[revisions[0]]:
+    if (has_authorizations, has_logins, has_keys) != GENERATIONS[revisions[0]]:
         raise RotationError("Credential store layout does not match the reviewed migration head")
     private_tables = (
         "file_insight_mounts",
@@ -135,7 +148,7 @@ def rotate_in_transaction(
     has_version = "credential_version" in {
         column["name"] for column in inspector.get_columns("llm_providers", schema=schema)
     }
-    if has_version != (revisions[0] == "0153"):
+    if has_version != (revisions[0] in VERSIONED_GENERATIONS):
         raise RotationError("Credential version layout does not match the reviewed migration head")
     names = ["llm_providers", "user_credentials", "workspace_connection_secrets"]
     if has_authorizations:

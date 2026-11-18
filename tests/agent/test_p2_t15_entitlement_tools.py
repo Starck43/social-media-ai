@@ -10,6 +10,15 @@ __source_only__ = True
 CAPABILITY = "connector.vk.search"
 
 
+def _as_json(preview: dict) -> dict:
+    """The tool boundary only admits JSON sequences: tuples become lists."""
+    result = dict(preview)
+    for key in ("required", "denials"):
+        if isinstance(result.get(key), tuple):
+            result[key] = list(result[key])
+    return result
+
+
 def _decision(reason="plan_expired"):
     return EntitlementDecision(
         allowed=False,
@@ -34,7 +43,7 @@ async def test_search_plan_includes_required_keys_and_denial_reasons(monkeypatch
 
     assert result["status"] == "proposal"
     assert result["execution"] == "not_started"
-    assert result["entitlements"] == preview
+    assert result["entitlements"] == _as_json(preview)
 
 
 async def test_task_plan_includes_same_workspace_decision(monkeypatch):
@@ -61,7 +70,7 @@ async def test_task_plan_includes_same_workspace_decision(monkeypatch):
     assert result["status"] == "validated_preview"
     assert result["writes"] is False
     assert result["run_created"] is False
-    assert result["entitlements"] == preview
+    assert result["entitlements"] == _as_json(preview)
 
 
 async def test_execute_once_returns_bounded_structured_entitlement_denial(monkeypatch):

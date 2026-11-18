@@ -1,7 +1,8 @@
 # P8-T29 — Implementation history and unresolved diagnostics
 
-This is a historical evidence archive for the active [P8-T29 task](../../tasks/p8-t29.md),
-not an acceptance audit. The active card and ROADMAP own current status. Old test
+This is a historical evidence archive for [P8-T29](p8-t29.md), which was accepted
+on 2026-11-18. The [acceptance audit](p8-t29.md) owns the current status; the
+working card is archived at `docs/archive/tasks/p8-t29.md`. Old test
 results belong to their original commits and do not certify the integrated `dev`
 revision or the remaining user journeys.
 
@@ -162,7 +163,7 @@ available parallel lanes. Refresh ROADMAP before claiming any task.
 
 - `README.md`, `AGENTS.md`, `.agents/skills/task/SKILL.md`: project hierarchy,
   branch ownership and task evidence.
-- `docs/tasks/p8-t29.md`, `docs/AGENT_TASKS_PLAN.md#explicit-task-plans`: goal, shared contract
+- `docs/archive/tasks/p8-t29.md`, `docs/AGENT_TASKS_PLAN.md#explicit-task-plans`: goal, shared contract
   and acceptance boundary.
 - `docs/COLLABORATION.md` sections Tests, Database and Git and cleanup;
   `tests/AGENTS.md`; `.agents/skills/test-runner/SKILL.md`: runner isolation,

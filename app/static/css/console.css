@@ -205,11 +205,16 @@ dialog.shell-dialog {
 
 .ui-shell th {
     font-family: var(--cn-mono);
-    font-size: .65rem;
     font-weight: 600;
     letter-spacing: .08em;
     text-transform: uppercase;
     color: var(--color-text-secondary);
+}
+
+@media (min-width: 768px) {
+    .ui-shell th {
+        font-size: .65rem;
+    }
 }
 
 /* --- Chat surface: container radii and mono badges ----------
@@ -219,9 +224,14 @@ dialog.shell-dialog {
 .ui-shell .chat-composer,
 .ui-shell .chat-workspace-panel,
 .ui-shell .chat-starter,
-.ui-shell .chat-content-dialog,
 .ui-shell .chat-attachment-dialog {
     border-radius: var(--cn-radius);
+}
+
+@media (min-width: 640px) {
+    .ui-shell .chat-content-dialog {
+        border-radius: var(--cn-radius);
+    }
 }
 
 .ui-shell .chat-attachment-badge {

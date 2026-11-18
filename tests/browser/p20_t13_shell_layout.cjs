@@ -23,10 +23,6 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'p20-t13-layout-'));
 const fixture = path.join(temp, 'fixture.html');
 const readCss = name => fs.readFileSync(path.join(root, 'app/static/css', name), 'utf8');
 
-const bar = `<nav class="shell-mobile-bar" aria-label="Быстрая навигация">
-    ${[['Задачи', 'tasks'], ['Чат', 'chat'], ['Агенты', 'agents'], ['Лента', 'feed']]
-        .map(([label, key]) => `<a href="/app/${key}" ${key === 'tasks' ? 'aria-current="page"' : ''}><span>${label}</span></a>`).join('')}
-    <button type="button"><span>Ещё</span></button></nav>`;
 const dock = `<div class="chat-dock-launcher z-30" data-chat-dock-container>
     <button type="button" id="chat-dock-toggle" data-chat-dock-toggle aria-label="Спросить агента"
         style="width:160px;height:44px;padding:0;border:0;border-radius:999px">Спросить агента</button></div>`;
@@ -37,7 +33,7 @@ const bell = `<div class="shell-notification-dock"><button type="button" class="
 // real end-of-list target, not the only child.
 const rows = Array.from({ length: 40 }, (_, i) => `    <p>Строка ${i + 1}: обычный контент страницы для проверки прокрутки.</p>`).join('\n');
 
-function page({ mobile = true, launcher = true, bellOn = true } = {}) {
+function page({ launcher = true, bellOn = true } = {}) {
     return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <!-- Mirror Tailwind preflight sizing without loading the CDN. -->
@@ -50,12 +46,10 @@ function page({ mobile = true, launcher = true, bellOn = true } = {}) {
 <div class="shell-layout">
     <aside class="shell-sidebar" aria-label="Боковая навигация"><p>Навигация</p></aside>
     <div class="shell-page">
-        <header class="shell-navbar"><h1 id="page-heading">Задачи</h1></header>
-        <main id="page-content" tabindex="-1" class="shell-content">${rows}
+        <main id="page-content" tabindex="-1" class="shell-content"><header class="shell-page-heading"><h1 id="page-heading">Задачи</h1></header>${rows}
     <button type="button" id="last-action">Последнее действие</button></main>
     </div>
 </div>
-${mobile ? bar : ''}
 ${launcher ? dock : ''}
 ${bellOn ? bell : ''}
 </body></html>`;
@@ -192,7 +186,7 @@ async function layoutCase(label, { width, height, phone }, scenario = {}) {
     await waitFor(`innerWidth === ${width} && innerHeight === ${height}`, `${label} viewport`);
     const m = await measure();
     check(m.overflowBefore === 0 && m.overflowAfter === 0, `${label}: no horizontal overflow`);
-    check(m.barShown === (phone && Boolean(scenario.mobile ?? true)), `${label}: mobile bar presence matches the viewport`);
+    check(!m.barShown, `${label}: mobile bar presence matches the viewport`);
     check(m.launcherShown === Boolean(scenario.launcher ?? true), `${label}: launcher presence matches ${scenario.launcher ?? true}`);
     if (m.launcherShown && m.bellShown) {
         const a = m.launcher, b = m.bell;
@@ -229,8 +223,7 @@ async function run() {
         check(m.scrollTop >= m.maxScroll - 1, `${label}: scrollContent reaches its end`);
         const floor = Math.min(...[m.barShown && m.bar.top, m.launcherShown && m.launcher.top, m.bellShown && m.bell.top].filter(Boolean));
         check(m.last.bottom <= floor + 0.5 && m.last.top >= m.content.top - 0.5, `${label}: last action wholly visible above fixed chrome`);
-        if (viewport.phone) check(m.marginBottom >= 140, `${label}: phone reserves bar + launcher`);
-        else check(m.marginBottom >= 80, `${label}: desktop/tablet reserves the launcher dock`);
+        check(m.marginBottom >= 80, `${label}: scrollport reserves the launcher dock`);
     }
 
     // 2. --shell-dock-space drives the bell reservation: 0px reserves nothing extra,

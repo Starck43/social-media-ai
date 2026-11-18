@@ -66,13 +66,24 @@ GENERATIONS = {
             "p21t14_rate_limits",
             "0157",
             "p12t15_policy_audit",
+            "p8t51_job_type_width",
         ),
         (True, True, True),
     ),
 }
 
 VERSIONED_GENERATIONS = frozenset(
-    ("0153", "0154", "0155", "0156", "p21t13_catalog_storage", "p21t14_rate_limits", "0157", "p12t15_policy_audit")
+    (
+        "0153",
+        "0154",
+        "0155",
+        "0156",
+        "p21t13_catalog_storage",
+        "p21t14_rate_limits",
+        "0157",
+        "p12t15_policy_audit",
+        "p8t51_job_type_width",
+    )
 )
 
 

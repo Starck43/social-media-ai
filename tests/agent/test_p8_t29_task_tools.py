@@ -215,6 +215,54 @@ async def test_plan_previews_are_bounded_and_do_not_start_platform_work(monkeypa
     assert preview["writes"] is False and preview["run_created"] is False
 
 
+async def test_plan_preview_serializes_entitlement_sequences(monkeypatch) -> None:
+    """The policy dataclass carries tuples; the tool contract only admits JSON."""
+    import json
+
+    from app.agent.toolset import tasks
+    from app.services.tenancy.entitlements import EntitlementDecision
+
+    decision = EntitlementDecision(
+        allowed=False,
+        plan="free",
+        catalog_version=1,
+        required=("connector.vk.read", "connector.vk.search"),
+        denials=({"capability": "connector.vk.read", "reason": "not_granted"},),
+    )
+
+    async def entitlements(_payload):
+        return decision.to_dict()
+
+    async def vk_access(_plan):
+        return {"checked": False}
+
+    monkeypatch.setattr("app.services.collection.entitlement_policy.preview_entitlements", entitlements)
+    monkeypatch.setattr("app.services.social.vk_task_access.preview_vk_access", vk_access)
+
+    def parse(raw):
+        return SimpleNamespace(normalized={"source_scope": "all", "source_ids": [], "platforms": ["vk"]})
+
+    def plan_block(parsed):
+        return parsed.normalized
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("preview must not read rows")
+
+    _module(monkeypatch, "app.services.task_plans", parse_task_plan=parse, task_plan_block=plan_block)
+    _module(
+        monkeypatch,
+        "app.models",
+        AgentScenario=SimpleNamespace(objects=SimpleNamespace(get=forbidden)),
+        Source=SimpleNamespace(objects=SimpleNamespace(select_related=forbidden)),
+    )
+
+    preview = await tasks.task_plan({"source_scope": "all"})
+
+    assert preview["entitlements"]["required"] == ["connector.vk.read", "connector.vk.search"]
+    assert preview["entitlements"]["denials"] == [{"capability": "connector.vk.read", "reason": "not_granted"}]
+    json.dumps(preview)
+
+
 class _FirstQuery:
     def __init__(self, row):
         self.row = row

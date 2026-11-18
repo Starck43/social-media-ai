@@ -694,7 +694,13 @@ class LLMModelAdmin(BaseAdmin, model=LLMModel):
         from app.services.ai.provider_egress import validate_endpoint_path
 
         if "custom_endpoint_path" in data:
-            data["custom_endpoint_path"] = validate_endpoint_path(data["custom_endpoint_path"])
+            # The field is optional, but sqladmin submits "" for an empty text
+            # input; only NULL means "no custom endpoint". Without this every
+            # edit of a non-custom model fails validation.
+            endpoint = data["custom_endpoint_path"]
+            if isinstance(endpoint, str) and not endpoint.strip():
+                endpoint = None
+            data["custom_endpoint_path"] = validate_endpoint_path(endpoint)
         if "model_type" in data and isinstance(data["model_type"], list):
             data["model_type"] = ",".join(data["model_type"])
         if is_created:

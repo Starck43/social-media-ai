@@ -434,6 +434,29 @@ def test_editing_a_model_never_resolves_the_composite_relation():
     assert data == {"name": "Renamed"}
 
 
+def test_an_empty_custom_endpoint_is_saved_as_no_endpoint():
+    """The optional field arrives as `""` from sqladmin; only NULL is a value."""
+    view = _view(LLMModelAdmin, type("Model", (), {"__personal_scoped__": True, "__name__": "Model"}))
+    data = {"name": "DeepSeek 4.1 Flash", "custom_endpoint_path": "   "}
+
+    original = BaseAdmin.on_model_change
+    BaseAdmin.on_model_change = AsyncMock()
+    try:
+        asyncio.run(view.on_model_change(data, SimpleNamespace(), False, _request(ADMIN)))
+    finally:
+        BaseAdmin.on_model_change = original
+
+    assert data == {"name": "DeepSeek 4.1 Flash", "custom_endpoint_path": None}
+
+
+def test_a_custom_endpoint_that_is_not_a_path_is_still_refused():
+    view = _view(LLMModelAdmin, type("Model", (), {"__personal_scoped__": True, "__name__": "Model"}))
+    data = {"name": "Probe", "custom_endpoint_path": "v1/models"}
+
+    with pytest.raises(ValueError):
+        asyncio.run(view.on_model_change(data, SimpleNamespace(), False, _request(ADMIN)))
+
+
 # --- the grants: only the platform owner writes without a grant -----------
 
 

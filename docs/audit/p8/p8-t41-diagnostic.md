@@ -113,3 +113,51 @@ executor's 94-pass baseline for the other paths stands. It was not pushed to
 Git and cleanup); `docs/phases/p8-first-value-ui.md`; `docs/audit/p11/p11-t41.md`;
 `tests/social/test_p8_t38_execution.py`; `app/services/social/vk_client.py`;
 `app/services/social/credentials.py`; `.agents/skills/audit/SKILL.md`.
+
+## Re-audit — 2026-11-18 (second independent audit; verdict unchanged)
+
+Auditor: a fresh independent audit session (not the first audit's subagent, not
+the executor). Scope: current registry state, integration, and the two recorded
+blockers.
+
+Verdict: **not accepted — the row stays IN_PROGRESS**. The remediation above has
+not been executed: no re-baseline commit exists, the card records no new required
+check evidence at a new candidate SHA, and no READY was published. The candidate
+is still `e6767991`, where finding 1 stands.
+
+Verified this session (`dev` == `origin/dev` at `4c454ea4` after
+`git fetch origin --prune`; Python 3.14.0, pytest 9.1.1):
+
+- Integration re-proven: `aa470623` and merge `e6767991` (parents `42982083`,
+  `82eb5a61`) are ancestors of `origin/dev`; the three delivered source files are
+  byte-identical between `e6767991` and `origin/dev` (blobs `656b5261`,
+  `386afd00`, `5bf8965e`); `operations.py` is `a37d777a` at the accepted revision
+  and the separately accepted P11-T41 blob `02e1df75` on current dev, as
+  recorded.
+- Publication status: `00d8d186` is now on `origin/dev`
+  (`git merge-base --is-ancestor 00d8d186 origin/dev` → exit 0), together with
+  this diagnostic commit; the "not pushed by this audit" note above no longer
+  describes current state.
+- Finding 1 reproduced at the exact accepted revision: detached temporary
+  worktree at `e6767991`, `python -m scripts.check_p8_t41` → 45 tests,
+  `FAILED (failures=1)` with the recorded seam assertion
+  (`{'project_task_plan_create', 'resolve_task_plan_create'} not less than or
+  equal to …`); the worktree was removed afterwards.
+- Current dev `4c454ea4`: `python -m scripts.check_p8_t41` → 45 tests, OK.
+- Current dev `4c454ea4`, source-only
+  `tests/social/test_p8_t38_execution.py::VKSelectedRequestTests` (`--noconftest`,
+  offline doubles): 9 passed, 2 subtests passed → finding 2's stale-double defect
+  is fixed on the published dev. This remains source-only evidence; the full 11
+  DB/P8-T38 paths with the root conftest against `test_schema` are still required
+  at the re-baselined SHA.
+- Worktree inventory: a locked detached worktree `/private/tmp/p8t41-recheck` at
+  `4c454ea4` exists and is not owned by this audit; preserved untouched as
+  foreign/unclear under the cleanup rules. The temporary worktree created by this
+  re-audit was removed; the repository tree stayed clean throughout.
+
+Path to acceptance unchanged: re-baseline to a current `dev` SHA, re-run and
+record all required checks at that exact SHA (`scripts.check_p8_t41`; the 11
+DB/P8-T38 paths with the root conftest against `test_schema`; before/after
+schema inventory diff), publish READY, then request a fresh independent audit —
+or obtain an explicit owner waiver naming the `e6767991` check, recorded as
+unrun/waived, never PASS.

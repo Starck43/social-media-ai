@@ -237,3 +237,38 @@ dialog.shell-dialog {
 .ui-shell .chat-attachment-badge {
     font-family: var(--cn-mono);
 }
+
+/* =====================================================
+   INCREMENT 3 (P20-T14): chat instrument pass.
+   Baseline: owner corrections 2f3e079d and 324b3762 -
+   mobile keeps base font sizes, touch targets >=40px and
+   fullscreen component modes; desktop keeps the dense scale.
+   ===================================================== */
+
+/* Pills become instrument stamps. */
+.ui-shell .chat-suggestions button,
+.ui-shell .chat-quick-reply,
+.ui-shell .chat-thinking {
+    border-radius: var(--cn-radius-sm);
+}
+
+.ui-shell .chat-attachment-card {
+    border-radius: var(--cn-radius-sm);
+}
+
+/* The slide-out panel tab keeps its edge-attached shape. */
+.ui-shell .chat-panel-tab {
+    border-radius: var(--cn-radius-sm) 0 0 var(--cn-radius-sm);
+}
+
+.ui-shell .json-block {
+    border-radius: var(--cn-radius-sm);
+}
+
+/* Touch floor below 768px: chat.css sets 34px for the panel tabs;
+   attach/send already reach 40px on mobile via the ui.css button floors. */
+@media (max-width: 767px) {
+    .ui-shell .chat-panel-tabs button {
+        min-height: 40px;
+    }
+}

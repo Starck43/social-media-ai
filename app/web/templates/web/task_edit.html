@@ -5,7 +5,7 @@
 {% block extra_head %}
 {% if request.query_params.get('embedded') == '1' %}
 <style>
-    .shell-sidebar, .shell-navbar, .shell-drawer, .shell-guest-theme { display: none !important; }
+    .shell-sidebar, .shell-page-heading, .shell-drawer, .shell-guest-theme { display: none !important; }
     {# Same scroll discipline as every shell page (shell.css): html, body and
        the layout are pinned to the iframe viewport, and `.shell-content` is
        the single scroll container, so the editor scrolls inside the dialog's

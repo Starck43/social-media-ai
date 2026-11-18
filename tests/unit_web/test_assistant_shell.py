@@ -250,7 +250,8 @@ def test_theme_and_collapse_leave_navbar_and_keep_unique_control_targets():
     assert collapse[0]["aria-controls"] == "nav-desktop"
     assert "theme-popover-desktop" in markup and "theme-popover-mobile" in markup
     assert "theme-popover-guest" not in markup
-    header = markup.split('<header class="shell-navbar">', 1)[1].split("</header>", 1)[0]
+    assert 'class="shell-navbar"' not in markup
+    header = markup.split('<header class="shell-page-heading">', 1)[1].split("</header>", 1)[0]
     assert "Тема оформления" not in header
     assert "shell-sidebar-footer" in markup
 

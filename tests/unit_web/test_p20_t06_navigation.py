@@ -92,12 +92,11 @@ def test_template_orders_accessible_groups_and_exposes_drawer_button():
     offsets = [html.index(f'class="shell-nav-group">{label}</h2>') for label in nav.NAV_GROUP_LABELS.values()]
     assert offsets == sorted(offsets)
     base = (ROOT / "app/web/templates/web/base.html").read_text()
-    assert 'aria-label="Быстрая навигация"' in base
-    assert 'data-dialog-open="navigation-drawer" aria-controls="navigation-drawer"' in base
-    assert "{% for item in mobile_nav|default([], true) %}" in base
+    assert 'aria-label="Быстрая навигация"' not in base
+    assert 'aria-controls="navigation-drawer"' in base
 
 
-def test_mobile_bar_renders_only_ready_permitted_items_and_skips_embedded():
+def test_mobile_drawer_opener_skips_embedded():
     env = Environment(loader=FileSystemLoader(ROOT / "app/web/templates"), autoescape=True)
     env.filters["ui_label"] = str
     env.globals["static_v"] = lambda path: "/static/" + path
@@ -121,12 +120,12 @@ def test_mobile_bar_renders_only_ready_permitted_items_and_skips_embedded():
         flashes=[],
     )
     html = env.get_template("web/base.html").render(**context)
-    bar = html.split('<nav class="shell-mobile-bar"', 1)[1].split("</nav>", 1)[0]
-    assert 'href="/app/"' in bar and 'href="/app/task-hub"' in bar
-    assert 'href="/app/chat"' not in bar and 'href="/app/communications"' not in bar
-    assert bar.index("Сегодня") < bar.index("Задачи") < bar.index("Ещё")
+    assert 'class="shell-mobile-bar"' not in html
+    assert 'id="navigation-drawer"' in html
+    assert 'data-dialog-open="navigation-drawer"' in html
     context["request"] = SimpleNamespace(query_params={"embedded": "1"})
-    assert 'class="shell-mobile-bar"' not in env.get_template("web/base.html").render(**context)
+    assert 'data-dialog-open="navigation-drawer"' not in env.get_template("web/base.html").render(**context)
+
 
 
 def test_unified_tasks_hub_is_visible_for_either_task_kind_and_legacy_paths_stay_gated():

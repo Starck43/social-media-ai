@@ -142,7 +142,7 @@ function chatApp() {
                     // Existing pages keep their scripts, forms, CSRF and permission checks.
                     // Hide only duplicate shell navigation inside this embedded document.
                     const style = doc.createElement('style');
-                    style.textContent = '.shell-sidebar,.shell-drawer,.shell-navbar,.shell-skip,.shell-guest-theme{display:none!important}.shell-layout{display:block!important}.shell-page{margin:0!important;min-width:0}.shell-content{padding:16px!important}';
+                    style.textContent = '.shell-sidebar,.shell-drawer,.shell-page-heading,.shell-skip,.shell-guest-theme{display:none!important}.shell-layout{display:block!important}.shell-page{margin:0!important;min-width:0}.shell-content{padding:16px!important}';
                     doc.head.append(style);
                     doc.addEventListener('keydown', event => {
                         if (event.key === 'Escape' && !doc.querySelector('dialog[open]')) {

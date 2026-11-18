@@ -56,3 +56,4 @@ Final accepted source: `ae2c877dd3e467dbaa1cea4b0ecad6d2d7399c01` (commit date
 - [P11-T40](../audit/p11/p11-t40.md) — DONE 2026-11-18: clean hash-locked tool profile verified; accepted `c8ae9fb0`. Offline parser failures remain tracked by P11-T46.
 
 - [P11-T46](../audit/p11/p11-t46.md) — DONE 2026-11-18: quoted triggers and SQL string-literal guard bodies are compared; offline manifest 163 passed. Accepted `29c8b5fc`.
+- [P11-T47](../audit/p11/p11-t47.md) — DONE 2026-11-18: sixteen stale local Markdown targets repointed (archived cards and audit records kept the pre-move depth) and an offline gate added; 462 files / 2373 candidates at 0 errors, offline manifest 164 passed. Accepted `8be650cc`, merged `c48dce66`; no PR.

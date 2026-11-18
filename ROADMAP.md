@@ -41,7 +41,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P1
 
 
-- [P8-T29](docs/tasks/p8-t29.md) Universal social tasks, VK first — **IN_PROGRESS** · opencode-p8-t29 · — · `P1` · `C4`
 - [P8-T41](docs/tasks/p8-t41.md) Accept the first VK research-to-digest journey — **DEFERRED** (owner: park after local mock/DB increment until runtime journey and bounded live VK evidence, 2026-10-29) · notion-ai-p8-t41 · [Closeout](https://github.com/Starck43/social-media-ai/pull/279#issuecomment-6492303448) · resume `dev` at `295268d9` · `P1` · `C4`
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
@@ -61,11 +60,10 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
-- [P11-T41](docs/tasks/p11-t41.md) Operations admin writer lost the shared plan-create seam — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · reproduced: `operations.py::on_model_change` subtest fails under the documented source-only route; fix the writer, not the assertion · `P2` · `C2`
-- [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · reproduced: `VerificationFailure('preparation-content-drift')` in the byte-pin coherence suite · `P2` · `C2`
-- [P11-T44](docs/tasks/p11-t44.md) Formatting baseline drift on untouched files — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · inherited 31 Black/isort findings surfaced while closing P11-T38 · `P2` · `C2`
-- [P11-T45](docs/tasks/p11-t45.md) Credential rotation refuses the current migration head — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · reproduced on `dev` `8c96f961` and on P12-T15's accepted revision: `RotationError: … use a supported single head` because `scripts/ops/rotate_credentials_key.py` stops at `0153`; the test also hard-codes `schema="test_schema"` · `P2` · `C2`
-- [P11-T47](docs/tasks/p11-t47.md) Broken relative links in archived cards and audit records — **IN_PROGRESS** · freepi-p11-t47 · 16 `missing target` lines on `dev` `7359da9b` from cards archived one directory deeper and audit records pointing at moved cards; archive depth gets an offline gate · branch `feat/p11-t47-markdown-links` · `P2` · `C1`
+- [P11-T41](docs/tasks/p11-t41.md) Operations admin writer lost the shared plan-create seam — **READY** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t41-followup` (`ff5eb8e2`); source 7 PASS, root-conftest admin/contracts 23 PASS; awaiting audit · `P2` · `C2`
+- [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t42-followup` (`18fe2d2a`); pin fixed, coherence 1 FAIL/10 PASS exposes Tenant definition drift; owner contract choice pending · `P2` · `C2`
+- [P11-T44](docs/tasks/p11-t44.md) Formatting baseline drift on untouched files — **READY** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t44-followup` (`8a1a05b4`); 47 scoped files fixed, format failures 0, AST/graph PASS; secret scan interrupted, awaiting audit · `P2` · `C2`
+- [P11-T45](docs/tasks/p11-t45.md) Credential rotation refuses the current migration head — **READY** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t45-followup` (`82517713`); offline 165 PASS, isolated rotation 13 PASS, schema cleanup verified; awaiting audit · `P2` · `C2`
 
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):
 

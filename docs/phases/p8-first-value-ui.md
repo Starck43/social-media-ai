@@ -11,8 +11,12 @@ work are separate facts; see [P8-T29 history](../audit/p8/p8-t29-history.md).
 
 **Plan — universal social milestone (ordered):**
 
-1. [P8-T29](../tasks/p8-t29.md) — shared task foundation and bounded VK collection;
-   its open method/profile evidence gate is recorded in Q-5 and its own card.
+1. [P8-T29](../audit/p8/p8-t29.md) — **DONE 2026-11-18**: shared task foundation,
+   five-surface parity and bounded VK collection accepted at
+   `0796ca7492043f186fe905994c084ddfee2b6001`; one live `newsfeed.search`
+   reached staging/analysis with provenance. Profile/method evidence is
+   [Q-5](../audit/q/q-5.md); collection-path evidence is in the
+   [live gate note](../audit/p8/p8-t29-live-gate.md).
 2. [P8-T38](../audit/p8/p8-t38.md) — DONE 2026-10-27: selected VK connections, fresh request access checks and safe catalogs; accepted `c0aa1c9de18962b6fe86405daedbdb4bf5a01bda`.
    The isolated selection-policy increment was pre-integrated into dev on
    2026-10-27 (PR #258, merge `5848c216`) with acceptance deferred — its six

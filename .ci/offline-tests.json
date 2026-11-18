@@ -12,8 +12,9 @@
     "tests/tooling/test_p11_t15_package_contract.py": "Tool-only TOML/AST/locked export checks; no app imports, env loading, resolver or DB fixtures.",
     "tests/tooling/test_p11_t16_navigation.py": "Stdlib/tool-only generated-table rendering and AST/path contracts; no app imports, framework dependencies, resolver or DB fixtures.",
     "tests/tooling/test_p11_t24_schema_guards.py": "Stdlib/AST-only frozen-baseline guard inventory and renderer extraction; loads scripts/schema_guards.py by file; no app, Alembic, settings or DB imports.",
-    "tests/web/test_web_task_selection_form.py": "AST/text-only form and template assertions; pytest fixtures only.",
-    "tests/tooling/test_p11_t45_rotation_heads.py": "Stdlib AST-only migration-head/explicit credential-rotation layout coverage; extracts only constant expressions, no app/SQLAlchemy/settings/DB imports."
+    "tests/tooling/test_p11_t45_rotation_heads.py": "Stdlib AST-only migration-head/explicit credential-rotation layout coverage; extracts only constant expressions, no app/SQLAlchemy/settings/DB imports.",
+    "tests/tooling/test_p11_t47_markdown_links.py": "Stdlib subprocess of scripts/check_markdown_links.py; asserts every tracked Markdown link resolves; no app, settings or DB imports.",
+    "tests/web/test_web_task_selection_form.py": "AST/text-only form and template assertions; pytest fixtures only."
   },
   "source_modules": [
     "app/services/ai/analysis_context.py",

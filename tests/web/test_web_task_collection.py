@@ -22,8 +22,9 @@ from httpx import ASGITransport, AsyncClient
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import AgentScenario, AgentTask, Platform, Source, User
-from app.models.managers.tenant_manager import TenantUserManager, tenants
+from app.models.managers.tenant_manager import TenantUserManager
 from app.types import SourceType
+from tests.shared.account_cleanup import purge_account  # noqa: E402
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 
@@ -130,8 +131,10 @@ async def _cleanup(user: User, tenant_id: int, *rows) -> None:
     with tenant_scope(bypass=True):
         for model, row in rows:
             await model.objects.delete(id=row.id)
-    await User.objects.delete_user(user.id)
-    await tenants.delete_by_id(tenant_id)
+    # The fixture account sponsors its workspace; purge_account follows the
+    # accepted teardown order (payer consents, audit events, tenant, tariff,
+    # account).
+    await purge_account(user.id)
 
 
 @pytest.fixture

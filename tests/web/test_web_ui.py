@@ -591,15 +591,17 @@ async def test_run_now_executes_the_job_without_queueing_it(client: AsyncClient)
             task_id = task.id
             next_before = task.next_run_at
             # The same path the /run-now endpoint and 'Сохранить и выполнить'
-            # use. `digest` is used deliberately: it has no network side
-            # effect, so the test measures the queueing, not the collection.
+            # use. `digest` runs inline; without a personal LLM catalog it
+            # fails honestly, so the test measures the execution, not delivery.
             # The inline run resolves the stored payer, so one has to consent.
             await _task_payer(user, tenant_id, task_id)
             with tenant_scope(tenant_id, bypass=True):
                 task = await AgentTask.objects.get(id=task_id)
             outcome = await run_task_now(task)
 
-            assert outcome["status"] in ("done", "failed")
+            # No personal LLM catalog exists in this fixture, so the digest
+            # fails honestly at the catalog boundary - terminal, not queued.
+            assert outcome["status"] == "failed"
             assert outcome.get("job_id") is not None
 
             with tenant_scope(bypass=True):
@@ -607,9 +609,10 @@ async def test_run_now_executes_the_job_without_queueing_it(client: AsyncClient)
                 refreshed = await AgentTask.objects.get(id=task_id)
 
             # Executed, not queued: the worker had no chance to claim it, and the
-            # row carries its result.
-            assert job.status == "done"
-            assert job.result is not None
+            # row carries the failure reason (PermissionError -> OSError family
+            # -> io_error): a provider-less digest cannot build a narrative.
+            assert job.status == "failed"
+            assert type(job.error) is str and job.error.endswith("io_error")
             # A recurring task keeps its schedule either way.
             assert refreshed.next_run_at == next_before
             assert refreshed.is_active is True

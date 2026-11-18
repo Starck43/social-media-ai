@@ -19,6 +19,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import create_application
+from tests.shared.account_cleanup import purge_account  # noqa: E402
 
 P12_PAGES = ("/app/knowledge", "/app/documents", "/app/communications", "/app/followups", "/app/cases")
 
@@ -85,7 +86,7 @@ async def _signed_in_client() -> tuple[AsyncClient, str]:
 async def test_p12_pages_open_for_a_signed_in_member() -> None:
     """A member with the section rights gets the page, not a redirect to login."""
     from app.models import User
-    from app.models.managers.tenant_manager import TenantUserManager, tenants
+    from app.models.managers.tenant_manager import TenantUserManager
 
     client, username = await _signed_in_client()
     user = None
@@ -108,6 +109,6 @@ async def test_p12_pages_open_for_a_signed_in_member() -> None:
             assert resp.status_code in (200, 403), f"{path} answered {resp.status_code}"
     finally:
         if user is not None:
-            await User.objects.delete_user(user.id)
-        if tenant_id is not None:
-            await tenants.delete_by_id(tenant_id)
+            # The registered account sponsors its workspace; purge_account
+            # follows the accepted teardown order.
+            await purge_account(user.id)

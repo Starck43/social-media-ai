@@ -52,6 +52,9 @@ from app.models import PlatformRole, Tenant, User
 from app.models.managers.tenant_manager import TenantUserManager
 from app.types import PlatformRoleType, WorkspaceRoleType
 from app.web import billing as billing_web
+from tests.p11_t12_audit_cleanup import purge_tenant_audit_events  # noqa: E402
+from tests.shared.account_cleanup import purge_account  # noqa: E402
+from tests.shared.payer_cleanup import purge_task_payer_consents  # noqa: E402
 from tests.web.test_web_settings import PASSWORD, _client, _csrf, _login, _name
 
 pytestmark = pytest.mark.tenancy
@@ -142,8 +145,14 @@ async def _join(
 
 async def _cleanup(users: list[User], tenants: list[Tenant]) -> None:
     with fixture_scope():
+        for tenant in tenants:
+            # These workspaces are unsponsored; drop their RESTRICT-referencing
+            # evidence first, in the accepted teardown order.
+            await purge_task_payer_consents(tenant.id)
+            await purge_tenant_audit_events(tenant.id)
         for user in users:
-            await User.objects.delete_user(user.id)
+            # purge_account resolves tariff history, then the account.
+            await purge_account(user.id)
         for tenant in tenants:
             await Tenant.objects.delete_by_id(tenant.id)
 

@@ -383,9 +383,9 @@ async def test_create_stores_targets_for_the_bound_scenario(client: AsyncClient)
         if scenario is not None:
             with tenant_scope(bypass=True):
                 await AgentScenario.objects.delete(id=scenario.id)
-        with tenant_scope(bypass=True):
-            await User.objects.delete_user(user.id)
-            await tenants.delete_by_id(tenant_id)
+        # Fixture account sponsors its workspace; purge_account follows the
+        # accepted teardown order.
+        await purge_account(user.id)
 
 
 @pytest.mark.tenancy

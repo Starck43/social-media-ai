@@ -1336,7 +1336,7 @@ async def test_workspace_owner_uses_workspace_delete_grant_without_platform_dele
             with tenant_scope(tenant_id), service_permission_scope("source", "delete"):
                 await _drop(user, tenant_id, source_id)
         elif user is not None:
-            await User.objects.delete_user(user.id)
+            await purge_account(user.id)
 
 
 @pytest.mark.tenancy
@@ -1382,4 +1382,4 @@ async def test_workspace_owner_cannot_cross_workspace_even_with_forged_target(cl
                 with tenant_scope(tid), service_permission_scope("source", "delete"):
                     await _drop(actor, tid, sid)
             elif actor is not None:
-                await User.objects.delete_user(actor.id)
+                await purge_account(actor.id)

@@ -20,6 +20,7 @@ from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import delete
 
 # isort: split
 # STOP before application imports, including collection without root conftest.
@@ -39,12 +40,17 @@ if (
     raise RuntimeError("STOP: only the approved local social_manager/test_schema target is allowed")
 # isort: split
 
+from app.core.database import async_session_maker
 from app.core.permissions import operator_permission_scope, permission_scope
+from app.core.personal_catalog_context import catalog_execution_scope
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
-from app.models import LLMModel, LLMProvider, PlatformRole, User
+from app.models import LLMCatalog, LLMModel, LLMProvider, PlatformRole, User
 from app.models.managers.tenant_manager import TenantUserManager, tenants
 from app.services.ai.personal_catalog import save_provider_bundle
+from tests.p11_t12_audit_cleanup import purge_tenant_audit_events  # noqa: E402
+from tests.shared.account_cleanup import purge_account  # noqa: E402
+from tests.shared.payer_cleanup import purge_task_payer_consents  # noqa: E402
 
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 PAGE = "/app/settings?tab=models"
@@ -185,15 +191,23 @@ class CatalogCase:
                     workspace = await tenants.get(id=membership.tenant_id)
                     assert workspace is not None and workspace.name in self.workspace_names
                     await tenants.update_by_id(workspace.id, agent_model_id=None)
+                    # Drop RESTRICT-referencing evidence before the workspace,
+                    # in the accepted teardown order.
+                    await purge_task_payer_consents(workspace.id)
+                    await purge_tenant_audit_events(workspace.id)
                     await tenants.delete_by_id(workspace.id)
-                models = await LLMModel.objects.filter(owner_user_id=user.id)
-                for model in models:
-                    await LLMModel.objects.delete_by_id(model.id)
-                providers = await LLMProvider.objects.filter(owner_user_id=user.id)
-                for provider in providers:
-                    await LLMProvider.objects.delete_by_id(provider.id)
+                # Personal reads refuse without a catalog owner in context,
+                # so the trusted teardown drops the user's catalog rows
+                # directly instead of through the personal-scoped manager.
+                async with async_session_maker() as session, session.begin():
+                    # Children first: models reference providers+catalogs,
+                    # providers reference catalogs, catalogs RESTRICT the user.
+                    await session.execute(delete(LLMModel).where(LLMModel.owner_user_id == user.id))
+                    await session.execute(delete(LLMProvider).where(LLMProvider.owner_user_id == user.id))
+                    await session.execute(delete(LLMCatalog).where(LLMCatalog.owner_user_id == user.id))
                 assert user.username.startswith(self.marker)
-                await User.objects.delete_user(user.id)
+                # purge_account resolves tariff history, then the account.
+                await purge_account(user.id)
 
 
 @pytest.fixture
@@ -384,6 +398,7 @@ async def test_revoked_active_session_cannot_write_personal_catalog(catalog_case
         )
         assert response.status_code == 302
         assert response.headers["location"].startswith("/app/login")
-    with fixture_scope():
+    # The personal-scoped read needs the fixture owner bound in context.
+    with fixture_scope(), catalog_execution_scope(owner.id):
         assert not await LLMProvider.objects.filter(owner_user_id=owner.id)
         assert not await LLMModel.objects.filter(owner_user_id=owner.id)

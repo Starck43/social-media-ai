@@ -72,3 +72,6 @@ backups/
 
 # Owner private working plan (local only, never commit)
 /tasks_plan.md
+
+# Owner local prototype pages (local only, never commit)
+/原型/

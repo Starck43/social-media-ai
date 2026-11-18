@@ -53,7 +53,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`
-- [P8-T52](docs/tasks/p8-t52.md) VK wall collection loses photo media URLs and legacy permalinks — **IN_PROGRESS** (root cause: `_staged_media_url` rejects the query-carrying VK CDN links; fix is a staging-contract choice — owner decision requested) · pi · `pi --session 01a1ee7e-eb8c-76ce-b15d-0f392fdd1878` · `fix/p8-t52-vk-media-urls` · `P2` · `C3`
+- [P8-T52](docs/tasks/p8-t52.md) VK wall collection loses photo media URLs and legacy permalinks — **READY** (`6cd2b02b`; owner chose option B: provider CDN queries kept for `userapi.com`/`vkuser.net`, bare-URL rule elsewhere; live A/B on the same 20 posts 0/8 → 8/8 stored photo URLs; new tooling+collection tests pass, offline lane 168 passed with the pre-existing rotation-head failure tracked as P8-T53; awaiting audit) · pi · `pi --session 01a1ee7e-eb8c-76ce-b15d-0f392fdd1878` · `fix/p8-t52-vk-media-urls` · `P2` · `C3`
 
 - [P20-T14](docs/tasks/p20-t14.md) Web shell restyle toward the console direction with the base palette preserved in variables — **IN_PROGRESS** · autoclaw-p20-t14 · owner approved the console direction from three mockups (2026-11-18); increment 1 is a scoped CSS overlay (console.css + one shell link), base color files stay untouched · [PR #507](https://github.com/Starck43/social-media-ai/pull/507) · branch `feat/p20-t14-web-console-ui` · `P2` · `C2`
 

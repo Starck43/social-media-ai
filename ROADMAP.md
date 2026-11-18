@@ -52,6 +52,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`
+- [P11-T49](docs/tasks/p11-t49.md) Repoint the four inbound links left by the P11-T42 archive move — **IN_PROGRESS** (`dev` markdown gate red: 4 × `../../tasks/p11-t42.md` from the archived P11-T39/T43 cards and the P11-T39 audit note) · pi · `pi --session 01a1ee7e-eb8c-76ce-b15d-0f392fdd1878` · `docs/p11-t49-link-repoints` · `P1` · `C3`
 
 - [P20-T14](docs/tasks/p20-t14.md) Web shell restyle toward the console direction with the base palette preserved in variables — **IN_PROGRESS** · autoclaw-p20-t14 · owner approved the console direction from three mockups (2026-11-18) and set the mobile carve-out preferences on the PR branches; stacked PRs [507](https://github.com/Starck43/social-media-ai/pull/507) → [511](https://github.com/Starck43/social-media-ai/pull/511) → [512](https://github.com/Starck43/social-media-ai/pull/512) → [513](https://github.com/Starck43/social-media-ai/pull/513) (retarget each to `dev` as the previous merges; stage 5 = fold overlay into base files after acceptance) · branches `feat/p20-t14-web-console-ui`, `-console-content`, `-chat-instrument`, `-console-visual` · `P2` · `C2`
 

@@ -350,3 +350,52 @@
     .chat-panel-tabs button { padding:4px 6px; font-size:11px; }
 }
 
+/* --- Console overlay fold (P20-T14 stage 5): chat instrument pass.
+   Rules keep the .ui-shell prefix so their specificity still wins over
+   the base chat rules; bubbles, send button and behavior untouched. --- */
+
+.ui-shell .chat-composer,
+.ui-shell .chat-workspace-panel,
+.ui-shell .chat-starter,
+.ui-shell .chat-attachment-dialog {
+    border-radius: var(--cn-radius);
+}
+
+@media (min-width: 640px) {
+    .ui-shell .chat-content-dialog {
+        border-radius: var(--cn-radius);
+    }
+}
+
+.ui-shell .chat-attachment-badge {
+    font-family: var(--cn-mono);
+}
+
+/* Pills become instrument stamps. */
+.ui-shell .chat-suggestions button,
+.ui-shell .chat-quick-reply,
+.ui-shell .chat-thinking {
+    border-radius: var(--cn-radius-sm);
+}
+
+.ui-shell .chat-attachment-card {
+    border-radius: var(--cn-radius-sm);
+}
+
+/* The slide-out panel tab keeps its edge-attached shape. */
+.ui-shell .chat-panel-tab {
+    border-radius: var(--cn-radius-sm) 0 0 var(--cn-radius-sm);
+}
+
+.ui-shell .json-block {
+    border-radius: var(--cn-radius-sm);
+}
+
+/* Preserve mobile touch targets in the composer and workspace panel. */
+@media (max-width: 767px) {
+    .ui-shell .chat-suggestions button,
+    .ui-shell .chat-panel-tabs button {
+        min-height: 40px;
+    }
+}
+

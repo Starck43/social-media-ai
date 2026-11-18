@@ -232,3 +232,13 @@ html.dark,
    prefers-color-scheme, and toggles the `dark` class on <html>.
    Both web and admin call this via a small inline script.
 */
+
+/* ── Console tokens (P20-T14 stage 5 fold) ────────────────────────────────
+   Dense instrument console tokens folded from the console overlay
+   (increment 1). Values are kept verbatim; no new palette values.
+*/
+:root {
+    --cn-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --cn-radius: 6px;
+    --cn-radius-sm: 4px;
+}

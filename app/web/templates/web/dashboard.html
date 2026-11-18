@@ -30,6 +30,14 @@
         .ui-home .ui-card { padding: 1rem; }
         .ui-home .ui-home-task { flex-basis: 100%; }
     }
+    /* P20-T14 stage 5: console overlay folded into base styles.
+       .ui-home h2 keeps only the properties the rules above do not set;
+       its inline font-size/line-height/font-weight stay authoritative. */
+    .ui-home-meta { font-family: var(--cn-mono); font-size: .6875rem; }
+    .ui-home .text-2xl { font-family: var(--cn-mono); letter-spacing: -.01em; }
+    .ui-home h2 { font-family: var(--cn-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-secondary); }
+    .ui-home .ui-home-result,
+    .ui-home .rounded-lg { border-radius: var(--cn-radius-sm); }
 </style>
 {% endblock %}
 {% block page_heading %}Обзор{% endblock %}

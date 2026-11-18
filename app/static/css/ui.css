@@ -58,3 +58,89 @@ html.dark .ui-tone { background:transparent; }
 .ui-notification-overlay { z-index:100; }
 .ui-notification-panel { display:flex; flex-direction:column; max-height:calc(100dvh - 32px); }
 .ui-notification-list { min-height:0; max-height:min(60dvh,560px); overscroll-behavior:contain; }
+
+/* --- Shared components (ui-*): folded from the console overlay (P20-T14 stage 5) --- */
+
+.ui-card {
+    border-radius: var(--cn-radius-sm);
+    padding: 1rem;
+}
+
+.ui-segments {
+    padding: 3px;
+    border-radius: var(--cn-radius-sm);
+}
+
+.ui-segment {
+    border-radius: var(--cn-radius-sm);
+}
+
+.ui-control {
+    border-radius: var(--cn-radius-sm);
+}
+
+@media (min-width: 768px) {
+    .ui-segment {
+        min-height: 36px;
+        padding: .4rem .65rem;
+    }
+
+    .ui-control {
+        min-height: 36px;
+    }
+}
+
+.ui-count {
+    font-family: var(--cn-mono);
+    font-size: .6875rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--cn-radius-sm);
+    padding: 0 .375rem;
+}
+
+.ui-badge {
+    border: 1px solid color-mix(in srgb, currentColor 32%, transparent);
+    border-radius: var(--cn-radius-sm);
+    font-weight: 600;
+}
+
+.ui-score {
+    font-family: var(--cn-mono);
+}
+
+.ui-group-meta {
+    font-family: var(--cn-mono);
+    font-size: .75rem;
+}
+
+/* --- Shape lock: one radius family inside the shell. Specificity beats
+   Tailwind utilities regardless of their injection order; rounded-full
+   (avatars, pills) untouched. --- */
+
+.ui-shell :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl) {
+    border-radius: var(--cn-radius);
+}
+
+/* --- Instrument table headers --- */
+
+.ui-shell th {
+    font-family: var(--cn-mono);
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+@media (min-width: 768px) {
+    .ui-shell th {
+        font-size: .65rem;
+    }
+}
+
+/* --- Stage-4 visual pass (three screens): mono numeral family for all
+   text-3xl usages (analytics KPIs, task run outcome, settings quota). --- */
+
+.ui-shell .text-3xl {
+    font-family: var(--cn-mono);
+    letter-spacing: -.01em;
+}

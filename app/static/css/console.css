@@ -57,9 +57,14 @@
 /* --- Navbar as a status strip ---------------------------- */
 
 .shell-navbar {
-    padding: 8px 20px;
-    gap: 10px;
     box-shadow: 0 1px 0 var(--color-bg);
+}
+
+@media (min-width: 768px) {
+    .shell-navbar {
+        padding: 8px 20px;
+        gap: 10px;
+    }
 }
 
 .shell-page-title h1 {
@@ -88,16 +93,6 @@
     .shell-content {
         padding-top: 14px;
         padding-inline: 14px;
-    }
-
-    /* Instrument labels on the mobile bar. */
-    .shell-mobile-bar > a,
-    .shell-mobile-bar > button {
-        font-family: var(--cn-mono);
-        font-size: .6875rem;
-        letter-spacing: .05em;
-        text-transform: uppercase;
-        min-height: 56px;
     }
 }
 
@@ -129,9 +124,11 @@ dialog.shell-dialog {
     border-radius: var(--cn-radius-sm);
 }
 
-.ui-shell button,
-.ui-shell select {
-    min-height: 36px;
+@media (min-width: 768px) {
+    .ui-shell button,
+    .ui-shell select {
+        min-height: 36px;
+    }
 }
 
 .ui-count {

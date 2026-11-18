@@ -53,7 +53,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`
-- [P8-T52](docs/tasks/p8-t52.md) VK wall collection loses photo media URLs and legacy permalinks — **TODO** · unassigned · `P2` · `C3`
+- [P8-T52](docs/tasks/p8-t52.md) VK wall collection loses photo media URLs and legacy permalinks — **IN_PROGRESS** · pi · `pi --session 01a1ee7e-eb8c-76ce-b15d-0f392fdd1878` · `fix/p8-t52-vk-media-urls` · `P2` · `C3`
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: contract ownership and gated remainder after the accepted increment (byte authority/original-open with deferred P8-T34, local-only execution with P18, mutations per D21) — **TODO** (gate: owner activation / P8-T34 resume / consumer contract request; not claimable before it; re-scoped 2026-11-11, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · unassigned · [re-scope record](docs/tasks/p12-t12.md#re-scoped-remaining-roadmap-2026-11-11) · [increment audit](docs/audit/p12/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot — **DEFERRED** (owner, 2026-11-04: VK full method access is unresolved, so the exact-byte version authority and native original-open cannot be closed) · resume: draft [PR #313](https://github.com/Starck43/social-media-ai/pull/313) · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`

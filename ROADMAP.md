@@ -63,7 +63,6 @@ Registered tooling follow-ups (not phase work; repo-level hygiene):
 - [P11-T41](docs/tasks/p11-t41.md) Operations admin writer lost the shared plan-create seam — **READY** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t41-followup` (`ff5eb8e2`); source 7 PASS, root-conftest admin/contracts 23 PASS; awaiting audit · `P2` · `C2`
 - [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t42-followup` (`18fe2d2a`); pin fixed, coherence 1 FAIL/10 PASS exposes Tenant definition drift; owner contract choice pending · `P2` · `C2`
 - [P11-T44](docs/tasks/p11-t44.md) Formatting baseline drift on untouched files — **READY** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t44-followup` (`8a1a05b4`); 47 scoped files fixed, format failures 0, AST/graph PASS; secret scan interrupted, awaiting audit · `P2` · `C2`
-- [P11-T45](docs/tasks/p11-t45.md) Credential rotation refuses the current migration head — **READY** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t45-followup` (`82517713`); offline 165 PASS, isolated rotation 13 PASS, schema cleanup verified; awaiting audit · `P2` · `C2`
 
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):
 

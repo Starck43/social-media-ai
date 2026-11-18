@@ -130,8 +130,10 @@ async def _cleanup(user: User, tenant_id: int, *rows) -> None:
     with tenant_scope(bypass=True):
         for model, row in rows:
             await model.objects.delete(id=row.id)
-    await User.objects.delete_user(user.id)
+    # Registration makes the account the workspace's plan holder; the manager
+    # refuses to delete a user while a workspace still references it (409).
     await tenants.delete_by_id(tenant_id)
+    await User.objects.delete_user(user.id)
 
 
 @pytest.fixture

@@ -114,17 +114,23 @@ dialog.shell-dialog {
 }
 
 .ui-segment {
-    min-height: 36px;
-    padding: .4rem .65rem;
     border-radius: var(--cn-radius-sm);
 }
 
 .ui-control {
-    min-height: 36px;
     border-radius: var(--cn-radius-sm);
 }
 
 @media (min-width: 768px) {
+    .ui-segment {
+        min-height: 36px;
+        padding: .4rem .65rem;
+    }
+
+    .ui-control {
+        min-height: 36px;
+    }
+
     .ui-shell button,
     .ui-shell select {
         min-height: 36px;
@@ -178,4 +184,46 @@ dialog.shell-dialog {
 .ui-home .ui-home-result,
 .ui-home .rounded-lg {
     border-radius: var(--cn-radius-sm);
+}
+
+/* =====================================================
+   INCREMENT 2 (P20-T14): content surfaces.
+   Owner correction 2f3e079d is the preference baseline:
+   density and control-height reductions apply from 768px
+   up; mobile keeps base spacing, touch size and legibility.
+   ===================================================== */
+
+/* --- Shape lock: one radius family inside the shell --------
+   Specificity beats Tailwind utilities regardless of their
+   injection order; rounded-full (avatars, pills) untouched. */
+
+.ui-shell :is(.rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl) {
+    border-radius: var(--cn-radius);
+}
+
+/* --- Instrument table headers ------------------------------- */
+
+.ui-shell th {
+    font-family: var(--cn-mono);
+    font-size: .65rem;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+}
+
+/* --- Chat surface: container radii and mono badges ----------
+   chat.css loads after this file, so rules carry .ui-shell
+   specificity; bubbles, send button and behavior untouched. */
+
+.ui-shell .chat-composer,
+.ui-shell .chat-workspace-panel,
+.ui-shell .chat-starter,
+.ui-shell .chat-content-dialog,
+.ui-shell .chat-attachment-dialog {
+    border-radius: var(--cn-radius);
+}
+
+.ui-shell .chat-attachment-badge {
+    font-family: var(--cn-mono);
 }

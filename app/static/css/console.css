@@ -238,6 +238,18 @@ dialog.shell-dialog {
     font-family: var(--cn-mono);
 }
 
+/* --- Stage-4 visual pass (three screens) -------------------
+   Reproduced inconsistency: analytics KPI numerals render in
+   proportional sans while dashboard KPIs and the console
+   direction use the mono numeral family. All text-3xl usages
+   are numeric displays (analytics KPIs, task run outcome,
+   settings quota). */
+
+.ui-shell .text-3xl {
+    font-family: var(--cn-mono);
+    letter-spacing: -.01em;
+}
+
 /* =====================================================
    INCREMENT 3 (P20-T14): chat instrument pass.
    Baseline: owner corrections 2f3e079d and 324b3762 -

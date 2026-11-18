@@ -36,8 +36,7 @@
     .ui-home-meta { font-family: var(--cn-mono); font-size: .6875rem; }
     .ui-home .text-2xl { font-family: var(--cn-mono); letter-spacing: -.01em; }
     .ui-home h2 { font-family: var(--cn-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-secondary); }
-    .ui-home .ui-home-result,
-    .ui-home .rounded-lg { border-radius: var(--cn-radius-sm); }
+    :where(.ui-home) .ui-home-result { border-radius: var(--cn-radius-sm); }
 </style>
 {% endblock %}
 {% block page_heading %}Обзор{% endblock %}

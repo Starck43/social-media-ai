@@ -265,9 +265,9 @@ dialog.shell-dialog {
     border-radius: var(--cn-radius-sm);
 }
 
-/* Touch floor below 768px: chat.css sets 34px for the panel tabs;
-   attach/send already reach 40px on mobile via the ui.css button floors. */
+/* Preserve mobile touch targets in the composer and workspace panel. */
 @media (max-width: 767px) {
+    .ui-shell .chat-suggestions button,
     .ui-shell .chat-panel-tabs button {
         min-height: 40px;
     }

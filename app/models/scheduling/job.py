@@ -38,8 +38,8 @@ class Job(Base, TenantScopedMixin, TimestampMixin):
         ForeignKey(f"{settings.DB_SCHEMA}.users.id", ondelete="RESTRICT"),
         nullable=True,
     )
-    # 'collect' | 'digest' | 'prune'
-    job_type: Mapped[str] = Column(String(20), nullable=False)
+    # Simple names plus dotted dispatch keys (see AgentTask.job_type, P8-T51).
+    job_type: Mapped[str] = Column(String(64), nullable=False)
     payload: Mapped[dict[str, Any]] = Column(JSON, default=dict, nullable=False, server_default=text("'{}'::json"))
     # 'pending' | 'running' | 'done' | 'failed'
     status: Mapped[str] = Column(String(20), default="pending", nullable=False, server_default="pending")

@@ -64,7 +64,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
-- [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **IN_PROGRESS** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t42-followup` (`18fe2d2a`); pin fixed, coherence 1 FAIL/10 PASS exposes Tenant definition drift; owner approved frozen historical tenants DDL; implementation resumed · `P2` · `C2`
+- [P11-T42](docs/tasks/p11-t42.md) LLM budget fixture preparation pin content drift — **READY** · codex · `codex resume 01a1eb6f-4d7d-7672-b605-572bfd3a212c` · `fix/p11-t42-followup` (`383109aa`); owner-approved frozen tenants DDL, coherence/parity 17 PASS + safety coverage 46 PASS; awaiting audit · `P2` · `C2`
 - [P11-T48](docs/tasks/p11-t48.md) Secret baseline drift makes the CI gate exit non-zero — **READY** (`ec1cee51`; `checks` exit 0 with 384 candidates and no new line, `run_offline` 166 passed; awaiting audit) · pi · `pi --session 01a1ee7e-eb8c-76ce-b15d-0f392fdd1878` · reproduced on `dev` `f2fc677b` and `49b98ea3`: the ten `detect-secrets` candidates absent from the former 381-entry baseline (`docs/archive/tasks/p11-t38.md` ×2, `docs/audit/p21/p21-t15-perch-test.json`, `tests/ai/test_p21_t15_*_pg.py` ×3, `tests/ai/test_p21_t16_*_pg.py` ×4), so every task sees a red required check · `P2` · `C1`
 
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):

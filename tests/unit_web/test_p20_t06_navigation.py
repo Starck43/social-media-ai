@@ -127,7 +127,6 @@ def test_mobile_drawer_opener_skips_embedded():
     assert 'data-dialog-open="navigation-drawer"' not in env.get_template("web/base.html").render(**context)
 
 
-
 def test_unified_tasks_hub_is_visible_for_either_task_kind_and_legacy_paths_stay_gated():
     tasks = next(item for item in nav.NAV_ITEMS if item.key == "tasks")
     assert tasks.href == "/app/task-hub"

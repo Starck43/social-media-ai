@@ -41,6 +41,12 @@ class FileCatalogObject(TenantScopedMixin, TimestampMixin, Base):
         CheckConstraint("kind IN ('file','dir')", name="ck_file_catalog_kind"),
         CheckConstraint("observation_number > 0", name="ck_file_catalog_number"),
         CheckConstraint("octet_length(path) <= 2048", name="ck_file_catalog_path_size"),
+        CheckConstraint("lifecycle_state IN ('present','missing','stale')", name="ck_file_catalog_lifecycle_state"),
+        CheckConstraint(
+            "(lifecycle_state = 'present' AND missing_since IS NULL) "
+            "OR (lifecycle_state IN ('missing','stale') AND missing_since IS NOT NULL)",
+            name="ck_file_catalog_lifecycle_missing_since",
+        ),
         CheckConstraint("path_key = encode(sha256(convert_to(path, 'UTF8')), 'hex')", name="ck_file_catalog_path_key"),
         Index("ix_file_catalog_page", "tenant_id", "connection_id", "root_key", "id"),
     )
@@ -56,6 +62,12 @@ class FileCatalogObject(TenantScopedMixin, TimestampMixin, Base):
     kind: Mapped[str] = mapped_column(String(10))
     observation_number: Mapped[int] = mapped_column(Integer, default=1)
     observed_at = mapped_column(DateTime(timezone=True), nullable=False)
+    lifecycle_state: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="present", server_default="present"
+    )
+    reconciled_at = mapped_column(DateTime(timezone=True), nullable=True)
+    missing_since = mapped_column(DateTime(timezone=True), nullable=True)
+    last_scan_token: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
 
 @app_label("knowledge")

@@ -12,6 +12,7 @@
   <header class="hero">
     <p class="eyebrow">Личное подключение · текстовый файл</p>
     <h1>{{ file.name }}</h1>
+    {% set _lc = file.get('lifecycle_state', 'present') %}{% if _lc != 'present' %}<p role="status" data-file-lifecycle="{{ _lc }}">Запись отсутствует или устарела по итогам последнего полного обхода; загрузка и чтение текущего оригинала заблокированы.</p>{% endif %}
     <p>Оригинал загружается только по вашему запросу. Для чтения выбранных строк нужно отдельное согласие на облачную обработку.</p>
   </header>
   <section class="card" aria-labelledby="original-title">

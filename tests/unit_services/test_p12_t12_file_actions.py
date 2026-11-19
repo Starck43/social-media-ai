@@ -272,7 +272,7 @@ def test_content_authority_checks_scope_policy_and_reauthorization():
         meta,
         *[
             Column(n, Integer if n in ("id", "tenant_id", "connection_id") else String, primary_key=n == "id")
-            for n in ("id", "tenant_id", "connection_id", "root_key", "kind")
+            for n in ("id", "tenant_id", "connection_id", "root_key", "kind", "lifecycle_state")
         ],
     )
     mounts = Table(

@@ -75,8 +75,10 @@ async def file_catalog_page(
     connection_id: int | None = Query(None, ge=1, le=2_147_483_647),
     q: str = Query("", max_length=200),
     after: int = Query(0, ge=0, le=2_147_483_647),
+    lifecycle: str = Query("", max_length=16),
 ):
     args = _actor(request)
+    lifecycle_filter = lifecycle.strip() or None
     try:
         mounts = await catalog.connections(**args)
         selected = next((mount for mount in mounts if mount["id"] == connection_id), None)
@@ -84,7 +86,14 @@ async def file_catalog_page(
             raise ConnectionDenied()
         selected = selected or (mounts[0] if mounts else None)
         result = (
-            await catalog.list_page(**args, connection_id=selected["id"], query=q, after=after, limit=50)
+            await catalog.list_page(
+                **args,
+                connection_id=selected["id"],
+                query=q,
+                after=after,
+                limit=50,
+                lifecycle=lifecycle_filter,
+            )
             if selected
             else {"items": [], "next_after": None}
         )
@@ -98,13 +107,14 @@ async def file_catalog_page(
         raise HTTPException(503, "Каталог временно недоступен") from None
     next_url = None
     if result["next_after"] is not None:
-        next_url = "/app/knowledge/files?" + urlencode(
-            {
-                "connection_id": selected["id"],
-                "q": q,
-                "after": result["next_after"],
-            }
-        )
+        params = {
+            "connection_id": selected["id"],
+            "q": q,
+            "after": result["next_after"],
+        }
+        if lifecycle_filter is not None:
+            params["lifecycle"] = lifecycle_filter
+        next_url = "/app/knowledge/files?" + urlencode(params)
     return _render_catalog(
         request,
         "web/file_catalog.html",
@@ -112,6 +122,7 @@ async def file_catalog_page(
         selected=selected,
         files=result["items"],
         q=q,
+        lifecycle=lifecycle_filter or "",
         next_url=next_url,
         after=after,
         scan_message=_scan_message(status),
@@ -137,5 +148,7 @@ async def file_catalog_detail(
         "web/file_catalog_detail.html",
         file=item,
         connection_id=connection_id,
-        workspace_actions=settings.FILE_WORKSPACE_ACTIONS_ENABLED and item["kind"] == "file",
+        workspace_actions=settings.FILE_WORKSPACE_ACTIONS_ENABLED
+        and item["kind"] == "file"
+        and item.get("lifecycle_state", "present") == "present",
     )

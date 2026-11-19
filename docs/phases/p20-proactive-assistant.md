@@ -20,6 +20,8 @@
 12. ~~P20-T12 — web research source, search and public page fetch.~~ **DONE 2026-11-11**, accepted source `bf180e4b3acd4bb9e944852835d73e4943edf323`, merge `d17c898031d7cdbd062a04254091a64a4a3caf58` — [audit](../audit/p20/p20-t12.md).
 13. P20-T13 — bounded web usability and keyboard/mobile hardening, preserving the existing theme and owning-service contracts. **DONE** — [../audit/p20-t13.md](../audit/p20/p20-t13.md).
 
+14. [P20-T15](../tasks/p20-t15.md) — console («Пульт») home information architecture: status strip, briefing card, decision/plan/answer blocks and the right instrument column. **TODO** (follows the presentation-only P20-T14 merge).
+
 ## Waves
 
 | Wave | Tasks | Needs |

@@ -21,7 +21,7 @@
 13. P20-T13 — bounded web usability and keyboard/mobile hardening, preserving the existing theme and owning-service contracts. **DONE** — [../audit/p20-t13.md](../audit/p20/p20-t13.md).
 
 14. ~~P20-T14 — console-direction web shell restyle.~~ **CLOSED 2026-11-19 without audit** (owner decision; integrated in merge `cab5516c`) — [note](../audit/p20/p20-t14.md).
-15. [P20-T15](../tasks/p20-t15.md) — console («Пульт») home information architecture: status strip, briefing card, decision/plan/answer blocks and the right instrument column. **TODO** (follows the presentation-only P20-T14 merge).
+15. [P20-T15](../tasks/p20-t15.md) — console («Пульт») home information architecture (of the three mockup directions): status strip, briefing card, decision/plan/answer blocks and the right instrument column. **TODO** (follows the presentation-only P20-T14 merge).
 
 ## Waves
 

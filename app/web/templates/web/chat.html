@@ -221,7 +221,7 @@
                         </div>
 
                         <!-- Timestamp + actions -->
-                        <div class="chat-actions mt-0.5 flex items-center gap-1.5 px-1"
+                        <div class="chat-actions chat-message-actions mt-1 flex items-center gap-2"
                              :class="message.role === 'user' ? 'justify-end' : 'justify-start chat-actions-hover'">
                             <!-- User message: always show date+time, with delete button -->
                             <span
@@ -236,9 +236,10 @@
                                 x-text="message.created_at"
                             ></span>
                             <button
+                                type="button"
                                 x-show="message.role === 'user' && typeof message.id === 'number'"
                                 x-on:click="requestConfirmation('delete', message.id)"
-                                class="text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
+                                class="chat-message-action text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
                                 title="Удалить" aria-label="Удалить сообщение"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none"
@@ -250,9 +251,10 @@
                             </button>
                             <!-- Assistant message: show copy + delete buttons -->
                             <button
+                                type="button"
                                 x-show="message.role !== 'user'"
                                 x-on:click="copyText(message.content || '', $event)"
-                                class="text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                                class="chat-message-action text-slate-600 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
                                 title="Копировать"
                                 aria-label="Копировать сообщение"
                             >
@@ -264,9 +266,10 @@
                                 </svg>
                             </button>
                             <button
+                                type="button"
                                 x-show="message.role !== 'user' && message.id"
                                 x-on:click="requestConfirmation('delete', message.id)"
-                                class="text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
+                                class="chat-message-action text-slate-600 dark:text-slate-400 hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
                                 title="Удалить" aria-label="Удалить сообщение"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none"
@@ -417,15 +420,19 @@
             ></textarea>
             <div class="chat-composer-bar flex items-center gap-4 justify-between w-full">
                 {% if perms and perms.can('plannertask', 'create') %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new">Создать дело</a>{% endif %}
-                <div class="chat-suggestions" data-chat-quick-actions>
-                    <button type="button" class="chat-attach" @click="handleAttachClick()" :disabled="pending || awaitingConfirmation" :aria-label="attachmentEnabled() ? 'Прикрепить фото или документ' : 'Прикрепить файл — о доступности'" title="Фото и документы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9m-6 12 8-8"/></svg></button>
-                    <button type="button" class="chat-attach-limits" x-show="attachmentEnabled()" x-cloak @click="openAttachmentLimits()" :disabled="pending" aria-label="Допустимые форматы и лимиты вложений">Форматы и лимиты</button>
+                <div class="chat-composer-tools">
+                    <div class="chat-attachment-tools" aria-label="Вложения">
+                        <button type="button" class="chat-attach" @click="handleAttachClick()" :disabled="pending || awaitingConfirmation" :aria-label="attachmentEnabled() ? 'Прикрепить фото или документ' : 'Прикрепить файл — о доступности'" title="Фото и документы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9m-6 12 8-8"/></svg></button>
+                        <button type="button" class="chat-attach-limits" x-show="attachmentEnabled()" x-cloak @click="openAttachmentLimits()" :disabled="pending" aria-label="Допустимые форматы и лимиты вложений">Форматы и лимиты</button>
+                    </div>
+                    <div class="chat-suggestions" data-chat-quick-actions aria-label="Быстрые команды">
                     <button type="button" data-quick-action="prepare-task" @click="draftAction(starters[2].text)" :disabled="pending || awaitingConfirmation">Подготовить задачу</button>
                     <button type="button" data-quick-action="analyze-result" @click="draftAction(workspaceTaskId ? 'Разбери результаты выбранной задачи: ключевые выводы, ссылки на материалы, охват и ограничения. Отдели подтверждённые данные от предположений.' : 'Разбери результаты, которые мы обсуждали: ключевые выводы, ссылки, охват и ограничения. Если данных не хватает, уточни задачу.')" :disabled="pending || awaitingConfirmation">Разобрать результат</button>
                     <button type="button" data-quick-action="whats-next" @click="draftAction('Предложи следующий шаг по текущему обсуждению' + (workspaceTaskId ? ' и выбранной задаче' : '') + '. Учти уже сделанное и ограничения. Объясни пользу и дождись моего решения перед действиями.')" :disabled="pending || awaitingConfirmation">Что дальше?</button>
                     <button type="button" @click="draftAction('/help')" :disabled="pending || awaitingConfirmation">Что ты умеешь?</button>
                     <button type="button" @click="draftAction('Покажи статус и доступные результаты выбранной задачи.')"
-                            x-show="workspaceTaskId" :disabled="pending || awaitingConfirmation">Статус и результаты</button>
+                             x-show="workspaceTaskId" :disabled="pending || awaitingConfirmation">Статус и результаты</button>
+                    </div>
                 </div>
                 <!-- Send, or stop the turn while the agent is answering -->
                 <button

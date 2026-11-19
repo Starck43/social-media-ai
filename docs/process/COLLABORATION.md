@@ -1,478 +1,423 @@
 # Development contract
 
-Read only the section needed by the selected skill. Mandatory entry rules live
-in [AGENTS](../../AGENTS.md); this file owns detailed workflow and DB/test procedures.
+Entry rules live in [AGENTS](../../AGENTS.md); this file owns detailed workflow,
+DB and test procedures. Read only the section your skill needs.
 
 ## Tasks
 
-ROADMAP owns one line per open item: ID/title linked to its card, status, owner,
-priority/complexity and last status-changing dialogue or PR-comment link. Use `—` only for unknown
-legacy links; a real session ID/resume command is valid when no URL exists.
-Anyone may add a TODO/question. Reserve the next unused phase/task or question ID
-against ROADMAP and phase/audit history; allocate IDs in numeric sequence, never
-recycle them. Display the active queue in the priority order defined by ROADMAP,
-respecting required predecessors and keeping explicit deferrals parked; phase
-plans retain numeric task order. Priority/complexity do not authorize execution
-or change a task status.
+ROADMAP: one line per open item — ID/title linked to its card, status, owner,
+priority/complexity, last status-changing dialogue or PR-comment link (`—` only
+for unknown legacy links; a session ID/resume command is valid when no URL
+exists). Anyone may add a TODO/question. Reserve the next unused phase/task or
+question ID against ROADMAP and phase/audit history, in numeric sequence; never
+recycle IDs. Display the queue in ROADMAP priority order, respecting predecessors
+and parked deferrals; phase plans keep numeric order. Priority/complexity never
+authorize execution or change status.
 
-Before editing a solution, fetch `origin`, claim/create the row as IN_PROGRESS
-with owner/dialogue, and add its card/parent-plan link. Publish only these registry
-paths in a small commit based on current `origin/dev`; synchronize local `dev`
-without overwriting other changes. If local dev is ahead, use a separate registry
-worktree based on origin rather than pushing unrelated commits. A non-fast-forward
-push requires fetch/reconcile and rechecking the claim; never force-push. Claim
-publication to `origin/dev` is authorized by this workflow; solution publication
-and merge still require the owner’s explicit choice. An offline/unpublishable claim
-is local only: report the coordination limitation, never pretend it is visible.
-Remote agents self-publish their scoped claim commit to `origin/dev` under the
-same rules as local claims, always before any solution edit and never later with
-the solution; they do not publish the solution, unrelated registry rows or
-competing registry copies, and they never stop to wait for a custodian or the
-owner between steps. A designated custodian may instead apply PR-comment status
-requests and refreshes both directions before each transition.
+Before editing a solution: fetch `origin`, claim/create the row as IN_PROGRESS
+with owner/dialogue and card/parent-plan link, and publish that claim as a small
+registry-only commit based on current `origin/dev`. Synchronize local `dev`
+without overwriting others' changes; if local dev is ahead, use a separate
+registry worktree instead of pushing unrelated commits. On a non-fast-forward
+push: fetch, reconcile, recheck the claim; never force-push. Claim publication
+to `origin/dev` is authorized by this workflow; solution publication and merge
+still require the owner's explicit choice. An unpublishable claim stays local —
+report the limitation, never pretend it is visible. Remote agents self-publish
+their scoped claim commit under the same rules, always before any solution edit
+and never with it; they never publish solutions, unrelated rows or competing
+registry copies, and never idle waiting for a custodian or owner. A designated
+custodian may instead apply PR-comment status requests, refreshing both
+directions before each transition.
 
-Create `type/<task-id>-<topic>` from the agreed source revision. Independent
-writers use exclusive paths and separate worktrees. Keep task implementation out
-of integration `dev`; registry-only synchronization is the exception above.
+Create `type/<task-id>-<topic>` from the agreed revision. Independent writers use
+exclusive paths and separate worktrees; task implementation stays out of `dev`
+(registry-only synchronization is the exception above).
 
-The primary checkout is the owner's interactive workspace: agents never
-switch, move or commit branches in it, and never leave it on an agent branch.
-When the owner's checkout sits on a branch an agent needs, the agent opens a
-worktree for that branch instead of moving the checkout. Verify the current
-branch and dirty state before any commit; a commit belongs only in the
-agent's own task worktree.
+The primary checkout is the owner's interactive workspace: never switch, move or
+commit branches in it, never leave it on an agent branch. If it sits on a branch
+you need, open a worktree for it. Verify branch and dirty state before any
+commit; commit only in your own task worktree.
 
-`docs/tasks/<id>.md` contains scope/acceptance, parent phase (or explicit orphan),
-related task links, owned paths/dependencies, branch/PR, documents read and checks.
-It links ROADMAP instead of copying current status. Phases live in `docs/phases/`:
-product-parent backlink, goal, numbered plan, active-card links and accepted audit
-links. Plan substantial work by creating/revising a numbered phase with continuity
-and reasons; keep short standalone tasks as cards, not artificial stages.
+`docs/tasks/<id>.md`: scope/acceptance, parent phase (or explicit orphan),
+related links, owned paths/dependencies, branch/PR, documents read, checks;
+links ROADMAP instead of copying status. Phases in `docs/phases/`: product-parent
+backlink, goal, numbered plan, active-card links, accepted audit links. Plan
+substantial work as a numbered phase; keep short standalone tasks as cards.
 
-A task card is working material for an **open** item, not its result. Once the row
-leaves ROADMAP the card has no owner, status or dialogue left to maintain, so it
-moves to `docs/archive/tasks/<id>.md` — never kept in `docs/tasks/`, never deleted
-while the history is useful. The phase line states the outcome and links the audit;
-the audit owns the durable record. A phase or contract that still owns a living
-decision keeps that text itself instead of pointing at an archived card.
-`scripts/check_registry.py` warns about a card in `docs/tasks/` with no open ROADMAP
-row: every card there must be visible to the registry.
+A card is working material for an **open** item. Once the row leaves ROADMAP,
+move the card to `docs/archive/tasks/<id>.md` — never keep it in `docs/tasks/`,
+never delete it while the history is useful. The phase line states the outcome
+and links the audit; the audit owns the durable record. A phase or contract with
+a living decision keeps that text itself. `scripts/check_registry.py` warns about
+cards in `docs/tasks/` without an open ROADMAP row.
 
 ## State machine
 
-Open row statuses: `TODO`, `IN_PROGRESS`, `READY`, `BLOCKED`, `DEFERRED`;
-questions use `TODO`/`OPEN`/`DEFERRED`. `DONE` is not a row status: acceptance
-removes the row, and the audit record plus the phase line carry the DONE/date
-summary.
+Open statuses: `TODO`, `IN_PROGRESS`, `READY`, `BLOCKED`, `DEFERRED`; questions
+use `TODO`/`OPEN`/`DEFERRED`. `DONE` is not a row status: acceptance removes the
+row; the audit record plus phase line carry the DONE/date summary.
 
-- `TODO → IN_PROGRESS`: the claim commit is published as under Tasks, before any
-  solution edit. A remote executor self-publishes its scoped claim commit (a
-  designated custodian may instead apply the PR-comment request); the executor
-  never idles waiting for either.
-- `IN_PROGRESS → READY`: the executor (for remote work, the custodian from the
-  PR comment) publishes the switch only when every required acceptance check
-  passed, with the [Evidence](#evidence) record in the card or linked PR body.
-  Actionable failure keeps the row IN_PROGRESS.
-- `READY → DONE`: the auditor applies the [Acceptance](#acceptance) steps only
-  after verified integration into fresh `origin/dev`; the row is removed, the
-  card moves to `docs/archive/tasks/`, and the audit record plus phase line stay.
-- rejected, correctable: back to IN_PROGRESS; the auditor returns findings,
-  required checks and a recommended fix. Remote findings ride PR comments,
-  never the PR body, which stays executor-owned.
-- rejected, cannot proceed: BLOCKED with reason, passed/failed/unrun checks and
-  recommended fix in the linked audit diagnostic.
-- owner defer: DEFERRED with the explicit choice, reason and resume branch/PR in
-  the row; never BLOCKED solely for being postponed.
-- owner descope without acceptance: only the owner's explicit decision; record
-  it in the audit note or a Questions row, remove the row, keep the note.
+- `TODO → IN_PROGRESS`: published claim commit (see Tasks) before any solution
+  edit; remote executors self-publish, never idle.
+- `IN_PROGRESS → READY`: executor (remote: custodian via PR comment) publishes
+  only when every required acceptance check passed, with the
+  [Evidence](#evidence) record in the card or linked PR body. Actionable failure
+  keeps IN_PROGRESS.
+- `READY → DONE`: auditor applies [Acceptance](#acceptance) only after verified
+  integration into fresh `origin/dev`; remove the row, archive the card, keep
+  audit and phase line.
+- Rejected, correctable → IN_PROGRESS with findings, required checks and a
+  recommended fix; remote findings ride PR comments, never the executor-owned
+  PR body.
+- Rejected, cannot proceed → BLOCKED with reason, passed/failed/unrun checks and
+  fix in the linked audit diagnostic.
+- Owner defer → DEFERRED with choice, reason and resume branch/PR; never BLOCKED
+  solely for being postponed.
+- Owner descope without acceptance: owner's explicit decision only; record in
+  the audit note or a Questions row, remove the row, keep the note.
 
 ## Evidence
 
 Before READY, record in the card or linked PR body:
 
-- **Solution:** behavior, affected files, source SHA, branch and dependencies.
-- **Documentation read:** actual `path#section` and purpose, not suggested reading.
-- **Checks:** exact commands, route, tested SHA, exit code and passed/failed/skipped
-  counts; required unrun checks and reason; DB target/cleanup when applicable.
-- **Handoff:** direct repository/PR links, remaining limits and review request.
+- **Solution:** behavior, affected files, source SHA, branch, dependencies.
+- **Documentation read:** actual `path#section` and purpose.
+- **Checks:** exact commands, route, tested SHA, exit code, passed/failed/skipped
+  counts; required unrun checks with reasons; DB target/cleanup when applicable.
+- **Handoff:** repository/PR links, remaining limits, review request.
 
 READY means every required acceptance check passed. Docs/mechanical work records
-applicable static checks and explains why application tests are not applicable.
-A required test not run is not PASS; use BLOCKED only if necessary acceptance
-cannot proceed, otherwise continue IN_PROGRESS. A waived check requires an explicit
-owner waiver and remains labelled unrun. Remote PR body is the solution/evidence
-entry point; the card links it instead of duplicating it. Preserve original
-revision attribution; old greens never certify new code. Long failures belong
-in `docs/audit/<phase>/<id>.md`. `/tmp` and ignored `.agents/tmp/` are local scratch only:
-never link them as evidence or a handoff. Copy the useful summary, tested SHA,
-commands/results and resume commit into the task card or PR body, then delete
-scratch files at closeout. A path on one machine is not visible to another
-checkout. For local commands, name the tested SHA and branch/worktree; distinguish
-migration/command success from application-test results. A clean `dev` status
-does not mean tests passed. Required DB/integration scenarios are acceptance
-checks, not an optional supplement to unit tests. Record their exact commands,
-scenario counts, tested SHA and DB target/cleanup separately from unit/mock
-results. Green unit tests cannot replace a failing or unrun DB scenario. A remote
-handoff remains IN_PROGRESS until the local runner's evidence is linked and all
-required checks pass (or the owner explicitly waives a named check).
+applicable static checks and why application tests are N/A. A required test not
+run is not PASS: stay IN_PROGRESS, or BLOCKED only if acceptance cannot proceed.
+A waived check requires an explicit owner waiver and stays labelled unrun. The
+remote PR body is the evidence entry point; the card links it. Preserve original
+revision attribution — old greens never certify new code. Long failures go to
+`docs/audit/<phase>/<id>.md`. `/tmp` and `.agents/tmp/` are local scratch only:
+copy the useful summary (SHA, commands/results, resume commit) into the card or
+PR body, then delete scratch at closeout; a path on one machine is invisible to
+another checkout. For local commands name the tested SHA and branch/worktree;
+distinguish migration/command success from application-test results — a clean
+`dev` status does not mean tests passed. Required DB/integration scenarios are
+acceptance checks, not a supplement to unit tests: record their exact commands,
+scenario counts, tested SHA and DB target/cleanup separately; green unit tests
+cannot replace a failing or unrun DB scenario. A remote handoff stays IN_PROGRESS
+until the local runner's evidence is linked and all required checks pass (or the
+owner waives a named check).
 
 ## Acceptance
 
-The auditor skill resolves a READY row → card → PR solution/diff and recorded
-checks. Findings may require focused tests; auditors decide based on corrections
-and risk. No routine retest for a docs-only review; full suites need owner request.
-No executor self-acceptance. `audit <ID>` / skill selection is enough; `/audit`
-works only if an interface explicitly maps it to the skill.
+The auditor resolves a READY row → card → PR diff and recorded checks. Findings
+may require focused tests (auditor judgment on corrections and risk); no routine
+retest for docs-only reviews; full suites need owner request. No executor
+self-acceptance. `audit <ID>` selects the skill; `/audit` only where an
+interface maps it.
 
 On successful review, verify integration **before** publishing DONE or removing
-any open row/card:
+any row/card:
 
 1. Confirm the accepted SHA is still the PR head and the merge conditions below
-   hold. Perform the authorized merge; a rejected command, queued merge or closed
-   PR is not integration. Never close a PR as a substitute for merging it.
-2. Read `gh pr view <number> --json state,mergedAt,mergeCommit,headRefOid,baseRefName`.
-   Require `state=MERGED`, non-null `mergedAt` and merge commit, target `dev`, and
-   the accepted head. Fetch `origin` again; prove that merge commit is an ancestor
-   of `origin/dev` with `git merge-base --is-ancestor <merge-sha> origin/dev`.
-   Inspect `git ls-tree origin/dev -- <delivered-file>` for each delivered path,
-   including migrations, and compare the delivered content with the accepted
-   revision (deletions must be absent). A listing alone proves presence, not
-   content equivalence. Resolve any discrepancy before closeout.
-3. Only after those checks, publish one scoped registry update: write
-   `docs/audit/<phase>/<id>.md` with verdict, completion date, accepted source SHA, PR,
-   verified merge commit, integration commands/results, corrections, affected
-   files, checks/limitations and dialogue. Consolidate useful card evidence.
-   Record branch/worktree disposition under [cleanup](#git-and-cleanup); delete
-   only verified-integrated owned artifacts.
-4. Replace the parent task link with the audit link and brief DONE/date summary;
-   remove the ROADMAP row/card and repair inbound active references. An orphan
-   leaves only its audit. When every phase item is accepted, compact its plan to
-   outcomes/audit links, history pointer, accepted SHA and actual commit date.
-5. Synchronize that registry update with local/origin dev as under Tasks.
+   hold; perform the authorized merge. A rejected command, queued merge or
+   closed PR is not integration; never close a PR instead of merging it.
+2. `gh pr view <number> --json state,mergedAt,mergeCommit,headRefOid,baseRefName`:
+   require `state=MERGED`, non-null `mergedAt` and merge commit, base `dev`,
+   accepted head. Fetch `origin`; prove ancestry with
+   `git merge-base --is-ancestor <merge-sha> origin/dev`. For each delivered path
+   (including migrations) check `git ls-tree origin/dev -- <file>` and compare
+   content with the accepted revision (deletions must be absent) — a listing
+   proves presence, not content. Resolve discrepancies before closeout.
+3. Then publish one scoped registry update: `docs/audit/<phase>/<id>.md` with
+   verdict, date, accepted SHA, PR, verified merge commit, integration
+   commands/results, corrections, affected files, checks/limitations, dialogue;
+   consolidate useful card evidence; record branch/worktree disposition under
+   [cleanup](#git-and-cleanup); delete only verified-integrated owned artifacts.
+4. Replace the parent task link with the audit link and a brief DONE/date
+   summary; remove the ROADMAP row/card and repair inbound active references;
+   an orphan leaves only its audit. When every phase item is accepted, compact
+   its plan to outcomes/audit links, history pointer, accepted SHA and commit date.
+5. Synchronize the registry update as under [Tasks](#tasks).
 
-If a merge or verification fails, retain the row/card and resume branch, record
-review success separately from missing integration, and report the actual failure.
-Keep READY only while its required checks remain valid; actionable corrections
-return to IN_PROGRESS, and an inability to proceed follows the BLOCKED rules below.
-Do not publish DONE or delete recovery artifacts. If a premature acceptance was
-already published, correct the registry with the actual integration state and
-resume point; a closed PR never supplies missing merge evidence.
+If merge or verification fails: retain row/card and resume branch, record review
+success separately from missing integration, report the actual failure. Keep
+READY only while its checks remain valid; actionable corrections return to
+IN_PROGRESS; inability to proceed follows the BLOCKED rules. Never publish DONE
+or delete recovery artifacts. If a premature acceptance was published, correct
+the registry to the actual integration state; a closed PR never supplies missing
+merge evidence.
 
-An explicitly authorized direct integration has no PR `mergedAt`: record that
+An explicitly authorized direct integration has no PR `mergedAt`: record the
 exception and authorization, prove accepted ancestry (or reviewed squash/rebase
-equivalence), and verify the fresh dev tree as above. A failed PR merge does not
-itself authorize this alternative.
+equivalence) and verify the fresh dev tree as above. A failed PR merge does not
+by itself authorize this alternative.
 
 Before integrating or deferring solution work, the executor reports the exact
-branch/commit or PR and asks the owner for one choice: merge to dev; continue on
-the current branch/PR; or defer and preserve that resume point. Do not merge,
-push a solution, close the PR or discard the branch until the owner chooses; an
-existing explicit instruction already covering that action counts. If the owner
-has not answered, leave the solution intact and record the pending decision.
-READY is executor evidence and grants nothing. A successful audit acceptance
-**is** merge authorization under the following conditions, and the auditor
-carries it out in the same closeout: the accepted SHA is the PR head; the audit
-was performed on that exact revision with its required checks recorded; the PR
-targets `dev` and has no conflicts or outstanding change requests. Then the
-auditor merges with the normal merge strategy, verifies integration as above,
-then deletes the merged branch and the task's owned worktrees and records the
-merge evidence in `docs/audit/<phase>/<id>.md`.
-Acceptance never authorizes a force-push, a production or schema mutation, or
-publishing unrelated local commits.
+branch/commit or PR and asks the owner to choose: merge to dev; continue on the
+current branch/PR; or defer and preserve the resume point. Do not merge, push a
+solution, close the PR or discard the branch until the owner chooses (an existing
+explicit instruction covering the action counts); unanswered — leave the solution
+intact and record the pending decision. READY grants nothing. A successful audit
+acceptance **is** merge authorization when all of: accepted SHA is the PR head;
+the audit ran on that exact revision with required checks recorded; the PR
+targets `dev` with no conflicts or outstanding change requests. Then the auditor
+merges (normal strategy) in the same closeout, verifies integration, deletes the
+merged branch and the task's owned worktrees, and records the merge evidence in
+`docs/audit/<phase>/<id>.md`. Acceptance never authorizes force-push, production
+or schema mutation, or publishing unrelated commits.
 
-When any condition fails — dirty/unmerged work, an unresolved finding, a target
-other than `dev`, or an owner instruction to hold — the auditor does not merge:
-it records the failing condition in the audit note and asks the owner explicitly.
-Integration and acceptance remain separately recorded facts, but a plain
-accepted task no longer waits for a second decision. For unresolved work, keep
-the task IN_PROGRESS if work can continue; use BLOCKED only for a task/dependency
-that prevents resolution. If the owner chooses to defer, record that choice and
-resume branch/PR without calling it BLOCKED solely for being postponed.
-
-If unresolved acceptance cannot proceed, change IN_PROGRESS/READY to BLOCKED;
-record concrete reason, passed/failed/unrun checks and recommended fix in the
-linked audit diagnostic. Correctable findings return to IN_PROGRESS when work
-can continue. Cleanup/session failures never cause BLOCKED or reopen accepted work.
-Data residue is an acceptance defect if test cleanup is required.
+When any condition fails — dirty/unmerged work, unresolved finding, non-`dev`
+target, or owner hold — the auditor does not merge: it records the failing
+condition in the audit note and asks the owner. Integration and acceptance stay
+separately recorded, but a plain accepted task needs no second decision. Keep
+IN_PROGRESS while work can continue; BLOCKED only for a blocking task/dependency;
+an owner deferral records the choice and resume point, not BLOCKED. Record
+BLOCKED with concrete reason, passed/failed/unrun checks and fix in the linked
+audit diagnostic. Cleanup/session failures never cause BLOCKED or reopen accepted
+work. Required-test data residue is an acceptance defect.
 
 Report briefly: `✅ <ID>: <result>; removed from ROADMAP; archive: <link>;
 checks: <actual results>`. State pending integration/cleanup separately.
 
 ## Owner questions
 
-The owner is a decision source, not a reviewer of routine detail. Ask when a
-decision hits a trigger; otherwise decide, record and proceed. A task that waits
-for the owner is a task that is not moving, so a silent stall is a defect.
+The owner is a decision source, not a routine reviewer. A task waiting on the
+owner is not moving — a silent stall is a defect.
 
 ### When to ask (four triggers)
 
-Ask the owner **before** implementing when the choice:
+Ask **before** implementing when the choice:
 
-1. **Changes money, certificates or infrastructure** - paid services, code-signing
-   or notarization, a new cloud component, a recurring bill, a support burden
-   the owner has to staff. Say the annual cost in the question.
-2. **Alters an accepted contract** - a document in `docs/audit/`, an API shape
-   other modules already consume, a test that encodes an accepted decision, a
-   closed owner decision. Changing what was accepted is the owner's call, even
-   when the change looks locally right.
-3. **Is irreversible once merged** - migrations that drop or rewrite data,
-   deletions, a public API another party depends on, anything that cannot be
-   rolled back by a follow-up commit.
-4. **Changes what a subscriber sees** - user-visible behaviour, install and
-   onboarding friction, warnings a customer must click through, anything that
-   reads as the product's promise.
+1. **Changes money, certificates or infrastructure** — paid services,
+   code-signing/notarization, new cloud components, recurring bills, support
+   burden. State the annual cost in the question.
+2. **Alters an accepted contract** — a `docs/audit/` document, an API shape in
+   use, a test encoding an accepted decision, a closed owner decision.
+3. **Is irreversible once merged** — data-dropping/rewriting migrations,
+   deletions, a public API others depend on, anything a follow-up commit cannot
+   roll back.
+4. **Changes what a subscriber sees** — user-visible behaviour, install/onboarding
+   friction, customer-facing warnings, the product's promise.
 
 Everything else belongs to the executor: naming, internal structure, library
-choice inside one module, test layout, documentation wording. **"It is a
-judgment call" is not a reason to ask** - the triggers are the reason; if none
-of the four applies, decide.
+choice within a module, test layout, wording. "It is a judgment call" is not a
+reason to ask — if none of the four applies, decide.
 
 ### How to ask
 
-- **Short.** 2-3 options and a recommendation per question. Each option one
-  sentence; the consequence that made you recommend it, not a restatement of the
-  option.
-- **Batch related questions** in one message, one option list each, so the owner
-  answers once. Do not split a decision across several messages.
-- **Read the register before asking.** An answered decision is an authorization,
-  not a pending question: check [Q-18](../audit/q/q-18-owner-decisions.md) and
-  the adapted contracts in [BUSINESS_MODULES](../product/BUSINESS_MODULES.md) first.
-  Re-asking what the owner already granted is the failure mode this section exists
-  to prevent - it costs a round trip and reads as not having read the task.
-- **Recommend one**, marked as such. "You decide" without a recommendation is not
-  an answer the owner can act on.
+- **Short:** 2–3 options plus a recommendation; each option one sentence with
+  the consequence behind your recommendation.
+- **Batch related questions** in one message so the owner answers once.
+- **Read the register first.** An answered decision is an authorization: check
+  [Q-18](../audit/q/q-18-owner-decisions.md) and the contracts in
+  [BUSINESS_MODULES](../product/BUSINESS_MODULES.md). Re-asking granted decisions
+  costs a round trip and reads as not having done the task.
+- **Recommend one**, marked as such; "you decide" is not actionable.
 - Ask through the interface the owner reads this session (chat question tool,
-  PR comment, or issue comment), in Russian when the owner writes Russian.
+  PR or issue comment), in Russian when the owner writes Russian.
 
 ### When the owner is unavailable
 
-Do not stall. For a doubt that hits a trigger but must be resolved to continue:
+Do not stall. For a doubt hitting a trigger that must be resolved to continue:
 
-1. **Record it in the task card** in an `## Open doubts` section: the doubt,
-   the options, the chosen default, the reason, and **how to reverse it**. Add the
-   section when the first doubt appears; a card without one has none.
-2. **Proceed on the chosen default** with the smallest reversible step - prefer
-   adding an option over replacing an accepted one.
+1. **Record it in the task card** under `## Open doubts`: doubt, options, chosen
+   default, reason, **how to reverse it**. Add the section at the first doubt.
+2. **Proceed on the smallest reversible step** — prefer adding an option over
+   replacing an accepted one.
 3. **Mark the task as needing owner confirmation** in the PR body. It may reach
-   READY when every check passes, but the auditor names the open doubt in the
-   acceptance note; a question the owner has not answered is never recorded as
-   approved.
-4. **Surface it in the next status report**, together with the other open
-   questions, so the owner closes them in one pass.
+   READY when checks pass, but the auditor names the open doubt in the acceptance
+   note; an unanswered question is never recorded as approved.
+4. **Surface it in the next status report** so the owner closes it in one pass.
 
-An answer given anywhere - chat, PR comment, issue - is written back into the
-registry the same session: ROADMAP question row or task card, with the decision
-ID, the choice, the date and the link to where it was said. A decision that lives
-only in chat is not a decision the next agent can rely on.
+An answer given anywhere (chat, PR/issue comment) is written back into the
+registry the same session — ROADMAP question row or card — with decision ID,
+choice, date and link. A decision living only in chat is not a decision.
 
 ### Owner decisions in a register
 
 When several open questions block as a group, keep them in one register card
-(Q-18 was one, now closed and kept as [history](../audit/q/q-18-owner-decisions.md))
-rather than scattered across task cards: one table row per decision
-with ID, question, recommended default and the task that needs it. Each task card
-names its decision by ID. When the last row is answered, the register moves to
-`docs/audit/` and its ROADMAP row is removed.
+(Q-18 was one, now closed and kept as [history](../audit/q/q-18-owner-decisions.md)):
+one row per decision — ID, question, recommended default, needing task. Each
+card names its decision by ID. When the last row is answered, move the register
+to `docs/audit/` and remove its ROADMAP row.
 
 ## Delegation
 
 Delegate bounded routine edits/inventories/test commands to a cheaper agent when
-its narrow input saves more cost/context than setup and result review. Keep
-judgment and final acceptance with the auditor; do not relay whole documentation
-trees. Assign one outcome, exact HEAD, file ownership and checks; require a compact
-verdict, file refs and counts. Only Codex calls third-party agents; if unavailable,
-use native children under the same scope/guards. Other agents use native children.
-Persist results, then stop/delete owned child sessions immediately. Never delete
-foreign sessions or manipulate session storage; unavailable/already closed sessions
-are housekeeping notes, not task failures. Keep a durable handoff if deletion
-prevents resume. Do not repeatedly investigate missing sessions after owner closure.
+narrow input saves more cost/context than setup and review. Keep judgment and
+final acceptance with the auditor; don't relay whole documentation trees. Assign
+one outcome, exact HEAD, file ownership and checks; require a compact verdict
+with file refs and counts. Only Codex calls third-party agents; otherwise use
+native children under the same scope/guards. Persist results, then stop/delete
+owned child sessions immediately; never touch foreign sessions or session
+storage. Unavailable/closed sessions are housekeeping notes, not task failures;
+keep a durable handoff if deletion prevents resume; don't repeatedly investigate
+missing sessions after owner closure.
 
-Remote assignments include repository and PR URLs. PR body holds solution/source
-and evidence; all instructions, feedback and questions go through PR comments.
-One custodian applies those status comments to fresh ROADMAP/task cards; remote
-branches do not publish competing registry copies.
+Remote assignments include repository and PR URLs. The PR body holds
+solution/evidence; instructions, feedback and questions go through PR comments.
+One custodian applies status comments to fresh ROADMAP/cards; remote branches
+never publish competing registry copies.
 
-An assignment issue is the lane's channel, not its state: status, owner and
-evidence live in ROADMAP and the card. The auditor who accepts the task closes
-that issue during the same closeout, citing the merge commit and the audit link;
-an executor never closes it, because its lane ends at merge. A paused or deferred
-task keeps its issue open with the owner decision and the resume point recorded
-there. Closing an issue without an accepted result, or leaving an accepted one
-open, is a registry defect the next auditor fixes like any other.
+The assignment issue is the lane's channel, not its state: status, owner and
+evidence live in ROADMAP and the card. The accepting auditor closes the issue in
+the same closeout citing merge commit and audit link; an executor never closes
+it. Paused/deferred tasks keep the issue open with the decision and resume point.
+Closing without an accepted result, or leaving an accepted one open, is a
+registry defect the next auditor fixes.
 
-For a task-ID assignment, the remote agent resolves its repository from the
-checkout/card and creates or locates the PR. Ask the owner for a repository or PR
-link only when project context cannot resolve it; never require the owner to find
-the source SHA. Reviewer/executor records the resolved SHA as evidence.
+For a task-ID assignment, the remote agent resolves the repository from the
+checkout/card and creates or locates the PR; ask the owner for a link only when
+project context cannot resolve it, never make the owner find the source SHA.
+Record the resolved SHA as evidence.
 
 ## Tests
 
 Read [test-runner](../../.agents/skills/test-runner/SKILL.md) and
-[tests/AGENTS](../../tests/AGENTS.md) for test work only. Route test runs in the
-delegation order: the [Perch route](../../.agents/skills/perch-task/SKILL.md)
-(`perch run --json`), then the `free-pi` subagent
-(`free-pi/deepseek-v4.1-flash#medium`). Fall to the next route only when the
-previous one is unavailable or fails, and report which route ran;
-permission/HEAD/ownership failures are not bypass permissions.
+[tests/AGENTS](../../tests/AGENTS.md) for test work. Route runs in delegation
+order: [Perch](../../.agents/skills/perch-task/SKILL.md) (`perch run --json`),
+then the `free-pi` subagent (`free-pi/deepseek-v4.1-flash#medium`); fall to the
+next route only when the previous is unavailable or fails, and report which
+route ran — permission/HEAD/ownership failures are not bypass permissions.
 Collect affected paths after enum/import/layout changes. DB scopes use root
 conftest; disable it only for proven no-DB isolation. No broad suite without
-explicit owner request; auditor retest decisions follow Acceptance above.
+explicit owner request; auditor retests follow Acceptance above.
 
 ## Database
 
 Local `localhost:5432/social_manager/test_schema` is authorized for synthetic
 records, setup/reset and reviewed Alembic migrations without repeated permission.
-Resolve effective host/database/`TEST_POSTGRES_URL`/`DB_TEST_SCHEMA`/settings,
-compatibility and exclusive writer ownership first. All worktrees share it:
-tests, migrations, setup and cleanup are sequential. Use the existing claim/lock
-and inspect active runners; no pytest alone does not exclude other writers.
-Preserve unrelated schemas/reference data; back up retained evidence before
-necessary destructive reset. Do not fake migration history or edit applied DDL.
+First resolve effective host/database/`TEST_POSTGRES_URL`/`DB_TEST_SCHEMA`/
+settings, compatibility and exclusive writer ownership. All worktrees share it:
+tests, migrations, setup and cleanup are sequential — use the existing claim/lock
+and inspect active runners ("no pytest alone" does not exclude other writers).
+Preserve unrelated schemas/reference data; back up retained evidence before a
+necessary destructive reset. Never fake migration history or edit applied DDL.
 
 Before branch DB checks, fetch origin and compare the Alembic head derived from
-fresh `origin/dev` (`ScriptDirectory.from_config(cfg).get_heads()` in a dev-based
-checkout) with the resolved shared `test_schema.alembic_version` and the candidate's
-migration graph. Record the SHAs and observed revisions. An unexplained shared
-schema/dev mismatch is a baseline/integration failure, not evidence of a branch
-defect: stop bootstrap, identify the missing integration or leftover migration,
-and reconcile under exclusive ownership and existing migration permissions.
-Never stamp past the mismatch, copy unmerged migrations into dev, or reset another
-run's schema to make a branch pass. An explicitly assigned task-isolated schema
-may run the candidate migration cycle; record its dev baseline and expected task
-head separately. Before releasing a shared target, verify its agreed dev baseline
-again or record the explicit ownership handoff for a still-active task head.
+fresh `origin/dev` (`ScriptDirectory.from_config(cfg).get_heads()` in a
+dev-based checkout) with the shared `test_schema.alembic_version` and the
+candidate's graph; record SHAs and observed revisions. An unexplained shared
+schema/dev mismatch is a baseline/integration failure, not a branch defect: stop
+bootstrap, find the missing integration or leftover migration, reconcile under
+exclusive ownership. Never stamp past a mismatch, copy unmerged migrations into
+dev, or reset another run's schema to make a branch pass. An assigned
+task-isolated schema may run the candidate cycle; record its dev baseline and
+expected task head separately. Before releasing a shared target, re-verify the
+agreed dev baseline or record the ownership handoff for a still-active task head.
 
-After success/failure/interruption, stop surviving processes, remove all synthetic
-records (including separately committed fixtures), and verify none remain.
-Rollback alone is insufficient. Take a schema inventory (relations, types,
-functions, triggers and `alembic_version`) before and after every run and diff
-it; never accept a spot check such as "existing triggers still present" as
-evidence of a clean run. A new relation, type, permission/`model_types` row or a
-revision the target branch does not contain is a leftover, even when no test
-failed. Diffing also proves a run left nothing behind in a schema it did not own. Never delete another active run's data; wait for
-exclusive ownership. Report partial/interrupted runs honestly and resolve unknown
-target/data state before retry. Preserve migration metadata/non-test reference rows.
-Public migrations require full prior validation of the same revisions/behavior on
-test_schema and separately authorized apply. Public test records require explicit
-Superuser approval for that scope; a DB role/agent identity does not grant approval.
-Use resolved schemas/Alembic context, qualified DDL and existing manager/session
-conventions; no ad-hoc engines, runtime DDL or unsafe search-path assumptions.
+After any run (success/failure/interruption): stop surviving processes, remove
+all synthetic records (including separately committed fixtures) and verify none
+remain — rollback alone is insufficient. Take a schema inventory (relations,
+types, functions, triggers, `alembic_version`) before and after every run and
+diff it; a spot check is not evidence. A new relation, type, permission or
+`model_types` row, or a revision the target branch lacks, is a leftover even
+when no test failed; diffing also proves nothing was left in a schema the run did
+not own. Never delete another active run's data — wait for exclusive ownership.
+Report partial/interrupted runs honestly and resolve unknown state before retry.
+Preserve migration metadata and non-test reference rows. Public migrations
+require full prior validation of the same revisions/behavior on test_schema and
+separately authorized apply. Public test records require explicit Superuser
+approval for that scope; a DB role does not grant approval. Use resolved
+schemas/Alembic context, qualified DDL and existing manager/session conventions;
+no ad-hoc engines, runtime DDL or unsafe search-path assumptions.
 
 ## Migration numbering and parallel tasks
 
-Task cards describe the migration a task needs; they do not hold a number in
-advance. The number is metadata about integration order, not part of the design,
-so it is resolved once, at merge, instead of being negotiated between agents.
+Task cards describe the needed migration but hold no number in advance — the
+number is integration-order metadata, resolved once at merge, not negotiated.
 
-1. **No pre-reservation.** A task writes its migration with a stable placeholder
-   revision (a descriptive string such as `p19t04_document_approval`) and sets
-   `down_revision` to the **live** head: run
-   `ScriptDirectory.from_config(cfg).get_heads()` on the current `dev`, never rely
-   on a remembered number or a file listing read earlier in the session (R-20 in
+1. **No pre-reservation.** Write the migration with a stable placeholder
+   revision (e.g. `p19t04_document_approval`) and `down_revision` set to the
+   **live** head: run `ScriptDirectory.from_config(cfg).get_heads()` on current
+   `dev`, never a remembered number or earlier file listing (R-20 in
    [BUSINESS_MODULES](../product/BUSINESS_MODULES.md)).
 2. **Numbering happens at merge.** Whoever integrates assigns the next free
-   numeric revision and rewrites `down_revision` in the same commit. The body of
-   the migration does not change. The audit note records the number that landed,
-   so the history says which revision is real.
-3. **Parallel tasks chain.** Two tasks that both follow the current head do not
-   both take it. The first integrated takes the next number after the head; the
-   second takes the one after that and points at the first. Chain order is
-   integration order, not claim order.
-4. **A dependent task does not wait for a number.** If task B needs task A's
-   schema, B records the dependency in its card, builds against A's placeholder
-   revision locally, and integrates after A. It never polls the auditor for a
-   number, and no agent allocates one it cannot see in `dev`.
-5. **Cycle evidence is earned once, at the graph that lands.** Run upgrade,
-   empty downgrade, refused downgrade with data and a single-head check on the
-   task's own isolated schema, against the chain that will actually be merged.
-   A renumber that changes only `revision`/`down_revision` — not the operation
-   body — does not require a fresh cycle; re-run only the head check.
+   numeric revision and rewrites `down_revision` in the same commit; the body
+   does not change. The audit note records the landed number.
+3. **Parallel tasks chain.** First integrated takes the next number after the
+   head; the second chains after the first. Chain order is integration order,
+   not claim order.
+4. **A dependent task does not wait for a number.** Task B records the
+   dependency in its card, builds against A's placeholder locally, integrates
+   after A; it never polls for a number, and no agent allocates one it cannot
+   see in `dev`.
+5. **Cycle evidence is earned once, at the landing graph.** Run upgrade, empty
+   downgrade, refused downgrade with data and single-head check on the task's
+   isolated schema against the chain that will merge. A renumber touching only
+   `revision`/`down_revision` needs only a fresh head check.
 6. **Public is not a second rehearsal.** [Database](#database) already requires
-   full validation of the same revisions on an isolated schema before any public
-   apply. A green isolated cycle is that validation, so `public` is a separate
-   authorized deployment action, not an extra test round.
+   full validation on an isolated schema before any public apply; a green
+   isolated cycle is that validation — `public` is a separate authorized
+   deployment action.
 
-An allocation note under `docs/tasks/` stays useful only while a task is open;
-it records the placeholder and its dependency, not a promise of a future number.
-The [reservation register](../archive/tasks/p19-t04-migration-allocation.md) is history, not
-a lock file.
+An allocation note under `docs/tasks/` matters only while the task is open; it
+records the placeholder and dependency, not a promised number. The
+[reservation register](../archive/tasks/p19-t04-migration-allocation.md) is
+history, not a lock file.
 
 ## State transitions
 
-A state-changing method is not safe for concurrent callers merely because it
-exists and passes a single-threaded test. Read-then-write transitions need an
-atomic compare-and-set or a row lock; a pre-check against unique columns does not
-protect concurrent creators, only a database uniqueness constraint does. Approval
-must be bound to actor and payload, not to a writable status field.
+A state-changing method is not concurrency-safe just because it exists and
+passes a single-threaded test. Read-then-write transitions need an atomic
+compare-and-set or row lock; a pre-check against unique columns protects nothing
+— only a database uniqueness constraint does. Approval must bind to actor and
+payload, not to a writable status field.
 
 When a task delivers such a mechanism, its acceptance names the atomicity and
 idempotency guarantee actually provided, and the audit records any remaining
-race or duplicate window. Do not describe a preview, helper or unreachable
-transition path as an execution mechanism. Loopholes found in a mechanism belong
-in the owning task card and its acceptance criteria, not in shared rules.
+race/duplicate window. Never describe a preview, helper or unreachable path as
+an execution mechanism. Loopholes belong in the owning task card and its
+acceptance criteria, not in shared rules.
 
 ## Git and cleanup
 
 ### Who creates and who removes a branch
 
-Executor-created branches are task-scoped and short-lived. The agent that creates
-a branch or worktree owns its removal; a branch without an owner is a defect, not
-a leftover to be rediscovered later.
+Executor branches are task-scoped and short-lived. The creator owns removal; a
+branch without an owner is a defect.
 
 | Artifact | Created by | Removed by |
 | --- | --- | --- |
-| Task branch / worktree | the executor of that task, named on the task card | the auditor at acceptance, which is also the merge authorization; the executor if it closes the task itself |
-| Merged task branch after integration | as above | whoever integrates: the merge owner deletes it immediately after the merge |
+| Task branch / worktree | the task's executor, named on the card | the auditor at acceptance (= merge authorization); the executor if it closes the task itself |
+| Merged task branch | as above | whoever integrates, immediately after the merge |
 | Audit/review branch | the auditor | the auditor, once the audit commit is on `dev` |
-| Explicit recovery backup (`backup/*`) | the agent naming it | owner decision only, recorded on the task card |
+| Recovery backup (`backup/*`) | the agent naming it | owner decision only, recorded on the card |
 
 Acceptance, integration and housekeeping are recorded as separate facts, but a
-plain accepted task is no longer parked for a second decision: the audit verdict
+plain accepted task is not parked for a second decision: the audit verdict
 authorizes the merge, and the merging auditor deletes the branch in the same
-closeout. A merged branch that outlives its integration has no remaining purpose.
-Deleting a branch whose commits are already in `dev` never drops work; it removes
+closeout. Deleting a branch whose commits are in `dev` drops no work — it removes
 a second name for the same commit.
 
 ### Closeout and acceptance duties
 
-Review scoped diffs before local task commits. Preserve foreign staging/edits.
-Integration/push/deployment requires applicable owner authorization. At closeout,
-inventory `git branch --no-merged origin/dev`, `git worktree list` and
-`git status`; for each candidate verify task/status/owner, HEAD, dirty and
-untracked files, and whether its commits are integrated. Age or a repeated HEAD
-alone does not prove a workspace is unused.
+Review scoped diffs before local task commits; preserve foreign staging/edits.
+Integration/push/deployment requires applicable owner authorization. At closeout
+inventory `git branch --no-merged origin/dev`, `git worktree list`, `git status`;
+per candidate verify task/status/owner, HEAD, dirty/untracked files and whether
+commits are integrated — age or a repeated HEAD alone proves nothing.
 
 Remove an owned, clean worktree when its owner confirms no active work remains.
-If its commits are unmerged, retain the branch and record branch/HEAD in the task
-card as the resume point. After verified integration (ancestry, or reviewed
-equivalent squash/rebase patch), remove the worktree and merged task branch.
-If files are dirty/untracked, ownership or activity is unclear, or task work
-remains active, preserve the workspace and report its path, task, branch/HEAD,
-file state and next owner action. Never discard work or force-delete to hide loss.
-Preserve foreign branches and explicit recovery backups. Record removed and
-retained candidates in closeout; acceptance, integration and housekeeping remain
-separate facts.
+Unmerged commits: retain the branch, record branch/HEAD on the card as resume
+point. After verified integration (ancestry or reviewed equivalent squash/rebase):
+remove worktree and merged branch. Dirty/untracked, unclear ownership/activity,
+or active work: preserve the workspace and report path, task, branch/HEAD, state
+and next owner action. Never discard work or force-delete to hide loss. Preserve
+foreign branches and explicit backups. Record removed and retained candidates.
 
-The acceptance step above adds one obligation: before removing the ROADMAP row,
-the auditor checks the accepting task's branches and worktrees, deletes those
-already integrated, and records in `docs/audit/<phase>/<id>.md` either the completed
-removal or the retained artifacts and their owner. A closed task with a live,
-integrated branch is an acceptance follow-up, not a new task.
+Acceptance adds one obligation: before removing the ROADMAP row, the auditor
+checks the task's branches/worktrees, deletes those already integrated, and
+records in `docs/audit/<phase>/<id>.md` either the completed removal or the
+retained artifacts and their owner. A closed task with a live integrated branch
+is an acceptance follow-up, not a new task.
 
 ### Periodic sweep
 
-A branch accrues only while two rules are broken at once: the executor did not
-clean up, and no auditor noticed. `git branch --no-merged origin/dev` and
-`git worktree list` are the authoritative inventory — never a hand-kept list.
-
-Sweep cadence: any agent may sweep before claiming a new task, and the owner may
-request one at any time. A sweep is read-only until it proves, per branch, that
-the commits are ancestors of `origin/dev` (or a reviewed equivalent
-squash/rebase) and the worktree is clean. Branches failing either test are
-reported with their task ID and next owner action, never deleted. A sweep is
-housekeeping: it cannot reopen or block a task, and deleting an integrated branch
-is not a claim about acceptance.
-
-Branches retained for a BLOCKED or deferred task are expected and are not
-sweep failures — the task card names them as the resume point.
-
+Branches accrue only when the executor skipped cleanup and no auditor noticed.
+`git branch --no-merged origin/dev` and `git worktree list` are the authoritative
+inventory — never a hand-kept list. Any agent may sweep before claiming a new
+task; the owner may request one anytime. A sweep is read-only until, per branch,
+it proves the commits are ancestors of `origin/dev` (or reviewed equivalent) and
+the worktree is clean; failing branches are reported with task ID and next owner
+action, never deleted. A sweep is housekeeping: it cannot reopen or block a task,
+and deleting an integrated branch is not a statement about acceptance. Branches
+retained for BLOCKED/deferred tasks are expected, not sweep failures — the card
+names them as the resume point.

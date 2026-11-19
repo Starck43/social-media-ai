@@ -30,6 +30,9 @@ _OUTCOMES = frozenset({"collected", "empty", "error", "auth_required", "rate_lim
 _INT_KEYS = ("items", "new_items", "analyzed", "actions")
 _RAW_KEYS = ("raw_total", "raw_selected", "raw_processed")
 _FLAG_KEYS = ("collection_error", "staged_error", "error")
+ACTION_JOB_TYPES = frozenset({"file_workspace.action"})
+_ACTION_NAMES = frozenset({"catalog_search", "catalog_scan_step", "content_read_prep"})
+_ACTION_PHASES = frozenset({"validating", "running", "completing", "done", "cancelled", "stopped"})
 
 
 class ProgressStopped(RuntimeError):
@@ -106,6 +109,37 @@ def build_snapshot(
         "current": items[position]["name"] if position < total else None,
         "first": first,
         "items": items[first : first + MAX_ITEMS],
+        "updated_at": (now or datetime.now(timezone.utc)).isoformat(),
+    }
+
+
+def build_action_snapshot(
+    action: str,
+    *,
+    total: int,
+    completed: int,
+    processed_items: int = 0,
+    processed_bytes: int = 0,
+    phase: str = "running",
+    budget_exhausted: bool = False,
+    now: Optional[datetime] = None,
+) -> dict[str, Any]:
+    """Sanitized bounded progress snapshot for queued file-workspace actions.
+
+    Only static action/phase names and non-negative counters are recorded;
+    paths, file names, tokens and raw error texts never enter `jobs.result`.
+    """
+    safe_total = _count(total) or 0
+    safe_completed = min(_count(completed) or 0, safe_total)
+    return {
+        "kind": "file_workspace_action",
+        "action": action if type(action) is str and action in _ACTION_NAMES else "unknown",
+        "phase": phase if type(phase) is str and phase in _ACTION_PHASES else "running",
+        "total": safe_total,
+        "completed": safe_completed,
+        "processed_items": _count(processed_items) or 0,
+        "processed_bytes": _count(processed_bytes) or 0,
+        "budget_exhausted": bool(budget_exhausted),
         "updated_at": (now or datetime.now(timezone.utc)).isoformat(),
     }
 
@@ -197,6 +231,44 @@ class ProgressSession:
             written = await self._writer(self.claim, snapshot)
         except ProgressStopped:
             raise
+        except Exception as error:  # noqa: BLE001 — progress must never fail a run
+            logger.warning(
+                "job_progress_write_failed job_id=%s error_kind=%s",
+                getattr(self.claim, "job_id", None),
+                type(error).__name__[:40],
+            )
+            return
+        if written is False:
+            self.lost = True
+            raise ProgressStopped()
+
+    async def report_action(
+        self,
+        action: str,
+        *,
+        total: int,
+        completed: int,
+        processed_items: int = 0,
+        processed_bytes: int = 0,
+        phase: str = "running",
+        budget_exhausted: bool = False,
+    ) -> None:
+        """Write a sanitized action progress snapshot and stop if cancelled/lost."""
+        if self.lost:
+            raise ProgressStopped()
+        if getattr(self.claim, "job_type", None) not in ACTION_JOB_TYPES:
+            return
+        snapshot = build_action_snapshot(
+            action,
+            total=total,
+            completed=completed,
+            processed_items=processed_items,
+            processed_bytes=processed_bytes,
+            phase=phase,
+            budget_exhausted=budget_exhausted,
+        )
+        try:
+            written = await self._writer(self.claim, snapshot)
         except Exception as error:  # noqa: BLE001 — progress must never fail a run
             logger.warning(
                 "job_progress_write_failed job_id=%s error_kind=%s",
@@ -309,6 +381,30 @@ async def begin_phase(phase: str) -> None:
         await session.begin_phase(phase)
 
 
+async def report_action(
+    action: str,
+    *,
+    total: int,
+    completed: int,
+    processed_items: int = 0,
+    processed_bytes: int = 0,
+    phase: str = "running",
+    budget_exhausted: bool = False,
+) -> None:
+    """Handler hook for cooperative cancellation and progress on file actions."""
+    session = _current.get()
+    if session is not None:
+        await session.report_action(
+            action,
+            total=total,
+            completed=completed,
+            processed_items=processed_items,
+            processed_bytes=processed_bytes,
+            phase=phase,
+            budget_exhausted=budget_exhausted,
+        )
+
+
 async def pipeline_checkpoint(checkpoint: dict) -> None:
     """Handler hook for durable, claim-fenced composed-stage receipts."""
     session = _current.get()
@@ -369,5 +465,43 @@ def read_snapshot(result: Any, attempts: Any) -> dict[str, Any] | None:
         "first": first,
         "current": _name(current, "") if type(current) is str else None,
         "items": items,
+        "updated_at": progress.get("updated_at") if type(progress.get("updated_at")) is str else None,
+    }
+
+
+def read_action_snapshot(result: Any, attempts: Any) -> dict[str, Any] | None:
+    """Validated file-workspace action progress of the current attempt, or None."""
+    if not isinstance(result, dict):
+        return None
+    progress = result.get("progress")
+    if (
+        not isinstance(progress, dict)
+        or type(attempts) is not int
+        or progress.get("attempt") != attempts
+        or progress.get("kind") != "file_workspace_action"
+    ):
+        return None
+    action = progress.get("action")
+    phase = progress.get("phase")
+    total, completed = _count(progress.get("total")), _count(progress.get("completed"))
+    if (
+        type(action) is not str
+        or action not in _ACTION_NAMES
+        or type(phase) is not str
+        or phase not in _ACTION_PHASES
+        or total is None
+        or completed is None
+        or completed > total
+    ):
+        return None
+    return {
+        "kind": "file_workspace_action",
+        "action": action,
+        "phase": phase,
+        "total": total,
+        "completed": completed,
+        "processed_items": _count(progress.get("processed_items")) or 0,
+        "processed_bytes": _count(progress.get("processed_bytes")) or 0,
+        "budget_exhausted": bool(progress.get("budget_exhausted")),
         "updated_at": progress.get("updated_at") if type(progress.get("updated_at")) is str else None,
     }

@@ -31,7 +31,9 @@ jobs = JobManager()
 
 
 _FAILURE_MESSAGE = "Не удалось завершить обработку. Подробности сохранены в задаче."
-_LOG_JOB_TYPES = frozenset({"collect", "digest", "prune", "analyze", "learn", "reflect", "comms.email.sync"})
+_LOG_JOB_TYPES = frozenset(
+    {"collect", "digest", "prune", "analyze", "learn", "reflect", "comms.email.sync", "file_workspace.action"}
+)
 
 
 class JobOutcomePersistenceError(RuntimeError):
@@ -106,6 +108,7 @@ def _job_label(job_type: str) -> str:
         "learn": "Обучение",
         "reflect": "Рефлексия",
         "comms.email.sync": "Синхронизация почты",
+        "file_workspace.action": "Операция с файлами",
     }
     return labels.get(job_type, job_type)
 
@@ -565,6 +568,10 @@ async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, A
         from app.jobs.job_handlers.calendar_sync import handle_calendar_sync
 
         handler = handle_calendar_sync
+    if handler is None and job.job_type == "file_workspace.action":
+        from app.jobs.job_handlers.file_workspace import handle_file_workspace_action
+
+        handler = handle_file_workspace_action
     if not handler:
         # A missing handler is not a transient execution failure. Stop this row
         # for operator inspection instead of spending its remaining attempts.

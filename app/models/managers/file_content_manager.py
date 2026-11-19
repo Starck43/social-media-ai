@@ -51,6 +51,7 @@ class FileContentManager:
                         FileCatalogObject.connection_id == connection_id,
                         FileCatalogObject.root_key == root_key,
                         FileCatalogObject.kind == "file",
+                        FileCatalogObject.lifecycle_state == "present",
                     )
                 )
                 if row is None or not all(

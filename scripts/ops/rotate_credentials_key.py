@@ -67,6 +67,7 @@ GENERATIONS = {
             "0157",
             "p12t15_policy_audit",
             "p8t51_job_type_width",
+            "p12t12_s1_lifecycle",
         ),
         (True, True, True),
     ),
@@ -83,6 +84,7 @@ VERSIONED_GENERATIONS = frozenset(
         "0157",
         "p12t15_policy_audit",
         "p8t51_job_type_width",
+        "p12t12_s1_lifecycle",
     )
 )
 

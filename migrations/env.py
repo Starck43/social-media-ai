@@ -112,6 +112,8 @@ def on_version_apply(
         "0155",
         # Restrictive folder policy audit adds no generic resource grants.
         "p12t15_policy_audit",
+        # Catalog lifecycle honesty adds no generic resource grants.
+        "p12t12_s1_lifecycle",
     }:
         return
     from scripts.migrations.register_model_types import register_model_types

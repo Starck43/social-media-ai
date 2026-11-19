@@ -160,7 +160,15 @@ async def _owned(tenant_id, actor_id, connection_id):
         yield session, connection, policy, _key(root)
 
 
+_LIFECYCLE_FRESHNESS = {
+    "present": "metadata_observed",
+    "missing": "missing_in_last_scan",
+    "stale": "stale_parent_missing",
+}
+
+
 def _object_dict(row):
+    lifecycle_state = getattr(row, "lifecycle_state", "present")
     return {
         "id": row.id,
         "name": row.name,
@@ -169,7 +177,10 @@ def _object_dict(row):
         "observed_at": row.observed_at,
         "observation_number": row.observation_number,
         "identity_kind": "path",
-        "freshness": "metadata_observed",
+        "freshness": _LIFECYCLE_FRESHNESS.get(lifecycle_state, "metadata_observed"),
+        "lifecycle_state": lifecycle_state,
+        "reconciled_at": getattr(row, "reconciled_at", None),
+        "missing_since": getattr(row, "missing_since", None),
         "content_version_known": False,
         "content_available": False,
         "original_open_available": False,
@@ -230,7 +241,7 @@ class FileCatalogManager:
             )
 
     async def admit_page(self, *, tenant_id, actor_id, connection_id, ticket, page, _scan_claim=None):
-        """Atomically admit one trusted metadata page, never infer missing/deleted.
+        """Atomically admit one trusted metadata page; reconcile absence only on exhausted scan.
 
         DiskPage carries no stable ID/version/size. An unchanged replay updates
         no observation count and downloads no bytes. This is an internal adapter
@@ -334,9 +345,16 @@ class FileCatalogManager:
             if count + sum(path not in existing for path in prepared) > MAX_OBJECTS:
                 raise CatalogCapacityError("catalog_quota")
             created = changed = 0
+            scan_token = scan.scan_token if scan is not None else None
             for path, item in prepared.items():
                 row = existing.get(path)
-                if row is not None and row.observed_at >= ticket.issued_at:
+                if row is not None and (
+                    row.observed_at > ticket.issued_at
+                    or (
+                        row.observed_at == ticket.issued_at
+                        and (scan_token is None or row.last_scan_token == scan_token)
+                    )
+                ):
                     continue
                 different = row is None or (row.name, row.kind) != (item.name, item.kind)
                 if row is None:
@@ -351,6 +369,10 @@ class FileCatalogManager:
                         kind=item.kind,
                         observation_number=1,
                         observed_at=ticket.issued_at,
+                        lifecycle_state="present",
+                        reconciled_at=ticket.issued_at if scan_token is not None else None,
+                        missing_since=None,
+                        last_scan_token=scan_token,
                     )
                     session.add(row)
                     await session.flush()
@@ -367,6 +389,11 @@ class FileCatalogManager:
                         item.kind,
                         ticket.issued_at,
                     )
+                    row.lifecycle_state = "present"
+                    row.missing_since = None
+                    if scan_token is not None:
+                        row.last_scan_token = scan_token
+                        row.reconciled_at = ticket.issued_at
                 if different:
                     session.add(
                         FileCatalogObservation(
@@ -394,6 +421,16 @@ class FileCatalogManager:
                     scan.state = "exhausted"
                 else:
                     scan.next_offset, scan.state = page.next_offset, "partial"
+                if scan.state == "exhausted":
+                    await self._reconcile_exhausted_scan(
+                        session,
+                        tenant_id=tenant_id,
+                        connection_id=connection_id,
+                        root_key=root_key,
+                        connection_config=connection.config,
+                        scan=scan,
+                        reconciled_at=ticket.issued_at,
+                    )
                 scan.error_code = scan.lease_token = scan.lease_until = None
                 result["scan"] = {
                     "state": scan.state,
@@ -402,10 +439,75 @@ class FileCatalogManager:
                 }
             return result
 
-    async def list_page(self, *, tenant_id, actor_id, connection_id, query="", after=0, limit=50):
+    async def _reconcile_exhausted_scan(
+        self,
+        session,
+        *,
+        tenant_id: int,
+        connection_id: int,
+        root_key: str,
+        connection_config: dict,
+        scan: FileCatalogScan,
+        reconciled_at: datetime,
+    ) -> None:
+        """Mark unobserved visible entries in a completely scanned scope as missing/stale.
+
+        Called only inside the locked connection transaction when a scan ends in
+        ``exhausted`` state. Partial, errored, limited, or policy-denied paths are
+        never marked absent.
+        """
+        prefix = scan.folder.rstrip("/") + "/"
+        rows = (
+            await session.scalars(
+                select(FileCatalogObject)
+                .where(
+                    FileCatalogObject.tenant_id == tenant_id,
+                    FileCatalogObject.connection_id == connection_id,
+                    FileCatalogObject.root_key == root_key,
+                    FileCatalogObject.path.startswith(prefix, autoescape=True),
+                    _visible_paths(FileCatalogObject.path, connection_config),
+                )
+                .with_for_update()
+            )
+        ).all()
+        recursive = scan.traversal is not None
+        present_dirs = set()
+        if not recursive:
+            for row in rows:
+                rel = row.path[len(prefix) :]
+                if "/" not in rel and row.kind == "dir" and row.last_scan_token == scan.scan_token:
+                    present_dirs.add(row.path)
+        for row in rows:
+            if row.last_scan_token == scan.scan_token:
+                row.reconciled_at = reconciled_at
+                continue
+            if row.observed_at > reconciled_at:
+                continue
+            rel = row.path[len(prefix) :]
+            if not rel:
+                continue
+            if recursive or "/" not in rel:
+                target_state = "missing"
+            else:
+                top_dir = prefix + rel.split("/", 1)[0]
+                if top_dir in present_dirs:
+                    continue
+                if row.lifecycle_state == "missing":
+                    row.reconciled_at = reconciled_at
+                    continue
+                target_state = "stale"
+            if row.lifecycle_state != target_state:
+                row.lifecycle_state = target_state
+                if row.missing_since is None:
+                    row.missing_since = reconciled_at
+            row.reconciled_at = reconciled_at
+
+    async def list_page(self, *, tenant_id, actor_id, connection_id, query="", after=0, limit=50, lifecycle=None):
         _bounded_int(after, 0, 2_147_483_647)
         _bounded_int(limit, 1, MAX_PAGE)
         if not isinstance(query, str) or len(query) > 200 or any(ord(c) < 32 for c in query):
+            raise CatalogInputError("invalid_query")
+        if lifecycle is not None and lifecycle not in ("present", "missing", "stale"):
             raise CatalogInputError("invalid_query")
         async with _owned(tenant_id, actor_id, connection_id) as (session, connection, _, root_key):
             stmt = select(FileCatalogObject).where(
@@ -415,6 +517,8 @@ class FileCatalogManager:
                 FileCatalogObject.id > after,
                 _visible_paths(FileCatalogObject.path, connection.config),
             )
+            if lifecycle is not None:
+                stmt = stmt.where(FileCatalogObject.lifecycle_state == lifecycle)
             if query.strip():
                 stmt = stmt.where(FileCatalogObject.name_search.contains(_search_key(query.strip()), autoescape=True))
             rows = (await session.scalars(stmt.order_by(FileCatalogObject.id).limit(limit))).all()
@@ -473,6 +577,7 @@ class FileCatalogManager:
                     FileCatalogObject.root_key == root_key,
                     FileCatalogObject.id == object_id,
                     FileCatalogObject.kind == "file",
+                    FileCatalogObject.lifecycle_state == "present",
                     _visible_paths(FileCatalogObject.path, connection.config),
                 )
             )

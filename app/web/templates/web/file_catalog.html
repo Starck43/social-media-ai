@@ -31,6 +31,15 @@
                 <label for="file-query">Название файла или папки</label>
                 <input id="file-query" name="q" value="{{ q }}" maxlength="200" placeholder="Например, договор" class="{{ control() }}">
             </div>
+            <div>
+                <label for="file-lifecycle">Состояние</label>
+                <select id="file-lifecycle" name="lifecycle" class="{{ control() }}">
+                    <option value="" {% if not lifecycle %}selected{% endif %}>Все записи</option>
+                    <option value="present" {% if lifecycle == 'present' %}selected{% endif %}>В наличии</option>
+                    <option value="missing" {% if lifecycle == 'missing' %}selected{% endif %}>Отсутствуют</option>
+                    <option value="stale" {% if lifecycle == 'stale' %}selected{% endif %}>Устаревшие</option>
+                </select>
+            </div>
             <button type="submit" class="ui-control">Найти</button>
         </form>
         <p class="file-catalog-note">Поиск только по сохранённым названиям. Обновление с диска, открытие оригинала и анализ пока недоступны.</p>
@@ -39,7 +48,7 @@
     <a class="ui-control" href="/app/knowledge/folders/{{ selected.id }}/permissions">Доступ к папкам</a>
     <section class="ui-card" aria-labelledby="file-results-heading">
         <div class="file-catalog-results-heading">
-            <h2 id="file-results-heading">{% if q %}Результаты поиска{% else %}Файлы и папки{% endif %}</h2>
+            <h2 id="file-results-heading">{% if q or lifecycle %}Результаты поиска{% else %}Файлы и папки{% endif %}</h2>
             <span class="file-catalog-note">По 50 записей на странице</span>
         </div>
         {% if files %}
@@ -50,20 +59,20 @@
                 <div class="file-catalog-item">
                     <a href="/app/knowledge/files/{{ file.id }}?connection_id={{ selected.id }}" class="file-catalog-name">{{ file.name }}</a>
                     <p class="file-catalog-path">{{ file.path }}</p>
-                    <p class="file-catalog-note">{{ 'Папка' if file.kind == 'dir' else 'Файл' }} · Сведения получены {{ file.observed_at|human_dt(tz=_tz) }}</p>
+                    <p class="file-catalog-note">{{ 'Папка' if file.kind == 'dir' else 'Файл' }} · Сведения получены {{ file.observed_at|human_dt(tz=_tz) }}{% if file.get('lifecycle_state', 'present') == 'missing' %} · Не найден при полном обходе{% if file.get('missing_since') %} {{ file.missing_since|human_dt(tz=_tz) }}{% endif %}{% elif file.get('lifecycle_state', 'present') == 'stale' %} · Родительская папка не найдена при обходе{% if file.get('missing_since') %} {{ file.missing_since|human_dt(tz=_tz) }}{% endif %}{% elif file.get('reconciled_at') %} · Проверен обходом {{ file.reconciled_at|human_dt(tz=_tz) }}{% endif %}</p>
                 </div>
-                <span class="file-catalog-tag">Содержимое не сохранено</span>
+                <span class="file-catalog-tag" data-file-lifecycle="{{ file.get('lifecycle_state', 'present') }}">{% if file.get('lifecycle_state', 'present') == 'missing' %}Отсутствует на диске{% elif file.get('lifecycle_state', 'present') == 'stale' %}Устарело{% else %}Содержимое не сохранено{% endif %}</span>
             </li>
             {% endfor %}
         </ul>
         {% else %}
         <div class="file-catalog-empty" data-file-catalog-empty>
-            <h3>{% if q or after %}Ничего не найдено{% else %}В каталоге пока нет записей{% endif %}</h3>
-            <p>{% if q or after %}Нет доступных сохранённых записей на этой странице. Измените запрос или вернитесь к началу списка.{% else %}Это не означает, что папка пуста: её содержимое здесь ещё не сохранено. Доступ к оригиналам не проверяется при просмотре каталога.{% endif %}</p>
+            <h3>{% if q or after or lifecycle %}Ничего не найдено{% else %}В каталоге пока нет записей{% endif %}</h3>
+            <p>{% if q or after or lifecycle %}Нет доступных сохранённых записей на этой странице. Измените запрос или вернитесь к началу списка.{% else %}Это не означает, что папка пуста: её содержимое здесь ещё не сохранено. Доступ к оригиналам не проверяется при просмотре каталога.{% endif %}</p>
         </div>
         {% endif %}
         <nav class="file-catalog-paging" aria-label="Страницы каталога">
-            {% if q or after %}<a href="/app/knowledge/files?connection_id={{ selected.id }}" class="ui-control">К началу списка</a>{% endif %}
+            {% if q or after or lifecycle %}<a href="/app/knowledge/files?connection_id={{ selected.id }}" class="ui-control">К началу списка</a>{% endif %}
             {% if next_url %}<a href="{{ next_url }}" class="ui-control" rel="next">Следующая страница →</a>{% endif %}
         </nav>
     </section>

@@ -146,11 +146,9 @@ const report = { cases: [], interactions: [], failures: [] };
               );
             }
             assert.equal(
-              await f.page
-                .locator(".shell-navbar")
-                .evaluate((el) => getComputedStyle(el).backgroundColor),
-              "rgba(0, 0, 0, 0)",
-              "navbar only has a separator, no distinct fill",
+              await f.page.locator(".shell-navbar").count(),
+              0,
+              "section navigation belongs to the sidebar",
             );
             const metrics = await f.page.evaluate(() => ({
               w: document.documentElement.scrollWidth,

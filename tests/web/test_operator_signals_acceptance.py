@@ -52,6 +52,9 @@ from app.models import PlatformRole, Tenant, User
 from app.models.managers.tenant_manager import TenantUserManager
 from app.types import PlatformRoleType, WorkspaceRoleType
 from app.web import billing as billing_web
+from tests.p11_t12_audit_cleanup import purge_tenant_audit_events  # noqa: E402
+from tests.shared.account_cleanup import purge_account  # noqa: E402
+from tests.shared.payer_cleanup import purge_task_payer_consents  # noqa: E402
 from tests.web.test_web_settings import PASSWORD, _client, _csrf, _login, _name
 
 pytestmark = pytest.mark.tenancy
@@ -129,9 +132,7 @@ async def _platform_user(role: PlatformRoleType, *, is_active: bool = True) -> U
         )
 
 
-async def _join(
-    user: User, tenant_id: int, role: WorkspaceRoleType = WorkspaceRoleType.OWNER
-) -> None:
+async def _join(user: User, tenant_id: int, role: WorkspaceRoleType = WorkspaceRoleType.OWNER) -> None:
     with fixture_scope():
         await TenantUserManager().add_web_member(
             tenant_id=tenant_id,
@@ -142,8 +143,14 @@ async def _join(
 
 async def _cleanup(users: list[User], tenants: list[Tenant]) -> None:
     with fixture_scope():
+        for tenant in tenants:
+            # These workspaces are unsponsored; drop their RESTRICT-referencing
+            # evidence first, in the accepted teardown order.
+            await purge_task_payer_consents(tenant.id)
+            await purge_tenant_audit_events(tenant.id)
         for user in users:
-            await User.objects.delete_user(user.id)
+            # purge_account resolves tariff history, then the account.
+            await purge_account(user.id)
         for tenant in tenants:
             await Tenant.objects.delete_by_id(tenant.id)
 
@@ -216,9 +223,9 @@ async def test_platform_operators_read_the_selected_workspace_only(role, monkeyp
         assert [label for label, _, _ in calls] == ["spend", "unpriced", "zero_price"]
         assert calls[0][1] == (second.id,), "spend must read the selected workspace"
         assert calls[1][1] == (second.id,), "unpriced evidence must read the selected workspace"
-        assert calls[2][1] == () and calls[2][2]["catalog_owner_id"] == user.id, (
-            "catalog reads use the signed-in actor owner"
-        )
+        assert (
+            calls[2][1] == () and calls[2][2]["catalog_owner_id"] == user.id
+        ), "catalog reads use the signed-in actor owner"
         assert first.id not in {call[1][0] for call in calls if call[1]}
 
         assert "Расходы пространства за сутки (UTC)" in html

@@ -27,16 +27,6 @@
 	flex-direction: column;
 }
 
-.shell-navbar {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 12px;
-	padding: 12px 24px;
-	border-bottom: 1px solid var(--color-border);
-	background: transparent;
-	min-width: 0;
-}
 
 /* Flash messages float where they naturally render (right below the navbar)
  * but as an overlay: vertical position stays the static spot, while the slot
@@ -60,6 +50,14 @@
 	from { opacity: 0; }
 }
 
+.shell-page-heading {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 1rem;
+}
+
 .shell-page-title {
 	flex: 1 1 180px;
 	min-width: 0;
@@ -79,7 +77,7 @@
 	overflow-wrap: anywhere;
 }
 
-.shell-page-actions, .shell-navbar-tools {
+.shell-page-actions, .shell-heading-tools {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
@@ -557,10 +555,6 @@ html[data-sidebar-collapsed="true"] .shell-sidebar .shell-daily-nav a:is(:hover,
 		display: inline-flex;
 	}
 
-	.shell-navbar {
-		padding: 12px;
-		gap: 8px;
-	}
 
 	.shell-page-title {
 		flex-basis: calc(100% - 60px);
@@ -570,7 +564,7 @@ html[data-sidebar-collapsed="true"] .shell-sidebar .shell-daily-nav a:is(:hover,
 		flex: 1 1 auto;
 	}
 
-	.shell-navbar-tools {
+	.shell-heading-tools {
 		margin-left: auto;
 	}
 
@@ -624,9 +618,6 @@ body[data-shell-section="chat"] .chat-window {
 	min-height: 0;
 }
 
-.shell-navbar {
-	flex-shrink: 0;
-}
 
 .shell-content {
 	min-height: 0;
@@ -689,34 +680,91 @@ html[data-sidebar-collapsed="true"] .shell-sidebar .shell-nav-group {
 	display: none;
 }
 
-/* Daily shortcuts remain permission-filtered by the server, like the drawer. */
-.shell-mobile-bar { display: none; }
+/* --- Console overlay fold (P20-T14 stage 5): compact instrument rail --- */
+
+.shell-sidebar {
+    width: 216px;
+    padding: 10px 10px 12px;
+}
+
+.shell-nav-group {
+    font-family: var(--cn-mono);
+    font-size: .65rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    padding: 14px 10px 4px;
+}
+
+.shell-daily-nav > a,
+.shell-unavailable {
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: var(--cn-radius-sm);
+}
+
+.shell-daily-nav > a .shell-nav-label {
+    font-weight: 500;
+}
+
+.shell-daily-nav a[aria-current] {
+    font-weight: 600;
+    box-shadow: inset 2px 0 var(--ui-accent);
+}
+
+.shell-icon-button,
+.shell-account-trigger {
+    border-radius: var(--cn-radius-sm);
+}
+
+.shell-avatar {
+    border-radius: var(--cn-radius-sm);
+    font-family: var(--cn-mono);
+}
+
+/* Page heading inside the scrollable content. */
+
+.shell-page-title h1 {
+    font-size: 1.05rem;
+    letter-spacing: -.01em;
+}
+
+.shell-page-context,
+.shell-menu-hint {
+    font-family: var(--cn-mono);
+    font-size: .75rem;
+}
+
+.shell-menu-hint {
+    font-size: .6875rem;
+}
+
+/* --- Content density --- */
+
+.shell-content {
+    padding-top: 20px;
+    padding-inline: 20px;
+}
+
 @media (max-width: 767px) {
-    .shell-mobile-bar {
-        position: fixed; inset: auto 0 0; z-index: 36;
-        display: flex; align-items: stretch;
-        padding: 0 0 env(safe-area-inset-bottom);
-        background: var(--color-surface); border-top: 1px solid var(--color-border);
+    .shell-content {
+        padding-top: max(14px, env(safe-area-inset-top));
+        padding-inline: 14px;
     }
-    .shell-mobile-bar > a, .shell-mobile-bar > button {
-        flex: 1 1 0; min-width: 0; min-height: 64px;
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        gap: 2px; padding: 4px 0; color: var(--color-text);
-        box-sizing: border-box; border: 0; background: transparent; text-decoration: none;
-        font-family: system-ui, sans-serif; font-size: 14px; line-height: 1.2; white-space: nowrap;
-    }
-    .shell-mobile-bar svg { width: 20px; height: 20px; flex: none; }
-    .shell-mobile-bar [aria-current="page"] { color: var(--ui-accent); background: var(--ui-accent-soft); }
-    .shell-mobile-bar :focus-visible { outline: 2px solid var(--ui-accent); outline-offset: -2px; }
-    .shell-notification-dock, .chat-dock-launcher { bottom: calc(80px + env(safe-area-inset-bottom)); }
-    .shell-navbar { padding-top: max(12px, env(safe-area-inset-top)); }
-    /* Reserve fixed chrome outside the scrollport, not just after its last row.
-     * --shell-dock-space already contains the safe-area inset; do not add it twice. */
-    body:has(> .shell-mobile-bar) .shell-content {
-        margin-bottom: max(calc(65px + env(safe-area-inset-bottom)), calc(65px + var(--shell-dock-space, 0px)));
-        padding-bottom: 24px;
-    }
-    body:has(> .shell-mobile-bar):has([data-chat-dock-container]) .shell-content {
-        margin-bottom: max(calc(140px + env(safe-area-inset-bottom)), calc(65px + var(--shell-dock-space, 0px)));
+}
+
+.shell-popover-panel,
+dialog.shell-dialog {
+    border-radius: var(--cn-radius);
+}
+
+/* --- Control heights (≥768px). Kept at the very end of shell.css so this
+   block stays after .chat-dock-launcher > button { min-height: 44px } and
+   .ui-notification-panel :is(button) { min-height: 44px } (same 0-1-1
+   specificity): from 768px up 36px must keep winning. --- */
+
+@media (min-width: 768px) {
+    .ui-shell button,
+    .ui-shell select {
+        min-height: 36px;
     }
 }

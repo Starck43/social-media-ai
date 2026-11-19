@@ -26,6 +26,7 @@ from app.main import create_application
 from app.models import User
 from app.models.managers.tenant_manager import TenantUserManager
 from app.types import PlatformRoleType, WorkspaceRoleType
+from tests.shared.account_cleanup import purge_account  # noqa: E402
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 DENIED = "Недостаточно прав"
@@ -71,7 +72,10 @@ def test_self_service_kinds_exclude_deployment_secrets() -> None:
     from app.web.settings import SELF_SERVICE_KINDS
 
     allowed = {kind for kinds in SELF_SERVICE_KINDS.values() for kind, _ in kinds}
-    assert "user_token" in allowed and "session" in allowed
+    # The manual form offers a personal token; a Telegram session credential is
+    # issued only by the dedicated authorization surface, never typed by hand.
+    assert "user_token" in allowed
+    assert "session" not in allowed
     # Per-deployment config lives in the environment, never in a workspace form.
     for forbidden in ("bot_token", "app_id", "client_secret"):
         assert forbidden not in allowed
@@ -153,7 +157,7 @@ async def _cleanup(*users: User | None) -> None:
     for user in users:
         if user is None:
             continue
-        await User.objects.delete_user(user.id)
+        await purge_account(user.id)
 
 
 async def _drop_workspaces(*tenant_ids: int | None) -> None:

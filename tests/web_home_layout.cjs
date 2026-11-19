@@ -107,12 +107,12 @@ const path = require('path');
                         const main = document.querySelector('main');
                         const results = document.querySelector('[data-home-results]').getBoundingClientRect();
                         const tasks = document.querySelector('[data-home-tasks]')?.getBoundingClientRect();
-                        return {fill:getComputedStyle(navbar).backgroundColor, mainWidth:main.clientWidth, mainScroll:main.scrollWidth,
+                        return {hasNavbar:Boolean(navbar), mainWidth:main.clientWidth, mainScroll:main.scrollWidth,
                             homeWidth:document.querySelector('.ui-home').getBoundingClientRect().width,
                             available:main.clientWidth - parseFloat(getComputedStyle(main).paddingLeft) - parseFloat(getComputedStyle(main).paddingRight),
                             results:{x:results.x,y:results.y,right:results.right,bottom:results.bottom}, tasks:tasks?{x:tasks.x,y:tasks.y}:null};
                     });
-                    if(shellMetrics.fill !== 'rgba(0, 0, 0, 0)') throw Error('Navbar has separate fill');
+                    if(shellMetrics.hasNavbar) throw Error('Unexpected top navbar');
                     if(shellMetrics.mainScroll > shellMetrics.mainWidth+1) throw Error('Main horizontal overflow');
                     if(Math.abs(shellMetrics.homeWidth-shellMetrics.available)>1) throw Error('Home is not using available width');
                     if(shellMetrics.tasks && width>=1200 && Math.abs(shellMetrics.tasks.y-shellMetrics.results.y)>1) throw Error('Wide home cards not in one row');

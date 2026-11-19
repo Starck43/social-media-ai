@@ -122,6 +122,9 @@ def render(pipeline, value):
         tenant=NS(name="synthetic"),
         next_step=None,
         is_superuser=False,
+        # The dashboard route injects request.state.web_perms; a rights-less
+        # viewer stub keeps the perm-gated controls out of the rendered facts.
+        perms=NS(can=lambda model, action: False, is_superuser_role=False),
         can_open_chat=False,
         recent_results=[],
         recent_tasks=[],

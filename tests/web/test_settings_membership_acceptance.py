@@ -22,6 +22,7 @@ from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import Tenant, TenantUser, WorkspaceRole
 from app.models.managers.tenant_manager import TenantUserManager
+from app.services.tenancy import limits as tenancy_limits
 
 # isort: on
 
@@ -91,7 +92,12 @@ async def test_owner_can_disable_member_through_settings_endpoint(settings_clien
 
 
 @pytest.mark.asyncio
-async def test_self_role_and_workspace_admin_restrictions(settings_client, home):
+async def test_self_role_and_workspace_admin_restrictions(settings_client, home, monkeypatch):
+    # The deployment-wide pilot ceiling (default 2, pinned by the settings
+    # contract) is an operator guard; this scenario needs three members, so it
+    # raises the ceiling locally. The ceiling rule itself stays covered by
+    # tests/ai/test_plan_tiers.py.
+    monkeypatch.setattr(tenancy_limits.settings, "MAX_WORKSPACE_MEMBERS", 3)
     client = settings_client
     users, tenant_ids, _ = home
     owner = users[0]
@@ -134,7 +140,10 @@ async def test_self_role_and_workspace_admin_restrictions(settings_client, home)
 
 
 @pytest.mark.asyncio
-async def test_revoked_admin_cannot_finish_inflight_team_mutation(settings_client, home):
+async def test_revoked_admin_cannot_finish_inflight_team_mutation(settings_client, home, monkeypatch):
+    # Three members are required here; raise the deployment pilot ceiling for
+    # this scenario (see the settings contract and test_plan_tiers for the rule).
+    monkeypatch.setattr(tenancy_limits.settings, "MAX_WORKSPACE_MEMBERS", 3)
     client = settings_client
     users, tenant_ids, _ = home
     admin = await actor(home, "viewer")

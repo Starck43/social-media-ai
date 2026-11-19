@@ -28,7 +28,8 @@ from app.main import create_application
 from app.models import User
 from app.models.managers.agent_message_manager import agent_messages
 from app.models.managers.agent_session_manager import agent_sessions
-from app.models.managers.tenant_manager import TenantUserManager, tenants
+from app.models.managers.tenant_manager import TenantUserManager
+from tests.shared.account_cleanup import purge_account  # noqa: E402
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 GREETING = "Спросите агента о ваших данных"
@@ -81,9 +82,10 @@ async def _register(client: AsyncClient, prefix: str) -> tuple[User, int]:
 
 async def _drop(user: User | None, tenant_id: int | None) -> None:
     if user is not None:
-        await User.objects.delete_user(user.id)
-    if tenant_id is not None:
-        await tenants.delete_by_id(tenant_id)
+        # Fixture accounts sponsor their workspace; purge_account follows the
+        # accepted teardown order (payer consents, audit events, tenant,
+        # tariff, account).
+        await purge_account(user.id)
 
 
 async def test_opening_the_page_creates_no_session() -> None:

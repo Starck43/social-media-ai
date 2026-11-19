@@ -227,6 +227,23 @@ class StagedAttachmentsContractTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(normalized, [{"type": "image", "url": None}])
                 self.assertEqual(len(self.classifier.classify_content([{"attachments": normalized}])["image"]), 1)
 
+    def test_provider_media_query_is_kept_and_elsewhere_still_rejected(self):
+        """P8-T52 owner choice B: only the provider CDN query survives."""
+        modern = "https://sun9-42.userapi.com/s/v1/ig2/abc.jpg?quality=96&as=1080x1080&cs=1080x1080&u=OPAQUE&from=bu"
+        self.assertEqual(NORMALIZE([{"type": "photo", "url": modern}]), [{"type": "image", "url": modern}])
+        legacy = "https://pp.userapi.com/c1/x.jpg?cs=1"
+        self.assertEqual(NORMALIZE([{"type": "video", "url": legacy}]), [{"type": "video", "url": legacy}])
+        for url in (
+            SAFE_URL + "?token=redacted",
+            "https://userapi.com.evil.example/x.jpg?u=redacted",
+            modern + "#secret",
+            modern.replace("https://", "https://user:password@"),
+            modern.replace("https://", "http://"),
+            modern.replace(":443", ":8443").replace("userapi.com", "userapi.com:8443"),
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(NORMALIZE([{"type": "image", "url": url}]), [{"type": "image", "url": None}])
+
     def test_private_local_and_malformed_url_references_are_not_stored(self):
         values = [
             "https://127.0.0.1/x",

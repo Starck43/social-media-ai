@@ -21,6 +21,16 @@ SAFE_FAILURE_CODES = frozenset(
         # Legacy digest stops that require operator review (see DigestRunManager).
         "digest_run_in_progress_requires_review",
         "partial_delivery_requires_review",
+        "file_workspace_writes_disabled",
+        "file_workspace_invalid_action",
+        "file_workspace_access_denied",
+        "file_workspace_consent_required",
+        "file_workspace_dependency_unavailable",
+        "file_workspace_scan_changed",
+        "file_workspace_scan_busy",
+        "file_workspace_scan_not_resumable",
+        "file_workspace_read_unavailable",
+        "file_workspace_budget_exhausted",
     }
 )
 

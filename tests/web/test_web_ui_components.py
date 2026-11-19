@@ -29,10 +29,10 @@ def test_sentiment_badges_include_words_scale_and_shared_thresholds():
         html = str(macros.sentiment_badge(score, average=True, mode="full"))
         assert label in html and f"{score:.2f} / 1" in html and "Средняя тональность" in html
     compact = str(macros.sentiment_badge(0.8))
-    assert 'class="ui-tone ui-positive"' in compact and '>0.80<' in compact
-    assert ' / 1</span>' not in compact
+    assert 'class="ui-tone ui-positive"' in compact and ">0.80<" in compact
+    assert " / 1</span>" not in compact
     dot = str(macros.sentiment_badge(0.8, mode="dot"))
-    assert 'ui-dot' in dot and '>0.80<' not in dot and 'aria-label=' in dot
+    assert "ui-dot" in dot and ">0.80<" not in dot and "aria-label=" in dot
     assert not str(macros.sentiment_badge(None)).strip()
 
 
@@ -52,9 +52,9 @@ def test_filter_links_preserve_scope_origin_and_clear_only_requested_dimension()
     )
     assert "<select" not in html
     assert 'aria-current="page"' in html and "Сбросить фильтр медиа из ссылки" in html
+    import re
     from html import unescape
     from urllib.parse import parse_qs, urlparse
-    import re
 
     links = [parse_qs(urlparse(unescape(url)).query) for url in re.findall(r'href="([^"]+)"', html)]
     assert len(links) == 5
@@ -144,10 +144,10 @@ def test_chat_and_notification_presentation_contracts():
     chat = Path("app/web/templates/web/chat.html").read_text()
     js = Path("app/static/js/chat.js").read_text()
     assert 'class="chat-composer"' in chat and 'class="chat-suggestions"' in chat
-    assert 'message.role !== \'user\' && message.id' in chat  # one delete action per side
-    assert 'requestConfirmation' in js and 'confirm(' not in js and 'alert(' not in js
-    assert '(!rawText && !readyAtts.length) || this.pending' in js
-    assert 'safeMarkdown(html)' in js and 'el.removeAttribute(attr.name)' in js
+    assert "message.role !== 'user' && message.id" in chat  # one delete action per side
+    assert "requestConfirmation" in js and "confirm(" not in js and "alert(" not in js
+    assert "(!rawText && !readyAtts.length) || this.pending" in js
+    assert "safeMarkdown(html)" in js and "el.removeAttribute(attr.name)" in js
     # The shell dialog lives in the notifications panel include; the task modal
     # carries aria-modal, and shell.js locks the body scroll while it is open.
     notifications = Path("app/web/templates/web/_shell_notifications.html").read_text()
@@ -156,22 +156,34 @@ def test_chat_and_notification_presentation_contracts():
     assert 'aria-modal="true"' in Path("app/web/templates/web/tasks.html").read_text()
     assert "document.body.style.overflow = 'hidden'" in Path("app/static/js/shell.js").read_text()
     for path in Path("app/templates").rglob("*.html"):
-        assert 'alert(' not in path.read_text(), path
+        assert "alert(" not in path.read_text(), path
 
 
 def test_chat_head_has_real_assets_and_css_contains_no_script_fragments():
     from html.parser import HTMLParser
-    from jinja2 import DictLoader, Environment, ChoiceLoader
 
-    env = Environment(loader=ChoiceLoader([
-        DictLoader({"web/base.html": "<html><head>{% block extra_head %}{% endblock %}</head><body>{% block content %}{% endblock %}</body></html>"}),
-        templates.env.loader,
-    ]))
+    from jinja2 import ChoiceLoader, DictLoader, Environment
+
+    env = Environment(
+        loader=ChoiceLoader(
+            [
+                DictLoader(
+                    {
+                        "web/base.html": "<html><head>{% block extra_head %}{% endblock %}</head><body>{% block content %}{% endblock %}</body></html>"
+                    }
+                ),
+                templates.env.loader,
+            ]
+        )
+    )
     html = env.get_template("web/chat.html").render(
-        messages=[], csrf="fixture", is_owner=True,
+        messages=[],
+        csrf="fixture",
+        is_owner=True,
         url_for=lambda name, **kwargs: "/static/" + kwargs["path"],
         static_v=lambda path: "/static/" + path,
     )
+
     class AssetParser(HTMLParser):
         def __init__(self):
             super().__init__()

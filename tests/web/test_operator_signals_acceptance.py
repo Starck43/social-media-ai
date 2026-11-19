@@ -132,9 +132,7 @@ async def _platform_user(role: PlatformRoleType, *, is_active: bool = True) -> U
         )
 
 
-async def _join(
-    user: User, tenant_id: int, role: WorkspaceRoleType = WorkspaceRoleType.OWNER
-) -> None:
+async def _join(user: User, tenant_id: int, role: WorkspaceRoleType = WorkspaceRoleType.OWNER) -> None:
     with fixture_scope():
         await TenantUserManager().add_web_member(
             tenant_id=tenant_id,
@@ -225,9 +223,9 @@ async def test_platform_operators_read_the_selected_workspace_only(role, monkeyp
         assert [label for label, _, _ in calls] == ["spend", "unpriced", "zero_price"]
         assert calls[0][1] == (second.id,), "spend must read the selected workspace"
         assert calls[1][1] == (second.id,), "unpriced evidence must read the selected workspace"
-        assert calls[2][1] == () and calls[2][2]["catalog_owner_id"] == user.id, (
-            "catalog reads use the signed-in actor owner"
-        )
+        assert (
+            calls[2][1] == () and calls[2][2]["catalog_owner_id"] == user.id
+        ), "catalog reads use the signed-in actor owner"
         assert first.id not in {call[1][0] for call in calls if call[1]}
 
         assert "Расходы пространства за сутки (UTC)" in html

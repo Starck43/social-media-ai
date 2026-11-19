@@ -20,7 +20,7 @@ from app.core.tenant_context import tenant_scope
 
 async def purge_account(user_id: int) -> None:
     """Resolve one fixture-owned account's lifecycle, then delete the account."""
-    from app.models import Tenant, UserServicePlan, User
+    from app.models import Tenant, User, UserServicePlan
     from tests.p11_t12_audit_cleanup import purge_tenant_audit_events
     from tests.shared.payer_cleanup import purge_task_payer_consents
 

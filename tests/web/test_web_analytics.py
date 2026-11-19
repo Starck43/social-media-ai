@@ -17,9 +17,9 @@ from httpx import ASGITransport, AsyncClient
 from app.core.tenant_context import tenant_scope
 from app.main import create_application
 from app.models import AIAnalytics, Platform, Role, Source, User
-from tests.shared.account_cleanup import purge_account  # noqa: E402
 from app.models.managers.tenant_manager import TenantUserManager, tenants
 from app.types import PeriodType, PlatformRoleType, SourceType, WorkspaceRoleType
+from tests.shared.account_cleanup import purge_account  # noqa: E402
 
 CSRF_RE = re.compile(r'name="_csrf" value="([^"]+)"')
 

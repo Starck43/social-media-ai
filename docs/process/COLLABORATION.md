@@ -30,8 +30,13 @@ custodian may instead apply PR-comment status requests, refreshing both
 directions before each transition.
 
 Create `type/<task-id>-<topic>` from the agreed revision. Independent writers use
-exclusive paths and separate worktrees; task implementation stays out of `dev`
-(registry-only synchronization is the exception above).
+exclusive paths and separate worktrees. Every task branch with active work gets its
+own worktree keyed by the task ID (`/private/tmp/social-<task-id>[-<suffix>]`, e.g.
+`...-audit` for a review); a bare branch ref with no active work needs no worktree.
+Record the branch and worktree path/HEAD on the card; integration removes both,
+unmerged work keeps a resume point under [Git and cleanup](#git-and-cleanup). Task
+implementation stays out of `dev` (registry-only synchronization is the exception
+above).
 
 The primary checkout is the owner's interactive workspace: never switch, move or
 commit branches in it, never leave it on an agent branch. If it sits on a branch

@@ -146,3 +146,8 @@
 [data-inbox-thread-list] .work-triage-tabs { margin-bottom: .75rem; }
 [data-inbox-thread-list] > h2 { font: 600 .75rem var(--cn-mono); color:var(--color-text-secondary); }
 [data-inbox-thread-item] { background:var(--color-surface); }
+/* Shared task hub uses the compact segmented control shown in the reference. */
+.work-task-tabs { width:fit-content; max-width:100%; padding:.25rem; gap:.15rem; border-radius:1.5rem; background:var(--color-surface-secondary); }
+.work-task-tabs a { border-color:transparent; background:transparent; }
+.work-task-tabs a[aria-current] { border-color:var(--color-border); background:var(--color-surface); }
+.planner-page { max-width:64rem; }

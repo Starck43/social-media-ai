@@ -48,7 +48,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 ### Priority P2
 
 - [P20-T17](docs/tasks/p20-t17.md) Work surfaces usability and visual standard from the owner PDF — **IN_PROGRESS** · Codex · local owner chat 2026-11-20 · `P2` · `C5`
-- [P20-T18](docs/tasks/p20-t18.md) Scenario overview cards from the owner prototype — **READY** · Codex · local owner chat 2026-11-20 · `P2` · `C2`
+- [P20-T18](docs/tasks/p20-t18.md) Scenario overview cards from the owner prototype — **IN_PROGRESS** · Codex · local owner chat 2026-11-20 · `P2` · `C2`
 
 
 

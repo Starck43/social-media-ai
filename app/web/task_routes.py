@@ -172,15 +172,18 @@ async def tasks_list(request: Request):
     # duplicate job. The status rides along: a pending job has not been claimed
     # by any worker yet, and the row says "queued", not "running".
     from app.models.scheduling.job import Job
+    from app.web.task_list_progress import task_list_progress
 
     task_ids = [t.id for t in tasks]
-    running_jobs: dict[int, dict[str, Any]] = {}  # task_id -> {id, status}
+    running_jobs: dict[int, dict[str, Any]] = {}  # task_id -> current active job
     if task_ids:
         for job in await Job.objects.filter(
             agent_task_id__in=task_ids,
             status__in=["pending", "running"],
-        ):
-            running_jobs[job.agent_task_id] = {"id": job.id, "status": job.status}
+        ).order_by(Job.created_at.desc(), Job.id.desc()):
+            if job.agent_task_id not in running_jobs:
+                progress = task_list_progress(job) if perms_can(request, "source", "view") else None
+                running_jobs[job.agent_task_id] = {"id": job.id, "status": job.status, "progress_percent": progress}
 
     raw_job_id = request.query_params.get("job_id")
     job_id = int(raw_job_id) if raw_job_id and raw_job_id.isdigit() else None

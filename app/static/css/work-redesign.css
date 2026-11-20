@@ -71,3 +71,15 @@
 .ui-home [data-today-item] .today-item-actions summary::-webkit-details-marker { display:none; }
 .ui-home [data-today-item] .today-item-actions[open] { flex-basis:100%; }
 .ui-home [data-today-section="brief"] .today-brief-actions a:first-child { background:var(--color-cyan-600); color:var(--color-surface); }
+
+/* Rounded inbox detail surfaces, using the existing theme tokens. */
+[data-inbox-thread-detail] [data-unified-message],
+[data-thread-triage-panel], [data-triage-proposal] {
+    border-radius: .75rem;
+    background: var(--color-surface-secondary);
+    border-color: var(--color-border);
+}
+[data-inbox-thread-item]:hover, [data-inbox-thread-item]:has(a[aria-current]) {
+    border-color: var(--ui-accent);
+    background: var(--ui-accent-soft);
+}

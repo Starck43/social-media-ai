@@ -38,7 +38,9 @@
         <input class="ui-control w-full" id="yandex-file-root" name="root" required placeholder="/Документы">
         <p class="text-xs ui-muted">Начните путь с /, без конечного /; символ % пока не поддерживается.</p>
         <label class="block text-sm" for="yandex-file-token">OAuth-токен</label>
+        {% if card.provider|default(none) and card.provider.source_url %}
         <a href="{{ card.provider.source_url }}" target="_blank" rel="noopener noreferrer">Инструкция: как получить OAuth-токен</a>
+        {% endif %}
         <input class="ui-control w-full" id="yandex-file-token" name="oauth_token" type="password" autocomplete="off" required>
         <label class="block text-sm"><input type="checkbox" name="scope_ack" value="on" required> Понимаю, что разрешение Яндекса может охватывать весь диск.</label>
         <button class="ui-control">Сохранить подключение</button>

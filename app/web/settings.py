@@ -1569,6 +1569,9 @@ async def _show_folder_picker(request: Request, handle: str, folder: str, offset
             message = "Облако Mail.ru отклонило вход. Проверьте адрес и пароль приложения с полным доступом."
         add_flash(request, "error", message)
         return _yandex_oauth_redirect(destination)
+    except BaseException:
+        discard(handle)
+        raise
     if action == "confirm":
         add_flash(request, "success", "Подключение сохранено. Доступ к папке проверен.")
         return _yandex_oauth_redirect(destination)

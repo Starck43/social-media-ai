@@ -26,7 +26,9 @@
         <input class="ui-control w-full" id="mailru-cloud-account" name="account" type="email"
                value="{{ mailru_cloud_email|default('') }}" maxlength="254" required>
         <label class="block text-sm" for="mailru-cloud-password">Пароль приложения</label>
+        {% if card.provider|default(none) and card.provider.source_url %}
         <a href="{{ card.provider.source_url }}" target="_blank" rel="noopener noreferrer">Инструкция: как получить пароль приложения</a>
+        {% endif %}
         <p class="text-sm ui-muted">В разделе «Пароли приложений» выберите «Полный доступ к почте, облаку и календарю». Пароль только для Облака может не подойти. Пароль даёт широкие права, а приложение использует его только для просмотра списка файлов и хранит в зашифрованном виде.</p>
         <input class="ui-control w-full" id="mailru-cloud-password" name="password" type="password"
                autocomplete="new-password" maxlength="512" required>

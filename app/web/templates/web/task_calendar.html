@@ -9,7 +9,7 @@
 <div class="space-y-6">
 {% include "web/_task_tabs.html" %}
 <section class="ui-card space-y-4" aria-labelledby="calendar-title">
-  <div class="flex flex-wrap items-center justify-between gap-3"><h2 id="calendar-title" class="text-lg font-semibold">Календарь</h2><details><summary class="ui-control cursor-pointer">Часовой пояс: {{ timezone }}</summary><p class="ui-muted text-sm">Объём выборки ограничен. Некоторые календари не разворачивают повторы; доступность указана ниже.</p><form method="get"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}"><label>Часовой пояс <input class="ui-control min-h-[44px]" name="timezone" value="{{ timezone }}" maxlength="100"></label><button class="ui-control min-h-[44px]">Показать</button></form></details></div>
+  <div class="flex flex-wrap items-center justify-between gap-3"><h2 id="calendar-title" class="text-lg font-semibold">Календарь</h2><details><summary class="ui-control cursor-pointer">Часовой пояс: {{ timezone }}</summary><form method="get"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}"><label>Часовой пояс <input class="ui-control min-h-[44px]" name="timezone" value="{{ timezone }}" maxlength="100"></label><button class="ui-control min-h-[44px]">Показать</button></form></details></div>
   <div class="task-calendar" data-task-calendar data-timezone="{{ timezone }}" data-year="{{ year }}" data-month="{{ month }}" hidden>
     <div class="task-calendar-toolbar">
       <button type="button" class="ui-control" data-calendar-prev aria-label="Предыдущий месяц">←</button>
@@ -17,14 +17,12 @@
       <button type="button" class="ui-control" data-calendar-next aria-label="Следующий месяц">→</button>
       <button type="button" class="ui-control" data-calendar-today>Сегодня</button>
     </div>
-    <p class="ui-muted task-calendar-note">Дела и доступные расписания загружаются за выбранный месяц; события показаны по дате начала. Некоторые календари могут показывать неполную страницу без развёрнутых повторов. Состояния и дополнительные страницы — ниже.</p>
     <div class="task-calendar-scroll">
       <div class="task-calendar-grid" data-calendar-grid role="list" aria-label="Дни выбранного месяца"></div>
     </div>
-    <p class="task-calendar-legend"><span>Дело</span><span>Событие</span><span>Поручение агенту</span></p>
   </div>
   {% for provider in providers %}
-  <section class="border-t pt-4 space-y-3" aria-labelledby="calendar-{{ provider.kind }}" data-calendar-provider="{{ provider.kind }}" data-calendar-grid-eligible="{{ 'false' if provider.get('grid_eligible') is false else 'true' }}">
+  <section hidden aria-hidden="true" class="task-calendar-source border-t pt-4 space-y-3" aria-labelledby="calendar-{{ provider.kind }}" data-calendar-provider="{{ provider.kind }}" data-calendar-grid-eligible="{{ 'false' if provider.get('grid_eligible') is false else 'true' }}">
     <h3 id="calendar-{{ provider['kind'] }}" class="font-semibold">{{ {'planner': 'Мои дела', 'event': 'События календаря', 'agent': 'Поручения агенту'}.get(provider['kind'], 'Задачи') }}</h3>
     {% if provider['status'] == 'denied' %}<p class="ui-muted">Нет доступа к этому типу элементов.</p>
     {% elif provider['status'] != 'available' %}<p role="status" class="ui-muted">{% if provider['status'] == 'not_configured' %}Выберите календарь в настройках.{% elif provider['status'] == 'sync_required' %}Обновите подключённый календарь в настройках.{% elif provider['status'] == 'reauth' %}Подключите календарь заново.{% else %}Раздел сейчас недоступен. Проверьте подключение в настройках.{% endif %}</p>{% if provider['kind'] == 'event' %}<a class="underline" href="/app/settings?tab=connections">Настройки календаря</a>{% endif %}

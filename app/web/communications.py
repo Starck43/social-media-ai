@@ -74,6 +74,16 @@ async def communications_page(
     # Empty selects and links represent “all channels”, not an invalid channel.
     channel = channel or None
     norm_triage_cat = triage_category if triage_category in TRIAGE_CATEGORIES else None
+    can_connect_messages = hasattr(request, "state") and perms_can(request, "source", "create")
+    inbox_filter_active = bool(
+        norm_triage_cat
+        or channel
+        or contact_id
+        or is_read is not None
+        or q
+        or before_id
+        or is_archived is not None
+    )
 
     if current_tenant_id() is not None:
         try:
@@ -115,16 +125,9 @@ async def communications_page(
                 # A deep link must not silently select an item excluded by the
                 # active filters. Unfiltered deep links remain usable.
                 visible_ids = {th["id"] for th in inbox_threads}
-                filtering = bool(
-                    norm_triage_cat
-                    or channel
-                    or contact_id
-                    or is_read is not None
-                    or q
-                    or before_id
-                    or is_archived is not None
+                active_thread_id = (
+                    thread_id if thread_id and (not inbox_filter_active or thread_id in visible_ids) else None
                 )
-                active_thread_id = thread_id if thread_id and (not filtering or thread_id in visible_ids) else None
                 if active_thread_id is None and inbox_threads:
                     active_thread_id = inbox_threads[0]["id"]
                 if active_thread_id is not None:
@@ -158,8 +161,10 @@ async def communications_page(
         triage_by_thread=triage_by_thread,
         contact_id_filter=contact_id,
         is_read_filter=is_read,
-        is_archived_filter=archive_filter,
+        is_archived_filter=is_archived,
         q=q or "",
+        inbox_filter_active=inbox_filter_active,
+        can_connect_messages=can_connect_messages,
         inbox_threads=inbox_threads,
         inbox_load_error=inbox_load_error,
         triage_load_error=triage_load_error,

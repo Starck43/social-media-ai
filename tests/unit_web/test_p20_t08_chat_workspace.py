@@ -266,6 +266,7 @@ def test_chat_template_renders_boundary_badge_chips_quick_actions_and_four_tabs(
     assert "Подготовить задачу" in rendered
     assert "Разобрать результат" in rendered
     assert "Что дальше?" in rendered
+    assert '@keydown="handleWorkspaceTabKey($event)"' in rendered
 
     for tab_key, tab_label in (
         ("context", "Контекст"),

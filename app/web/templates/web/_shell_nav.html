@@ -1,4 +1,8 @@
 {% from "web/_macros.html" import icon %}
+<div class="shell-brand">
+    <span class="shell-brand-mark" aria-hidden="true">{{ icon('zap') }}</span>
+    <span class="shell-brand-name">AI Assistant</span>
+</div>
 <div class="shell-account-row">
     <div class="shell-popover shell-account" data-shell-popover data-hover-popover>
         <button type="button" class="shell-account-trigger" data-popover-trigger aria-expanded="false" aria-controls="account-{{ menu_id }}" aria-label="Меню пользователя: {{ user.username }}">
@@ -51,7 +55,7 @@
             </section>
         </div>
     </div>
-    {% if menu_id == 'desktop' %}<button type="button" class="shell-icon-button shell-collapse" data-sidebar-collapse aria-label="Свернуть навигацию" aria-expanded="true" aria-controls="nav-desktop" title="Свернуть / развернуть навигацию">{{ icon('sidebar-collapse') }}</button>{% endif %}
+    {% if menu_id == 'desktop' %}<button type="button" class="shell-icon-button shell-collapse" data-sidebar-collapse aria-label="Свернуть навигацию" aria-expanded="true" aria-controls="nav-desktop" title="Свернуть / развернуть навигацию">{{ icon('panel-left') }}</button>{% endif %}
 </div>
 <nav id="nav-{{ menu_id }}" class="shell-daily-nav" aria-label="Основные разделы">
 {% if tenant %}{% set ns = namespace(group='') %}{% for item in nav if item.key != 'settings' %}

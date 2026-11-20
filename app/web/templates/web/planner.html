@@ -1,24 +1,24 @@
 {% extends "web/base.html" %}
+{% from "web/_macros.html" import icon %}
 {% block title %}Задачи — AI Assistant{% endblock %}
 {% block page_heading %}Задачи{% endblock %}
+{% block page_actions %}{% if can_create %}<button type="button" class="ui-button ui-button-primary" x-data @click="$dispatch('open-task-modal')">{{ icon('calendar') }}<span>Новая задача</span></button>{% endif %}{% endblock %}
 {% block extra_head %}
 {{ super() }}
 <style>
     /* The shared ui-control minimum is 40px; planner forms use touch-sized targets. */
     .planner-page .ui-control { min-height: 44px; }
+    .task-create-modal { width: min(42rem, calc(100vw - 2rem)); max-height: min(42rem, calc(100dvh - 2rem)); overflow-y: auto; }
+    .task-create-modal::backdrop { background: rgb(2 6 23 / .65); }
 </style>
 {% endblock %}
 {% block content %}
-<div class="planner-page space-y-6">
+<div class="planner-page space-y-6" x-data="{ taskModalOpen: false, taskType: 'personal', sourceScope: 'all', editOpen: {{ 'true' if editing else 'false' }} }" @open-task-modal.window="taskModalOpen = true">
     {% include "web/_task_tabs.html" %}
     <div class="planner-toolbar flex flex-wrap items-center justify-between gap-3">
         <p class="ui-muted text-sm">Личные дела и поручения агенту в одном месте.</p>
-        <div class="flex flex-wrap gap-2">
-            {% if can_create %}<a class="ui-control" href="/app/task-hub/new">Новая задача</a>{% endif %}
-            <nav class="flex flex-wrap gap-2" aria-label="Вид планировщика">
-                <a href="/app/planner?view=list" class="ui-control" {% if view == 'list' %}aria-current="page"{% endif %}>Список</a>
-                <a href="/app/planner?view=board" class="ui-control" {% if view == 'board' %}aria-current="page"{% endif %}>Доска</a>
-            </nav>
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="ui-muted text-sm">{{ planner_groups|length }} раздела</span>
         </div>
     </div>
 
@@ -27,8 +27,11 @@
     {% endif %}
 
     {% if editing and can_update %}
-    <section class="ui-card space-y-4" aria-labelledby="edit-heading">
-        <h2 id="edit-heading" class="text-lg font-semibold">Изменить задачу №{{ editing.id }}</h2>
+    <section x-show="editOpen" class="ui-card space-y-4" aria-labelledby="edit-heading">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 id="edit-heading" class="text-lg font-semibold">Изменить задачу №{{ editing.id }}</h2>
+            <button type="button" class="ui-button ui-button-icon ui-button-quiet" @click="editOpen = false" aria-label="Свернуть форму редактирования" title="Свернуть">{{ icon('chevron-up') }}</button>
+        </div>
         {% if perms and perms.can("agenttask", "create") %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/tasks?create=1&planner_id={{ editing.id }}">Поручить агенту</a>{% endif %}
         <form method="post" action="/app/planner/{{ editing.id }}/edit" class="space-y-4">
             <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ editing.version }}">
@@ -116,58 +119,101 @@
                 {% endif %}
                 <div class="planner-task-content">
                     <h3 id="task-{{ item.id }}" class="font-semibold break-words">{{ item.title }}</h3>
-                    <p class="planner-meta ui-muted text-sm">{% if item.due_at %}<time datetime="{{ item.due_at.isoformat() }}">{{ item.due_at|human_dt(tz=item.timezone) }}</time> · {{ item.timezone }}{% elif item.due_date %}<time datetime="{{ item.due_date }}">{{ item.due_date|human_dt }}</time>{% else %}Без срока{% endif %} · приоритет {{ priority_labels[item.priority] }}{% if item.parent_id %} · Подзадача №{{ item.parent_id }}{% endif %}</p>
+                    <p class="planner-meta ui-muted text-sm">{% if item.due_at %}<time datetime="{{ item.due_at.isoformat() }}">{{ item.due_at|human_dt(tz=item.timezone) }}</time> · {{ item.timezone }}{% elif item.due_date %}<time datetime="{{ item.due_date }}">{{ item.due_date|human_dt }}</time>{% else %}Без срока{% endif %}{% if item.parent_id %} · Подзадача №{{ item.parent_id }}{% endif %}</p>
+                    <span class="planner-priority planner-priority--{{ item.priority }}"><span class="planner-priority-dot" aria-hidden="true"></span>{{ priority_labels[item.priority] }}</span>
                     {% if item.recurrence %}<p class="ui-muted text-sm break-words">Повтор: {{ item.recurrence }}</p>{% endif %}
                     {% if item.description %}<p class="break-words whitespace-pre-wrap">{{ item.description }}</p>{% endif %}
                 </div>
                 <div class="planner-task-actions">
                     {% if perms and perms.can("agenttask", "create") and item.status not in ['done','cancelled'] %}<a class="planner-delegate" href="/app/tasks?create=1&amp;planner_id={{ item.id }}">Поручить агенту</a>{% endif %}
-                    <details><summary class="ui-control">Действия</summary><div class="flex flex-wrap gap-2 pt-2">
-                    {% if can_draft_greeting and item.id in greeting_ids %}<form method="post" action="/app/planner/events/{{ item.id }}/draft"><input type="hidden" name="_csrf" value="{{ csrf }}"><button type="submit" class="ui-control">Создать черновик поздравления</button></form>{% endif %}
-                    {% if can_update and item.status not in ['done','cancelled'] %}<a class="ui-control inline-flex" href="/app/planner/{{ item.id }}/edit">Изменить</a>{% endif %}
-                    {% if can_delete %}<form method="post" action="/app/planner/{{ item.id }}/delete" data-confirm="Удалить задачу, её следующие повторы и подзадачи? Для корня серии удалится вся серия."><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><button type="submit" class="ui-control">Удалить{% if item.id == item.series_id %} серию{% else %} и повторы{% endif %}</button></form>{% endif %}
-                    </div></details>
+                    <div class="flex flex-wrap items-center gap-1" aria-label="Действия с задачей">
+                    {% if can_update and item.status not in ['done','cancelled'] %}{% if editing and editing.id == item.id %}<button type="button" class="ui-button ui-button-icon ui-button-quiet" @click="editOpen = !editOpen" :aria-label="editOpen ? 'Свернуть редактирование' : 'Развернуть редактирование'" :title="editOpen ? 'Свернуть' : 'Развернуть'">{{ icon('settings') }}</button>{% else %}<a class="ui-button ui-button-icon ui-button-quiet" href="/app/planner/{{ item.id }}/edit" aria-label="Изменить задачу: {{ item.title }}" title="Изменить">{{ icon('settings') }}</a>{% endif %}{% endif %}
+                    {% if can_delete %}<form method="post" action="/app/planner/{{ item.id }}/delete" data-confirm="Удалить задачу, её следующие повторы и подзадачи? Для корня серии удалится вся серия."><input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="expected_version" value="{{ item.version }}"><button type="submit" class="ui-button ui-button-icon ui-button-quiet" aria-label="Удалить: {{ item.title }}" title="Удалить">{{ icon('close') }}</button></form>{% endif %}
+                    </div>
                 </div>
             </article>
             {% else %}<p class="ui-muted py-4" role="status">Задач пока нет.</p>{% endfor %}
         </div>
     {% endfor %}
     </section>
-    {% if event_settings is defined and event_settings.can_configure %}
-    <details class="ui-card space-y-3" aria-labelledby="event-planning-heading">
-        <summary id="event-planning-heading" class="font-semibold cursor-pointer">Планирование памятных дат</summary>
-        <p class="ui-muted text-sm">{% if event_settings.enabled %}Включено. Задачи принадлежат пользователю, включившему планирование.{% else %}Выключено. Включивший пользователь станет владельцем задач.{% endif %} При утрате доступа создание задач остановится; отправки нет.</p>
-        <form method="post" action="/app/planner/events/settings">
-            <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="enabled" value="{{ 'off' if event_settings.enabled else 'on' }}">
-            <button type="submit" class="ui-control min-h-[44px]">{{ 'Выключить' if event_settings.enabled else 'Включить' }} планирование</button>
-        </form>
-    </details>
-    {% endif %}
+    {% if next_before_id %}<a class="ui-button inline-flex min-h-[44px]" href="/app/planner?view={{ view | urlencode }}&amp;before_id={{ next_before_id }}">Следующие задачи</a>{% endif %}
 
-    {% if not editing and can_create %}
-    <details class="ui-card space-y-4" aria-labelledby="create-heading">
-        <summary id="create-heading" class="text-lg font-semibold cursor-pointer">Новая задача</summary>
-        <form method="post" action="/app/planner" class="space-y-4">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <label class="block">Название<input class="ui-control w-full mt-2" name="title" required maxlength="500" placeholder="Что нужно сделать?"></label>
-            <label class="block">Описание<textarea class="ui-control w-full mt-2" name="description" rows="2" maxlength="20000"></textarea></label>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label>Дата без времени<input class="ui-control w-full mt-2" type="date" name="due_date"></label>
-                <label>Или время со смещением<input class="ui-control w-full mt-2" name="due_at" placeholder="2026-11-10T09:00:00+03:00"></label>
-                <label>Часовой пояс<input class="ui-control w-full mt-2" name="timezone" value="UTC" required></label>
-                <label>Приоритет<select class="ui-control w-full mt-2" name="priority">{% for key, label in priority_labels.items() %}<option value="{{ key }}" {% if key == 'medium' %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
-                <label>Исполнитель · ID пользователя<input class="ui-control w-full mt-2" type="number" min="1" name="assignee_id"></label>
-                <label>Контакт · ID<input class="ui-control w-full mt-2" type="number" min="1" name="contact_id"></label>
-                <label>Родительская задача · ID<input class="ui-control w-full mt-2" type="number" min="1" name="parent_id"></label>
-                <label>Категория<input class="ui-control w-full mt-2" name="category" maxlength="100"></label>
-                <label>Метки через запятую<input class="ui-control w-full mt-2" name="tags"></label>
-                <label>Повтор · RRULE<input class="ui-control w-full mt-2" name="recurrence" maxlength="150" placeholder="FREQ=WEEKLY;INTERVAL=1"></label>
+    <div x-show="taskModalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4" @keydown.escape.window="taskModalOpen = false">
+        <section class="task-create-modal ui-card" role="dialog" aria-modal="true" aria-labelledby="task-create-title">
+            <div class="flex items-start justify-between gap-4">
+                <div><h2 id="task-create-title" class="text-lg font-semibold">Новая задача</h2><p class="ui-muted mt-1 text-sm">Выберите сценарий, чтобы показать только нужные поля.</p></div>
+                <button type="button" class="ui-button ui-button-icon ui-button-quiet" @click="taskModalOpen = false" aria-label="Закрыть окно" title="Закрыть">{{ icon('close') }}</button>
             </div>
-            <p class="ui-muted text-sm">Поддерживаются DAILY, WEEKLY, MONTHLY; INTERVAL и COUNT либо UNTIL. Для повтора нужен срок.</p>
-            <button class="ui-control min-h-[44px]" type="submit">Создать задачу</button>
-        </form>
-    </details>
-    {% endif %}
-    {% if next_before_id %}<a class="ui-control inline-flex min-h-[44px]" href="/app/planner?view={{ view }}&amp;before_id={{ next_before_id }}">Следующие задачи</a>{% endif %}
+            <fieldset class="mt-5 space-y-3">
+                <legend class="text-sm font-semibold">Тип задачи</legend>
+                <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"><input type="radio" value="personal" x-model="taskType" class="mt-1"><span><strong>Личное дело</strong><span class="ui-muted block text-sm">Срок, приоритет и напоминание для себя.</span></span></label>
+                <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"><input type="radio" value="team" x-model="taskType" class="mt-1"><span><strong>Командное дело</strong><span class="ui-muted block text-sm">Назначьте участника и добавьте срок.</span></span></label>
+                {% if can_create_agent_task %}
+                <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"><input type="radio" value="social" x-model="taskType" class="mt-1"><span><strong>Сбор данных в соцсетях</strong><span class="ui-muted block text-sm">Настройка источников, периода и расписания откроется дальше.</span></span></label>
+                <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"><input type="radio" value="analytics" x-model="taskType" class="mt-1"><span><strong>Аналитика соцсетей</strong><span class="ui-muted block text-sm">Выберите сценарий анализа и параметры результата.</span></span></label>
+                {% endif %}
+            </fieldset>
+            <form x-show="taskType === 'personal' || taskType === 'team'" method="post" action="/app/planner" class="mt-5 space-y-4">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <label class="block text-sm font-medium">Название<input class="ui-control mt-2 w-full" name="title" required maxlength="500" placeholder="Что нужно сделать?"></label>
+                <label class="block text-sm font-medium">Описание<textarea class="ui-control mt-2 w-full" name="description" rows="3" maxlength="20000"></textarea></label>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="text-sm">Срок<input class="ui-control mt-2 w-full" type="date" name="due_date"></label>
+                    <label class="text-sm">Приоритет<select class="ui-control mt-2 w-full" name="priority">{% for key, label in priority_labels.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}</select></label>
+                    <label x-show="taskType === 'team'" class="text-sm">ID исполнителя<input class="ui-control mt-2 w-full" type="number" min="1" name="assignee_id"></label>
+                    <label class="text-sm">Часовой пояс<input class="ui-control mt-2 w-full" name="timezone" value="UTC" required></label>
+                </div>
+                <button type="submit" class="ui-button ui-button-primary">Создать дело</button>
+            </form>
+            {% if can_create_agent_task %}
+            <form x-show="taskType === 'social' || taskType === 'analytics'" method="post" action="/app/tasks" class="mt-5 space-y-4">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="job_type" :value="taskType === 'social' ? 'collect' : 'analyze'">
+                <input type="hidden" name="cron_custom" value="@once">
+                <input type="hidden" name="run_now" value="on">
+                <input type="hidden" name="window_type" value="rolling">
+                <input type="hidden" name="rolling_days" value="1">
+                <input type="hidden" name="trigger_timezone" value="UTC">
+                <input type="hidden" name="collection_configured" value="1">
+                <input type="hidden" name="collection_content_types" value="posts">
+                <label class="block text-sm font-medium">Название<input class="ui-control mt-2 w-full" name="name" required maxlength="100" placeholder="Например, мониторинг обращений"></label>
+                <label class="block text-sm font-medium">Цель<input class="ui-control mt-2 w-full" name="task_goal" maxlength="500" placeholder="Что нужно собрать или проанализировать?"></label>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="text-sm">Источники
+                        <select class="ui-control mt-2 w-full" name="source_scope" x-model="sourceScope">
+                            <option value="all">Все активные источники</option>
+                            <option value="selected">Выбранные источники</option>
+                            <option value="discovery">Найти сообщества по теме</option>
+                        </select>
+                    </label>
+                    <label class="text-sm" x-show="taskType === 'social' && sourceScope === 'discovery'">Фразы для поиска новых сообществ
+                        <input class="ui-control mt-2 w-full" name="collection_discovery_queries" placeholder="Заполните при выборе поиска сообществ">
+                    </label>
+                    <label class="text-sm" x-show="taskType === 'analytics'">Сценарий
+                        <select class="ui-control mt-2 w-full" name="scenario_id">
+                            <option value="">Сценарий workspace по умолчанию</option>
+                            {% for scenario in task_scenarios %}<option value="{{ scenario.id }}">{{ scenario.name }}</option>{% endfor %}
+                        </select>
+                    </label>
+                </div>
+                <fieldset>
+                    <legend class="mb-2 text-sm font-semibold">Платформы</legend>
+                    <label class="mr-4 text-sm"><input type="checkbox" name="platforms" value="vk" checked> VK</label>
+                    <label class="text-sm"><input type="checkbox" name="platforms" value="telegram"> Telegram</label>
+                </fieldset>
+                <fieldset class="space-y-2">
+                    <legend class="text-sm font-semibold">Источники для задачи</legend>
+                    {% if task_sources %}
+                    <div class="grid max-h-40 gap-2 overflow-y-auto rounded-lg border border-slate-200 p-3 dark:border-slate-800 sm:grid-cols-2">
+                        {% for source in task_sources %}<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="source_ids" value="{{ source.id }}"><span class="truncate">{{ source.name }}</span></label>{% endfor %}
+                    </div>
+                    {% else %}<p class="ui-muted text-sm">Подключите источник, чтобы выбрать его для задачи.</p>{% endif %}
+                </fieldset>
+                <p class="ui-muted text-xs">Разовый запуск создаст задачу и проверит доступ к выбранным источникам перед выполнением.</p>
+                <button type="submit" class="ui-button ui-button-primary">Создать и запустить</button>
+            </form>
+            {% endif %}
+        </section>
+    </div>
 </div>
 {% endblock %}

@@ -65,6 +65,7 @@ def context(*, manager=False, tenant=True, operator=False):
             is_owner=manager,
         ),
         nav=[SimpleNamespace(key="dashboard", href="/app/", ready=True, label="Обзор", icon="home")],
+        mobile_nav=[],
         workspaces=[],
     )
 

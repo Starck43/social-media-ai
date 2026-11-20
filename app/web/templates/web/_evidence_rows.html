@@ -1,3 +1,4 @@
+{% if show_boundary_filter | default(true) %}
 {% from "web/_macros.html" import popover_select %}
 <form method="get" class="ui-card space-y-3">
     {% if q is defined %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
@@ -14,6 +15,7 @@
     </div>
     <p class="text-xs ui-muted">Доступные записи зависят от ваших прав. Выбор не меняет место обработки данных.</p>
 </form>
+{% endif %}
 <div class="space-y-4" data-evidence-catalog>
     {% for row in evidence_rows %}
     <article class="ui-card" aria-labelledby="evidence-{{ row.context_type }}-{{ row.context_id }}">

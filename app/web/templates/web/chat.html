@@ -1,4 +1,5 @@
 {% extends "web/base.html" %}
+{% from "web/_macros.html" import icon %}
 {% block title %}Чат с агентом{% endblock %}
 
 {% block extra_head %}
@@ -22,44 +23,37 @@
 
 {% block page_heading %}Чат с агентом{% endblock %}
 {% block content %}
-<div class="chat-page flex flex-col" x-data="chatApp()" :class="{'chat-panel-open': panelOpen}">
-    <!-- Header -->
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div class="space-y-1">
-            <div class="flex flex-wrap items-center gap-2">
-                <span
-                    class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-mono font-medium border"
-                    :class="activeBoundary() === 'local_only'
-                        ? 'border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-200'
-                        : (activeBoundary() === 'company'
-                            ? 'border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-200'
-                            : 'border-cyan-200 bg-cyan-50 text-cyan-800 dark:border-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-300')"
-                    data-chat-boundary-badge
-                    :data-boundary="activeBoundary()"
-                >
-                    <span x-text="boundaryBadgeLabel()">Контур: {{ active_boundary | default(scoped_context.boundary if scoped_context else 'cloud') }}</span>
-                </span>
-            </div>
-            <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                {% if is_owner %}
-                Вы владелец workspace — агент будет подтверждать записи, которые меняют его настройки.
-                {% elif member_level %}
-                Ваш уровень — «{{ member_level.label }}». Агент отвечает по данным этого workspace
-                и выполняет только действия, разрешённые этому уровню.
-                {% else %}
-                Агент отвечает по данным этого workspace и может читать их без подтверждения.
-                {% endif %}
-            </p>
+<div class="chat-page flex flex-col" x-data="chatApp()">
+    <header class="chat-header">
+        <span class="chat-agent-avatar" aria-hidden="true">{{ icon('zap') }}</span>
+        <p class="chat-header-title">Рабочий диалог</p>
+        <span
+            class="chat-boundary-badge"
+            :class="activeBoundary() === 'local_only'
+                ? 'chat-boundary-badge-warning'
+                : (activeBoundary() === 'company' ? 'chat-boundary-badge-company' : 'chat-boundary-badge-cloud')"
+            data-chat-boundary-badge
+            :data-boundary="activeBoundary()"
+        >{{ icon('intent') }}<span x-text="boundaryBadgeLabel()">Контур: {{ active_boundary | default(scoped_context.boundary if scoped_context else 'cloud') }}</span></span>
+        <div class="chat-header-actions">
+            {% if messages %}<button type="button" class="ui-button ui-button-quiet" x-on:click="requestConfirmation('clear')">Очистить историю</button>{% endif %}
+            <button type="button" class="chat-panel-tab" x-ref="panelToggle" @click="toggleWorkspacePanel()"
+                    aria-controls="chat-workspace-panel" :aria-expanded="panelOpen"
+                    :aria-label="panelOpen ? 'Свернуть рабочий контекст' : 'Развернуть рабочий контекст'"
+                    :title="panelOpen ? 'Свернуть рабочий контекст' : 'Развернуть рабочий контекст'">
+                {{ icon('panel-right', 'chat-panel-toggle-icon') }}
+            </button>
         </div>
-        {% if messages %}
-        <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><button
-            x-on:click="requestConfirmation('clear')"
-            class="rounded-lg border border-slate-300 dark:border-slate-700 px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-900 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
-        >
-            Очистить историю
-        </button></div></template>
+    </header>
+    <p class="chat-header-hint">
+        {% if is_owner %}
+        Вы владелец workspace — агент будет подтверждать записи, которые меняют его настройки.
+        {% elif member_level %}
+        Ваш уровень — «{{ member_level.label }}». Агент отвечает по данным этого workspace и выполняет только действия, разрешённые этому уровню.
+        {% else %}
+        Агент отвечает по данным этого workspace и может читать их без подтверждения.
         {% endif %}
-    </div>
+    </p>
 
     <div class="chat-workspace-toolbar" x-show="workspaceTaskId || evidenceContext" x-cloak>
         <span class="chat-context-label" x-show="workspaceTaskId" x-cloak>
@@ -72,9 +66,6 @@
         </span>
     </div>
     <div class="chat-workspace-grid">
-    <button type="button" class="chat-panel-tab" x-ref="panelToggle" @click="toggleWorkspacePanel()"
-            x-show="!panelOpen" x-cloak aria-controls="chat-workspace-panel" :aria-expanded="panelOpen"
-            aria-label="Открыть рабочий контекст" title="Открыть рабочий контекст">‹</button>
     <section class="chat-window" aria-label="Диалог с агентом">
         {% if scoped_context %}
         <div x-show="evidenceContext" class="chat-scoped-context-banner p-3 m-3 mb-0 rounded-lg border {% if scoped_context.is_local_only %}border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40{% else %}border-cyan-200 bg-cyan-50/70 dark:border-cyan-900/60 dark:bg-cyan-950/30{% endif %} flex flex-wrap items-center justify-between gap-3 text-xs" data-chat-scoped-context>
@@ -201,7 +192,6 @@
             <template x-for="message in messages" :key="message.id">
                 <div class="chat-row msg-enter"
                      :class="message.role === 'user' ? 'chat-row-user' : 'chat-row-assistant'">
-
                     <div class="chat-message-body">
                         <!-- Message bubble -->
                         <div
@@ -411,48 +401,55 @@
                 </ul>
                 <p x-show="connectorReferences.length && connectorSearchPartial" x-cloak class="mt-1 text-xs text-slate-600 dark:text-slate-400">Показана часть доступных результатов.</p>
             </section>
-            <textarea
-                name="text" rows="2" :required="!readyAttachments().length" placeholder="Напишите сообщение или /help"
-                x-ref="input"
-                @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendMessage(); }"
-                @input="resizeInput()" :disabled="pending" aria-label="Сообщение агенту"
-                class="chat-input"
-            ></textarea>
-            <div class="chat-composer-bar flex items-center gap-4 justify-between w-full">
-                {% if perms and perms.can('plannertask', 'create') %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new">Создать дело</a>{% endif %}
-                <div class="chat-composer-tools">
-                    <div class="chat-attachment-tools" aria-label="Вложения">
-                        <button type="button" class="chat-attach" @click="handleAttachClick()" :disabled="pending || awaitingConfirmation" :aria-label="attachmentEnabled() ? 'Прикрепить фото или документ' : 'Прикрепить файл — о доступности'" title="Фото и документы"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="20" height="20" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8 12 6-6a3 3 0 0 1 4 4l-8 8a5 5 0 0 1-7-7l9-9m-6 12 8-8"/></svg></button>
-                        <button type="button" class="chat-attach-limits" x-show="attachmentEnabled()" x-cloak @click="openAttachmentLimits()" :disabled="pending" aria-label="Допустимые форматы и лимиты вложений">Форматы и лимиты</button>
-                    </div>
-                    <div class="chat-suggestions" data-chat-quick-actions aria-label="Быстрые команды">
-                    <button type="button" data-quick-action="prepare-task" @click="draftAction(starters[2].text)" :disabled="pending || awaitingConfirmation">Подготовить задачу</button>
-                    <button type="button" data-quick-action="analyze-result" @click="draftAction(workspaceTaskId ? 'Разбери результаты выбранной задачи: ключевые выводы, ссылки на материалы, охват и ограничения. Отдели подтверждённые данные от предположений.' : 'Разбери результаты, которые мы обсуждали: ключевые выводы, ссылки, охват и ограничения. Если данных не хватает, уточни задачу.')" :disabled="pending || awaitingConfirmation">Разобрать результат</button>
-                    <button type="button" data-quick-action="whats-next" @click="draftAction('Предложи следующий шаг по текущему обсуждению' + (workspaceTaskId ? ' и выбранной задаче' : '') + '. Учти уже сделанное и ограничения. Объясни пользу и дождись моего решения перед действиями.')" :disabled="pending || awaitingConfirmation">Что дальше?</button>
-                    <button type="button" @click="draftAction('/help')" :disabled="pending || awaitingConfirmation">Что ты умеешь?</button>
-                    <button type="button" @click="draftAction('Покажи статус и доступные результаты выбранной задачи.')"
-                             x-show="workspaceTaskId" :disabled="pending || awaitingConfirmation">Статус и результаты</button>
-                    </div>
-                </div>
-                <!-- Send, or stop the turn while the agent is answering -->
-                <button
-                    type="button" class="chat-send" :class="{ 'chat-send-stop': sending }"
-                    @click="sending ? stopGeneration() : sendMessage()"
-                    :disabled="(pending && !sending) || workspaceContextBlocked() || isLocalOnlyBlocked()"
-                    :aria-label="sending ? 'Остановить генерацию' : 'Отправить сообщение'"
-                    :title="sending ? 'Остановить' : 'Отправить'"
-                >
-                    <svg x-show="!sending" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
-                    </svg>
-                    <svg x-show="sending" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <div class="chat-input-row">
+                <button type="button" class="chat-attach" @click="handleAttachClick()" :disabled="pending || awaitingConfirmation"
+                        :aria-label="attachmentEnabled() ? 'Прикрепить фото или документ' : 'Прикрепить файл — о доступности'"
+                        title="Фото и документы">{{ icon('clip') }}</button>
+                <label class="sr-only" for="chat-message-input">Сообщение агенту</label>
+                <textarea
+                    id="chat-message-input"
+                    name="text" rows="2" :required="!readyAttachments().length" placeholder="Напишите сообщение или /help"
+                    x-ref="input"
+                    @keydown.enter="if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); sendMessage(); }"
+                    @input="resizeInput()" :disabled="pending" aria-describedby="chat-input-hint"
+                    class="chat-input"
+                ></textarea>
+                <button type="button" class="chat-send" :class="{ 'chat-send-stop': sending }"
+                        @click="sending ? stopGeneration() : sendMessage()"
+                        :disabled="(pending && !sending) || workspaceContextBlocked() || isLocalOnlyBlocked()"
+                        :aria-label="sending ? 'Остановить генерацию' : 'Отправить сообщение'"
+                        :title="sending ? 'Остановить' : 'Отправить'">
+                    <span x-show="!sending">{{ icon('send') }}</span>
+                    <svg x-show="sending" x-cloak class="ui-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                         <rect x="7" y="7" width="10" height="10" rx="2.5" />
                     </svg>
                 </button>
             </div>
+            <div class="chat-composer-bar">
+                {% if perms and perms.can('plannertask', 'create') %}<a class="ui-button" href="/app/task-hub/new">Создать дело</a>{% endif %}
+                <button type="button" class="ui-button ui-button-quiet" x-show="attachmentEnabled()" x-cloak @click="openAttachmentLimits()" :disabled="pending" aria-label="Допустимые форматы и лимиты вложений">Форматы и лимиты</button>
+            </div>
+            <div class="chat-suggestions" data-chat-quick-actions role="group" aria-label="Быстрые команды">
+                <button type="button" data-quick-action="prepare-task" @click="draftAction(starters[2].text)" :disabled="pending || awaitingConfirmation">
+                    {{ icon('document') }}<span>Подготовить задачу</span>
+                </button>
+                <button type="button" data-quick-action="analyze-result" @click="draftAction(workspaceTaskId ? 'Разбери результаты выбранной задачи: ключевые выводы, ссылки на материалы, охват и ограничения. Отдели подтверждённые данные от предположений.' : 'Разбери результаты, которые мы обсуждали: ключевые выводы, ссылки, охват и ограничения. Если данных не хватает, уточни задачу.')" :disabled="pending || awaitingConfirmation">
+                    {{ icon('chart') }}<span>Разобрать результат</span>
+                </button>
+                <button type="button" data-quick-action="whats-next" @click="draftAction('Предложи следующий шаг по текущему обсуждению' + (workspaceTaskId ? ' и выбранной задаче' : '') + '. Учти уже сделанное и ограничения. Объясни пользу и дождись моего решения перед действиями.')" :disabled="pending || awaitingConfirmation">
+                    {{ icon('arrow') }}<span>Что дальше?</span>
+                </button>
+                <button type="button" data-quick-action="help" @click="draftAction('/help')" :disabled="pending || awaitingConfirmation">
+                    {{ icon('chat') }}<span>Что ты умеешь?</span>
+                </button>
+                <button type="button" data-quick-action="task-status" @click="draftAction('Покажи статус и доступные результаты выбранной задачи.')"
+                        x-show="workspaceTaskId" :disabled="pending || awaitingConfirmation">
+                    {{ icon('list') }}<span>Статус и результаты</span>
+                </button>
+            </div>
         </form>
-        <p class="chat-hint mt-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
-            <span class="">Enter — отправить · Shift+Enter — новая строка</span>
+        <p id="chat-input-hint" class="chat-hint mt-1.5 flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
+            <span>Enter — отправить · Shift+Enter — новая строка</span>
         </p>
     </section>
     {% include "web/_chat_workspace.html" %}

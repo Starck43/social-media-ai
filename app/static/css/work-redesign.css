@@ -102,3 +102,12 @@
  .work-agent-tasks td[data-label="Статус"] { position:static; text-align:left; }
  .work-agent-tasks td[data-label="Статус"]::before { content:attr(data-label) ': '; }
 }
+
+.today-count { min-width:1.75rem; padding:.2rem .5rem; border-radius:999px; text-align:center; background:var(--color-surface-secondary); color:var(--color-text-secondary); font:600 .75rem var(--cn-mono); font-variant-numeric:tabular-nums; }
+.ui-home [data-today-section="decisions"] ul { display:grid; gap:.65rem; }
+.ui-home [data-today-section="decisions"] [data-today-item] { padding:1rem; border:0; border-radius:.75rem; background:var(--color-surface-secondary); }
+.ui-home .today-decision-open { margin-top:.35rem; color:var(--color-cyan-600); text-decoration:underline; font-weight:600; font-size:.875rem; }
+@media (min-width:769px) {
+ .ui-home [data-today-section="attention"] ul { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem; }
+ .ui-home [data-today-section="attention"] [data-today-item] { padding:1rem; border:0; border-radius:.75rem; background:var(--color-surface-secondary); }
+}

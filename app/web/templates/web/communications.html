@@ -1,6 +1,7 @@
 {% extends "web/base.html" %}
 
 {% block title %}Входящие — AI Assistant{% endblock %}
+{% block extra_head %}<script defer src="{{ static_v('js/inbox-reply-draft.js') }}"></script>{% endblock %}
 {% block page_heading %}Входящие{% endblock %}
 
 {% block page_actions %}

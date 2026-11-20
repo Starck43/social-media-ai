@@ -50,6 +50,7 @@
                             <input type="text" name="subject" value="{{ prop.fields.subject }}" class="ui-control w-full text-xs" aria-label="Тема черновика ответа">
                             <textarea name="body" rows="3" class="ui-control w-full text-xs" aria-label="Текст черновика ответа">{{ prop.fields.body }}</textarea>
                             <button type="submit" class="ui-control text-xs">Создать черновик в Outbox (без отправки)</button>
+                            <p data-reply-draft-status role="status" aria-live="polite"></p>
                         </form>
                         {% endif %}
                     </div>

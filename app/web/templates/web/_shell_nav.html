@@ -4,7 +4,7 @@
     <span class="shell-brand-name">AI Assistant</span>
 </div>
 <div class="shell-account-row">
-    <div class="shell-popover shell-account" data-shell-popover data-hover-popover>
+    <div class="shell-popover shell-account" data-shell-popover>
         <button type="button" class="shell-account-trigger" data-popover-trigger aria-expanded="false" aria-controls="account-{{ menu_id }}" aria-label="Меню пользователя: {{ user.username }}">
             <span class="shell-avatar" aria-hidden="true">{{ (user.username or '?')[:2]|upper }}</span>
             <span class="shell-nav-label">{{ user.username }}</span>

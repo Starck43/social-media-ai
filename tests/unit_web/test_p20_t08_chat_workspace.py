@@ -261,7 +261,7 @@ def test_chat_template_renders_boundary_badge_chips_quick_actions_and_four_tabs(
     )
 
     assert "data-chat-model" in rendered
-    assert "Модель: автовыбор · ZRO/deepseek-v4.1-flash" in rendered
+    assert "Модель: ZRO/deepseek-v4.1-flash (автовыбор)" in rendered
     assert "data-chat-boundary-badge" in rendered
     assert "data-chat-context-chips" in rendered
     assert "data-remove-context-chip" in rendered

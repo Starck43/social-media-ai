@@ -473,8 +473,8 @@ def test_shell_context_labels_admin_entry_and_member_disable_markup():
             )
         ]
         html = environment().get_template("shell-fixture.html").render(**data)
-        assert ("Своё пространство" if owner else "Доступ предоставлен") in html
-        assert "data-workspace-context" in html
+        # The page heading carries no workspace name or ownership hint any more.
+        assert "data-workspace-context" not in html
         assert 'href="/admin/"' in html
         assert "&lt;script&gt;other&lt;/script&gt;" in html
     template = (ROOT / "app/web/templates/web/settings.html").read_text()

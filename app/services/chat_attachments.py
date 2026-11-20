@@ -207,6 +207,7 @@ class WorkspaceAttachmentPolicy:
     plan_label: str = "Pro"
     model_id: int | None = None
     model_name: str = "Модель по умолчанию"
+    model_display_name: str = ""
     model_max_tokens: int = 4096
     supports_images: bool = True
     supports_documents: bool = True
@@ -225,6 +226,7 @@ class WorkspaceAttachmentPolicy:
             "plan": self.plan,
             "plan_label": self.plan_label,
             "model_name": self.model_name,
+            "model_display_name": self.model_display_name or self.model_name,
             "model_max_tokens": self.model_max_tokens,
             "supports_images": self.supports_images,
             "image_supported": self.supports_images,
@@ -1801,6 +1803,7 @@ async def resolve_workspace_attachment_policy(
             plan_label=plan_label,
             model_id=getattr(model_row, "id", None),
             model_name=label_name,
+            model_display_name=str(getattr(model_row, "name", "") or ""),
             model_max_tokens=max_tokens,
             supports_images=supports_images,
             supports_documents=True,

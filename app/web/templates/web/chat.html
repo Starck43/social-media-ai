@@ -24,7 +24,7 @@
 {% block page_heading %}Чат с агентом{% endblock %}
 {% block page_context %}
 {% set cm = chat_model if chat_model is defined and chat_model else none %}
-{{ tenant.name if tenant else 'Нет пространства' }} · <span class="chat-model-line" data-chat-model>{% if cm and cm.label %}Модель: {% if cm.is_auto %}автовыбор · {% endif %}{{ cm.label }}{% else %}Модель не выбрана{% endif %}</span>
+<span class="chat-model-line" data-chat-model>{% if cm and cm.label %}Модель: {{ cm.label }}{% if cm.is_auto %} (автовыбор){% endif %}{% else %}Модель не выбрана{% endif %}</span>
 {% endblock %}
 {% block content %}
 <div class="chat-page flex flex-col" x-data="chatApp()">

@@ -5,7 +5,7 @@
 {%- endmacro %}
 {% block title %}{{ display.display_title }} — AI Monitor{% endblock %}
 {% block page_heading %}{{ display.display_title }}{% endblock %}
-{% block page_context %}{{ super() }} · {{ analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id) }}{% endblock %}
+{% block page_context %}{{ analysis.source.name if analysis.source else ('Источник #' ~ analysis.source_id) }}{% endblock %}
 {% block page_actions %}
 {% if retry is defined and retry.task_links|length == 1 %}<a href="{{ retry.task_links[0].url }}" class="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Задача · {{ retry.task_links[0].name }}</a>{% endif %}
 {% endblock %}

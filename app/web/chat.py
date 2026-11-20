@@ -324,7 +324,8 @@ def _chat_model_context(request: Request, policy: dict) -> dict:
     """Model badge for the chat heading: explicit choice or the automatic default."""
     tenant = getattr(getattr(request, "state", None), "tenant", None)
     selected = getattr(tenant, "agent_model_id", None) if tenant is not None else None
-    return {"label": str(policy.get("model_name") or ""), "is_auto": selected is None}
+    label = str(policy.get("model_display_name") or policy.get("model_name") or "")
+    return {"label": label, "is_auto": selected is None}
 
 
 async def _company_connector_search_options(owner_id: int) -> dict:

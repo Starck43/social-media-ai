@@ -431,16 +431,17 @@ html.dark .chat-boundary-badge-warning { color:#fde68a; background:#451a03; }
     width: 44px;
     min-height: 44px;
     padding: 0;
-    border: 0;
+    border: 1px solid transparent;
     border-radius: var(--cn-radius-sm);
     background: transparent;
     color: var(--color-text-secondary);
     cursor: pointer;
-    transition: background-color 150ms ease, color 150ms ease;
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
 .ui-shell .chat-panel-tab:hover {
-    background: var(--color-bg);
+    border-color: var(--ui-accent);
+    background: var(--color-surface-secondary);
     color: var(--color-text-secondary);
 }
 

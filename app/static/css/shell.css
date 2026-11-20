@@ -489,11 +489,6 @@ dialog.shell-right-panel {
 	font-size: .875rem;
 }
 
-/* A dedicated footer gutter keeps the bell outside the composer and last actions. */
-body[data-shell-section="chat"] .shell-content {
-	padding-bottom: 96px;
-}
-
 .ui-notification-panel :is(button) {
 	min-height: 44px;
 	min-width: 44px;
@@ -632,12 +627,8 @@ body[data-shell-section="chat"] .chat-window {
 	overflow: auto;
 	overscroll-behavior: contain;
 	/* The page fills the scrollport edge to edge: the fixed launcher and bell float
-	 * above the text instead of a reserved footer band. */
-	padding-bottom: 24px;
-}
-
-body[data-shell-section="chat"] .shell-content {
-	padding-bottom: 24px;
+	 * above the text, and a bottom pad lets the last rows scroll clear of them. */
+	padding-bottom: calc(88px + env(safe-area-inset-bottom));
 }
 
 .shell-attention-popup {

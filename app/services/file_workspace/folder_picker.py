@@ -16,6 +16,7 @@ class PendingFolder:
     provider: str
     credential: str = field(repr=False)
     expires_at: datetime
+    root: str = "/"
 
 
 _pending: dict[str, tuple[PendingFolder, asyncio.TimerHandle]] = {}

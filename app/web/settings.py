@@ -1420,6 +1420,7 @@ async def _cloud_connection_browse(request: Request, connection_id: int, provide
             "invalid_provider_response": "Не удалось обработать ответ Диска.",
         }
         if provider == "mailru_cloud":
+            messages["rate_limited"] = "Облако Mail.ru временно ограничило запросы. Попробуйте позже."
             messages["reauthorization_required"] = "Облако Mail.ru отклонило доступ. Проверьте пароль приложения."
             messages["invalid_provider_response"] = "Не удалось обработать ответ Облака Mail.ru."
         settings_link = _MAILRU_SETTINGS if provider == "mailru_cloud" else _YANDEX_SETTINGS
@@ -1520,7 +1521,7 @@ async def _show_folder_picker(request: Request, handle: str, folder: str, offset
             raise ValueError
         folder = "/" + "/".join(parts)
         await _authorize_setup(tenant, actor)
-        policy = ReadOnlyFolderPolicy("/")
+        policy = ReadOnlyFolderPolicy(pending.root)
         limit = 1 if action == "confirm" else 100
         offset = 0 if action == "confirm" else offset
         async with asyncio.timeout(15):
@@ -1562,7 +1563,9 @@ async def _show_folder_picker(request: Request, handle: str, folder: str, offset
     except (ConnectionDenied, MetadataError, ValueError, RuntimeError, TimeoutError, PickerExpired) as exc:
         discard(handle)
         message = "Папка недоступна. Убедитесь, что она существует и у вашего аккаунта есть право на чтение."
-        if mailru and str(exc) == "reauthorization_required":
+        if isinstance(exc, PickerExpired):
+            message = "Сеанс подключения истёк. Начните подключение заново."
+        elif mailru and str(exc) == "reauthorization_required":
             message = "Облако Mail.ru отклонило вход. Проверьте адрес и пароль приложения с полным доступом."
         add_flash(request, "error", message)
         return _yandex_oauth_redirect(destination)

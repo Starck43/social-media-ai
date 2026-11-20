@@ -72,7 +72,12 @@ def _items(content: bytes, requested: tuple[str, ...], policy: ReadOnlyFolderPol
             for propstat in row.findall(_DAV + "propstat"):
                 status = propstat.findtext(_DAV + "status", default="").split()
                 resource = propstat.find(f"{_DAV}prop/{_DAV}resourcetype")
-                if len(status) >= 2 and status[1] == "200" and resource is not None:
+                if (
+                    len(status) >= 2
+                    and status[0] in {"HTTP/1.0", "HTTP/1.1"}
+                    and status[1] == "200"
+                    and resource is not None
+                ):
                     kind = "dir" if resource.find(_DAV + "collection") is not None else "file"
                     break
             if path == requested:
@@ -121,8 +126,10 @@ async def list_mailru_folder(
         raise MetadataError("provider_unavailable") from None
     if response.status_code in {401, 403}:
         raise MetadataError("reauthorization_required")
+    if response.status_code == 429:
+        raise MetadataError("rate_limited")
     if response.status_code != 207:
         raise MetadataError("provider_unavailable")
-    entries = _items(response._body, requested, policy)
+    entries = sorted(_items(response._body, requested, policy), key=lambda item: item.name)
     end = offset + limit
     return DiskPage(tuple(entries[offset:end]), end if end < len(entries) else None)

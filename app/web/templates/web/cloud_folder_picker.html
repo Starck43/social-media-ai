@@ -1,6 +1,15 @@
 <!doctype html>
 <html lang="ru">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Выбор папки</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Выбор папки</title>
+<style>
+:root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+body { max-width: 48rem; margin: 0 auto; padding: 2rem 1rem; }
+p, button { overflow-wrap: anywhere; }
+form { margin: .5rem 0; }
+button { font: inherit; min-height: 44px; max-width: 100%; padding: .4rem .75rem; cursor: pointer; }
+button:focus-visible { outline: 2px solid Highlight; outline-offset: 3px; }
+</style>
+</head>
 <body><main>
 <h1>Выберите папку</h1>
 <p>{{ folder }}</p>

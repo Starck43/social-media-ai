@@ -651,7 +651,7 @@ class _FormsParser:
                 if tag == "form":
                     self.current = {"action": attrs.get("action"), "fields": {}, "text": ""}
                     self.forms.append(self.current)
-                elif tag == "input" and self.current is not None and "name" in attrs:
+                elif tag in {"input", "button"} and self.current is not None and "name" in attrs:
                     self.current["fields"][attrs["name"]] = attrs.get("value", "")
 
             def handle_endtag(self, tag):
@@ -837,15 +837,17 @@ async def test_assembled_browse_pagination_and_provider_error(workspace_data, pi
         assert len(pinned_http.calls) == 3 and all(writer.closed for writer in pinned_http.calls)
 
 
-async def test_settings_oauth_consent_verifies_and_stores_only_the_selected_folder(workspace_data, monkeypatch):
+async def test_settings_oauth_consent_verifies_and_stores_only_the_selected_folder(
+    workspace_data, pinned_http, monkeypatch
+):
+    import json
     import re
-    from unittest.mock import AsyncMock
     from urllib.parse import parse_qs, urlsplit
 
     from pydantic import SecretStr
 
     from app.core.hashing import get_password_hash
-    from app.integrations.file_workspace.yandex_disk import MetadataError
+    from app.integrations.file_workspace import yandex_http
     from app.main import create_application
     from app.services.file_workspace import yandex_oauth
     from app.utils.crypto import decrypt_secret
@@ -853,11 +855,19 @@ async def test_settings_oauth_consent_verifies_and_stores_only_the_selected_fold
     monkeypatch.setattr(settings, "YANDEX_DISK_CLIENT_ID", "test-yandex-client")
     monkeypatch.setattr(settings, "YANDEX_DISK_CLIENT_SECRET", SecretStr("test-yandex-client-secret"))
     monkeypatch.setattr(settings, "PUBLIC_BASE_URL", "http://localhost:8000")
-    exchanged = AsyncMock(return_value={"access_token": TEST_TOKEN, "refresh_token": "discard-me"})
-    listed = AsyncMock()
-    monkeypatch.setattr(yandex_oauth, "exchange_yandex_code", exchanged)
-    monkeypatch.setattr(yandex_oauth, "list_folder", listed)
+    exchanged = []
+    payload = {"access_token": TEST_TOKEN, "refresh_token": "discard-me"}
 
+    async def exchange_stream():
+        reader = asyncio.StreamReader()
+        body = json.dumps(payload).encode()
+        reader.feed_data(b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body)
+        reader.feed_eof()
+        writer = _PickerWriter()
+        exchanged.append(writer)
+        return reader, writer
+
+    monkeypatch.setattr(yandex_http, "open_yandex_oauth_tls", exchange_stream)
     actor = workspace_data.users[0]
     password = "p8t34-test-password"
     async with async_session_maker() as session, session.begin():
@@ -882,10 +892,11 @@ async def test_settings_oauth_consent_verifies_and_stores_only_the_selected_fold
         oauth_form = page.text.split(f'action="{start_path}"', 1)[1].split("</form>", 1)[0]
         csrf = re.search(csrf_pattern, oauth_form).group(1)
         assert "Подключить через Яндекс" in oauth_form
-        form = {"_csrf": csrf, "root": "/Документы", "label": "OAuth test mount", "scope_ack": "on"}
+        assert 'name="root"' not in oauth_form and 'name="label"' not in oauth_form
+        form = {"_csrf": csrf}
 
         assert (await client.post(start_path, data={**form, "_csrf": login_csrf})).status_code == 403
-        assert (await client.post(start_path, data={**form, "scope_ack": "off"})).status_code == 400
+        assert (await client.post(start_path, data={**form, "root": "/work"})).status_code == 400
 
         async def start():
             response = await client.post(start_path, data=form)
@@ -904,47 +915,69 @@ async def test_settings_oauth_consent_verifies_and_stores_only_the_selected_fold
         state = await start()
         assert (await client.get(callback, params={"state": state, "error": "access_denied"})).status_code == 303
         assert (await client.get(callback, params={"state": state, "code": "reused"})).status_code == 303
-        exchanged.assert_not_awaited()
-        async with async_session_maker() as session:
-            assert (
-                await session.scalar(select(WorkspaceConnection.id).where(WorkspaceConnection.label == form["label"]))
-                is None
-            )
+        assert not exchanged
+        target = "/Документы"
+        query = select(WorkspaceConnection).where(
+            WorkspaceConnection.owner_user_id == actor.id, WorkspaceConnection.label == "Яндекс.Диск"
+        )
 
-        exchanged.return_value = {"access_token": TEST_TOKEN, "scope": "cloud_api:disk.read cloud_api:disk.write"}
+        payload["scope"] = "cloud_api:disk.read cloud_api:disk.write"
         state = await start()
         assert (await client.get(callback, params={"state": state, "code": "broad-scope"})).status_code == 303
-        listed.assert_not_awaited()
+        assert not pinned_http.calls
+        del payload["scope"]
 
-        exchanged.return_value = {"access_token": TEST_TOKEN, "refresh_token": "discard-me"}
-        listed.side_effect = MetadataError("provider_unavailable")
+        pinned_http.status = b"503 Unavailable"
         state = await start()
         assert (await client.get(callback, params={"state": state, "code": "unavailable-folder"})).status_code == 303
-        async with async_session_maker() as session:
-            assert (
-                await session.scalar(select(WorkspaceConnection.id).where(WorkspaceConnection.label == form["label"]))
-                is None
-            )
-        exchanged.reset_mock()
-        listed.reset_mock(side_effect=True)
+        pinned_http.status = b"200 OK"
+        home_items = [{"path": f"disk:{target}", "name": target[1:], "type": "dir"}]
+        pinned_http.response = {"path": "disk:/", "type": "dir", "_embedded": {"offset": 0, "items": home_items}}
+        picker = "/app/settings/cloud-folders/pick"
+
+        def fields(response, label):
+            assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+            assert TEST_TOKEN not in response.text
+            return next(form["fields"] for form in _FormsParser.parse(response.text).forms if label in form["text"])
+
+        state = await start()
+        response = await client.get(callback, params={"state": state, "code": "cancel-picker"})
+        cancel = fields(response, "Отменить")
+        assert (await client.post(picker, data=cancel)).status_code == 303
+        assert (await client.post(picker, data={**cancel, "action": "list"})).status_code == 303
 
         state = await start()
         response = await client.get(callback, params={"state": state, "code": "provider-code"})
-        assert response.status_code == 303 and response.headers["referrer-policy"] == "no-referrer"
-        assert response.headers["location"] == f"{settings_path}#conn-ws-yandex_disk"
+        assert response.headers["referrer-policy"] == "no-referrer"
+        assert "Использовать эту папку" not in response.text
         assert (await client.get(callback, params={"state": state, "code": "reused"})).status_code == 303
-        exchanged.assert_awaited_once()
-        listed.assert_awaited_once()
-        assert listed.call_args.kwargs["folder"] == form["root"]
-        assert listed.call_args.kwargs["token"] == TEST_TOKEN
-        assert listed.call_args.kwargs["policy"].binding() == "disk:/Документы"
+        assert b"POST /token HTTP/1.1" in exchanged[-1].data and all(writer.closed for writer in exchanged)
+        async with async_session_maker() as session:
+            assert await session.scalar(query) is None
+        child = fields(response, target[1:])
+        pinned_http.response = {"path": f"disk:{target}", "type": "dir"}
+        opened = await client.post(picker, data=child)
+        back = fields(opened, "На уровень выше")
+        pinned_http.response = {"path": "disk:/", "type": "dir", "_embedded": {"offset": 0, "items": home_items}}
+        response = await client.post(picker, data=back)
+        child = fields(response, target[1:])
+        pinned_http.response = {"path": f"disk:{target}", "type": "dir"}
+        opened = await client.post(picker, data=child)
+        confirm = fields(opened, "Использовать эту папку")
+        calls = len(pinned_http.calls)
+        response = await client.post(picker, data=confirm)
+        assert response.status_code == 303
+        assert response.headers["location"] == f"{settings_path}#conn-ws-yandex_disk"
+        assert (await client.post(picker, data=confirm)).status_code == 303
+        assert len(pinned_http.calls) == calls + 1
+        assert b"limit=1" in pinned_http.calls[-1].data
 
         async with async_session_maker() as session:
-            row = await session.scalar(select(WorkspaceConnection).where(WorkspaceConnection.label == form["label"]))
+            row = await session.scalar(query)
             secret = await session.get(WorkspaceConnectionSecret, row.id)
             assert row.state == "verified" and row.checked_at is not None
             assert row.owner_user_id == actor.id
-            assert row.config["file_policy"] == {"version": 1, "root": form["root"], "restrictions": []}
+            assert row.config["file_policy"] == {"version": 1, "root": target, "restrictions": []}
             assert secret.secret_encrypted != TEST_TOKEN and decrypt_secret(secret.secret_encrypted) == TEST_TOKEN
             connection_id = row.id
 
@@ -959,3 +992,120 @@ async def test_settings_oauth_consent_verifies_and_stores_only_the_selected_fold
         async with async_session_maker() as session:
             assert not (await session.get(WorkspaceConnection, connection_id)).is_active
             assert (await session.get(WorkspaceConnectionSecret, connection_id)).secret_encrypted == ""
+
+
+class _PickerWriter:
+    def __init__(self):
+        self.data = b""
+        self.closed = False
+
+    def write(self, data):
+        self.data += data
+
+    async def drain(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+    async def wait_closed(self):
+        pass
+
+
+async def test_mailru_webdav_settings_picker_and_revoke(workspace_data, monkeypatch):
+    from app.core.hashing import get_password_hash
+    from app.integrations.file_workspace import mailru_webdav
+    from app.main import create_application
+    from app.utils.crypto import decrypt_secret
+
+    account, app_password = "example@mail.ru", "synthetic-app-password"
+    actor = workspace_data.users[0]
+    password = "p12t19-test-password"
+    async with async_session_maker() as session, session.begin():
+        await session.execute(
+            update(User).where(User.id == actor.id).values(hashed_password=get_password_hash(password))
+        )
+
+    def xml(*paths):
+        rows = "".join(
+            f"<response><href>{path}</href><propstat><prop><resourcetype><collection/></resourcetype></prop>"
+            "<status>HTTP/1.1 200 OK</status></propstat></response>"
+            for path in paths
+        )
+        return f'<multistatus xmlns="DAV:">{rows}</multistatus>'.encode()
+
+    data = SimpleNamespace(status=b"207 Multi-Status", body=xml("/", "/work/"), writers=[])
+
+    async def opener():
+        reader = asyncio.StreamReader()
+        reader.feed_data(
+            b"HTTP/1.1 "
+            + data.status
+            + b"\r\nContent-Length: "
+            + str(len(data.body)).encode()
+            + b"\r\n\r\n"
+            + data.body
+        )
+        reader.feed_eof()
+        writer = _PickerWriter()
+        data.writers.append(writer)
+        return reader, writer
+
+    monkeypatch.setattr(mailru_webdav, "open_mailru_tls", opener)
+    settings_path = "/app/settings?tab=connections"
+    start = "/app/settings/mailru-cloud-connections/start"
+    picker = "/app/settings/cloud-folders/pick"
+
+    def form(response, *, action=None, text=None):
+        return next(
+            f["fields"]
+            for f in _FormsParser.parse(response.text).forms
+            if (action is None or f["action"] == action) and (text is None or text in f["text"])
+        )
+
+    query = select(WorkspaceConnection).where(
+        WorkspaceConnection.provider_id == "mailru_cloud", WorkspaceConnection.owner_user_id == actor.id
+    )
+    transport = httpx.ASGITransport(app=create_application())
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost:8000") as client:
+        login = await client.get("/app/login")
+        csrf = form(login, action="/app/login")["_csrf"]
+        await client.post("/app/login", data={"username": actor.username, "password": password, "_csrf": csrf})
+        page = await client.get(settings_path)
+        initial = form(page, action=start)
+        assert initial["account"] == actor.email
+        assert "https://id.mail.ru/security" in page.text
+        creds = {"_csrf": initial["_csrf"], "account": account, "password": app_password}
+        data.status = b"401 Unauthorized"
+        assert (await client.post(start, data=creds)).status_code == 303
+        data.status = b"207 Multi-Status"
+        started = await client.post(start, data=creds)
+        assert started.status_code == 200 and app_password not in started.text
+        async with async_session_maker() as session:
+            assert await session.scalar(query) is None
+        open_work = form(started, action=picker, text="work")
+        data.body = xml("/work/", "/work/nested/")
+        opened = await client.post(picker, data=open_work)
+        confirm = form(opened, action=picker, text="Использовать эту папку")
+        assert (await client.post(picker, data=confirm)).status_code == 303
+        async with async_session_maker() as session:
+            row = await session.scalar(query)
+            assert row.state == "verified" and row.config["file_policy"]["root"] == "/work"
+            secret = await session.get(WorkspaceConnectionSecret, row.id)
+            assert app_password in decrypt_secret(secret.secret_encrypted)
+            cid = row.id
+        page = await client.get(settings_path)
+        endpoint = f"/app/settings/mailru-cloud-connections/{cid}/browse"
+        read = form(page, action=endpoint)
+        assert (await client.post(endpoint, data=read)).status_code == 200
+        total = len(data.writers)
+        for bad in ("/workspace", "/work/../other", "/work/%2e%2e"):
+            assert (await client.post(endpoint, data={**read, "folder": bad, "offset": "0"})).status_code == 403
+        assert len(data.writers) == total
+        assert all(w.closed and b"PROPFIND " in w.data and b"Depth: 1" in w.data for w in data.writers)
+        disable = f"/app/settings/mailru-cloud-connections/{cid}/disable"
+        assert (await client.post(disable, data=form(page, action=disable))).status_code == 303
+        assert (await client.post(endpoint, data=read)).status_code == 403
+        assert len(data.writers) == total
+        async with async_session_maker() as session:
+            assert (await session.get(WorkspaceConnectionSecret, cid)).secret_encrypted == ""

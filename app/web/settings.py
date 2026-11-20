@@ -1167,28 +1167,23 @@ def _yandex_oauth_redirect(url: str = _YANDEX_SETTINGS) -> RedirectResponse:
 async def yandex_oauth_start(request: Request):
     from app.admin.csrf import SESSION_ID_KEY
     from app.models.managers.workspace_connection_manager import ConnectionDenied
-    from app.services.file_workspace.connections import FolderConnectionInputError
     from app.services.file_workspace.yandex_oauth import YandexOAuthError, start_yandex_oauth
 
     form = await request.form()
     token = form.get("_csrf")
     if not isinstance(token, str) or not _personal_access(request) or not _verify_yandex_browse_csrf(request, token):
         return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
-    expected = {"_csrf", "label", "root", "scope_ack"}
-    if set(form) != expected or any(len(form.getlist(key)) != 1 for key in expected) or form["scope_ack"] != "on":
+    expected = {"_csrf"}
+    if set(form) != expected or any(len(form.getlist(key)) != 1 for key in expected):
         return HTMLResponse("Некорректная форма", status_code=400)
     try:
         url = await start_yandex_oauth(
             tenant_id=request.state.tenant_id,
             actor_id=request.state.web_user.id,
             session_id=request.session[SESSION_ID_KEY],
-            label=form["label"],
-            root=form["root"],
         )
     except ConnectionDenied:
         return HTMLResponse("Подключение недоступно", status_code=403)
-    except FolderConnectionInputError:
-        add_flash(request, "error", "Укажите путь к одной папке на Яндекс.Диске, например /Документы.")
     except YandexOAuthError:
         add_flash(request, "error", "Вход через Яндекс пока не настроен.")
     else:
@@ -1202,6 +1197,7 @@ async def yandex_oauth_callback(request: Request):
     from app.integrations.file_workspace.yandex_disk import MetadataError
     from app.models.managers.workspace_connection_manager import ConnectionDenied
     from app.services.file_workspace.connections import FolderConnectionInputError
+    from app.services.file_workspace.folder_picker import PickerExpired
     from app.services.file_workspace.yandex_oauth import YandexOAuthError, complete_yandex_oauth
 
     session_id = request.session.get(SESSION_ID_KEY)
@@ -1218,7 +1214,7 @@ async def yandex_oauth_callback(request: Request):
         add_flash(request, "error", "Сеанс подключения истёк. Начните подключение заново.")
         return _yandex_oauth_redirect()
     try:
-        await complete_yandex_oauth(
+        handle = await complete_yandex_oauth(
             tenant_id=request.state.tenant_id,
             actor_id=request.state.web_user.id,
             session_id=session_id,
@@ -1229,7 +1225,6 @@ async def yandex_oauth_callback(request: Request):
     except YandexOAuthError as exc:
         messages = {
             "cancelled": "Подключение отменено.",
-            "folder_unavailable": "Яндекс.Диск не открыл выбранную папку. Убедитесь, что папка существует, путь указан точно и у аккаунта Яндекса есть право на чтение.",
             "invalid_state": "Сеанс подключения истёк. Начните подключение заново.",
         }
         add_flash(
@@ -1237,10 +1232,10 @@ async def yandex_oauth_callback(request: Request):
         )
     except ConnectionDenied:
         add_flash(request, "error", "Подключение недоступно в этом пространстве.")
-    except (MetadataError, FolderConnectionInputError, RuntimeError):
+    except (MetadataError, FolderConnectionInputError, PickerExpired, RuntimeError):
         add_flash(request, "error", "Не удалось сохранить подключение к Яндекс.Диску. Повторите подключение.")
     else:
-        add_flash(request, "success", "Яндекс.Диск подключён. Доступ к выбранной папке проверен.")
+        return await _show_folder_picker(request, handle, "/", 0, "list")
     return _yandex_oauth_redirect()
 
 
@@ -1421,3 +1416,85 @@ async def yandex_connection_browse(request: Request, connection_id: int):
         csrf=_yandex_browse_csrf(request),
     )
     return _private_file_response(response)
+
+
+async def _cloud_form(request: Request, *, max_fields: int) -> dict[str, str]:
+    from urllib.parse import parse_qsl
+
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/x-www-form-urlencoded":
+        raise ValueError
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 65536:
+            raise ValueError
+        body.extend(chunk)
+    pairs = parse_qsl(body.decode("utf-8"), keep_blank_values=True, strict_parsing=True,
+                      max_num_fields=max_fields, errors="strict")
+    form = dict(pairs)
+    if len(pairs) != len(form):
+        raise ValueError
+    return form
+
+
+@router.post("/cloud-folders/pick")
+async def cloud_folder_pick(request: Request):
+    try:
+        form = await _cloud_form(request, max_fields=5)
+        if set(form) != {"_csrf", "handle", "folder", "offset", "action"}:
+            raise ValueError
+        offset = form["offset"]
+        if not offset.isascii() or not offset.isdecimal() or len(offset) > 7 or int(offset) > 1_000_000:
+            raise ValueError
+        if form["action"] not in {"list", "confirm", "cancel"} or len(form["handle"]) != 43:
+            raise ValueError
+    except ValueError:
+        return _private_file_response(HTMLResponse("Некорректная форма", status_code=400))
+    if not _personal_access(request) or not _verify_yandex_browse_csrf(request, form["_csrf"]):
+        return _private_file_response(HTMLResponse("Недостаточно прав или сессия истекла", status_code=403))
+    return await _show_folder_picker(request, form["handle"], form["folder"], int(offset), form["action"])
+
+
+async def _show_folder_picker(request: Request, handle: str, folder: str, offset: int, action: str):
+    from app.integrations.file_workspace.policy import ReadOnlyFolderPolicy, _components
+    from app.integrations.file_workspace.yandex_disk import MetadataError, list_folder
+    from app.integrations.file_workspace.yandex_http import YandexMetadataClient
+    from app.models.managers.workspace_connection_manager import ConnectionDenied
+    from app.services.file_workspace.connections import create_yandex_connection
+    from app.services.file_workspace.folder_picker import PickerExpired, discard, get
+    from app.services.file_workspace.yandex_oauth import _authorize_setup
+
+    tenant, actor = request.state.tenant_id, request.state.web_user.id
+    try:
+        pending = get(handle, _yandex_browse_session_id(request, create=False), consume=action != "list")
+    except PickerExpired:
+        add_flash(request, "error", "Сеанс подключения истёк. Начните подключение заново.")
+        return _yandex_oauth_redirect()
+    if action == "cancel":
+        return _yandex_oauth_redirect()
+    try:
+        parts = _components(folder)
+        if action == "confirm" and not parts:
+            raise ValueError
+        folder = "/" + "/".join(parts)
+        await _authorize_setup(tenant, actor)
+        page = await list_folder(
+            YandexMetadataClient(), token=pending.credential, folder=folder, policy=ReadOnlyFolderPolicy("/"),
+            offset=offset if action == "list" else 0, limit=100 if action == "list" else 1,
+        )
+        if action == "confirm":
+            await create_yandex_connection(
+                tenant_id=tenant, actor_id=actor, label="", root=folder,
+                oauth_token=pending.credential, folder_verified=True,
+            )
+    except (ConnectionDenied, MetadataError, ValueError, RuntimeError):
+        discard(handle)
+        add_flash(request, "error", "Папка недоступна. Убедитесь, что она существует и у вашего аккаунта есть право на чтение.")
+        return _yandex_oauth_redirect()
+    if action == "confirm":
+        add_flash(request, "success", "Подключение сохранено. Доступ к папке проверен.")
+        return _yandex_oauth_redirect()
+    return _private_file_response(render(
+        request, "web/cloud_folder_picker.html", csrf=_yandex_browse_csrf(request), handle=handle,
+        folder=folder, parent="/" + "/".join(parts[:-1]) if parts else None,
+        items=[item for item in page.items if item.kind == "dir"], next_offset=page.next_offset, offset=offset,
+    ))

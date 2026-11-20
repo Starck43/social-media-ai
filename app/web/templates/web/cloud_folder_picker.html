@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Выбор папки</title></head>
+<body><main>
+<h1>Выберите папку</h1>
+<p>{{ folder }}</p>
+{% macro picker_button(label, path, action='list', offset=0) %}
+<form method="post" action="/app/settings/cloud-folders/pick">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input type="hidden" name="handle" value="{{ handle }}">
+    <input type="hidden" name="folder" value="{{ path }}">
+    <input type="hidden" name="offset" value="{{ offset }}">
+    <button name="action" value="{{ action }}">{{ label }}</button>
+</form>
+{% endmacro %}
+{% if parent is not none %}
+    {{ picker_button('На уровень выше', parent) }}
+    {{ picker_button('Использовать эту папку', folder, 'confirm') }}
+{% endif %}
+{% for item in items %}
+    {{ picker_button(item.name, item.path) }}
+{% endfor %}
+{% if offset %}{{ picker_button('Предыдущая страница', folder, offset=[0, offset - 100]|max) }}{% endif %}
+{% if next_offset is not none %}{{ picker_button('Следующая страница', folder, offset=next_offset) }}{% endif %}
+{{ picker_button('Отменить', folder, 'cancel') }}
+</main></body>
+</html>

@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 from urllib.parse import urlencode, urlsplit
 
 from app.core.config import settings
 from app.core.database import async_session_maker
-from app.integrations.file_workspace.policy import ReadOnlyFolderPolicy, _components
-from app.integrations.file_workspace.yandex_disk import MetadataError, list_folder
-from app.integrations.file_workspace.yandex_http import YandexMetadataClient, exchange_yandex_code
+from app.integrations.file_workspace.yandex_http import exchange_yandex_code
 from app.integrations.file_workspace.yandex_tls import OAUTH_HOST
 from app.integrations.oauth.state import OAuthStateError, oauth_state_store
 
@@ -59,15 +56,10 @@ async def _authorize_setup(tenant_id: int, actor_id: int) -> None:
         await _authorize(session, tenant_id, actor_id, write=True, require_source_view=True)
 
 
-async def start_yandex_oauth(*, tenant_id: int, actor_id: int, session_id: str, label: str, root: str) -> str:
-    from .connections import FolderConnectionInputError, validate_yandex_folder
-
+async def start_yandex_oauth(*, tenant_id: int, actor_id: int, session_id: str) -> str:
     redirect_uri = _redirect_uri()
     if not oauth_configured() or redirect_uri is None:
         raise YandexOAuthError("not_configured")
-    label, root = validate_yandex_folder(label, root)
-    if not _components(root):
-        raise FolderConnectionInputError("select_folder")
     await _authorize_setup(tenant_id, actor_id)
     pending = oauth_state_store.issue(
         tenant_id=tenant_id,
@@ -76,7 +68,7 @@ async def start_yandex_oauth(*, tenant_id: int, actor_id: int, session_id: str, 
         connection_id=None,
         redirect_uri=redirect_uri,
         browser_session_id=session_id,
-        setup=(label, root),
+        setup=("", "/"),
     )
     query = urlencode(
         {
@@ -95,8 +87,9 @@ async def start_yandex_oauth(*, tenant_id: int, actor_id: int, session_id: str, 
 
 async def complete_yandex_oauth(
     *, tenant_id: int, actor_id: int, session_id: str, state: str, code: str, cancelled: bool
-) -> None:
-    from .connections import create_yandex_connection, validate_yandex_token
+) -> str:
+    from .connections import validate_yandex_token
+    from .folder_picker import PendingFolder, issue
 
     try:
         pending = oauth_state_store.consume(
@@ -128,14 +121,6 @@ async def complete_yandex_oauth(
     if not isinstance(scope, str) or set(scope.split()) != {_DISK_SCOPE}:
         raise YandexOAuthError("unexpected_scope")
     token = validate_yandex_token(response.get("access_token"))
-    label, root = pending.setup
-    try:
-        async with asyncio.timeout(15):
-            await list_folder(
-                YandexMetadataClient(), token=token, folder=root, policy=ReadOnlyFolderPolicy(root), limit=1
-            )
-    except (MetadataError, TimeoutError):
-        raise YandexOAuthError("folder_unavailable") from None
-    await create_yandex_connection(
-        tenant_id=tenant_id, actor_id=actor_id, label=label, root=root, oauth_token=token, folder_verified=True
+    return issue(
+        PendingFolder(f"yandex-browse:{session_id}:{actor_id}:{tenant_id}", _PROVIDER, token, pending.expires_at)
     )

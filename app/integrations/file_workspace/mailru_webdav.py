@@ -24,6 +24,7 @@ async def open_mailru_tls():
 
 def credentials(account: str, password: str) -> tuple[str, str]:
     account = account.strip()
+    password = password.strip()
     if (
         len(account) > 254
         or account.count("@") != 1

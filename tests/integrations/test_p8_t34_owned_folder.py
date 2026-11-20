@@ -1013,6 +1013,8 @@ class _PickerWriter:
 
 
 async def test_mailru_webdav_settings_picker_and_revoke(workspace_data, monkeypatch):
+    import json
+
     from app.core.hashing import get_password_hash
     from app.integrations.file_workspace import mailru_webdav
     from app.main import create_application
@@ -1075,10 +1077,21 @@ async def test_mailru_webdav_settings_picker_and_revoke(workspace_data, monkeypa
         initial = form(page, action=start)
         assert initial["account"] == actor.email
         assert "https://id.mail.ru/security" in page.text
-        creds = {"_csrf": initial["_csrf"], "account": account, "password": app_password}
+        webdav_scope = "Полный доступ к Облаку (WebDAV)"
+        broader_scope = "полным доступом к почте, облаку и календарю"
+        assert page.text.index(webdav_scope) < page.text.index(broader_scope)
+        creds = {"_csrf": initial["_csrf"], "account": account, "password": f" {app_password} \r\n"}
         data.status = b"401 Unauthorized"
         assert (await client.post(start, data=creds)).status_code == 303
         data.status = b"207 Multi-Status"
+        root_listing = data.body
+        oversized = b" " * (256 * 1024 + 1)
+        data.body = oversized
+        too_large_message = "В этой папке слишком много файлов и подпапок для просмотра."
+        rejected = await client.post(start, data=creds, follow_redirects=True)
+        assert rejected.history[0].status_code == 303
+        assert too_large_message in rejected.text
+        data.body = root_listing
         started = await client.post(start, data=creds)
         assert started.status_code == 200 and app_password not in started.text
         async with async_session_maker() as session:
@@ -1092,12 +1105,15 @@ async def test_mailru_webdav_settings_picker_and_revoke(workspace_data, monkeypa
             row = await session.scalar(query)
             assert row.state == "verified" and row.config["file_policy"]["root"] == "/work"
             secret = await session.get(WorkspaceConnectionSecret, row.id)
-            assert app_password in decrypt_secret(secret.secret_encrypted)
+            assert json.loads(decrypt_secret(secret.secret_encrypted)) == [account, app_password]
             cid = row.id
         page = await client.get(settings_path)
         endpoint = f"/app/settings/mailru-cloud-connections/{cid}/browse"
         read = form(page, action=endpoint)
         assert (await client.post(endpoint, data=read)).status_code == 200
+        data.body = oversized
+        rejected = await client.post(endpoint, data=read)
+        assert rejected.status_code == 503 and too_large_message in rejected.text
         total = len(data.writers)
         for bad in ("/workspace", "/work/../other", "/work/%2e%2e"):
             assert (await client.post(endpoint, data={**read, "folder": bad, "offset": "0"})).status_code == 403

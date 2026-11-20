@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.integrations.file_workspace.mailru_webdav import _href, _items
+from app.integrations.file_workspace.mailru_webdav import _href, _items, credentials
 from app.integrations.file_workspace.policy import ReadOnlyFolderPolicy
 from app.integrations.file_workspace.yandex_disk import MetadataError
 from app.services.file_workspace.folder_picker import PendingFolder, PickerExpired, get, issue
@@ -44,6 +44,16 @@ async def test_picker_expiry_discards_the_pending_token():
         get(handle, binding)
     with pytest.raises(PickerExpired):
         issue(pending)
+
+
+def test_mailru_credentials_strip_surrounding_whitespace():
+    assert credentials(" example@mail.ru ", "\t app-password \r\n") == ("example@mail.ru", "app-password")
+
+
+@pytest.mark.parametrize("password", [" \t\n", "app password", "app\npassword"])
+def test_mailru_credentials_reject_empty_passwords_and_internal_whitespace(password):
+    with pytest.raises(ValueError, match="invalid_credentials"):
+        credentials("example@mail.ru", password)
 
 
 @pytest.mark.parametrize(

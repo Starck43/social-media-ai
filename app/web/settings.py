@@ -1160,6 +1160,10 @@ async def workspace_connection_action(request: Request, connection_id: int, oper
 
 _YANDEX_SETTINGS = f"{BACK}?tab=connections#conn-ws-yandex_disk"
 _MAILRU_SETTINGS = f"{BACK}?tab=connections#conn-ws-mailru_cloud"
+_MAILRU_FOLDER_TOO_LARGE = (
+    "В этой папке слишком много файлов и подпапок для просмотра. "
+    "Выберите другую папку или распределите её содержимое по подпапкам в Облаке Mail.ru."
+)
 
 
 def _yandex_oauth_redirect(url: str = _YANDEX_SETTINGS) -> RedirectResponse:
@@ -1423,6 +1427,7 @@ async def _cloud_connection_browse(request: Request, connection_id: int, provide
             messages["rate_limited"] = "Облако Mail.ru временно ограничило запросы. Попробуйте позже."
             messages["reauthorization_required"] = "Облако Mail.ru отклонило доступ. Проверьте пароль приложения."
             messages["invalid_provider_response"] = "Не удалось обработать ответ Облака Mail.ru."
+            messages["response_too_large"] = _MAILRU_FOLDER_TOO_LARGE
         settings_link = _MAILRU_SETTINGS if provider == "mailru_cloud" else _YANDEX_SETTINGS
         message = messages.get(str(error), "Не удалось получить список. Проверьте подключение и попробуйте позже.")
         # Provider failure is not a folder: the shared browse template carries the
@@ -1566,7 +1571,9 @@ async def _show_folder_picker(request: Request, handle: str, folder: str, offset
         if isinstance(exc, PickerExpired):
             message = "Сеанс подключения истёк. Начните подключение заново."
         elif mailru and str(exc) == "reauthorization_required":
-            message = "Облако Mail.ru отклонило вход. Проверьте адрес и пароль приложения с полным доступом."
+            message = "Облако Mail.ru отклонило вход. Проверьте адрес и пароль приложения с доступом к Облаку."
+        elif mailru and str(exc) == "response_too_large":
+            message = _MAILRU_FOLDER_TOO_LARGE
         add_flash(request, "error", message)
         return _yandex_oauth_redirect(destination)
     except BaseException:

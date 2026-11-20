@@ -331,8 +331,12 @@ A restart requires starting setup again.
 
 Mail.ru Cloud uses the fixed HTTPS authority `webdav.cloud.mail.ru`. Users
 enter their account and an external app password, verify access, then confirm a
-folder. The Settings hint describes the full mail, cloud and calendar password
-option. The connector sends only bounded WebDAV metadata requests. The app
+folder. Choose `Полный доступ к Облаку (WebDAV)` in Mail.ru's app-password
+settings. If a newly issued WebDAV password is still refused, full access to
+mail, cloud and calendar is an optional fallback that grants additional rights.
+The connector sends only bounded WebDAV metadata requests. If a folder response
+exceeds 256 KiB, select another folder or split its contents into subfolders in
+Mail.ru Cloud. The app
 password is held in process memory during selection (ten minutes maximum), then
 stored encrypted only after confirmation. Disconnecting deletes the local
 credential; the account holder can revoke it in Mail.ru. Both pickers require

@@ -29,7 +29,8 @@
         {% if card.provider|default(none) and card.provider.source_url %}
         <a href="{{ card.provider.source_url }}" target="_blank" rel="noopener noreferrer">Инструкция: как получить пароль приложения</a>
         {% endif %}
-        <p class="text-sm ui-muted">В разделе «Пароли приложений» выберите «Полный доступ к почте, облаку и календарю». Пароль только для Облака может не подойти. Пароль даёт широкие права, а приложение использует его только для просмотра списка файлов и хранит в зашифрованном виде.</p>
+        <p class="text-sm ui-muted">В разделе «Пароли приложений» выберите «Полный доступ к Облаку (WebDAV)». Приложение использует пароль для просмотра списка файлов и хранит его в зашифрованном виде.</p>
+        <p class="text-sm ui-muted">Если Mail.ru отклоняет пароль WebDAV, проверьте адрес и создайте новый пароль WebDAV. Если это не помогло, можно попробовать пароль с полным доступом к почте, облаку и календарю, если вы готовы предоставить эти права.</p>
         <input class="ui-control w-full" id="mailru-cloud-password" name="password" type="password"
                autocomplete="new-password" maxlength="512" required>
         <button class="ui-control">Проверить и подключить</button>

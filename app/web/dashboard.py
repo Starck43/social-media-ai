@@ -30,6 +30,36 @@ async def _recent_results(tenant_id: int | None, is_superuser: bool, show_source
     return await _recent_results_in_scope(tenant_id, show_sources)
 
 
+def _analysis_coverage_row(summary_data: dict, source_name: str | None, incomplete: bool, reasons: list[str]) -> dict:
+    """One honest coverage bar: measured metric coverage, else the completeness marker.
+
+    An unknown marker is never rendered as full coverage; the bar stays empty and
+    says so. Only a measured ratio produces a percentage.
+    """
+    known = total = 0
+    coverage = summary_data.get("metric_coverage") if isinstance(summary_data, dict) else None
+    for info in (coverage or {}).values() if isinstance(coverage, dict) else ():
+        if isinstance(info, dict) and isinstance(info.get("total"), int) and info["total"] > 0:
+            total += info["total"]
+            known += info["known"] if isinstance(info.get("known"), int) else 0
+    label = source_name or "Источники"
+    if total:
+        percent = max(0, min(100, round(100 * known / total)))
+        return {"label": label, "percent": percent, "state": "ok" if percent >= 100 else "partial", "note": ""}
+    meta = (summary_data or {}).get("analysis_metadata") if isinstance(summary_data, dict) else None
+    complete = meta.get("analysis_complete") if isinstance(meta, dict) else None
+    if incomplete:
+        return {
+            "label": label,
+            "percent": 100,
+            "state": "none",
+            "note": reasons[0] if reasons else "нет полного покрытия",
+        }
+    if complete is True:
+        return {"label": label, "percent": 100, "state": "ok", "note": ""}
+    return {"label": label, "percent": 0, "state": "unknown", "note": "покрытие не подтверждено"}
+
+
 async def _recent_results_in_scope(tenant_id: int | None, show_sources: bool) -> list[dict]:
     from app.services.ai.analysis_render import render_analysis
 
@@ -43,6 +73,7 @@ async def _recent_results_in_scope(tenant_id: int | None, show_sources: bool) ->
     for analysis in rows:
         source_name = analysis.source.name if show_sources and analysis.source else None
         display = render_analysis(analysis.summary_data or {}, source_name=source_name)
+        coverage = display["coverage"]
         recent.append(
             {
                 "id": analysis.id,
@@ -52,9 +83,14 @@ async def _recent_results_in_scope(tenant_id: int | None, show_sources: bool) ->
                 "created_at": analysis.created_at,
                 "title": display["display_title"],
                 "summary": (display["analysis_summary"] or "")[:220],
-                "analysis_incomplete": display["coverage"]["incomplete"],
-                "status_label": "Частично" if display["coverage"]["incomplete"] else "Успех",
-                "status_tone": "warn" if display["coverage"]["incomplete"] else "ok",
+                "analysis_incomplete": coverage["incomplete"],
+                "status_label": "Частично" if coverage["incomplete"] else "Успех",
+                "status_tone": "warn" if coverage["incomplete"] else "ok",
+                "coverage": [
+                    _analysis_coverage_row(
+                        analysis.summary_data or {}, source_name, coverage["incomplete"], coverage["reasons"]
+                    )
+                ],
                 "period_label": None,
                 "delivery_status": None,
             }
@@ -62,8 +98,8 @@ async def _recent_results_in_scope(tenant_id: int | None, show_sources: bool) ->
     return recent
 
 
-def _digest_delivery_status(run) -> str:
-    """Return a safe summary of delivery evidence without exposing destinations."""
+def _digest_delivery_evidence(run) -> dict:
+    """Return delivery status plus ledger part counts without exposing destinations."""
     error = getattr(run, "error", None) or ""
     state = getattr(run, "delivery_state", None)
     if isinstance(state, dict):
@@ -75,20 +111,46 @@ def _digest_delivery_status(run) -> str:
             if checkpoint["run_id"] != getattr(run, "id", None) or checkpoint["tenant_id"] != getattr(
                 run, "tenant_id", None
             ):
-                return "unknown"
+                return {"status": "unknown", "sent": None, "total": None}
             if "partial_delivery_requires_review" in error:
-                return "partial"
+                return {"status": "partial", "sent": None, "total": None}
             outcome = summarize_delivery(checkpoint)
             if outcome["pending_parts"] == outcome["total_parts"] and getattr(run, "status", None) == "pending":
-                return "pending"
-            return outcome["status"]
+                return {"status": "pending", "sent": outcome["sent_parts"], "total": outcome["total_parts"]}
+            return {"status": outcome["status"], "sent": outcome["sent_parts"], "total": outcome["total_parts"]}
         except (KeyError, TypeError, ValueError):
-            return "unknown"
+            return {"status": "unknown", "sent": None, "total": None}
 
     if "partial_delivery_requires_review" in error:
-        return "partial"
+        return {"status": "partial", "sent": None, "total": None}
     status = getattr(run, "status", None)
-    return status if status in {"sent", "failed", "skipped", "pending"} else "unknown"
+    return {
+        "status": status if status in {"sent", "failed", "skipped", "pending"} else "unknown",
+        "sent": None,
+        "total": None,
+    }
+
+
+def _digest_delivery_status(run) -> str:
+    """Return a safe summary of delivery evidence without exposing destinations."""
+    return _digest_delivery_evidence(run)["status"]
+
+
+def _digest_coverage_row(delivery: str, sent, total) -> dict:
+    """Delivery coverage bar: measured parts when the ledger is readable, else the state."""
+    if isinstance(sent, int) and isinstance(total, int) and total > 0:
+        percent = max(0, min(100, round(100 * sent / total)))
+        state = "ok" if percent >= 100 else ("none" if percent == 0 else "partial")
+        return {"label": "Доставка", "percent": percent, "state": state, "note": f"{sent} из {total} частей"}
+    if delivery == "sent":
+        return {"label": "Доставка", "percent": 100, "state": "ok", "note": ""}
+    if delivery == "failed":
+        return {"label": "Доставка", "percent": 100, "state": "none", "note": "не доставлено"}
+    if delivery == "blocked":
+        return {"label": "Доставка", "percent": 100, "state": "none", "note": "заблокировано"}
+    if delivery == "partial":
+        return {"label": "Доставка", "percent": 100, "state": "none", "note": "частично"}
+    return {"label": "Доставка", "percent": 0, "state": "unknown", "note": "доставка не подтверждена"}
 
 
 async def _recent_digests_in_scope(tenant_id: int | None) -> list[dict]:
@@ -120,7 +182,8 @@ async def _recent_digests_in_scope(tenant_id: int | None) -> list[dict]:
     }
     results = []
     for run in rows:
-        delivery = _digest_delivery_status(run)
+        evidence = _digest_delivery_evidence(run)
+        delivery = evidence["status"]
         results.append(
             {
                 "id": run.id,
@@ -133,6 +196,7 @@ async def _recent_digests_in_scope(tenant_id: int | None) -> list[dict]:
                 "analysis_incomplete": False,
                 "status_label": labels[delivery],
                 "status_tone": tones[delivery],
+                "coverage": [_digest_coverage_row(delivery, evidence["sent"], evidence["total"])],
                 "period_label": f"Период {run.period_start:%d.%m.%Y} — {run.period_end:%d.%m.%Y}",
                 "delivery_status": labels[delivery],
             }
@@ -293,6 +357,26 @@ def _offers(perms) -> dict[str, bool]:
     }
 
 
+def _home_has_content(today: dict | None, recent_results: list[dict], recent_tasks: list[dict], pipeline) -> bool:
+    """True when the home page already shows something worth reading.
+
+    The brief card always carries a roll-up line, so it never counts as content on
+    its own: the empty-state chat entry belongs to a workspace without results,
+    tasks or actionable items.
+    """
+    if recent_results or recent_tasks:
+        return True
+    for section in (today or {}).get("sections") or []:
+        if section.get("key") in {"brief", "recent_results"}:
+            continue
+        if section.get("items"):
+            return True
+    if isinstance(pipeline, dict) and not pipeline.get("scope_all"):
+        if pipeline.get("staged") or pipeline.get("analyzed") or pipeline.get("running"):
+            return True
+    return False
+
+
 async def _today_projection_for_request(
     request: Request,
     tenant_id: int | None,
@@ -412,6 +496,7 @@ async def dashboard(request: Request):
         offer=offer,
         next_step=next_step,
         can_open_chat=bool(getattr(perms, "can_open_chat", False)),
+        home_has_content=_home_has_content(extra_context.get("today"), recent_results, recent_tasks, pipeline),
         **extra_context,
     )
 

@@ -36,7 +36,7 @@ def _environment() -> Environment:
     return env
 
 
-def _dashboard(can_open_chat: bool) -> str:
+def _dashboard(can_open_chat: bool, **overrides) -> str:
     offer = {
         "sources": False,
         "add_source": False,
@@ -52,32 +52,30 @@ def _dashboard(can_open_chat: bool) -> str:
         url=SimpleNamespace(path="/app/", query=""),
         query_params={},
     )
-    return (
-        _environment()
-        .get_template("web/dashboard.html")
-        .render(
-            section="dashboard",
-            can_open_chat=can_open_chat,
-            is_superuser=False,
-            tenants=[],
-            filter_tenant_id=None,
-            next_step=None,
-            offer=offer,
-            recent_results=[],
-            recent_tasks=[],
-            source_schedule_status_unknown=False,
-            pipeline=None,
-            _tz="Europe/Kirov",
-            request=request,
-            perms=SimpleNamespace(
-                can=lambda *args, **kwargs: False,
-                can_manage_workspace=lambda target: False,
-                is_owner=False,
-                workspace_role="VIEWER",
-            ),
-            member_level=None,
-        )
-    )
+    context = {
+        "section": "dashboard",
+        "can_open_chat": can_open_chat,
+        "is_superuser": False,
+        "tenants": [],
+        "filter_tenant_id": None,
+        "next_step": None,
+        "offer": offer,
+        "recent_results": [],
+        "recent_tasks": [],
+        "source_schedule_status_unknown": False,
+        "pipeline": None,
+        "_tz": "Europe/Kirov",
+        "request": request,
+        "perms": SimpleNamespace(
+            can=lambda *args, **kwargs: False,
+            can_manage_workspace=lambda target: False,
+            is_owner=False,
+            workspace_role="VIEWER",
+        ),
+        "member_level": None,
+    }
+    context.update(overrides)
+    return _environment().get_template("web/dashboard.html").render(**context)
 
 
 def test_overview_foregrounds_chat_only_when_permission_allows_it():
@@ -91,8 +89,64 @@ def test_overview_foregrounds_chat_only_when_permission_allows_it():
     assert "Начните с разговора" not in denied
     assert 'href="/app/chat"' not in denied
     assert "data-home-chat" not in denied
-    assert "Обзор" in allowed
+    assert "Сегодня" in allowed
     assert "data-home-results" in allowed
+
+
+def test_overview_chat_entry_is_only_an_empty_state():
+    """The chat offer belongs to a workspace without results, tasks or signals."""
+    empty = _dashboard(True)
+    filled = _dashboard(True, home_has_content=True)
+
+    assert "Начните с разговора" in empty
+    assert "data-home-chat" in empty
+    assert "Начните с разговора" not in filled
+    assert "data-home-chat" not in filled
+
+
+def test_overview_results_render_coverage_bars():
+    offer = {
+        "sources": False,
+        "add_source": False,
+        "add_scenario": False,
+        "tasks": False,
+        "add_task": False,
+        "digests": False,
+        "analytics": True,
+        "collected_items": False,
+        "jobs": False,
+    }
+    results = [
+        {
+            "id": 1,
+            "kind": "analysis",
+            "href": "/app/analytics/1",
+            "created_at": "2026-01-01 10:00",
+            "title": "Полный охват",
+            "summary": "",
+            "status_label": "Успех",
+            "status_tone": "ok",
+            "coverage": [{"label": "Источник", "percent": 100, "state": "ok", "note": ""}],
+        },
+        {
+            "id": 2,
+            "kind": "analysis",
+            "href": "/app/analytics/2",
+            "created_at": "2026-01-01 11:00",
+            "title": "Неполный охват",
+            "summary": "",
+            "status_label": "Частично",
+            "status_tone": "warn",
+            "coverage": [{"label": "Источник", "percent": 100, "state": "none", "note": "нет полного покрытия"}],
+        },
+    ]
+    html = _dashboard(True, offer=offer, recent_results=results, home_has_content=True)
+
+    assert html.count("data-home-result-coverage") == 2
+    assert "ui-home-bar-ok" in html
+    assert "ui-home-bar-none" in html
+    assert "нет полного покрытия" in html
+    assert "100%" in html
 
 
 def _render_plan(task_definition: dict, *, task=None, scenario=None) -> str:

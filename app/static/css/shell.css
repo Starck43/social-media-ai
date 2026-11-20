@@ -460,8 +460,9 @@ dialog.shell-right-panel {
 	min-height: 44px;
 }
 
-.shell-bell {
+.shell-icon-button.shell-bell {
 	position: relative;
+	border-radius: 999px;
 	background: var(--color-surface);
 	border: 1px solid var(--color-border);
 	box-shadow: 0 4px 16px #0002;
@@ -471,9 +472,14 @@ dialog.shell-right-panel {
 	position: absolute;
 	right: -4px;
 	top: -4px;
-	font-size: .75rem;
-	padding: 2px 5px;
-	border-radius: 12px;
+	display: grid;
+	place-items: center;
+	min-width: 18px;
+	height: 18px;
+	font-size: .6875rem;
+	line-height: 1;
+	padding: 0 2px;
+	border-radius: 50%;
 	background: #be123c;
 	color: white;
 }
@@ -625,15 +631,9 @@ body[data-shell-section="chat"] .chat-window {
 	min-height: 0;
 	overflow: auto;
 	overscroll-behavior: contain;
-	/* Keep the fixed bell outside the scrollport, including intermediate rows.
-	 * Bottom padding alone only protects the end of a long document. */
-	margin-bottom: var(--shell-dock-space, 0px);
+	/* The page fills the scrollport edge to edge: the fixed launcher and bell float
+	 * above the text instead of a reserved footer band. */
 	padding-bottom: 24px;
-}
-
-/* The launcher exists even when there are no notifications to reserve space. */
-body:has([data-chat-dock-container]) .shell-content {
-	margin-bottom: max(var(--shell-dock-space, 0px), calc(80px + env(safe-area-inset-bottom)));
 }
 
 body[data-shell-section="chat"] .shell-content {

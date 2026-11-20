@@ -51,11 +51,15 @@ async def communications_page(
     contact_id: int | None = Query(None, gt=0),
     thread_id: int | None = Query(None, gt=0),
     is_read: bool | None = Query(None),
-    is_archived: bool = Query(False),
+    is_archived: bool | None = Query(None),
     q: str | None = Query(None, max_length=200),
     before_id: int | None = Query(None, gt=0),
 ):
     """Render unified inbox tabs, triage classifications/proposals, chronological thread messages, and outbox catalog."""
+    # ``None`` means the archive parameter was omitted.  The inbox still
+    # defaults to non-archived rows, but an ordinary deep link must remain
+    # usable; an explicitly supplied archive filter must constrain selection.
+    archive_filter = False if is_archived is None else is_archived
     evidence_rows = await snippet_rows("communication", boundary)
     inbox_threads: list[dict[str, Any]] = []
     next_before_id: int | None = None
@@ -79,7 +83,7 @@ async def communications_page(
                     channel=channel,
                     contact_id=contact_id,
                     is_read=is_read,
-                    is_archived=is_archived,
+                    is_archived=archive_filter,
                     q=q,
                     limit=50,
                     before_id=before_id,
@@ -92,7 +96,7 @@ async def communications_page(
                         session,
                         category=norm_triage_cat,
                         channel=channel,
-                        include_archived=is_archived,
+                        include_archived=archive_filter,
                         limit=50,
                         thread_ids=[th["id"] for th in inbox_threads if isinstance(th.get("id"), int)],
                     )
@@ -111,7 +115,15 @@ async def communications_page(
                 # A deep link must not silently select an item excluded by the
                 # active filters. Unfiltered deep links remain usable.
                 visible_ids = {th["id"] for th in inbox_threads}
-                filtering = bool(norm_triage_cat or channel or contact_id or is_read is not None or q or before_id)
+                filtering = bool(
+                    norm_triage_cat
+                    or channel
+                    or contact_id
+                    or is_read is not None
+                    or q
+                    or before_id
+                    or is_archived is not None
+                )
                 active_thread_id = thread_id if thread_id and (not filtering or thread_id in visible_ids) else None
                 if active_thread_id is None and inbox_threads:
                     active_thread_id = inbox_threads[0]["id"]
@@ -146,7 +158,7 @@ async def communications_page(
         triage_by_thread=triage_by_thread,
         contact_id_filter=contact_id,
         is_read_filter=is_read,
-        is_archived_filter=is_archived,
+        is_archived_filter=archive_filter,
         q=q or "",
         inbox_threads=inbox_threads,
         inbox_load_error=inbox_load_error,

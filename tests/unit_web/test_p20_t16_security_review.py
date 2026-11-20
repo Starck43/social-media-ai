@@ -78,9 +78,10 @@ def _perms(*allowed, role="member"):
     )
 
 
-def _planner_item(task_id, *, owner=8, status="todo", title="Task"):
+def _planner_item(task_id, *, tenant_id=42, owner=8, status="todo", title="Task"):
     values = {
         "id": task_id,
+        "tenant_id": tenant_id,
         "title": title,
         "status": status,
         "owner_user_id": owner,
@@ -117,7 +118,11 @@ async def test_today_projection_keeps_personal_tasks_actor_scoped(monkeypatch):
     class Repo:
         async def planner_tasks(self, _workspace_id, limit):
             assert limit == 5
-            return [_planner_item(2, owner=9, title="Foreign"), _planner_item(1, title="Mine")]
+            return [
+                _planner_item(3, tenant_id=41, title="Other tenant"),
+                _planner_item(2, owner=9, title="Foreign"),
+                _planner_item(1, title="Mine"),
+            ]
 
     projection = TodayProjection(
         workspace_id=42,

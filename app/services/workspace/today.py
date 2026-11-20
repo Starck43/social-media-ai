@@ -50,6 +50,46 @@ TODAY_SECTION_TITLES: dict[str, str] = {
     "attention": "Требует внимания",
     "recent_results": "Последние результаты",
 }
+# Presentation-only tone per item status, so the home page can colour a label without
+# duplicating a mapping in every provider. Ordered: the first matching tone wins.
+STATUS_TONE_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "bad",
+        (
+            "сбой",
+            "ошибк",
+            "недоступ",
+            "переавторизац",
+            "не подключ",
+            "исчерпан",
+            "заблокирован",
+            "ограничена частота",
+            "просроч",
+        ),
+    ),
+    (
+        "warn",
+        (
+            "частично",
+            "не подтвержд",
+            "почти",
+            "подождёт",
+            "ждёт подтверждения",
+            "ожида",
+            "нужно переподключение",
+            "нужно разрешение",
+            "не уверен",
+        ),
+    ),
+    (
+        "ok",
+        ("успех", "готово", "доставлен", "выполнен", "свежесть"),
+    ),
+    (
+        "accent",
+        ("нужен ответ", "ждёт решения", "на согласовании"),
+    ),
+)
 VALID_SCOPES = frozenset({"mine", "team"})
 VALID_ITEM_OPERATIONS = frozenset({"seen", "snooze", "dismiss", "restore"})
 MANAGER_ROLES = frozenset({"owner", "admin", "manager", "OWNER", "ADMIN", "MANAGER"})
@@ -57,6 +97,19 @@ MANAGER_ROLES = frozenset({"owner", "admin", "manager", "OWNER", "ADMIN", "MANAG
 # Per-user start page and per-actor Today item state (process-level + session-backed; no schema migration).
 _USER_START_PAGES: dict[int, str] = {}
 _ACTOR_ITEM_STATES: dict[tuple[int, int], dict[str, dict[str, str | None]]] = {}
+
+
+def status_tone(label: Any) -> str:
+    """Map a human status label to a colour tone; unknown labels stay neutral."""
+    text = str(label or "").strip().casefold()
+    if not text:
+        return ""
+    if "почти исчерпан" in text:
+        return "warn"
+    for tone, markers in STATUS_TONE_MARKERS:
+        if any(marker in text for marker in markers):
+            return tone
+    return "neutral"
 
 
 def _positive_int(value: Any) -> bool:
@@ -613,6 +666,8 @@ class TodayProjection:
             meta = self.actor_states.get(key)
             state = meta.get("state") if isinstance(meta, dict) else None
             item["actor_state"] = state
+            if not item.get("status_tone"):
+                item["status_tone"] = status_tone(item.get("status_label"))
             if state in {"dismissed", "snoozed"} and not self.include_dismissed:
                 hidden_count += 1
                 continue
@@ -1169,7 +1224,12 @@ class TodayProjection:
                         "channel": channel,
                         "title": subject,
                         "summary": f"Канал: {channel.upper()} · Непрочитанных: {unread} · {triaged.category_label}: {triaged.reason}",
-                        "status_label": f"{unread} непрочит.",
+                        "status_label": triaged.category_label,
+                        "status_tone": {
+                            "needs_reply": "accent",
+                            "can_wait": "warn",
+                            "uncertain": "warn",
+                        }.get(triaged.category, "neutral"),
                         "triage_category": triaged.category,
                         "triage_label": triaged.category_label,
                         "triage_reason": triaged.reason,

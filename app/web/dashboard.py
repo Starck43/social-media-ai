@@ -53,6 +53,8 @@ async def _recent_results_in_scope(tenant_id: int | None, show_sources: bool) ->
                 "title": display["display_title"],
                 "summary": (display["analysis_summary"] or "")[:220],
                 "analysis_incomplete": display["coverage"]["incomplete"],
+                "status_label": "Частично" if display["coverage"]["incomplete"] else "Успех",
+                "status_tone": "warn" if display["coverage"]["incomplete"] else "ok",
                 "period_label": None,
                 "delivery_status": None,
             }
@@ -106,21 +108,36 @@ async def _recent_digests_in_scope(tenant_id: int | None) -> list[dict]:
         "pending": "Ожидает доставки",
         "unknown": "Статус доставки неизвестен",
     }
-    return [
-        {
-            "id": run.id,
-            "kind": "digest",
-            "href": "/app/digests",
-            "source_name": None,
-            "created_at": run.created_at,
-            "title": f"Дайджест за период {run.period_start:%d.%m.%Y} — {run.period_end:%d.%m.%Y}",
-            "summary": (run.content or "")[:220],
-            "analysis_incomplete": False,
-            "period_label": f"Период {run.period_start:%d.%m.%Y} — {run.period_end:%d.%m.%Y}",
-            "delivery_status": labels[_digest_delivery_status(run)],
-        }
-        for run in rows
-    ]
+    tones = {
+        "sent": "ok",
+        "partial": "warn",
+        "uncertain": "warn",
+        "blocked": "bad",
+        "failed": "bad",
+        "skipped": "neutral",
+        "pending": "neutral",
+        "unknown": "warn",
+    }
+    results = []
+    for run in rows:
+        delivery = _digest_delivery_status(run)
+        results.append(
+            {
+                "id": run.id,
+                "kind": "digest",
+                "href": "/app/digests",
+                "source_name": None,
+                "created_at": run.created_at,
+                "title": f"Дайджест за период {run.period_start:%d.%m.%Y} — {run.period_end:%d.%m.%Y}",
+                "summary": (run.content or "")[:220],
+                "analysis_incomplete": False,
+                "status_label": labels[delivery],
+                "status_tone": tones[delivery],
+                "period_label": f"Период {run.period_start:%d.%m.%Y} — {run.period_end:%d.%m.%Y}",
+                "delivery_status": labels[delivery],
+            }
+        )
+    return results
 
 
 async def _recent_digests(tenant_id: int | None, is_superuser: bool = False) -> list[dict]:

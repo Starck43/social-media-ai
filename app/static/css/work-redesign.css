@@ -55,7 +55,6 @@
 .planner-complete span { display:block; border:1px solid var(--color-text-secondary); border-radius:50%; width:22px; height:22px; }
 .today-more summary { min-height:40px; display:flex; align-items:center; }
 .today-more[open] form { margin-left:.4rem; }
-.ui-home [data-today-section="brief"] .today-brief-actions a { border-radius:999px; }
 [data-inbox-search-panel] summary { min-height:40px; display:flex; align-items:center; }
 [data-inbox-thread-list] > h2 { font-size:1rem; }
 [data-inbox-thread-item] h3 a { text-decoration:none; }
@@ -70,7 +69,6 @@
 .ui-home [data-today-item] .today-item-actions summary { list-style:none; cursor:pointer; min-height:40px; display:flex; align-items:center; color:var(--color-text-secondary); font-size:.8rem; }
 .ui-home [data-today-item] .today-item-actions summary::-webkit-details-marker { display:none; }
 .ui-home [data-today-item] .today-item-actions[open] { flex-basis:100%; }
-.ui-home [data-today-section="brief"] .today-brief-actions a:first-child { background:var(--color-cyan-600); color:var(--color-surface); }
 
 /* Rounded inbox detail surfaces, using the existing theme tokens. */
 [data-inbox-thread-detail] [data-unified-message],
@@ -155,8 +153,6 @@
 .today-bento [data-today-section="attention"] > ul { display:grid; gap:.75rem; }
 .today-bento [data-today-section="attention"] > ul > li { margin:0; padding:.9rem; border:1px solid var(--color-border); border-radius:.75rem; background:var(--color-surface-secondary); }
 @media (min-width:769px) { .today-bento [data-today-section="attention"] > ul { grid-template-columns:repeat(3,minmax(0,1fr)); } }
-
-.ui-home [data-today-section="brief"] .today-brief-actions .ui-button { border-radius: var(--cn-radius-sm); }
 
 /* Minimal inbox category filters. */
 .communications-page .communications-filter-tabs { gap: .25rem; margin-bottom: .75rem; }

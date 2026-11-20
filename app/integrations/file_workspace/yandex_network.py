@@ -25,9 +25,9 @@ class NetworkUnavailable(Exception):
     """Generic failure without DNS answers or filesystem/provider details."""
 
 
-async def _resolve() -> list:
+async def _resolve(host: str = _HOST) -> list:
     loop = asyncio.get_running_loop()
-    return await loop.getaddrinfo(_HOST, _PORT, type=socket.SOCK_STREAM)
+    return await loop.getaddrinfo(host, _PORT, type=socket.SOCK_STREAM)
 
 
 def _validated_addresses(answers: object) -> tuple[str, ...]:

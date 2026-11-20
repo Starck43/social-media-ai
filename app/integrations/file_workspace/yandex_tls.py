@@ -13,10 +13,11 @@ import os
 import socket
 import ssl
 from collections.abc import Callable
+from functools import partial
 
 import certifi
 
-from app.integrations.file_workspace.yandex_network import _HOST, _PORT, NetworkUnavailable, _connect_pinned
+from app.integrations.file_workspace.yandex_network import _HOST, _PORT, NetworkUnavailable, _connect_pinned, _resolve
 
 
 def _tls_context() -> ssl.SSLContext:
@@ -36,6 +37,7 @@ async def _open_tls_to_ip(
     host: str,
     port: int,
     *,
+    _server_hostname: str = _HOST,
     _socket_factory: Callable = socket.socket,
     _loop=None,
     _open_connection: Callable = asyncio.open_connection,
@@ -74,7 +76,7 @@ async def _open_tls_to_ip(
         return await _open_connection(
             sock=sock,
             ssl=context,
-            server_hostname=_HOST,
+            server_hostname=_server_hostname,
             ssl_handshake_timeout=8.0,
         )
     except BaseException:
@@ -89,3 +91,13 @@ async def open_yandex_tls() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]
     Caller must close the returned writer; no retry, proxy or alternate host.
     """
     return await _connect_pinned(_open_tls_to_ip)
+
+
+OAUTH_HOST = "oauth.yandex.ru"
+
+
+async def open_yandex_oauth_tls() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    """Open a pinned, verified stream for the separate fixed OAuth authority."""
+    return await _connect_pinned(
+        partial(_open_tls_to_ip, _server_hostname=OAUTH_HOST), resolver=partial(_resolve, OAUTH_HOST)
+    )

@@ -1,9 +1,8 @@
-<p class="mt-3 text-sm ui-muted">Пилот: настройка одной папки только для чтения. Просмотр названий работает только по запросу. Открытие и анализ файлов ещё в разработке. Сохранение не проверяет доступ и не обращается к Яндекс.Диску.</p>
-<p class="mt-2 text-sm ui-muted">Разрешение Яндекса на чтение может охватывать весь диск. Выбранная папка ограничивает только работу этого приложения, не других приложений. Запись и удаление в пилоте выключены.</p>
+<p class="mt-3 text-sm ui-muted">Подключите одну папку для просмотра списка файлов. Яндекс может выдать доступ на чтение ко всему диску, но это приложение ограничит работу выбранной папкой. Запись и удаление выключены. Открытие и анализ файлов ещё в разработке.</p>
 {% for row in workspace_connection_rows|default([]) if row.provider_id|default('') == 'yandex_disk' %}
 <article class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3" data-yandex-connection="{{ row.id }}">
     <h3 class="font-medium">{{ row.label }}</h3>
-    <p class="mt-2 text-sm" role="status">{% if row.is_active %}Сохранено · доступ не проверен{% else %}Отключено{% endif %}</p>
+    <p class="mt-2 text-sm" role="status">{% if not row.is_active %}Отключено{% elif row.state|default("") == "verified" %}Доступ к папке проверен при подключении{% else %}Сохранено · доступ не проверен{% endif %}</p>
     {% if row.is_active %}
     <form method="post" action="/app/settings/yandex-connections/{{ row.id }}/browse" class="mt-3">
         <input type="hidden" name="_csrf" value="{{ yandex_browse_csrf|default('') }}">
@@ -20,8 +19,21 @@
 </article>
 {% endfor %}
 {% if workspace_connection_write|default(false) %}
-<details class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
-    <summary class="cursor-pointer text-sm font-medium">Добавить Яндекс.Диск</summary>
+{% if yandex_oauth_configured|default(false) %}
+<form method="post" action="/app/settings/yandex-connections/oauth/start" class="mt-4 space-y-3">
+    <input type="hidden" name="_csrf" value="{{ yandex_browse_csrf }}">
+    <label class="block text-sm" for="yandex-oauth-label">Название подключения</label>
+    <input class="ui-control w-full" id="yandex-oauth-label" name="label" maxlength="100" placeholder="Например: Рабочие документы">
+    <label class="block text-sm" for="yandex-oauth-root">Путь папки на Яндекс.Диске</label>
+    <input class="ui-control w-full" id="yandex-oauth-root" name="root" required placeholder="/Документы">
+    <label class="block text-sm"><input type="checkbox" name="scope_ack" value="on" required> Понимаю, что разрешение Яндекса может охватывать весь диск.</label>
+    <button class="ui-control">Подключить через Яндекс</button>
+</form>
+{% else %}
+<p class="mt-3 text-sm" role="status">Вход через Яндекс пока не настроен. Можно использовать личный токен на чтение.</p>
+{% endif %}
+<details class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3"{% if not yandex_oauth_configured|default(false) %} open{% endif %}>
+    <summary class="cursor-pointer text-sm font-medium">Подключить Яндекс.Диск вручную</summary>
     <p class="mt-2 text-sm ui-muted">Используйте личный OAuth-токен с разрешением на чтение, без разрешения на запись. Права токена пока не проверяются автоматически. Токен сохранится зашифрованным и повторно не показывается.</p>
     <form method="post" action="/app/settings/yandex-connections" class="mt-3 space-y-3" autocomplete="off">
         <input type="hidden" name="_csrf" value="{{ csrf }}">

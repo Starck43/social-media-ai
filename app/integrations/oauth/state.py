@@ -39,12 +39,14 @@ class OAuthPendingState:
     tenant_id: int
     actor_user_id: int
     provider_id: str
-    connection_id: int
+    connection_id: int | None
     code_verifier: str | None
     code_challenge: str | None
     redirect_uri: str
     created_at: datetime
     expires_at: datetime
+    browser_session_id: str | None = None
+    setup: tuple[str, str] | None = None
 
 
 def generate_pkce_pair() -> tuple[str, str]:
@@ -76,15 +78,18 @@ class OAuthStateStore:
         tenant_id: int,
         actor_user_id: int,
         provider_id: str,
-        connection_id: int,
+        connection_id: int | None,
         redirect_uri: str,
         use_pkce: bool = True,
         ttl_seconds: int = DEFAULT_STATE_TTL_SECONDS,
         now: datetime | None = None,
+        browser_session_id: str | None = None,
+        setup: tuple[str, str] | None = None,
     ) -> OAuthPendingState:
         if type(tenant_id) is not int or tenant_id <= 0 or type(actor_user_id) is not int or actor_user_id <= 0:
             raise OAuthStateError("invalid_state_context")
-        if type(connection_id) is not int or connection_id <= 0 or not provider_id:
+        new_setup = connection_id is None and browser_session_id and setup is not None
+        if not provider_id or (not new_setup and (type(connection_id) is not int or connection_id <= 0)):
             raise OAuthStateError("invalid_state_context")
 
         current_time = now or datetime.now(timezone.utc)
@@ -103,6 +108,8 @@ class OAuthStateStore:
             redirect_uri=redirect_uri,
             created_at=current_time,
             expires_at=current_time + timedelta(seconds=ttl_seconds),
+            browser_session_id=browser_session_id,
+            setup=setup,
         )
         self._records[token] = pending
         return pending
@@ -115,6 +122,7 @@ class OAuthStateStore:
         actor_user_id: int,
         provider_id: str,
         expected_connection_id: int | None = None,
+        browser_session_id: str | None = None,
         now: datetime | None = None,
     ) -> OAuthPendingState:
         """Atomically pop and verify a single-use state token."""
@@ -137,6 +145,9 @@ class OAuthStateStore:
 
         if pending.provider_id != provider_id:
             raise OAuthStateError("state_provider_mismatch")
+
+        if pending.browser_session_id != browser_session_id:
+            raise OAuthStateError("state_session_mismatch")
 
         if expected_connection_id is not None and pending.connection_id != expected_connection_id:
             raise OAuthStateError("state_connection_mismatch")

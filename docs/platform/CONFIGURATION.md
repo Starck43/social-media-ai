@@ -313,6 +313,20 @@ provider availability: it returns an empty list only when the provider confirms
 the calendar is empty, reports `sync_required` when events need initial indexing,
 and reports the source unavailable when it cannot verify the provider.
 
+Yandex Disk browser authorization is available in Settings → My connections when
+the deployment supplies `YANDEX_DISK_CLIENT_ID` and `YANDEX_DISK_CLIENT_SECRET`
+for a Yandex OAuth application registered for `cloud_api:disk.read` only.
+Register the exact callback `<PUBLIC_BASE_URL>/app/settings/yandex-connections/oauth/callback`.
+Use an HTTPS origin, or a registered loopback HTTP origin for local development.
+The app asks for explicit consent, verifies the selected folder and stores the
+access token encrypted using the existing credentials key. The permission at
+Yandex can cover the disk. The app applies its read-only policy to the selected
+folder. A successful folder check records access at setup time. When the access
+token expires, connect again and disconnect the previous entry. Disconnecting
+deletes the local token; the account holder can revoke the grant in Yandex ID.
+The authorization must start and return to the same application process and
+browser session during its ten-minute lifetime.
+
 Planner-to-calendar writes use the existing `calendar.event_write.v1` business
 capability, which is disabled by default. Set
 `CALENDAR_EVENT_WRITE_ENABLED=true` to enable it after review. Set

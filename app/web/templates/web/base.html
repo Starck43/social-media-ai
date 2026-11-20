@@ -68,8 +68,7 @@
             {% if user and request.query_params.get('embedded') != '1' %}<button type="button" class="shell-icon-button shell-mobile-toggle" aria-controls="navigation-drawer" aria-expanded="false" data-dialog-open="navigation-drawer" aria-label="Открыть навигацию">{{ icon('menu') }}</button>{% endif %}
             <div class="shell-page-title">
                 <h1 id="page-heading">{% block page_heading %}AI Assistant{% endblock %}</h1>
-                <div class="shell-page-context">{% block page_context %}{{ tenant.name if tenant else 'Нет пространства' }}{% endblock %}</div>
-                {% if tenant %}<p class="shell-menu-hint" data-workspace-context>{{ 'Своё пространство' if perms and perms.is_owner else 'Доступ предоставлен' }}{% if member_level %} · {{ member_level.label }}{% endif %}</p>{% endif %}
+                <div class="shell-page-context">{% block page_context %}{% endblock %}</div>
             </div>
             <div id="page-actions" class="shell-page-actions">{% block page_actions %}{% endblock %}</div>
             <div class="shell-heading-tools">

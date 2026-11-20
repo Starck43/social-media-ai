@@ -167,7 +167,7 @@ const measure = () => evaluate(`(() => {
     };
 })()`);
 
-// Fixed chrome currently visible over the page; the scrollport must end above it.
+// Fixed chrome floats over the page; the scrollport itself fills the viewport.
 function chromeTops(m) {
     return [m.barShown && m.bar.top, m.launcherShown && m.launcher.top, m.bellShown && m.bell.top].filter(Boolean);
 }
@@ -200,10 +200,9 @@ async function layoutCase(label, { width, height, phone }, scenario = {}) {
             check(r.left >= 0 && r.right <= width && r.top >= 0, `${label}: ${name} stays in the viewport`);
         }
     }
-    // The scrollport (its rect already excludes the reserved margin) ends above all
-    // visible fixed chrome, so no row is permanently covered.
-    const floor = Math.min(...chromeTops(m));
-    if (Number.isFinite(floor)) check(m.content.bottom <= floor + 0.5, `${label}: scrollport ends above fixed chrome`);
+    // The launcher and bell overlay the text; the scrollport keeps the full height.
+    check(m.marginBottom === 0, `${label}: no reserved footer band`);
+    check(m.content.bottom >= m.viewport.height - 0.5, `${label}: scrollport fills the viewport`);
     return m;
 }
 
@@ -214,27 +213,28 @@ async function run() {
     await send('Page.enable');
     await send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
 
-    // 1. Full shell at every viewport; the last action is reachable and fully visible.
+    // 1. Full shell at every viewport; the last action stays reachable at the end.
     await load('full', {});
     for (const viewport of VIEWPORTS) {
         const label = `${viewport.width}x${viewport.height}`;
         const m = await layoutCase(label, viewport);
         check(m.maxScroll > 0, `${label}: fixture content actually scrolls`);
         check(m.scrollTop >= m.maxScroll - 1, `${label}: scrollContent reaches its end`);
-        const floor = Math.min(...[m.barShown && m.bar.top, m.launcherShown && m.launcher.top, m.bellShown && m.bell.top].filter(Boolean));
-        check(m.last.bottom <= floor + 0.5 && m.last.top >= m.content.top - 0.5, `${label}: last action wholly visible above fixed chrome`);
-        check(m.marginBottom >= 80, `${label}: scrollport reserves the launcher dock`);
+        check(m.last.top >= m.content.top - 0.5 && m.last.bottom <= m.viewport.height + 0.5,
+            `${label}: last action is reachable inside the scrollport`);
     }
 
-    // 2. --shell-dock-space drives the bell reservation: 0px reserves nothing extra,
-    // the real shell.js value reserves the bell plus its offset.
+    // 2. The retired dock-space switch leaves no footer band: neither value reserves
+    // height, and the fixed launcher and bell overlay the page instead.
     await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
     await evaluate(`document.documentElement.style.setProperty('--shell-dock-space', '0px')`);
     const none = await measure();
     check(!none.barShown && none.launcherShown && none.bellShown, 'dock-space 0: no mobile bar');
+    check(none.marginBottom === 0, 'dock-space 0: no reserved band');
     await evaluate(`document.documentElement.style.setProperty('--shell-dock-space', 'calc(80px + env(safe-area-inset-bottom))')`);
     const docked = await measure();
-    check(docked.marginBottom >= 80 && docked.content.bottom <= docked.bell.top + 0.5, 'dock-space calc(80px + safe-area) reserves the bell');
+    check(docked.marginBottom === 0, 'dock-space value: no reserved band');
+    check(docked.content.bottom >= docked.viewport.height - 0.5, 'dock-space value: scrollport still fills the viewport');
 
     // 3. Chat page without notifications: reserve only the mobile navigation bar.
     await load('no-launcher', { launcher: false, bellOn: false });

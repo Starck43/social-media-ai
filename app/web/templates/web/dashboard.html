@@ -25,11 +25,29 @@
     .ui-home .ui-home-task-name { font-size: 1rem; line-height: 1.5; }
     .ui-home .border-dashed p { max-width: 52ch; font-size: 1rem; line-height: 1.6; }
     .ui-home .ui-home-task { min-width: 0; overflow-wrap: anywhere; }
+    .ui-home .ui-home-cov { display: flex; flex-wrap: wrap; gap: .875rem; align-items: center; margin-top: .5rem; }
+    .ui-home .ui-home-cr { display: inline-flex; align-items: center; gap: .45rem; min-width: 0;
+        font: 500 .75rem var(--cn-mono); color: var(--color-text-secondary); }
+    .ui-home .ui-home-cr-label, .ui-home .ui-home-cr-note { overflow-wrap: anywhere; }
+    .ui-home .ui-home-bar { position: relative; flex: none; width: 80px; height: 5px; border-radius: 99px;
+        background: var(--color-surface-secondary); overflow: hidden; }
+    .ui-home .ui-home-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: var(--ui-accent); }
+    .ui-home .ui-home-bar-ok i { background: var(--color-success); }
+    .ui-home .ui-home-bar-none i { background: repeating-linear-gradient(90deg, var(--color-danger) 0 3px, transparent 3px 6px); }
+    .ui-home .ui-home-bar-unknown i { background: var(--color-border); }
     @media (max-width: 639px) {
         .ui-home-title { font-size: 1.5rem; }
         .ui-home .ui-card { padding: 1rem; }
         .ui-home .ui-home-task { flex-basis: 100%; }
     }
+    /* Status stamps: semantic tone per item, matching the «Диалог» direction. */
+    .ui-home .today-status { display: inline-flex; align-items: center; gap: .25rem; padding: .125rem .5rem;
+        border-radius: 999px; font-size: .875rem; line-height: 1.6; font-weight: 600; white-space: nowrap;
+        background: var(--color-surface-secondary); color: var(--color-text-secondary); }
+    .ui-home .today-status-ok { background: var(--color-success-bg); color: var(--color-success); }
+    .ui-home .today-status-warn { background: var(--color-warning-bg); color: var(--color-warning); }
+    .ui-home .today-status-bad { background: var(--color-danger-bg); color: var(--color-danger); }
+    .ui-home .today-status-accent { background: var(--ui-accent-soft); color: var(--ui-accent); }
     /* P20-T14 stage 5: console overlay folded into base styles.
        .ui-home h2 keeps only the properties the rules above do not set;
        its inline font-size/line-height/font-weight stay authoritative. */
@@ -58,7 +76,10 @@
                    class="ui-home-result min-w-0 rounded-xl border border-slate-300 dark:border-slate-800 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
                     <div class="ui-home-meta flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
                         <span class="ui-home-source">{% if result.kind == 'digest' %}Дайджест{% else %}Анализ{% if offer.sources and result.source_name %} · {{ result.source_name }}{% endif %}{% endif %}</span>
-                        <span>Создан {{ result.created_at|human_dt(tz=_tz) }}</span>
+                        <span class="flex flex-wrap items-center gap-2">
+                            {% if result.get('status_label') %}<span data-home-result-status="{{ result.get('status_tone') or 'neutral' }}" class="today-status today-status-{{ result.get('status_tone') or 'neutral' }}">{{ result.status_label }}</span>{% endif %}
+                            <span>Создан {{ result.created_at|human_dt(tz=_tz) }}</span>
+                        </span>
                     </div>
                     <p title="{{ result.title }}" class="ui-home-result-title mt-2 break-words font-medium text-slate-900 dark:text-slate-100">{{ result.title }}</p>
                     {% if result.period_label %}
@@ -66,6 +87,17 @@
                     {% endif %}
                     {% if result.delivery_status %}
                     <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Доставка: {{ result.delivery_status }}</p>
+                    {% endif %}
+                    {% if result.get('coverage') %}
+                    <div class="ui-home-cov" data-home-result-coverage="{{ result.get('status_tone') or 'neutral' }}">
+                        {% for row in result.coverage %}
+                        <span class="ui-home-cr" data-coverage>
+                            <span class="ui-home-cr-label">{{ row.label }}:</span>
+                            <span class="ui-home-bar ui-home-bar-{{ row.state }}" role="img" aria-label="{{ row.label }}: {{ row.percent }}%"><i style="width: {{ row.percent }}%"></i></span>
+                            <span class="ui-home-cr-note">{{ row.note or (row.percent ~ '%') }}</span>
+                        </span>
+                        {% endfor %}
+                    </div>
                     {% endif %}
                     {% if result.analysis_incomplete %}
                     <p class="mt-2">{{ incomplete_analysis_badge(true) }}</p>
@@ -167,8 +199,8 @@
                     <div class="min-w-0 flex-1">
                         <div class="flex flex-wrap items-center gap-2">
                             <a href="{{ item.href }}" class="font-medium text-slate-900 dark:text-slate-100 hover:underline" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ item.title }}</a>
-                            {% if item.status_label %}
-                            <span class="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-300">{{ item.status_label }}</span>
+                            {% if item.get('status_label') %}
+                            <span data-today-status="{{ item.get('status_tone') or 'neutral' }}" class="today-status today-status-{{ item.get('status_tone') or 'neutral' }}">{{ item.status_label }}</span>
                             {% endif %}
                             {% if item.stale_or_unavailable and item.marker_label %}
                             <span data-today-stale-marker class="rounded-md bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-300">{{ item.marker_label }}</span>
@@ -205,7 +237,6 @@
             {% else %}
             <p data-today-section-empty="{{ sec.key }}" class="mt-3 text-sm text-slate-500 dark:text-slate-400">Нет элементов, требующих действий.</p>
             {% endif %}
-            {% if sec.key == 'brief' %}<div class="today-brief-actions ui-toolbar mt-4">{% if can_open_chat %}<a class="ui-button ui-button-primary" href="/app/chat">Открыть чат</a>{% endif %}<a class="ui-button" href="/app/planner">Мой план на день</a></div>{% endif %}
         </section>
         {% endif %}
         {% endfor %}
@@ -216,7 +247,7 @@
     {% endif %}
     {% if not today %}{{ render_home_results() }}{% endif %}
 
-    {% if can_open_chat %}
+    {% if can_open_chat and not (home_has_content|default(false)) %}
     <section data-home-chat-primary class="mb-6 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-5">
         <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">Начните с разговора</h2>
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">

@@ -419,16 +419,13 @@ function notificationsBell(csrf, workspaceId, userId) {
         preferences: AttentionPreferences.defaults(), preferencesOpen: false, popupVisible: false, popupKeys: new Set(), primed: false,
         preferenceRequestId: 0,
         init() {
-            this.$watch('items', () => this.updateDockSpace());
             const preferencesChanged = event => {
                 if (event.type !== 'storage' && event.detail?.userId !== userId) return;
                 this.preferenceRequestId++;
                 this.preferences = AttentionPreferences.normalize(event.detail.value);
-                this.popupVisible = false; this.updateDockSpace();
+                this.popupVisible = false;
             };
             window.addEventListener('app:attention-preferences', preferencesChanged);
-            this.$watch('openModal', () => this.updateDockSpace());
-            this.$watch('error', () => this.updateDockSpace());
             this.load();
             this.loadPreferences();
             const poll = window.setInterval(() => { if (!document.hidden) { this.load(); this.loadPreferences(); } }, 30000);
@@ -463,7 +460,6 @@ function notificationsBell(csrf, workspaceId, userId) {
                 const changed = JSON.stringify(this.preferences) !== JSON.stringify(data.preferences);
                 this.preferences = data.preferences;
                 if (changed) this.popupVisible = false;
-                this.updateDockSpace();
             } catch (_) {
                 if (requestId === this.preferenceRequestId) this.popupVisible = false;
             }
@@ -474,7 +470,6 @@ function notificationsBell(csrf, workspaceId, userId) {
             this.loading = false; this.pending = false; this.contextChanged = true; this.error = message;
             this.popupVisible = false; this.popupKeys.clear();
             if (this.openModal) this.$nextTick(() => this.$refs.dialog?.focus());
-            this.updateDockSpace();
         },
         validItem(item) {
             if (!item || typeof item.key !== 'string' || !item.key || item.scope !== 'personal' ||
@@ -517,10 +512,6 @@ function notificationsBell(csrf, workspaceId, userId) {
             const fresh = keys.some(key => !this.popupKeys.has(key));
             this.popupVisible = this.primed && this.complete && fresh && this.preferences.popup && !AttentionPreferences.quietNow(this.preferences);
             this.popupKeys = new Set(keys); this.primed = true;
-        },
-        updateDockSpace() {
-            document.documentElement.style.setProperty('--shell-dock-space',
-                this.showDock() ? 'calc(80px + env(safe-area-inset-bottom))' : '0px');
         },
         open() {
             if (this.openModal) return;

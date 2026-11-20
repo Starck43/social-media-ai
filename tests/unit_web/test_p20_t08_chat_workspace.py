@@ -240,6 +240,7 @@ def test_chat_template_renders_boundary_badge_chips_quick_actions_and_four_tabs(
         is_owner=True,
         awaiting_confirmation=False,
         attachment_policy=None,
+        chat_model={"label": "ZRO/deepseek-v4.1-flash", "is_auto": True},
         active_boundary="company",
         scoped_context={
             "type": "contact",
@@ -259,6 +260,8 @@ def test_chat_template_renders_boundary_badge_chips_quick_actions_and_four_tabs(
         request=NS(query_params={}),
     )
 
+    assert "data-chat-model" in rendered
+    assert "Модель: ZRO/deepseek-v4.1-flash (автовыбор)" in rendered
     assert "data-chat-boundary-badge" in rendered
     assert "data-chat-context-chips" in rendered
     assert "data-remove-context-chip" in rendered

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 
@@ -52,7 +50,6 @@ async def task_hub(request: Request):
 @router.get("/task-hub/calendar")
 async def task_calendar(
     request: Request,
-    timezone_name: str = Query("UTC", alias="timezone", max_length=100),
     year: int | None = Query(None, ge=1900, le=2099),
     month: int | None = Query(None, ge=1, le=12),
     before_planner: int | None = Query(None, gt=0),
@@ -65,12 +62,11 @@ async def task_calendar(
         raise HTTPException(422, "Year and month must be supplied together")
     if before_agent is not None:
         raise HTTPException(422, "Agent calendar cursors are not supported")
-    try:
-        ZoneInfo(timezone_name)
-    except (ZoneInfoNotFoundError, ValueError):
-        raise HTTPException(422, "Invalid timezone") from None
     from app.services.workspace.task_surface import calendar_view
+    from app.tasks.cron import resolve_tz
 
+    # The workspace's own zone is the only time source; the page takes no client-supplied timezone.
+    timezone_name = resolve_tz(getattr(request.state, "tenant", None))
     try:
         data = await calendar_view(
             timezone_name=timezone_name, year=year, month=month, before_planner=before_planner,

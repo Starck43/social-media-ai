@@ -1,7 +1,7 @@
 /* Small shared components. Existing slate/cyan tokens remain the design language. */
 .ui-shell { --ui-accent: #0e7490; --ui-accent-soft: #ecfeff; color: var(--color-text); background: var(--color-bg); }
 html.dark .ui-shell { --ui-accent: #67e8f9; --ui-accent-soft: #083344; }
-.ui-card { min-width: 0; border: 1px solid var(--color-border); border-radius: .75rem; background: var(--color-surface); padding: 1.25rem; }
+.ui-card { min-width: 0; border: 1px solid var(--color-border); border-radius: .75rem; padding: 1.25rem; }
 .ui-card-link { display: block; color: inherit; transition: border-color 150ms ease, background-color 150ms ease; }
 .ui-card-link:hover { border-color: var(--ui-accent); background: var(--color-surface-secondary); }
 .ui-icon { display: inline-block; flex-shrink: 0; width: 1.125rem; height: 1.125rem; vertical-align: -.15em; }

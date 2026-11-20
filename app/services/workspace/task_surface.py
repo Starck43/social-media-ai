@@ -76,6 +76,18 @@ def display_time(value, zone):
     raise ValueError("missing_schedule")
 
 
+def calendar_schedule(value, zone):
+    """Precompute the source list value plus grid day and clock in the tenant's zone.
+
+    The page renders these values as-is: no browser-side timezone conversion.
+    """
+    displayed = display_time(value, zone)
+    if "T" in displayed:
+        day, clock = displayed.split("T", 1)
+        return {"when": displayed, "date": day, "time": clock[:5]}
+    return {"when": displayed, "date": displayed, "time": ""}
+
+
 def event_schedule(row):
     """Project source-owned start only; never expand provider recurrence here."""
     payload = row["source"]["payload"]
@@ -160,7 +172,7 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
                                     "key": f"planner:{task.id}",
                                     "title": task.title,
                                     "href": f"/app/planner/{task.id}/edit",
-                                    "when": display_time(when, zone),
+                                    **calendar_schedule(when, zone),
                                 }
                             )
                 elif kind == "event":
@@ -181,7 +193,7 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
                                 continue
                             title, when = event_schedule(row)
                             items.append({"key": f"event:{row['id']}", "title": title, "href": None,
-                                          "settings_href": "/app/settings?tab=connections", "when": display_time(when, zone)})
+                                          "settings_href": "/app/settings?tab=connections", **calendar_schedule(when, zone)})
                     elif page["state"] != "available":
                         provider["status"] = page["state"]
                         continue
@@ -191,7 +203,7 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
                             provider["grid_eligible"] = False
                         for index, row in enumerate(page["items"]):
                             items.append({"key": f"event-range:{index}", "title": row["title"], "href": None,
-                                          "settings_href": "/app/settings?tab=connections", "when": display_time(row["when"], zone)})
+                                          "settings_href": "/app/settings?tab=connections", **calendar_schedule(row["when"], zone)})
                 else:
                     rows, provider["range_complete"] = await _agent_page(session, start_utc, end_utc, agent_cursor) if agent_cursor else await _agent_page(session, start_utc, end_utc)
                     if not provider["range_complete"] and rows:
@@ -204,7 +216,7 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
                                     "key": f"agent:{task.id}",
                                     "title": task.name,
                                     "href": f"/app/tasks/{task.id}",
-                                    "when": display_time(task.next_run_at, zone),
+                                    **calendar_schedule(task.next_run_at, zone),
                                 }
                             )
                 provider.update(status="available", items=list({item["key"]: item for item in items}.values()))
@@ -215,7 +227,7 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
         except Exception:
             # Discard partial output; failures must never look like an empty source.
             provider.update(status="source_unavailable", items=[], next_before_id=None)
-    return {"timezone": timezone_name, "year": year, "month": month, "providers": providers}
+    return {"today": now.date().isoformat(), "year": year, "month": month, "providers": providers}
 
 
 async def create_linked_assignment(*, task_values, source_ids, tenant_id, planner_id, expected_version):

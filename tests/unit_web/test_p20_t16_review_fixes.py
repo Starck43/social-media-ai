@@ -39,6 +39,19 @@ def test_calendar_keeps_metadata_only_events_visible_in_grid():
     assert "titleNode.textContent.trim()" in script
 
 
+def test_calendar_has_no_client_timezone_or_time_calculation():
+    template = read("app/web/templates/web/task_calendar.html")
+    script = read("app/static/js/task-calendar.js")
+    assert "Часовой пояс" not in template
+    assert "data-timezone" not in template
+    assert "timezone=" not in template
+    assert "data-today=" in template
+    assert "data-date=" in template and "data-time=" in template
+    assert "Intl.DateTimeFormat" not in script
+    assert "timeZone" not in script
+    assert "dataset.date" in script and "dataset.time" in script
+
+
 def test_work_surface_controls_follow_the_compact_visual_contract():
     dashboard = read("app/web/templates/web/dashboard.html")
     chat = read("app/web/templates/web/chat.html")

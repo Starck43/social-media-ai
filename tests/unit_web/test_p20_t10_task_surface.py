@@ -397,7 +397,7 @@ def test_calendar_template_exposes_unavailable_provider_state(status):
     env = _task_surface_templates()
     context = _tab_context()
     context.update(
-        timezone="America/New_York", year=2026, month=11,
+        today="2026-11-01", year=2026, month=11,
         providers=[
             {"kind": "planner", "status": "available", "items": [], "next_before_id": None},
             {"kind": "event", "status": status, "items": [], "next_before_id": None},
@@ -419,7 +419,9 @@ def test_calendar_template_exposes_unavailable_provider_state(status):
     assert "Нет доступа к этому типу элементов" in html
     assert 'aria-label="Разделы задач"' in html
     assert 'aria-labelledby="calendar-event"' in html
-    assert "America/New_York" in html
+    assert "data-today=\"2026-11-01\"" in html
+    assert "data-timezone" not in html
+    assert "Часовой пояс" not in html
 
 
 def test_quick_create_empty_context_has_accessible_csrf_form_and_no_nested_navigation():
@@ -790,7 +792,7 @@ async def test_calendar_route_mixed_google_transport_falls_back_to_labelled_inve
     monkeypatch.setattr(surface, 'calendar_service', svc)
     monkeypatch.setattr(task_surface_client.routes, 'render', lambda _request, _template, **context: JSONResponse(context['providers'][1]))
 
-    response = await task_surface_client.client.get('/task-hub/calendar?timezone=UTC&year=2026&month=3')
+    response = await task_surface_client.client.get('/task-hub/calendar?year=2026&month=3')
     assert response.status_code == 200
     provider = response.json()
     assert provider['status'] == 'available' and provider['inventory_only'] is True
@@ -798,3 +800,30 @@ async def test_calendar_route_mixed_google_transport_falls_back_to_labelled_inve
     assert [item['title'] for item in provider['items']] == ['Timed event', 'All day']
     svc.events.assert_awaited_once()
     adapter._request.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_calendar_route_takes_the_timezone_from_the_tenant(monkeypatch):
+    """The calendar exposes no client timezone; all time math uses the workspace zone."""
+    from app.core.config import settings
+    from app.web import task_surface as routes
+
+    captured = {}
+
+    async def fake_calendar_view(**kwargs):
+        captured.update(kwargs)
+        return {"today": "2026-11-20", "year": 2026, "month": 11, "providers": []}
+
+    monkeypatch.setattr("app.services.workspace.task_surface.calendar_view", fake_calendar_view)
+    monkeypatch.setattr(routes, "task_tabs", lambda _request: [])
+    monkeypatch.setattr(routes, "render", lambda _request, _name, **context: context)
+
+    defaults = dict(year=2026, month=11, before_planner=None, before_event=None,
+                    before_agent=None, after_agent_at=None, after_agent_id=None)
+    await routes.task_calendar(NS(state=NS(tenant=NS(timezone="Asia/Tokyo"))), **defaults)
+    assert captured["timezone_name"] == "Asia/Tokyo"
+
+    context = await routes.task_calendar(NS(state=NS(tenant=None)), **defaults)
+    assert captured["timezone_name"] == settings.SCHEDULER_TIMEZONE
+    assert "timezone" not in context
+    assert context["today"] == "2026-11-20"

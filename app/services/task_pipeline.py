@@ -24,10 +24,17 @@ def _safe_collection_result(value: dict) -> dict:
         "counts": _counts(value, ("sources", "items", "new_items", "error", "rate_limited", "skipped")),
         "per_source": per_source,
     }
+    source_ids = value.get("coverage_source_ids")
+    if isinstance(source_ids, list) and all(type(source_id) is int and source_id > 0 for source_id in source_ids):
+        result["coverage_source_ids"] = source_ids
     for row in value.get("per_source", []):
         if not isinstance(row, dict):
             continue
         item = {"source_id": row.get("source_id") if type(row.get("source_id")) is int else None}
+        if isinstance(row.get("name"), str):
+            item["name"] = row["name"][:80]
+        if isinstance(row.get("narrowed_access"), dict) and row["narrowed_access"]:
+            item["narrowed_access"] = True
         for key in ("items", "new_items", "error", "rate_limited", "skipped"):
             if type(row.get(key)) is int and row[key] >= 0:
                 item[key] = row[key]

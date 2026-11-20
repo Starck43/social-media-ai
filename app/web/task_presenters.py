@@ -23,6 +23,8 @@ from .task_shared import (
     timezone,
 )
 
+from .task_source_coverage import source_coverage
+
 
 async def _task_run_scope(
     task: Any, *, include_raw: bool = False, include_sources: bool = False
@@ -229,6 +231,8 @@ def _task_run_panel_data(
                     "hidden_after": max(0, len(valid_rows) - len(steps)),
                 }
     if can_view_sources:
+        if perms_can(request, "agenttask", "view"):
+            summary["source_coverage"] = source_coverage(job)
         if job.job_type == "analyze":
             summary["raw_coverage"] = _raw_coverage(job)
     else:

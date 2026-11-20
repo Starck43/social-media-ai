@@ -6,10 +6,17 @@
 {% block content %}
 <div x-data="tasksPage()">
     {% include "web/_task_tabs.html" %}
+    {% if scenario_context | default(none) %}
+    <div class="ui-card mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p class="text-sm">Задачи по сценарию <a href="/app/scenarios/{{ scenario_context.id }}" class="underline">«{{ scenario_context.name }}»</a></p>
+        <a href="/app/tasks" class="text-sm text-cyan-700 underline dark:text-cyan-400">Все задачи</a>
+    </div>
+    {% else %}
     <div class="ui-card mb-4">
         <p class="text-sm font-medium text-slate-800 dark:text-slate-200">Источники → Сценарий → Задача → Результаты</p>
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">Добавьте источники и настройте сценарий, затем создайте анализ соцсетей. Запуск можно выполнить сразу или сохранить задачу для очереди и расписания.</p>
     </div>
+    {% endif %}
     <div class="mb-6 flex items-center justify-between">
 
         <div class="flex items-center gap-3">

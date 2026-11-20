@@ -34,3 +34,29 @@
 /* Source identity palette adapts to the surface, independently of outcome. */
 :root { --run-source-0:#087f98; --run-source-1:#3579a2; --run-source-2:#6964a5; --run-source-3:#526c42; --run-source-4:#91604c; --run-source-5:#886080; }
 .dark,[data-theme="dark"] { --run-source-0:#44b5c9; --run-source-1:#80add3; --run-source-2:#a9a5df; --run-source-3:#9cbd7f; --run-source-4:#d5a18b; --run-source-5:#c9a2bf; }
+
+.task-source-coverage {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--color-surface-secondary);
+    font-size: 0.8125rem;
+}
+
+.task-source-coverage-bar {
+    display: flex;
+    height: 8px;
+    margin-top: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+}
+
+.task-source-coverage-checked { background: var(--color-success); }
+.task-source-coverage-issue { background: var(--color-warning); }
+.task-source-coverage-unconfirmed { background: var(--color-border-strong); }
+
+.task-source-coverage-notes {
+    margin-top: 4px;
+    color: var(--color-text-secondary);
+    overflow-wrap: anywhere;
+}

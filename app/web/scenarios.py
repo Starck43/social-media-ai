@@ -18,7 +18,7 @@ from sqlalchemy import and_, func
 from app.models.analysis.agent_scenario import AgentScenario
 from app.services.ai.scenario_schema import ScenarioSchemaError, validate_scenario_values
 
-from .deps import add_flash, ensure_csrf, guard_web, render
+from .deps import add_flash, ensure_csrf, guard_web, perms_can, render
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,9 @@ async def scenarios_list(request: Request):
     """List methodologies; task metadata is queried only for permitted viewers."""
     from app.types import AnalysisType, ContentType, MediaType
 
-    can_view_tasks = getattr(request.state, "web_perms", None) is not None and request.state.web_perms.can(
-        "agenttask", "view"
-    )
-    query = AgentScenario.objects.filter(tenant_id=request.state.tenant_id)
+    tenant_id = request.state.tenant_id
+    can_view_tasks = perms_can(request, "agenttask", "view")
+    query = AgentScenario.objects.filter(tenant_id=tenant_id)
     if can_view_tasks:
         from app.models import AgentTask
 
@@ -80,7 +79,11 @@ async def scenarios_list(request: Request):
         for r in rows
     ]
     return render(
-        request, "web/scenarios.html", section="scenarios", scenarios=scenarios, can_view_tasks=can_view_tasks
+        request,
+        "web/scenarios.html",
+        section="scenarios",
+        scenarios=scenarios,
+        can_view_tasks=can_view_tasks,
     )
 
 
@@ -508,7 +511,6 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
     from app.models.llm.llm_model import LLMModel
     from app.services.ai.scenario_builder import ScenarioBuilder
     from app.types import AnalysisType, LLMStrategyType, MediaType
-    from app.web.deps import human_datetime
 
     perms = getattr(request.state, "web_perms", None)
     llm_models = [
@@ -528,46 +530,12 @@ async def _wizard_page(request: Request, *, draft, create: bool, scenario_id: in
     usage = None
     can_view_tasks = perms is not None and perms.can("agenttask", "view")
     if not create and scenario_id is not None and can_view_tasks:
-        from app.core.tenant_context import tenant_scope
-        from app.models.managers.agent_task_manager import AgentTaskManager
-        from app.models.scheduling.job import Job
+        from app.models.scheduling.agent_task import AgentTask
 
-        manager = AgentTaskManager()
-        with tenant_scope(request.state.tenant_id):
-            tasks = await manager.filter(
-                tenant_id=request.state.tenant_id, agent_scenario_id=scenario_id
-            ).prefetch_related("agent_scenario", "sources")
-            active_sources = await manager.get_workspace_active_source_ids()
-            effective = await manager.effective_active_map(tasks, active_sources)
-            task_ids = [task.id for task in tasks]
-            last_job = (
-                await Job.objects.filter(tenant_id=request.state.tenant_id, agent_task_id__in=task_ids)
-                .order_by(Job.created_at.desc())
-                .first()
-                if task_ids
-                else None
-            )
+        tasks = AgentTask.objects.filter(tenant_id=request.state.tenant_id, agent_scenario_id=scenario_id)
         usage = {
-            "total": len(tasks),
-            "active": sum(1 for task in tasks if effective.get(task.id)),
-            "paused": sum(1 for task in tasks if not effective.get(task.id)),
-            "last_status": (
-                {
-                    "done": "завершён",
-                    "failed": "ошибка",
-                    "pending": "в очереди",
-                    "running": "выполняется",
-                }.get(str(last_job.status), str(last_job.status))
-                if last_job
-                else None
-            ),
-            "next_run": human_datetime(
-                min((t.next_run_at for t in tasks if effective.get(t.id) and t.next_run_at), default=None),
-                empty="не запланирован",
-            ),
-            "tasks": [
-                {"id": task.id, "name": task.name, "is_active": effective.get(task.id, False)} for task in tasks[:5]
-            ],
+            "total": await tasks.count(),
+            "tasks": await tasks.order_by(AgentTask.name, AgentTask.id).limit(5),
         }
     # Scenario pickers must not offer models that only burn runs: safety
     # classifiers answer with a verdict (analysis reads that as `failed_output`)

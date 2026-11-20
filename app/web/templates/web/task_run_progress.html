@@ -6,7 +6,7 @@
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{% if job %}{{ job.created_at|human_dt(tz=_tz) }}{% elif task.last_run_at %}{{ task.last_run_at|human_dt(tz=_tz) }} · {{ legacy_status_label }}{% else %}Счётчики появятся после запуска задачи.{% endif %}</p>
         </div>
     </div>
-    {{ record_progress(run_progress) }}
+    {% if not (summary and summary.heartbeat_unconfirmed) %}{{ record_progress(run_progress) }}{% endif %}
     {% if summary and not run_progress and summary.headline %}<p class="mt-3 text-sm">{{ summary.headline.value }} {{ summary.headline.noun }} · {{ summary.headline.label }}</p>{% endif %}
     {% if summary %}
         {% if summary.heartbeat_unconfirmed %}<p class="mt-4 text-sm text-amber-800 dark:text-amber-300">Нет свежего подтверждения. Последний прогресс сохранён; повторный запуск остаётся недоступен.</p>{% endif %}

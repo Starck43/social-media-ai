@@ -539,8 +539,10 @@ _STEP_NOTES = {"running": "выполняется…", "waiting": "", "skipped":
 
 
 def _progress_view(job: "Job", *, stopped: bool = False) -> dict[str, Any] | None:
-    """Per-source progress of the current attempt, ready for the modal."""
-    snapshot = read_snapshot(job.result, getattr(job, "attempts", None))
+    """Per-source progress of the current, sufficiently live attempt."""
+    from app.web.task_progress import current_attempt_snapshot
+
+    snapshot = current_attempt_snapshot(job)
     if snapshot is None or not snapshot["total"]:
         return None
     steps = []
@@ -651,14 +653,9 @@ def _job_summary(job: "Job", task_name: str | None = None) -> dict[str, Any]:
             "cancel": _cancel_info(job),
         }
         if status == "running":
-            heartbeat = getattr(job, "locked_at", None)
-            if heartbeat is None:
-                summary["heartbeat_unconfirmed"] = True
-            else:
-                heartbeat = heartbeat if heartbeat.tzinfo else heartbeat.replace(tzinfo=timezone.utc)
-                summary["heartbeat_unconfirmed"] = datetime.now(timezone.utc) - heartbeat.astimezone(
-                    timezone.utc
-                ) > timedelta(seconds=90)
+            from app.web.task_progress import progress_heartbeat_fresh
+
+            summary["heartbeat_unconfirmed"] = not progress_heartbeat_fresh(job)
         if status == "running":
             progress = _progress_view(job)
             if progress is not None:

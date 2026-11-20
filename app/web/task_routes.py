@@ -277,7 +277,7 @@ async def task_detail(request: Request, task_id: int):
         # Recent jobs for this task.
         recent_jobs = await (
             Job.objects.filter(agent_task_id=task_id, tenant_id=source.tenant_id)
-            .order_by(Job.created_at.desc())
+            .order_by(Job.created_at.desc(), Job.id.desc())
             .limit(10)
         )
 
@@ -397,12 +397,12 @@ async def task_latest_progress(request: Request, task_id: int):
         return HTMLResponse('<p class="text-sm text-slate-600">Задача не найдена.</p>', status_code=404)
     job = (
         await Job.objects.filter(agent_task_id=task.id, tenant_id=tenant_id, status__in=["pending", "running"])
-        .order_by(Job.created_at.desc())
+        .order_by(Job.created_at.desc(), Job.id.desc())
         .first()
     )
     if job is None:
         job = (
-            await Job.objects.filter(agent_task_id=task.id, tenant_id=tenant_id).order_by(Job.created_at.desc()).first()
+            await Job.objects.filter(agent_task_id=task.id, tenant_id=tenant_id).order_by(Job.created_at.desc(), Job.id.desc()).first()
         )
     run_scope = await _task_run_scope(task, include_sources=perms_can(request, "source", "view"))
     panel = _task_run_panel_data(request, task, job, run_scope=run_scope)

@@ -22,7 +22,7 @@
 
 14. ~~P20-T14 — console-direction web shell restyle.~~ **CLOSED 2026-11-19 without audit** (owner decision; integrated in merge `cab5516c`) — [note](../audit/p20/p20-t14.md).
 
-15. [P20-T16](../tasks/p20-t16.md) — Work section redesign from owner PDF, preserving existing behavior and theme tokens.
+15. [P20-T16](../audit/p20/p20-t16.md) — **DONE 2026-11-20**, redesigned Today, chat, inbox, and tasks from the owner PDF while preserving the sidebar, page navigation, and chat message styling. Accepted `e8656a9874ea6dd1132c876aa5b9276763e5a03a`.
 
 ## Waves
 

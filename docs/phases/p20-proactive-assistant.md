@@ -26,6 +26,8 @@
 16. [P20-T17](../audit/p20/p20-t17.md) — **DONE 2026-11-20**, shared Work controls and refinements to Today, chat, inbox, and tasks. Accepted `be851078e33aada3adfdfaebe1155c827e98fbd2`.
 17. [P20-T18](../audit/p20/p20-t18.md) — **DONE 2026-11-20**, responsive scenario cards, filtered links to related tasks, and source coverage in task run details. Accepted `233d9f98291342b787f3c101ff814de13f0829cf`.
 
+18. [P20-T19](../tasks/p20-t19.md) — review the workspace prototype and align controls across Today, Chat, Inbox and Tasks.
+
 ## Waves
 
 | Wave | Tasks | Needs |

@@ -50,24 +50,61 @@ async def create_yandex_connection(
     """
     label, root = validate_yandex_folder(label, root)
     token = validate_yandex_token(oauth_token)
+    return await _create_folder_connection(
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        label=label,
+        root=root,
+        secret=token,
+        provider="yandex_disk",
+        method="oauth_token",
+        verified=folder_verified,
+    )
+
+
+async def create_mailru_connection(*, tenant_id: int, actor_id: int, root: str, secret: str) -> dict:
+    ReadOnlyFolderPolicy(root)
+    return await _create_folder_connection(
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        label="Облако Mail.ru",
+        root=root,
+        secret=secret,
+        provider="mailru_cloud",
+        method="webdav_password",
+        verified=True,
+    )
+
+
+async def _create_folder_connection(
+    *,
+    tenant_id: int,
+    actor_id: int,
+    label: str,
+    root: str,
+    secret: str,
+    provider: str,
+    method: str,
+    verified: bool,
+) -> dict:
     async with async_session_maker() as session, session.begin():
-        await _authorize(session, tenant_id, actor_id, write=True)
+        await _authorize(session, tenant_id, actor_id, write=True, require_source_view=verified)
         connection = WorkspaceConnection(
             tenant_id=tenant_id,
             owner_user_id=actor_id,
-            platform="yandex_disk",
-            provider_id="yandex_disk",
-            auth_method="oauth_token",
+            platform=provider,
+            provider_id=provider,
+            auth_method=method,
             schema_version=CATALOG_VERSION,
             label=label,
             account_key="file-conn:" + secrets.token_hex(16),
             config={"file_policy": {"version": 1, "root": root, "restrictions": []}},
             is_active=True,
-            state="verified" if folder_verified else "unverified",
-            checked_at=datetime.now(timezone.utc) if folder_verified else None,
+            state="verified" if verified else "unverified",
+            checked_at=datetime.now(timezone.utc) if verified else None,
         )
         session.add(connection)
         await session.flush()
-        session.add(WorkspaceConnectionSecret(connection_id=connection.id, secret_encrypted=encrypt_secret(token)))
+        session.add(WorkspaceConnectionSecret(connection_id=connection.id, secret_encrypted=encrypt_secret(secret)))
         await session.flush()
         return {"id": connection.id, "label": connection.label, "root": root, "state": connection.state}

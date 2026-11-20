@@ -345,6 +345,7 @@ async def test_settings_page_connections_tab_populates_workspace_connectors(monk
         "HTMLResponse": HTMLResponse,
         "RedirectResponse": RedirectResponse,
         "SELF_SERVICE_KINDS": self_service_kinds,
+        "_yandex_browse_csrf": lambda request: "cloud-setup-csrf",
         "render": lambda request, template, **ctx: NS(headers={}, context=ctx),
     }
     exec(

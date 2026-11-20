@@ -305,12 +305,16 @@ async def settings_page(request: Request):
         context.update(
             workspace_connection_rows=workspace_rows,
             workspace_connection_write=can_configure,
+            mailru_cloud_email=getattr(user, "email", None) or "",
             yandex_oauth_configured=can_use_yandex_oauth,
             workspace_providers=WORKSPACE_PROVIDERS,
             yandex_browse_csrf=(
                 _yandex_browse_csrf(request)
-                if can_use_yandex_oauth
-                or any(row.get("provider_id") == "yandex_disk" and row.get("is_active") for row in workspace_rows)
+                if can_configure
+                or any(
+                    row.get("provider_id") in {"yandex_disk", "mailru_cloud"} and row.get("is_active")
+                    for row in workspace_rows
+                )
                 else ""
             ),
         )
@@ -1155,6 +1159,11 @@ async def workspace_connection_action(request: Request, connection_id: int, oper
 
 
 _YANDEX_SETTINGS = f"{BACK}?tab=connections#conn-ws-yandex_disk"
+_MAILRU_SETTINGS = f"{BACK}?tab=connections#conn-ws-mailru_cloud"
+_MAILRU_FOLDER_TOO_LARGE = (
+    "В этой папке слишком много файлов и подпапок для просмотра. "
+    "Выберите другую папку или распределите её содержимое по подпапкам в Облаке Mail.ru."
+)
 
 
 def _yandex_oauth_redirect(url: str = _YANDEX_SETTINGS) -> RedirectResponse:
@@ -1167,28 +1176,26 @@ def _yandex_oauth_redirect(url: str = _YANDEX_SETTINGS) -> RedirectResponse:
 async def yandex_oauth_start(request: Request):
     from app.admin.csrf import SESSION_ID_KEY
     from app.models.managers.workspace_connection_manager import ConnectionDenied
-    from app.services.file_workspace.connections import FolderConnectionInputError
     from app.services.file_workspace.yandex_oauth import YandexOAuthError, start_yandex_oauth
 
-    form = await request.form()
+    try:
+        form = await _cloud_form(request, max_fields=1)
+    except ValueError:
+        return _private_file_response(HTMLResponse("Некорректная форма", status_code=400))
     token = form.get("_csrf")
     if not isinstance(token, str) or not _personal_access(request) or not _verify_yandex_browse_csrf(request, token):
         return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
-    expected = {"_csrf", "label", "root", "scope_ack"}
-    if set(form) != expected or any(len(form.getlist(key)) != 1 for key in expected) or form["scope_ack"] != "on":
+    expected = {"_csrf"}
+    if set(form) != expected:
         return HTMLResponse("Некорректная форма", status_code=400)
     try:
         url = await start_yandex_oauth(
             tenant_id=request.state.tenant_id,
             actor_id=request.state.web_user.id,
             session_id=request.session[SESSION_ID_KEY],
-            label=form["label"],
-            root=form["root"],
         )
     except ConnectionDenied:
         return HTMLResponse("Подключение недоступно", status_code=403)
-    except FolderConnectionInputError:
-        add_flash(request, "error", "Укажите путь к одной папке на Яндекс.Диске, например /Документы.")
     except YandexOAuthError:
         add_flash(request, "error", "Вход через Яндекс пока не настроен.")
     else:
@@ -1202,6 +1209,7 @@ async def yandex_oauth_callback(request: Request):
     from app.integrations.file_workspace.yandex_disk import MetadataError
     from app.models.managers.workspace_connection_manager import ConnectionDenied
     from app.services.file_workspace.connections import FolderConnectionInputError
+    from app.services.file_workspace.folder_picker import PickerExpired
     from app.services.file_workspace.yandex_oauth import YandexOAuthError, complete_yandex_oauth
 
     session_id = request.session.get(SESSION_ID_KEY)
@@ -1218,7 +1226,7 @@ async def yandex_oauth_callback(request: Request):
         add_flash(request, "error", "Сеанс подключения истёк. Начните подключение заново.")
         return _yandex_oauth_redirect()
     try:
-        await complete_yandex_oauth(
+        handle = await complete_yandex_oauth(
             tenant_id=request.state.tenant_id,
             actor_id=request.state.web_user.id,
             session_id=session_id,
@@ -1229,7 +1237,6 @@ async def yandex_oauth_callback(request: Request):
     except YandexOAuthError as exc:
         messages = {
             "cancelled": "Подключение отменено.",
-            "folder_unavailable": "Яндекс.Диск не открыл выбранную папку. Проверьте путь и права доступа.",
             "invalid_state": "Сеанс подключения истёк. Начните подключение заново.",
         }
         add_flash(
@@ -1237,10 +1244,10 @@ async def yandex_oauth_callback(request: Request):
         )
     except ConnectionDenied:
         add_flash(request, "error", "Подключение недоступно в этом пространстве.")
-    except (MetadataError, FolderConnectionInputError, RuntimeError):
+    except (MetadataError, FolderConnectionInputError, PickerExpired, RuntimeError):
         add_flash(request, "error", "Не удалось сохранить подключение к Яндекс.Диску. Повторите подключение.")
     else:
-        add_flash(request, "success", "Яндекс.Диск подключён. Доступ к выбранной папке проверен.")
+        return await _show_folder_picker(request, handle, "/", 0, "list")
     return _yandex_oauth_redirect()
 
 
@@ -1278,7 +1285,16 @@ async def yandex_connection_save(request: Request):
 
 @router.post("/yandex-connections/{connection_id}/disable")
 async def yandex_connection_disable(request: Request, connection_id: int):
-    """Remove only the caller's Yandex secret; remote OAuth revocation is separate."""
+    return await _cloud_connection_disable(request, connection_id, "yandex_disk")
+
+
+@router.post("/mailru-cloud-connections/{connection_id}/disable")
+async def mailru_connection_disable(request: Request, connection_id: int):
+    return await _cloud_connection_disable(request, connection_id, "mailru_cloud")
+
+
+async def _cloud_connection_disable(request: Request, connection_id: int, provider: str):
+    """Remove only the caller's credential for the provider on this route."""
     from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
 
     form = await request.form()
@@ -1292,12 +1308,15 @@ async def yandex_connection_disable(request: Request, connection_id: int):
             tenant_id=request.state.tenant_id,
             actor_id=request.state.web_user.id,
             connection_id=connection_id,
-            expected_provider="yandex_disk",
+            expected_provider=provider,
         )
     except ConnectionDenied:
         return HTMLResponse("Подключение недоступно", status_code=403)
+    if provider == "mailru_cloud":
+        add_flash(request, "success", "Подключение отключено и пароль удалён. Его можно отозвать в аккаунте Mail.ru.")
+        return _yandex_oauth_redirect(_MAILRU_SETTINGS)
     add_flash(request, "success", "Подключение отключено и токен удалён. Отзовите доступ приложения в Яндексе.")
-    return RedirectResponse(_YANDEX_SETTINGS, status_code=303)
+    return _yandex_oauth_redirect()
 
 
 def _yandex_browse_session_id(request: Request, *, create: bool) -> str | None:
@@ -1337,6 +1356,15 @@ def _private_file_response(response: HTMLResponse) -> HTMLResponse:
 
 @router.post("/yandex-connections/{connection_id}/browse")
 async def yandex_connection_browse(request: Request, connection_id: int):
+    return await _cloud_connection_browse(request, connection_id, "yandex_disk")
+
+
+@router.post("/mailru-cloud-connections/{connection_id}/browse")
+async def mailru_connection_browse(request: Request, connection_id: int):
+    return await _cloud_connection_browse(request, connection_id, "mailru_cloud")
+
+
+async def _cloud_connection_browse(request: Request, connection_id: int, provider: str):
     """Read one bounded metadata page after CSRF and fresh owner/policy checks."""
     from urllib.parse import parse_qsl
 
@@ -1383,6 +1411,7 @@ async def yandex_connection_browse(request: Request, connection_id: int):
             connection_id=connection_id,
             folder=folder,
             offset=offset,
+            provider=provider,
         )
     except ConnectionDenied:
         return _private_file_response(HTMLResponse("Подключение или папка недоступны", status_code=403))
@@ -1394,6 +1423,12 @@ async def yandex_connection_browse(request: Request, connection_id: int):
             "invalid_page": "Некорректная страница списка.",
             "invalid_provider_response": "Не удалось обработать ответ Диска.",
         }
+        if provider == "mailru_cloud":
+            messages["rate_limited"] = "Облако Mail.ru временно ограничило запросы. Попробуйте позже."
+            messages["reauthorization_required"] = "Облако Mail.ru отклонило доступ. Проверьте пароль приложения."
+            messages["invalid_provider_response"] = "Не удалось обработать ответ Облака Mail.ru."
+            messages["response_too_large"] = _MAILRU_FOLDER_TOO_LARGE
+        settings_link = _MAILRU_SETTINGS if provider == "mailru_cloud" else _YANDEX_SETTINGS
         message = messages.get(str(error), "Не удалось получить список. Проверьте подключение и попробуйте позже.")
         # Provider failure is not a folder: the shared browse template carries the
         # sibling navigation legend and would look like a directory claim.
@@ -1402,7 +1437,7 @@ async def yandex_connection_browse(request: Request, connection_id: int):
                 '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
                 '<meta name="referrer" content="no-referrer"><title>Папка недоступна</title></head>'
                 f'<body><main><p role="alert">{escape(message)}</p>'
-                '<p><a href="/app/settings?tab=connections#conn-ws-yandex_disk">'
+                f'<p><a href="{settings_link}">'
                 "← К подключениям</a></p></main></body></html>",
                 status_code=503,
             )
@@ -1413,6 +1448,7 @@ async def yandex_connection_browse(request: Request, connection_id: int):
         request,
         "web/yandex_file_browser.html",
         connection_id=connection_id,
+        provider=provider,
         page=page,
         parent=parent,
         offset=offset,
@@ -1421,3 +1457,170 @@ async def yandex_connection_browse(request: Request, connection_id: int):
         csrf=_yandex_browse_csrf(request),
     )
     return _private_file_response(response)
+
+
+async def _cloud_form(request: Request, *, max_fields: int) -> dict[str, str]:
+    from urllib.parse import parse_qsl
+
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/x-www-form-urlencoded":
+        raise ValueError
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 65536:
+            raise ValueError
+        body.extend(chunk)
+    pairs = parse_qsl(
+        body.decode("utf-8"), keep_blank_values=True, strict_parsing=True, max_num_fields=max_fields, errors="strict"
+    )
+    form = dict(pairs)
+    if len(pairs) != len(form):
+        raise ValueError
+    return form
+
+
+@router.post("/cloud-folders/pick")
+async def cloud_folder_pick(request: Request):
+    try:
+        form = await _cloud_form(request, max_fields=5)
+        if set(form) != {"_csrf", "handle", "folder", "offset", "action"}:
+            raise ValueError
+        offset = form["offset"]
+        if not offset.isascii() or not offset.isdecimal() or len(offset) > 7 or int(offset) > 1_000_000:
+            raise ValueError
+        if form["action"] not in {"list", "confirm", "cancel"} or len(form["handle"]) != 43:
+            raise ValueError
+    except ValueError:
+        return _private_file_response(HTMLResponse("Некорректная форма", status_code=400))
+    if not _personal_access(request) or not _verify_yandex_browse_csrf(request, form["_csrf"]):
+        return _private_file_response(HTMLResponse("Недостаточно прав или сессия истекла", status_code=403))
+    return await _show_folder_picker(request, form["handle"], form["folder"], int(offset), form["action"])
+
+
+async def _show_folder_picker(request: Request, handle: str, folder: str, offset: int, action: str):
+    import asyncio
+    import json
+    from datetime import datetime, timezone
+
+    from app.integrations.file_workspace.mailru_webdav import list_mailru_folder
+    from app.integrations.file_workspace.policy import ReadOnlyFolderPolicy, _components
+    from app.integrations.file_workspace.yandex_disk import MetadataError, list_folder
+    from app.models.managers.workspace_connection_manager import ConnectionDenied
+    from app.services.file_workspace.connections import create_mailru_connection, create_yandex_connection
+    from app.services.file_workspace.folder_picker import PickerExpired, discard, get
+    from app.services.file_workspace.yandex_oauth import _authorize_setup
+    from app.services.file_workspace.yandex_reader import YandexMetadataClient
+
+    tenant, actor = request.state.tenant_id, request.state.web_user.id
+    try:
+        pending = get(handle, _yandex_browse_session_id(request, create=False), consume=action != "list")
+    except PickerExpired:
+        add_flash(request, "error", "Сеанс подключения истёк. Начните подключение заново.")
+        return _yandex_oauth_redirect()
+    mailru = pending.provider == "mailru_cloud"
+    destination = _MAILRU_SETTINGS if mailru else _YANDEX_SETTINGS
+    if action == "cancel":
+        return _yandex_oauth_redirect(destination)
+    try:
+        parts = _components(folder)
+        if action == "confirm" and not parts and not mailru:
+            raise ValueError
+        folder = "/" + "/".join(parts)
+        await _authorize_setup(tenant, actor)
+        policy = ReadOnlyFolderPolicy(pending.root)
+        limit = 1 if action == "confirm" else 100
+        offset = 0 if action == "confirm" else offset
+        async with asyncio.timeout(15):
+            if mailru:
+                account, password = json.loads(pending.credential)
+                page = await list_mailru_folder(
+                    account=account,
+                    password=password,
+                    folder=folder,
+                    policy=policy,
+                    offset=offset,
+                    limit=limit,
+                )
+            else:
+                page = await list_folder(
+                    YandexMetadataClient(),
+                    token=pending.credential,
+                    folder=folder,
+                    policy=policy,
+                    offset=offset,
+                    limit=limit,
+                )
+        if action == "confirm":
+            if pending.expires_at <= datetime.now(timezone.utc):
+                raise PickerExpired
+            if mailru:
+                await create_mailru_connection(tenant_id=tenant, actor_id=actor, root=folder, secret=pending.credential)
+            else:
+                await create_yandex_connection(
+                    tenant_id=tenant,
+                    actor_id=actor,
+                    label="",
+                    root=folder,
+                    oauth_token=pending.credential,
+                    folder_verified=True,
+                )
+        else:
+            get(handle, _yandex_browse_session_id(request, create=False))
+    except (ConnectionDenied, MetadataError, ValueError, RuntimeError, TimeoutError, PickerExpired) as exc:
+        discard(handle)
+        message = "Папка недоступна. Убедитесь, что она существует и у вашего аккаунта есть право на чтение."
+        if isinstance(exc, PickerExpired):
+            message = "Сеанс подключения истёк. Начните подключение заново."
+        elif mailru and str(exc) == "reauthorization_required":
+            message = "Облако Mail.ru отклонило вход. Проверьте адрес и пароль приложения с доступом к Облаку."
+        elif mailru and str(exc) == "response_too_large":
+            message = _MAILRU_FOLDER_TOO_LARGE
+        add_flash(request, "error", message)
+        return _yandex_oauth_redirect(destination)
+    except BaseException:
+        discard(handle)
+        raise
+    if action == "confirm":
+        add_flash(request, "success", "Подключение сохранено. Доступ к папке проверен.")
+        return _yandex_oauth_redirect(destination)
+    return _private_file_response(
+        render(
+            request,
+            "web/cloud_folder_picker.html",
+            csrf=_yandex_browse_csrf(request),
+            handle=handle,
+            folder=folder,
+            can_confirm=bool(parts) or mailru,
+            parent="/" + "/".join(parts[:-1]) if parts else None,
+            items=[item for item in page.items if item.kind == "dir"],
+            next_offset=page.next_offset,
+            offset=offset,
+        )
+    )
+
+
+@router.post("/mailru-cloud-connections/start")
+async def mailru_cloud_start(request: Request):
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    from app.integrations.file_workspace.mailru_webdav import credentials
+    from app.integrations.oauth.state import DEFAULT_STATE_TTL_SECONDS
+    from app.services.file_workspace.folder_picker import PendingFolder, issue
+
+    try:
+        form = await _cloud_form(request, max_fields=3)
+        if set(form) != {"_csrf", "account", "password"}:
+            raise ValueError
+    except ValueError:
+        return _private_file_response(HTMLResponse("Некорректная форма", status_code=400))
+    binding = _yandex_browse_session_id(request, create=False)
+    if not binding or not _personal_access(request) or not _verify_yandex_browse_csrf(request, form["_csrf"]):
+        return _private_file_response(HTMLResponse("Недостаточно прав или сессия истекла", status_code=403))
+    try:
+        account, password = credentials(form["account"], form["password"])
+    except ValueError:
+        add_flash(request, "error", "Проверьте адрес и пароль приложения Mail.ru.")
+        return _yandex_oauth_redirect(_MAILRU_SETTINGS)
+    expires = datetime.now(timezone.utc) + timedelta(seconds=DEFAULT_STATE_TTL_SECONDS)
+    handle = issue(PendingFolder(binding, "mailru_cloud", json.dumps([account, password]), expires))
+    return await _show_folder_picker(request, handle, "/", 0, "list")

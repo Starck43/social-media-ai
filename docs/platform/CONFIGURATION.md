@@ -327,6 +327,37 @@ deletes the local token; the account holder can revoke the grant in Yandex ID.
 The authorization must start and return to the same application process and
 browser session during its ten-minute lifetime.
 
+### Registering the Yandex application
+
+The flow refuses to start unless all three values are present, so the Settings
+button appears only after the application exists:
+
+1. Open <https://oauth.yandex.ru/client/new/> (not the `/client/new/id/` link: that
+   creates the API-only type and offers no user permissions). Choose the type
+   **Для авторизации пользователей**; the type cannot be changed later.
+2. Name: the product name a user recognises on the consent screen, plus icon and a
+   reachable contact email.
+3. Platform **Веб-сервисы**, Redirect URI exactly
+   `<PUBLIC_BASE_URL>/app/settings/yandex-connections/oauth/callback`. Scheme,
+   host, port and path must match; query and fragment are ignored. Add a separate
+   local-development URI if needed — the console may reject plain loopback HTTP, and
+   in that case test locally with a manually issued token instead.
+4. Доступ к данным: tick only **«Чтение всего Диска»** (`cloud_api:disk.read`).
+   The application compares the granted scope to that exact single value and
+   refuses any additional permission, so `cloud_api:disk.info`, `write` or
+   `app_folder` break the connection with «Яндекс не подтвердил доступ на чтение».
+5. Create the application and copy **ClientID** and **ClientSecret** into
+   `YANDEX_DISK_CLIENT_ID` / `YANDEX_DISK_CLIENT_SECRET`, with `PUBLIC_BASE_URL` set
+   to the bare origin (scheme + host + optional port, no path — a path silently
+   disables the OAuth form). Restart the runtime.
+6. Unverified services show users a warning on the consent screen and have
+   verification requirements; check the application's status in the console before
+   promising the one-button experience to real users.
+
+The access token is not refreshed: when it expires, the user connects again and
+disables the previous entry. Rotating the application secret requires no user
+action; existing tokens stay valid until the user revokes the grant.
+
 Planner-to-calendar writes use the existing `calendar.event_write.v1` business
 capability, which is disabled by default. Set
 `CALENDAR_EVENT_WRITE_ENABLED=true` to enable it after review. Set

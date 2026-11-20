@@ -263,11 +263,12 @@ YANDEX_MAIL = replace(
 )
 YANDEX_DISK = replace(
     YANDEX_DISK,
-    description="Подключение папок Яндекс.Диска пока не реализовано.",
+    description="Подключение папки Яндекс.Диска для просмотра списка файлов.",
     category="Облачный диск и документы",
     icon_asset="icons/providers/yandex-disk.svg",
-    setup_hint="Форма и транспорт пока недоступны.",
-    auth_protocol="OAuth-токен (планируется)",
+    setup_hint="Войдите через Яндекс или используйте личный токен на чтение.",
+    auth_protocol="OAuth 2.0",
+    source_url="https://yandex.ru/dev/disk/rest/",
 )
 MAILRU_CLOUD = replace(
     MAILRU_CLOUD,

@@ -1229,7 +1229,7 @@ async def yandex_oauth_callback(request: Request):
     except YandexOAuthError as exc:
         messages = {
             "cancelled": "Подключение отменено.",
-            "folder_unavailable": "Яндекс.Диск не открыл выбранную папку. Проверьте путь и права доступа.",
+            "folder_unavailable": "Яндекс.Диск не открыл выбранную папку. Убедитесь, что папка существует, путь указан точно и у аккаунта Яндекса есть право на чтение.",
             "invalid_state": "Сеанс подключения истёк. Начните подключение заново.",
         }
         add_flash(

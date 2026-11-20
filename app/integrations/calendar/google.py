@@ -104,7 +104,11 @@ class GoogleCalendar:
             if not isinstance(values, list) or len(values) > 100:
                 raise CalendarError("invalid_calendar_response")
             for value in values:
-                if not isinstance(value, dict) or not isinstance(value.get("start"), dict):
+                if not isinstance(value, dict):
+                    raise CalendarError("invalid_calendar_response")
+                if value.get("status") == "cancelled":
+                    continue
+                if not isinstance(value.get("start"), dict):
                     raise CalendarError("invalid_calendar_response")
                 start_value = value["start"].get("dateTime") or value["start"].get("date")
                 title = value.get("summary") or "Событие"

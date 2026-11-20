@@ -51,3 +51,24 @@ async def test_range_denial_before_adapter_and_reauth(monkeypatch):
     assert result == {'state':'reauth','items':None,'complete':False}
     assert conn.state=='reauth'
     assert get.await_args.args[1:3] == (7,(42,8,'member'))
+
+@pytest.mark.asyncio
+async def test_range_connection_lookup_scopes_owner_and_tenant():
+    from sqlalchemy.dialects import postgresql
+    class Capture:
+        query=None
+        async def scalar(self, query):
+            self.query=query
+            return NS(is_active=True,state='verified')
+    session=Capture()
+    await CalendarService()._connection(session, 7, (42,8,'member'), verified=False)
+    compiled=session.query.compile(dialect=postgresql.dialect())
+    sql=str(compiled)
+    assert 'tenant_id' in sql and 'owner_user_id' in sql and 'provider_id' in sql
+    assert {42,8,7}.issubset(set(v for v in compiled.params.values() if isinstance(v,int)))
+
+@pytest.mark.asyncio
+async def test_range_skips_cancelled_occurrence():
+    adapter=GoogleCalendar('fake','primary')
+    adapter._request=AsyncMock(return_value={'items':[{'status':'cancelled'}]})
+    assert await adapter.range_events(start=START,end=END) == {'items':[], 'complete':True}

@@ -1118,6 +1118,7 @@ async def _handle_collect_with_access(
 
     stats = {
         "sources": 0,
+        "coverage_source_ids": [source.id for source in sources],
         "collected": 0,
         "empty": 0,
         "error": 0,
@@ -2044,6 +2045,7 @@ async def handle_analyze(
                         "error_code",
                         "error_hint",
                         "auth_hint",
+                        "narrowed_access",
                         "selection",
                     )
                     if key in collection_row

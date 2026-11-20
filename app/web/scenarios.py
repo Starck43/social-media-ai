@@ -18,7 +18,8 @@ from sqlalchemy import and_, func
 from app.models.analysis.agent_scenario import AgentScenario
 from app.services.ai.scenario_schema import ScenarioSchemaError, validate_scenario_values
 
-from .deps import add_flash, ensure_csrf, guard_web, render
+from .deps import add_flash, ensure_csrf, guard_web, perms_can, render
+from .scenario_runs import latest_scenario_runs
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +32,10 @@ async def scenarios_list(request: Request):
     """List methodologies; task metadata is queried only for permitted viewers."""
     from app.types import AnalysisType, ContentType, MediaType
 
-    can_view_tasks = getattr(request.state, "web_perms", None) is not None and request.state.web_perms.can(
-        "agenttask", "view"
-    )
-    query = AgentScenario.objects.filter(tenant_id=request.state.tenant_id)
+    tenant_id = request.state.tenant_id
+    can_view_tasks = perms_can(request, "agenttask", "view")
+    can_view_sources = can_view_tasks and perms_can(request, "source", "view")
+    query = AgentScenario.objects.filter(tenant_id=tenant_id)
     if can_view_tasks:
         from app.models import AgentTask
 
@@ -66,6 +67,11 @@ async def scenarios_list(request: Request):
         media = MediaType.get_by_value(legacy.required_media_type)
         content_labels.setdefault(legacy.db_value, media.display_name if media else legacy.display_name)
 
+    latest_runs = (
+        await latest_scenario_runs(tenant_id, [row.id for row in rows], can_view_sources=can_view_sources)
+        if can_view_tasks
+        else {}
+    )
     scenarios = [
         {
             "id": r.id,
@@ -76,11 +82,17 @@ async def scenarios_list(request: Request):
             "analysis_types": [analysis_labels.get(value, value) for value in (r.analysis_types or [])],
             "content_types": [content_labels.get(value, value) for value in (r.content_types or [])],
             "task_count": r.task_count if can_view_tasks else None,
+            "latest_run": latest_runs.get(r.id),
         }
         for r in rows
     ]
     return render(
-        request, "web/scenarios.html", section="scenarios", scenarios=scenarios, can_view_tasks=can_view_tasks
+        request,
+        "web/scenarios.html",
+        section="scenarios",
+        scenarios=scenarios,
+        can_view_tasks=can_view_tasks,
+        can_view_sources=can_view_sources,
     )
 
 

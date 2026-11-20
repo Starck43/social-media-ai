@@ -112,7 +112,7 @@
             <h2 class="text-sm font-semibold">Цепочки сообщений</h2>
             <div class="space-y-2">
                 {% for th in inbox_threads %}
-                <article class="rounded border border-slate-800 p-3 text-xs space-y-1" data-inbox-thread-item="{{ th.id }}">
+                <article class="rounded border border-slate-800 p-3 text-xs space-y-1" data-inbox-thread-item="{{ th.id }}" {% if selected_thread_detail and selected_thread_detail.thread.id == th.id %}data-selected="true"{% endif %}>
                     <div class="flex items-center justify-between gap-2">
                         <span class="px-2 py-0.5 rounded border border-slate-700 font-medium {{ th.channel_badge }}" data-channel-badge="{{ th.channel }}">{{ th.channel_label }}</span>
                         <span class="ui-muted">{{ th.message_count }} сообщ.{% if th.unread_count %} · непрочитано: {{ th.unread_count }}{% endif %}</span>

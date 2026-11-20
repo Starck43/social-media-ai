@@ -56,6 +56,7 @@
             {% for task in tasks %}
             <tr class="hover:bg-slate-50 dark:hover:bg-slate-900/80">
                 <td data-label="Название" class="px-4 py-3 font-medium">
+                    <span class="work-task-ring" title="Прогресс запуска недоступен" aria-label="Прогресс запуска недоступен">—</span>
                     {% if perms and perms.can('agenttask', 'view') %}
                         <a href="/app/tasks/{{ task.id }}"
                            class="text-left hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ task.name|e }}</a>
@@ -150,7 +151,7 @@
                                  <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"
                                       stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
                                      <path stroke-linecap="round" stroke-linejoin="round" d="M8 5v14l11-7z" />
-                                 </svg>
+                                 </svg><span>Запустить</span>
                              </button>
                         </form>
                         {% endif %}
@@ -179,6 +180,7 @@
                                            d="M5.636 5.636a9 9 0 1 0 12.728 0M12 3v9" />
                                  </svg>
                                  {% endif %}
+                                 <span>{% if task.id in effective_active %}Деактивировать{% else %}Активировать{% endif %}</span>
                              </button>
                         </form>
                     </div>

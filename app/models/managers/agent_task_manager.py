@@ -544,6 +544,8 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         end: datetime,
         include_source_based: bool,
         limit: int = 100,
+        after: tuple[datetime, int] | None = None,
+        include_prune: bool = True,
     ) -> dict[str, Any]:
         """Return effective schedules in the half-open UTC interval ``[start, end)``.
 
@@ -578,6 +580,15 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         if start_utc >= end_utc:
             raise ValueError("end must be after start")
 
+        if after is not None:
+            if (not isinstance(after, tuple) or len(after) != 2
+                    or not isinstance(after[0], datetime) or after[0].tzinfo is None
+                    or after[0].utcoffset() is None or type(after[1]) is not int or after[1] <= 0):
+                raise ValueError("invalid range cursor")
+            after = (after[0].astimezone(timezone.utc), after[1])
+            if not start_utc <= after[0] < end_utc:
+                raise ValueError("range cursor outside month")
+
         active_scenario = exists(
             select(literal(1)).where(
                 AgentScenario.id == AgentTask.agent_scenario_id,
@@ -592,6 +603,12 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
             AgentTask.next_run_at >= start_utc,
             AgentTask.next_run_at < end_utc,
         ]
+
+        if after is not None:
+            eligibility.append(or_(AgentTask.next_run_at > after[0],
+                                   and_(AgentTask.next_run_at == after[0], AgentTask.id > after[1])))
+        if not include_prune:
+            eligibility.append(AgentTask.job_type != "prune")
 
         source_types = tuple(sorted(SOURCE_BASED_JOB_TYPES))
         if include_source_based:

@@ -17,9 +17,9 @@ async def test_google_range_uses_occurrences_and_bounded_pages():
     adapter=GoogleCalendar('fake','primary')
     adapter._request=AsyncMock(side_effect=[
       {'items':[{'id':'private', 'summary':'Встреча', 'start':{'dateTime':'2026-03-02T10:00:00Z'}}], 'nextPageToken':'next'},
-      {'items':[{'id':'private2', 'summary':'Повтор', 'start':{'date':'2026-03-04'}}]}])
+      {'items':[{'id':'private2', 'summary':'Повтор', 'start':{'dateTime':'2026-03-04T00:00:00Z'}}]}])
     result=await adapter.range_events(start=START,end=END)
-    assert result == {'complete':True, 'items':[{'title':'Встреча','when':'2026-03-02T10:00:00Z'},{'title':'Повтор','when':'2026-03-04'}]}
+    assert result == {'complete':True, 'items':[{'title':'Встреча','when':'2026-03-02T10:00:00Z'},{'title':'Повтор','when':'2026-03-04T00:00:00Z'}]}
     calls=adapter._request.await_args_list
     first=calls[0].kwargs['params']; second=calls[1].kwargs['params']
     assert first['singleEvents']=='true' and first['timeMin']=='2026-03-01T00:00:00Z' and first['timeMax']=='2026-04-01T00:00:00Z'
@@ -72,3 +72,28 @@ async def test_range_skips_cancelled_occurrence():
     adapter=GoogleCalendar('fake','primary')
     adapter._request=AsyncMock(return_value={'items':[{'status':'cancelled'}]})
     assert await adapter.range_events(start=START,end=END) == {'items':[], 'complete':True}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("start_value", [
+    {"dateTime": "2026-02-28T23:59:59Z"}, {"dateTime": "2026-04-01T00:00:00Z"},
+    {"dateTime": "2026-03-08T02:30:00"}, {"dateTime": "not-a-date"},
+    {"dateTime": "2026-03-01 00:00:00+00:00"}, {"date": "2026-03-08"},
+    {"dateTime": "2026-03-01T00:00:00Z", "date": "2026-03-01"},
+])
+async def test_google_rejects_unverified_event_instead_of_partial_success(start_value):
+    adapter=GoogleCalendar('fake','primary')
+    adapter._request=AsyncMock(return_value={'items':[
+        {'summary':'Valid', 'start':{'dateTime':'2026-03-02T10:00:00Z'}},
+        {'summary':'Invalid', 'start':start_value}]})
+    with pytest.raises(CalendarError, match='invalid_calendar_response'):
+        await adapter.range_events(start=START,end=END)
+
+@pytest.mark.asyncio
+async def test_google_start_inclusive_and_dst_offset_normalized():
+    adapter=GoogleCalendar('fake','primary')
+    adapter._request=AsyncMock(return_value={'items':[
+        {'summary':'Start','start':{'dateTime':'2026-03-01T00:00:00Z'}},
+        {'summary':'DST','start':{'dateTime':'2026-03-08T03:30:00-04:00'}}]})
+    result=await adapter.range_events(start=START,end=END)
+    assert result['complete'] and [item['title'] for item in result['items']] == ['Start','DST']

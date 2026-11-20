@@ -1,6 +1,7 @@
 """Google Calendar wire adapter, conditional writes and complete incremental pages."""
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
@@ -110,10 +111,22 @@ class GoogleCalendar:
                     continue
                 if not isinstance(value.get("start"), dict):
                     raise CalendarError("invalid_calendar_response")
-                start_value = value["start"].get("dateTime") or value["start"].get("date")
+                # Date-only needs the calendar's own verified timezone, not
+                # an inferred UTC midnight. Fail the whole range rather than
+                # claiming an incomplete month as successful.
+                start_value = value["start"].get("dateTime")
                 title = value.get("summary") or "Событие"
-                if not isinstance(start_value, str) or not isinstance(title, str):
+                if (not isinstance(start_value, str) or not isinstance(title, str)
+                    or value["start"].get("date") is not None):
                     raise CalendarError("invalid_calendar_response")
+                try:
+                    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", start_value):
+                        raise ValueError
+                    instant = datetime.fromisoformat(start_value.replace("Z", "+00:00"))
+                    if instant.utcoffset() is None or not start <= instant < end:
+                        raise ValueError
+                except (ValueError, TypeError, OverflowError):
+                    raise CalendarError("invalid_calendar_response") from None
                 items.append({"title": title[:500], "when": start_value})
             token = page.get("nextPageToken")
             if not token:

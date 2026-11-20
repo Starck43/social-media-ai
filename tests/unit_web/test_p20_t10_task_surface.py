@@ -709,3 +709,36 @@ async def test_task_hub_routes_planner_only_actor_and_assignment_tab_stays_hidde
     tabs = task_surface_client.routes.task_tabs(NS())
     assert [tab[0] for tab in tabs] == ["planner", "calendar"]
     assert all(tab[0] != "tasks" for tab in tabs)
+
+
+@pytest.mark.asyncio
+async def test_calendar_local_inventory_is_not_month_grid(monkeypatch):
+    monkeypatch.setattr(surface, "has_permission", FakePermission({"plannertask"}))
+    monkeypatch.setattr(surface, "get_current_user", lambda: object())
+    monkeypatch.setattr(surface, "async_session_maker", FakeSession)
+    monkeypatch.setattr(surface, "planner_service", NS(calendar_range=AsyncMock(return_value={"items": [], "next_before_id": None})))
+    inventory={"id": 7, "source": {"deleted": False, "payload": {"summary": "Old event", "start": {"dateTime": "2025-01-01T00:00:00Z"}}}}
+    calendar=NS(events_range=AsyncMock(return_value={"state":"range_unavailable"}), events=AsyncMock(return_value={"state":"available", "items":[inventory], "next_before_id":None}))
+    monkeypatch.setattr(surface, "calendar_service", calendar)
+    result=await surface.calendar_view(timezone_name="UTC", year=2026, month=11)
+    provider=next(item for item in result["providers"] if item["kind"] == "event")
+    assert provider["status"] == "available" and provider["range_complete"] is False
+    assert provider["grid_eligible"] is False and provider["items"][0]["title"] == "Old event"
+
+@pytest.mark.asyncio
+async def test_calendar_agent_next_cursor_is_month_scoped_and_propagated(monkeypatch):
+    monkeypatch.setattr(surface, 'has_permission', FakePermission({'agenttask'}))
+    monkeypatch.setattr(surface, 'get_current_user', lambda: object())
+    monkeypatch.setattr(surface, 'async_session_maker', FakeSession)
+    at = datetime(2026, 11, 10, 12, tzinfo=timezone.utc)
+    page = AsyncMock(return_value=([NS(id=77, name='Schedule', next_run_at=at)], False))
+    monkeypatch.setattr(surface, '_agent_page', page)
+    result = await surface.calendar_view(year=2026, month=11, timezone_name='UTC')
+    agent = result['providers'][2]
+    assert (agent['next_agent_at'], agent['next_agent_id']) == (at.isoformat(), 77)
+    await surface.calendar_view(year=2026, month=11, timezone_name='UTC', after_agent_at=at.isoformat(), after_agent_id=77)
+    assert page.await_args.args[3] == (at, 77)
+    with pytest.raises(ValueError, match='invalid_agent_cursor'):
+        await surface.calendar_view(year=2026, month=10, after_agent_at=at.isoformat(), after_agent_id=77)
+    with pytest.raises(ValueError, match='invalid_agent_cursor'):
+        await surface.calendar_view(year=2026, month=11, after_agent_at=at.isoformat())

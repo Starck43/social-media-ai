@@ -165,3 +165,28 @@ async def test_calendar_agent_caller_requires_source_permission_and_filters_prun
     rows, complete = await task_surface._agent_page(object(), datetime(2026,11,1,tzinfo=timezone.utc), datetime(2026,12,1,tzinfo=timezone.utc))
     assert [row.job_type for row in rows] == ['notify'] and complete is False
     assert mock.await_args.kwargs['include_source_based'] is False
+
+@pytest.mark.asyncio
+async def test_agent_range_cursor_orders_equal_timestamps_and_filters_prune_before_limit(monkeypatch):
+    manager = AgentTaskManager()
+    captured = {}
+    def fake_filter(*criteria, **kwargs):
+        captured['criteria'] = criteria
+        captured['query'] = _Query([])
+        return captured['query']
+    monkeypatch.setattr(manager, 'filter', fake_filter)
+    at = datetime(2026, 11, 12, 10, tzinfo=timezone.utc)
+    await manager.upcoming_effective_range(start=datetime(2026,11,1,tzinfo=timezone.utc),
+        end=datetime(2026,12,1,tzinfo=timezone.utc), include_source_based=False,
+        limit=50, after=(at, 77), include_prune=False)
+    sql, params = _compiled(captured['criteria'])
+    assert 'next_run_at >' in sql and 'next_run_at =' in sql and 'id >' in sql
+    assert at in params and 77 in params and 'prune' in params
+    assert captured['query'].limit_value == 51
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('cursor', [(datetime(2026,11,1),1), (datetime(2026,12,1,tzinfo=timezone.utc),1), (datetime(2026,11,1,tzinfo=timezone.utc),0)])
+async def test_agent_range_rejects_invalid_composite_cursor(cursor):
+    with pytest.raises(ValueError):
+        await AgentTaskManager().upcoming_effective_range(start=datetime(2026,11,1,tzinfo=timezone.utc),
+            end=datetime(2026,12,1,tzinfo=timezone.utc), include_source_based=False, after=cursor)

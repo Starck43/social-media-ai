@@ -114,3 +114,28 @@
 
 @media (min-width:1100px) { .today-bento [data-home-results] { grid-column:1 / -1; } }
 @media (min-width:769px) { .today-bento [data-home-results] > .space-y-3 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; } .today-bento [data-home-results] > .space-y-3 > * { margin-top:0; } }
+
+/* The PDF's mobile navigation reuses the permission-filtered shell items and drawer. */
+.work-mobile-nav { display: none; }
+@media (max-width: 767px) {
+    .work-mobile-nav {
+        position: fixed; z-index: 40; inset: auto 0 0;
+        display: flex; align-items: stretch; justify-content: space-around;
+        min-height: calc(64px + env(safe-area-inset-bottom));
+        padding: 4px max(4px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(4px, env(safe-area-inset-left));
+        border-top: 1px solid var(--color-border); background: var(--color-surface);
+    }
+    .work-mobile-nav :is(a, button) {
+        flex: 1 1 0; min-width: 0; min-height: 48px; display: flex;
+        flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+        color: var(--color-text-secondary); font-size: .7rem; text-decoration: none;
+        background: transparent; border: 0; cursor: pointer;
+    }
+    .work-mobile-nav [aria-current="page"] { color: var(--color-cyan-600); font-weight: 600; }
+    .work-mobile-nav :is(a, button):focus-visible { outline: 2px solid var(--color-cyan-600); outline-offset: -2px; }
+    .work-mobile-nav svg { width: 20px; height: 20px; stroke-width: 1.7; }
+    body:has(.work-mobile-nav) .shell-notification-dock,
+    body:has(.work-mobile-nav) .chat-dock-launcher { bottom: calc(76px + env(safe-area-inset-bottom)); }
+    body:has(.work-mobile-nav) .shell-content { margin-bottom: calc(140px + env(safe-area-inset-bottom)); }
+    body:has(.work-mobile-nav) .shell-attention-popup { bottom: calc(136px + env(safe-area-inset-bottom)); }
+}

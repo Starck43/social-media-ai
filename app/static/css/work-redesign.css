@@ -151,3 +151,7 @@
 .work-task-tabs a { border-color:transparent; background:transparent; }
 .work-task-tabs a[aria-current] { border-color:var(--color-border); background:var(--color-surface); }
 .planner-page { max-width:64rem; }
+/* Attention items form individual cards rather than a long list on desktop. */
+.today-bento [data-today-section="attention"] > ul { display:grid; gap:.75rem; }
+.today-bento [data-today-section="attention"] > ul > li { margin:0; padding:.9rem; border:1px solid var(--color-border); border-radius:.75rem; background:var(--color-surface-secondary); }
+@media (min-width:769px) { .today-bento [data-today-section="attention"] > ul { grid-template-columns:repeat(3,minmax(0,1fr)); } }

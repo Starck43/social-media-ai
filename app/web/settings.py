@@ -293,6 +293,7 @@ async def settings_page(request: Request):
         }
         from app.integrations.catalog import PROVIDERS, WORKSPACE_PROVIDERS
         from app.models.managers.workspace_connection_manager import ConnectionDenied, workspace_connections
+        from app.services.file_workspace.yandex_oauth import oauth_configured
 
         try:
             workspace_rows, can_configure = await workspace_connections.list_for_actor(
@@ -300,13 +301,16 @@ async def settings_page(request: Request):
             )
         except ConnectionDenied:
             workspace_rows, can_configure = [], False
+        can_use_yandex_oauth = can_configure and oauth_configured()
         context.update(
             workspace_connection_rows=workspace_rows,
             workspace_connection_write=can_configure,
+            yandex_oauth_configured=can_use_yandex_oauth,
             workspace_providers=WORKSPACE_PROVIDERS,
             yandex_browse_csrf=(
                 _yandex_browse_csrf(request)
-                if any(row.get("provider_id") == "yandex_disk" and row.get("is_active") for row in workspace_rows)
+                if can_use_yandex_oauth
+                or any(row.get("provider_id") == "yandex_disk" and row.get("is_active") for row in workspace_rows)
                 else ""
             ),
         )
@@ -1150,6 +1154,96 @@ async def workspace_connection_action(request: Request, connection_id: int, oper
     return RedirectResponse(f"{BACK}?tab=connections#conn-ws-email", status_code=303)
 
 
+_YANDEX_SETTINGS = f"{BACK}?tab=connections#conn-ws-yandex_disk"
+
+
+def _yandex_oauth_redirect(url: str = _YANDEX_SETTINGS) -> RedirectResponse:
+    return RedirectResponse(
+        url, status_code=303, headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+    )
+
+
+@router.post("/yandex-connections/oauth/start")
+async def yandex_oauth_start(request: Request):
+    from app.admin.csrf import SESSION_ID_KEY
+    from app.models.managers.workspace_connection_manager import ConnectionDenied
+    from app.services.file_workspace.connections import FolderConnectionInputError
+    from app.services.file_workspace.yandex_oauth import YandexOAuthError, start_yandex_oauth
+
+    form = await request.form()
+    token = form.get("_csrf")
+    if not isinstance(token, str) or not _personal_access(request) or not _verify_yandex_browse_csrf(request, token):
+        return HTMLResponse("Недостаточно прав или сессия истекла", status_code=403)
+    expected = {"_csrf", "label", "root", "scope_ack"}
+    if set(form) != expected or any(len(form.getlist(key)) != 1 for key in expected) or form["scope_ack"] != "on":
+        return HTMLResponse("Некорректная форма", status_code=400)
+    try:
+        url = await start_yandex_oauth(
+            tenant_id=request.state.tenant_id,
+            actor_id=request.state.web_user.id,
+            session_id=request.session[SESSION_ID_KEY],
+            label=form["label"],
+            root=form["root"],
+        )
+    except ConnectionDenied:
+        return HTMLResponse("Подключение недоступно", status_code=403)
+    except FolderConnectionInputError:
+        add_flash(request, "error", "Укажите путь к одной папке на Яндекс.Диске, например /Документы.")
+    except YandexOAuthError:
+        add_flash(request, "error", "Вход через Яндекс пока не настроен.")
+    else:
+        return _yandex_oauth_redirect(url)
+    return _yandex_oauth_redirect()
+
+
+@router.get("/yandex-connections/oauth/callback")
+async def yandex_oauth_callback(request: Request):
+    from app.admin.csrf import SESSION_ID_KEY
+    from app.integrations.file_workspace.yandex_disk import MetadataError
+    from app.models.managers.workspace_connection_manager import ConnectionDenied
+    from app.services.file_workspace.connections import FolderConnectionInputError
+    from app.services.file_workspace.yandex_oauth import YandexOAuthError, complete_yandex_oauth
+
+    session_id = request.session.get(SESSION_ID_KEY)
+    states = request.query_params.getlist("state")
+    codes = request.query_params.getlist("code")
+    errors = request.query_params.getlist("error")
+    if (
+        not _personal_access(request)
+        or not isinstance(session_id, str)
+        or len(states) != 1
+        or len(states[0]) > 128
+        or (len(codes), len(errors)) not in {(1, 0), (0, 1)}
+    ):
+        add_flash(request, "error", "Сеанс подключения истёк. Начните подключение заново.")
+        return _yandex_oauth_redirect()
+    try:
+        await complete_yandex_oauth(
+            tenant_id=request.state.tenant_id,
+            actor_id=request.state.web_user.id,
+            session_id=session_id,
+            state=states[0],
+            code=codes[0] if codes else "",
+            cancelled=errors == ["access_denied"],
+        )
+    except YandexOAuthError as exc:
+        messages = {
+            "cancelled": "Подключение отменено.",
+            "folder_unavailable": "Яндекс.Диск не открыл выбранную папку. Проверьте путь и права доступа.",
+            "invalid_state": "Сеанс подключения истёк. Начните подключение заново.",
+        }
+        add_flash(
+            request, "error", messages.get(str(exc), "Яндекс не подтвердил доступ на чтение. Повторите подключение.")
+        )
+    except ConnectionDenied:
+        add_flash(request, "error", "Подключение недоступно в этом пространстве.")
+    except (MetadataError, FolderConnectionInputError, RuntimeError):
+        add_flash(request, "error", "Не удалось сохранить подключение к Яндекс.Диску. Повторите подключение.")
+    else:
+        add_flash(request, "success", "Яндекс.Диск подключён. Доступ к выбранной папке проверен.")
+    return _yandex_oauth_redirect()
+
+
 @router.post("/yandex-connections")
 async def yandex_connection_save(request: Request):
     """Save one private, unverified read-only connection; never call a provider."""
@@ -1179,7 +1273,7 @@ async def yandex_connection_save(request: Request):
         return HTMLResponse("Не удалось безопасно сохранить подключение", status_code=503)
     else:
         add_flash(request, "success", "Подключение сохранено. Доступ не проверен; просмотр папки доступен по кнопке.")
-    return RedirectResponse(f"{BACK}?tab=connections#conn-ws-yandex_disk", status_code=303)
+    return RedirectResponse(_YANDEX_SETTINGS, status_code=303)
 
 
 @router.post("/yandex-connections/{connection_id}/disable")
@@ -1203,11 +1297,11 @@ async def yandex_connection_disable(request: Request, connection_id: int):
     except ConnectionDenied:
         return HTMLResponse("Подключение недоступно", status_code=403)
     add_flash(request, "success", "Подключение отключено и токен удалён. Отзовите доступ приложения в Яндексе.")
-    return RedirectResponse(f"{BACK}?tab=connections#conn-ws-yandex_disk", status_code=303)
+    return RedirectResponse(_YANDEX_SETTINGS, status_code=303)
 
 
 def _yandex_browse_session_id(request: Request, *, create: bool) -> str | None:
-    """Bind browsing CSRF to the signed session, actor and active workspace."""
+    """Bind Yandex read and consent actions to the signed session, actor and active workspace."""
     from app.admin.csrf import SESSION_ID_KEY, ensure_session_id
 
     session_id = ensure_session_id(request) if create else request.session.get(SESSION_ID_KEY)

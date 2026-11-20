@@ -835,3 +835,127 @@ async def test_assembled_browse_pagination_and_provider_error(workspace_data, pi
         assert "Содержимое папки" not in error.text and "Следующая страница" not in error.text
         assert TEST_TOKEN not in error.text and error.headers["cache-control"] == "no-store"
         assert len(pinned_http.calls) == 3 and all(writer.closed for writer in pinned_http.calls)
+
+
+async def test_settings_oauth_consent_verifies_and_stores_only_the_selected_folder(workspace_data, monkeypatch):
+    import re
+    from unittest.mock import AsyncMock
+    from urllib.parse import parse_qs, urlsplit
+
+    from pydantic import SecretStr
+
+    from app.core.hashing import get_password_hash
+    from app.integrations.file_workspace.yandex_disk import MetadataError
+    from app.main import create_application
+    from app.services.file_workspace import yandex_oauth
+    from app.utils.crypto import decrypt_secret
+
+    monkeypatch.setattr(settings, "YANDEX_DISK_CLIENT_ID", "test-yandex-client")
+    monkeypatch.setattr(settings, "YANDEX_DISK_CLIENT_SECRET", SecretStr("test-yandex-client-secret"))
+    monkeypatch.setattr(settings, "PUBLIC_BASE_URL", "http://localhost:8000")
+    exchanged = AsyncMock(return_value={"access_token": TEST_TOKEN, "refresh_token": "discard-me"})
+    listed = AsyncMock()
+    monkeypatch.setattr(yandex_oauth, "exchange_yandex_code", exchanged)
+    monkeypatch.setattr(yandex_oauth, "list_folder", listed)
+
+    actor = workspace_data.users[0]
+    password = "p8t34-test-password"
+    async with async_session_maker() as session, session.begin():
+        await session.execute(
+            update(User).where(User.id == actor.id).values(hashed_password=get_password_hash(password))
+        )
+
+    transport = httpx.ASGITransport(app=create_application())
+    csrf_pattern = r'name="_csrf" value="([^"]+)"'
+    start_path = "/app/settings/yandex-connections/oauth/start"
+    callback = yandex_oauth.CALLBACK_PATH
+    settings_path = "/app/settings?tab=connections"
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost:8000") as client:
+        login = await client.get("/app/login")
+        login_csrf = re.search(csrf_pattern, login.text).group(1)
+        assert (
+            await client.post(
+                "/app/login", data={"username": actor.username, "password": password, "_csrf": login_csrf}
+            )
+        ).status_code in (302, 303)
+        page = await client.get(settings_path)
+        oauth_form = page.text.split(f'action="{start_path}"', 1)[1].split("</form>", 1)[0]
+        csrf = re.search(csrf_pattern, oauth_form).group(1)
+        assert "Подключить через Яндекс" in oauth_form
+        form = {"_csrf": csrf, "root": "/Документы", "label": "OAuth test mount", "scope_ack": "on"}
+
+        assert (await client.post(start_path, data={**form, "_csrf": login_csrf})).status_code == 403
+        assert (await client.post(start_path, data={**form, "scope_ack": "off"})).status_code == 400
+
+        async def start():
+            response = await client.post(start_path, data=form)
+            assert response.status_code == 303
+            assert response.headers["cache-control"] == "no-store"
+            url = urlsplit(response.headers["location"])
+            assert (url.scheme, url.hostname, url.path) == ("https", "oauth.yandex.ru", "/authorize")
+            params = parse_qs(url.query)
+            assert params["scope"] == ["cloud_api:disk.read"]
+            assert params["force_confirm"] == ["yes"]
+            assert params["code_challenge_method"] == ["S256"]
+            assert params["redirect_uri"] == [f"http://localhost:8000{callback}"]
+            assert "test-yandex-client-secret" not in url.query and "Документы" not in url.query
+            return params["state"][0]
+
+        state = await start()
+        assert (await client.get(callback, params={"state": state, "error": "access_denied"})).status_code == 303
+        assert (await client.get(callback, params={"state": state, "code": "reused"})).status_code == 303
+        exchanged.assert_not_awaited()
+        async with async_session_maker() as session:
+            assert (
+                await session.scalar(select(WorkspaceConnection.id).where(WorkspaceConnection.label == form["label"]))
+                is None
+            )
+
+        exchanged.return_value = {"access_token": TEST_TOKEN, "scope": "cloud_api:disk.read cloud_api:disk.write"}
+        state = await start()
+        assert (await client.get(callback, params={"state": state, "code": "broad-scope"})).status_code == 303
+        listed.assert_not_awaited()
+
+        exchanged.return_value = {"access_token": TEST_TOKEN, "refresh_token": "discard-me"}
+        listed.side_effect = MetadataError("provider_unavailable")
+        state = await start()
+        assert (await client.get(callback, params={"state": state, "code": "unavailable-folder"})).status_code == 303
+        async with async_session_maker() as session:
+            assert (
+                await session.scalar(select(WorkspaceConnection.id).where(WorkspaceConnection.label == form["label"]))
+                is None
+            )
+        exchanged.reset_mock()
+        listed.reset_mock(side_effect=True)
+
+        state = await start()
+        response = await client.get(callback, params={"state": state, "code": "provider-code"})
+        assert response.status_code == 303 and response.headers["referrer-policy"] == "no-referrer"
+        assert response.headers["location"] == f"{settings_path}#conn-ws-yandex_disk"
+        assert (await client.get(callback, params={"state": state, "code": "reused"})).status_code == 303
+        exchanged.assert_awaited_once()
+        listed.assert_awaited_once()
+        assert listed.call_args.kwargs["folder"] == form["root"]
+        assert listed.call_args.kwargs["token"] == TEST_TOKEN
+        assert listed.call_args.kwargs["policy"].binding() == "disk:/Документы"
+
+        async with async_session_maker() as session:
+            row = await session.scalar(select(WorkspaceConnection).where(WorkspaceConnection.label == form["label"]))
+            secret = await session.get(WorkspaceConnectionSecret, row.id)
+            assert row.state == "verified" and row.checked_at is not None
+            assert row.owner_user_id == actor.id
+            assert row.config["file_policy"] == {"version": 1, "root": form["root"], "restrictions": []}
+            assert secret.secret_encrypted != TEST_TOKEN and decrypt_secret(secret.secret_encrypted) == TEST_TOKEN
+            connection_id = row.id
+
+        refreshed = await client.get(settings_path)
+        assert "Доступ к папке проверен при подключении" in refreshed.text
+        assert TEST_TOKEN not in refreshed.text and "discard-me" not in refreshed.text
+        disable_form = refreshed.text.split(f'/yandex-connections/{connection_id}/disable"', 1)[1]
+        disable_csrf = re.search(csrf_pattern, disable_form).group(1)
+        assert (
+            await client.post(f"/app/settings/yandex-connections/{connection_id}/disable", data={"_csrf": disable_csrf})
+        ).status_code == 303
+        async with async_session_maker() as session:
+            assert not (await session.get(WorkspaceConnection, connection_id)).is_active
+            assert (await session.get(WorkspaceConnectionSecret, connection_id)).secret_encrypted == ""

@@ -271,3 +271,47 @@ async def test_io_error_is_sanitized_and_socket_is_closed(caplog):
     assert str(exc.value) == "provider_unavailable"
     assert "fake-secret" not in caplog.text and "/private folder" not in caplog.text
     assert calls == [True] and writer.closed
+
+
+@pytest.mark.asyncio
+async def test_oauth_token_exchange_uses_only_fixed_authority_and_closes_stream(monkeypatch, caplog):
+    payload = b'{"access_token":"synthetic-token"}'
+    reader = FakeReader(http_response(payload), chunk_size=9)
+    writer = FakeWriter()
+
+    async def opener():
+        return reader, writer
+
+    monkeypatch.setattr(yandex_http, "open_yandex_oauth_tls", opener)
+    result = await yandex_http.exchange_yandex_code(
+        code="mock-code", verifier="mock-verifier", client_id="mock-client", client_secret="mock-client-secret"
+    )
+    assert result == {"access_token": "synthetic-token"}
+    assert writer.closed
+    assert writer.written.startswith(b"POST /token HTTP/1.1\r\nHost: oauth.yandex.ru\r\n")
+    assert b"Authorization: Basic " in writer.written
+    assert writer.written.endswith(b"grant_type=authorization_code&code=mock-code&code_verifier=mock-verifier")
+    assert "mock-code" not in caplog.text and "mock-client-secret" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        http_response(b"{}", b"302 Found", b"Location: https://other.invalid/\r\n"),
+        http_response(b"x" * 17000, b"400 Bad Request"),
+        http_response(b"[]"),
+    ],
+)
+async def test_oauth_exchange_refuses_redirect_oversize_and_invalid_payload(monkeypatch, response):
+    reader, writer = FakeReader(response), FakeWriter()
+
+    async def opener():
+        return reader, writer
+
+    monkeypatch.setattr(yandex_http, "open_yandex_oauth_tls", opener)
+    with pytest.raises(MetadataError, match="^oauth_exchange_failed$"):
+        await yandex_http.exchange_yandex_code(
+            code="mock-code", verifier="mock-verifier", client_id="mock-client", client_secret="mock-secret"
+        )
+    assert writer.closed

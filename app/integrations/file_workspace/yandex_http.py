@@ -1,4 +1,4 @@
-"""Fixed-endpoint metadata HTTP/1.1 transport; not wired to routes or jobs.
+"""Fixed-endpoint HTTP/1.1 transport for Yandex Disk metadata and OAuth.
 
 No redirects, proxies, compression, retries, generic URL fetching, or request
 logging. Authentication and folder policy remain the caller's responsibility.
@@ -8,6 +8,7 @@ This client is compatible with the metadata reader's narrow ``stream`` call.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -25,7 +26,7 @@ from app.integrations.file_workspace.yandex_disk import (
     MetadataError,
 )
 from app.integrations.file_workspace.yandex_network import NetworkUnavailable
-from app.integrations.file_workspace.yandex_tls import open_yandex_tls
+from app.integrations.file_workspace.yandex_tls import OAUTH_HOST, open_yandex_oauth_tls, open_yandex_tls
 
 _MAX_HEADER_BYTES = 16 * 1024
 _MAX_REQUEST_BYTES = 16 * 1024
@@ -73,21 +74,30 @@ def _request_bytes(method, url, params, headers, follow_redirects) -> tuple[h11.
             params=params,
             headers={**headers, "Accept-Encoding": "identity", "Connection": "close"},
         )
-        protocol = h11.Connection(h11.CLIENT, max_incomplete_event_size=_MAX_HEADER_BYTES)
-        result = protocol.send(h11.Request(method=b"GET", target=request.url.raw_path, headers=request.headers.raw))
-        result += protocol.send(h11.EndOfMessage())
-        if len(result) > _MAX_REQUEST_BYTES:
-            raise ValueError
-        return protocol, result
+        return _encode_request(request)
     except (ValueError, TypeError, KeyError, UnicodeError, httpx.InvalidURL, httpx.HTTPError, h11.ProtocolError):
         raise httpx.HTTPError("provider_unavailable") from None
 
 
-async def _exchange(protocol, reader, writer, request: bytes) -> _Response:
+def _encode_request(request: httpx.Request) -> tuple[h11.Connection, bytes]:
+    protocol = h11.Connection(h11.CLIENT, max_incomplete_event_size=_MAX_HEADER_BYTES)
+    result = protocol.send(
+        h11.Request(method=request.method.encode("ascii"), target=request.url.raw_path, headers=request.headers.raw)
+    )
+    if request.content:
+        result += protocol.send(h11.Data(data=request.content))
+    result += protocol.send(h11.EndOfMessage())
+    if len(result) > _MAX_REQUEST_BYTES:
+        raise ValueError("request_too_large")
+    return protocol, result
+
+
+async def _exchange(protocol, reader, writer, request: bytes, max_response_bytes: int) -> _Response:
     writer.write(request)
     await writer.drain()
     status = None
     header_bytes = 0
+    body_bytes = 0
     body = bytearray()
     keep_body = True
     while True:
@@ -115,12 +125,12 @@ async def _exchange(protocol, reader, writer, request: bytes) -> _Response:
             # status alone, and leaving the message unconsumed would not be a
             # bounded single-use exchange.
             keep_body = status == 200
-            if keep_body:
-                for name, value in event.headers:
-                    if name.lower() == b"content-length" and int(value) > _MAX_RESPONSE_BYTES:
-                        raise MetadataError("response_too_large")
+            for name, value in event.headers:
+                if name.lower() == b"content-length" and int(value) > max_response_bytes:
+                    raise MetadataError("response_too_large")
         elif isinstance(event, h11.Data):
-            if len(body) + len(event.data) > _MAX_RESPONSE_BYTES:
+            body_bytes += len(event.data)
+            if body_bytes > max_response_bytes:
                 raise MetadataError("response_too_large")
             if keep_body:
                 body.extend(event.data)
@@ -148,18 +158,44 @@ class YandexMetadataClient:
         # body (RFC 9112 §4.4/§3.3.2).
         del timeout
         protocol, request = _request_bytes(method, url, params, headers, follow_redirects)
-        writer = None
-        try:
-            reader, writer = await self._opener()
-            response = await _exchange(protocol, reader, writer, request)
-        except (TimeoutError, OSError, ValueError, h11.ProtocolError, NetworkUnavailable):
-            raise httpx.HTTPError("provider_unavailable") from None
-        finally:
-            if writer is not None:
-                try:
-                    writer.close()
-                    async with asyncio.timeout(_CLOSE_TIMEOUT):
-                        await writer.wait_closed()
-                except (TimeoutError, OSError):
-                    pass
-        yield response
+        yield await _request_once(protocol, request, self._opener, _MAX_RESPONSE_BYTES)
+
+
+async def _request_once(protocol, request: bytes, opener: Callable, max_response_bytes: int) -> _Response:
+    writer = None
+    try:
+        reader, writer = await opener()
+        return await _exchange(protocol, reader, writer, request, max_response_bytes)
+    except (TimeoutError, OSError, ValueError, h11.ProtocolError, NetworkUnavailable):
+        raise httpx.HTTPError("provider_unavailable") from None
+    finally:
+        if writer is not None:
+            try:
+                writer.close()
+                async with asyncio.timeout(_CLOSE_TIMEOUT):
+                    await writer.wait_closed()
+            except (TimeoutError, OSError):
+                pass
+
+
+async def exchange_yandex_code(*, code: str, verifier: str, client_id: str, client_secret: str) -> dict:
+    """Exchange a grant at the fixed Yandex ID endpoint with a bounded response."""
+    try:
+        request = httpx.Request(
+            "POST",
+            f"https://{OAUTH_HOST}/token",
+            data={"grant_type": "authorization_code", "code": code, "code_verifier": verifier},
+            headers={"Accept": "application/json", "Accept-Encoding": "identity", "Connection": "close"},
+        )
+        request = next(httpx.BasicAuth(client_id, client_secret).auth_flow(request))
+        protocol, wire = _encode_request(request)
+        async with asyncio.timeout(15):
+            response = await _request_once(protocol, wire, open_yandex_oauth_tls, 16 * 1024)
+        if response.status_code != 200:
+            raise ValueError
+        payload = json.loads(response._body)
+        if not isinstance(payload, dict):
+            raise ValueError
+    except (httpx.HTTPError, MetadataError, ValueError, UnicodeError, TimeoutError, h11.ProtocolError):
+        raise MetadataError("oauth_exchange_failed") from None
+    return payload

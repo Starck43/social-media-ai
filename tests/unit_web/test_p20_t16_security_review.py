@@ -283,7 +283,7 @@ async def test_calendar_view_preserves_reauth_as_unavailable_not_empty(monkeypat
     monkeypatch.setattr(
         task_surface,
         "calendar_service",
-        NS(events=AsyncMock(return_value={"state": "reauth", "items": None, "next_before_id": None})),
+        NS(events_range=AsyncMock(return_value={"state": "reauth", "items": None, "complete": False})),
     )
 
     result = await task_surface.calendar_view()

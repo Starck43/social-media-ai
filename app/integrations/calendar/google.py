@@ -1,7 +1,7 @@
 """Google Calendar wire adapter, conditional writes and complete incremental pages."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from app.integrations.calendar.transport import CalendarTransport
@@ -85,6 +85,40 @@ class GoogleCalendar:
             seen.add(token)
             params["pageToken"] = token
         raise CalendarError("calendar_page_limit")
+
+    async def range_events(self, *, start, end, max_pages=3):
+        """Bounded, read-only occurrence query independent of sync tokens."""
+        if (not isinstance(start, datetime) or not isinstance(end, datetime)
+            or start.utcoffset() is None or end.utcoffset() is None
+            or not timedelta(0) < end - start <= timedelta(days=33)
+            or type(max_pages) is not int or not 1 <= max_pages <= 3):
+            raise ValueError("invalid_calendar_range")
+        def stamp(value):
+            return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        params = {"timeMin": stamp(start), "timeMax": stamp(end), "singleEvents": "true",
+                  "showDeleted": "false", "orderBy": "startTime", "maxResults": 100}
+        items, seen = [], set()
+        for _ in range(max_pages):
+            page = await self._request("GET", params=dict(params))
+            values = page.get("items", [])
+            if not isinstance(values, list) or len(values) > 100:
+                raise CalendarError("invalid_calendar_response")
+            for value in values:
+                if not isinstance(value, dict) or not isinstance(value.get("start"), dict):
+                    raise CalendarError("invalid_calendar_response")
+                start_value = value["start"].get("dateTime") or value["start"].get("date")
+                title = value.get("summary") or "Событие"
+                if not isinstance(start_value, str) or not isinstance(title, str):
+                    raise CalendarError("invalid_calendar_response")
+                items.append({"title": title[:500], "when": start_value})
+            token = page.get("nextPageToken")
+            if not token:
+                return {"items": items, "complete": True}
+            if not isinstance(token, str) or token in seen:
+                raise CalendarError("invalid_calendar_response")
+            seen.add(token)
+            params["pageToken"] = token
+        return {"items": items, "complete": False}
 
     async def read(self, external_id):
         item = await self._request("GET", "/" + quote(external_id, safe=""))

@@ -140,24 +140,30 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
                                 }
                             )
                 elif kind == "event":
-                    page = await calendar_service.events(session=session, limit=PAGE_SIZE, before_id=cursors[kind])
-                    if page["state"] != "available":
+                    page = await calendar_service.events_range(session=session, start=start_utc, end=end_utc)
+                    if page["state"] == "range_unavailable":
+                        # Preserve the existing CalDAV page, but never present it
+                        # as a complete range or expanded recurrence inventory.
+                        page = await calendar_service.events(session=session, limit=PAGE_SIZE, before_id=cursors[kind])
+                        if page["state"] != "available":
+                            provider["status"] = page["state"]
+                            continue
+                        provider["range_complete"] = False
+                        provider["next_before_id"] = page["next_before_id"]
+                        for row in page["items"]:
+                            if row["source"].get("deleted"):
+                                continue
+                            title, when = event_schedule(row)
+                            items.append({"key": f"event:{row['id']}", "title": title, "href": None,
+                                          "settings_href": "/app/settings?tab=connections", "when": display_time(when, zone)})
+                    elif page["state"] != "available":
                         provider["status"] = page["state"]
                         continue
-                    provider["next_before_id"] = page["next_before_id"]
-                    for row in page["items"]:
-                        if row["source"].get("deleted"):
-                            continue
-                        title, when = event_schedule(row)
-                        items.append(
-                            {
-                                "key": f"event:{row['id']}",
-                                "title": title,
-                                "href": None,
-                                "settings_href": "/app/settings?tab=connections",
-                                "when": display_time(when, zone),
-                            }
-                        )
+                    else:
+                        provider["range_complete"] = page["complete"]
+                        for index, row in enumerate(page["items"]):
+                            items.append({"key": f"event-range:{index}", "title": row["title"], "href": None,
+                                          "settings_href": "/app/settings?tab=connections", "when": display_time(row["when"], zone)})
                 else:
                     rows, provider["next_before_id"] = await _agent_page(session, cursors[kind])
                     for task in rows:

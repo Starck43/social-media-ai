@@ -21,7 +21,6 @@
 13. P20-T13 — bounded web usability and keyboard/mobile hardening, preserving the existing theme and owning-service contracts. **DONE** — [../audit/p20-t13.md](../audit/p20/p20-t13.md).
 
 14. ~~P20-T14 — console-direction web shell restyle.~~ **CLOSED 2026-11-19 without audit** (owner decision; integrated in merge `cab5516c`) — [note](../audit/p20/p20-t14.md).
-15. [P20-T15](../tasks/p20-t15.md) — «Сегодня» becomes a work desk: live status strip, day-summary card, blocks «Ждут решения» / «По плану на сегодня» / «Ждут ответа», summaries «Вкратце» / «Требует внимания» / «Последние результаты» and the right instrument column. Plain names replace the prototype labels «Брифинг» → «Сводка», «Пульт» → «Рабочий стол» (canonical), «Компаньон» → «Диалог». **TODO**.
 
 ## Waves
 

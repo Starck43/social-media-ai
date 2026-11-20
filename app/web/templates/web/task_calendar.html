@@ -9,15 +9,15 @@
 <div class="space-y-6">
 {% include "web/_task_tabs.html" %}
 <section class="ui-card space-y-4" aria-labelledby="calendar-title">
-  <div class="flex flex-wrap items-center justify-between gap-3"><h2 id="calendar-title" class="text-lg font-semibold">Календарь</h2><details><summary class="ui-control cursor-pointer">Часовой пояс: {{ timezone }}</summary><p class="ui-muted text-sm">До 50 записей каждого раздела. Для повторяющихся событий показан исходный срок.</p><form method="get"><label>Часовой пояс <input class="ui-control min-h-[44px]" name="timezone" value="{{ timezone }}" maxlength="100"></label><button class="ui-control min-h-[44px]">Показать</button></form></details></div>
-  <div class="task-calendar" data-task-calendar data-timezone="{{ timezone }}" hidden>
+  <div class="flex flex-wrap items-center justify-between gap-3"><h2 id="calendar-title" class="text-lg font-semibold">Календарь</h2><details><summary class="ui-control cursor-pointer">Часовой пояс: {{ timezone }}</summary><p class="ui-muted text-sm">До 50 записей каждого раздела. Для повторяющихся событий показан исходный срок.</p><form method="get"><input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}"><label>Часовой пояс <input class="ui-control min-h-[44px]" name="timezone" value="{{ timezone }}" maxlength="100"></label><button class="ui-control min-h-[44px]">Показать</button></form></details></div>
+  <div class="task-calendar" data-task-calendar data-timezone="{{ timezone }}" data-year="{{ year }}" data-month="{{ month }}" hidden>
     <div class="task-calendar-toolbar">
       <button type="button" class="ui-control" data-calendar-prev aria-label="Предыдущий месяц">←</button>
       <h3 data-calendar-month aria-live="polite"></h3>
       <button type="button" class="ui-control" data-calendar-next aria-label="Следующий месяц">→</button>
       <button type="button" class="ui-control" data-calendar-today>Сегодня</button>
     </div>
-    <p class="ui-muted task-calendar-note">В сетке — только загруженная страница записей. Доступность и более ранние записи — ниже.</p>
+    <p class="ui-muted task-calendar-note">Дела загружаются за выбранный месяц. События и поручения показаны только из загруженной страницы; повторы событий не развёрнуты. Состояния и дополнительные страницы — ниже.</p>
     <div class="task-calendar-scroll">
       <div class="task-calendar-grid" data-calendar-grid aria-label="Месячный календарь"></div>
     </div>
@@ -31,7 +31,7 @@
     {% elif provider['items'] %}{% if provider['kind'] == 'event' %}<a class="underline" href="/app/settings?tab=connections">Настройки календаря</a>{% endif %}<ul class="space-y-2">{% for item in provider['items'] %}<li class="flex flex-wrap justify-between gap-3 rounded border p-3" data-calendar-item>{% if item.href %}<a class="underline" data-calendar-link href="{{ item.href }}">{{ item.title }}</a>{% else %}<span data-calendar-title>{{ item.title }}</span>{% endif %}<time datetime="{{ item.when }}">{{ item.when }}</time></li>{% endfor %}</ul>
     {% elif provider['kind'] == 'event' %}<a class="underline" href="/app/settings?tab=connections">Настройки календаря</a><p class="ui-muted">На этой странице элементов нет.</p>
     {% else %}<p class="ui-muted">На этой странице элементов нет.</p>{% endif %}
-    {% if provider['next_before_id'] %}<a class="ui-control inline-flex min-h-[44px] items-center" href="?timezone={{ timezone|urlencode }}&before_{{ provider['kind'] }}={{ provider['next_before_id'] }}">Показать более ранние</a>{% endif %}
+    {% if provider['next_before_id'] %}<a class="ui-control inline-flex min-h-[44px] items-center" href="?timezone={{ timezone|urlencode }}&year={{ year }}&month={{ month }}&before_{{ provider['kind'] }}={{ provider['next_before_id'] }}">Показать более ранние</a>{% endif %}
   </section>{% endfor %}
 </section></div>
 {% endblock %}

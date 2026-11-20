@@ -1,0 +1,25 @@
+const {chromium}=require('playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const base=process.env.P20_BASE_URL;
+ assert(/^http:\/\/127\.0\.0\.1:\d+$/.test(base||'') && process.env.P20_STORAGE_STATE);
+ const browser=await chromium.launch({executablePath:process.env.P20_CHROMIUM||'/usr/local/bin/chromium',args:['--no-sandbox']});
+ const ctx=await browser.newContext({storageState:process.env.P20_STORAGE_STATE});
+ const p=await ctx.newPage();
+ let response=await p.goto(base+'/app/task-hub/calendar?timezone=Europe%2FMoscow&year=2026&month=11');
+ assert.equal(response.status(),200);
+ await p.waitForSelector('[data-calendar-grid] .task-calendar-day');
+ assert((await p.locator('[data-calendar-grid]').innerText()).includes('Проверить цифры'));
+ const previous=p.url();
+ await p.locator('[data-calendar-next]').click();
+ await p.waitForURL(url=>url.searchParams.get('month')==='12');
+ assert.notEqual(previous,p.url());
+ assert.equal(new URL(p.url()).searchParams.get('timezone'),'Europe/Moscow');
+ await p.waitForSelector('[data-calendar-grid] .task-calendar-day');
+ assert(!(await p.locator('[data-calendar-grid]').innerText()).includes('Проверить цифры'));
+ assert((await p.locator('.task-calendar-note').innerText()).includes('только из загруженной страницы'));
+ response=await p.goto(base+'/app/task-hub/calendar?year=2026'); assert.equal(response.status(),422);
+ response=await p.goto(base+'/app/task-hub/calendar?year=2026&month=13'); assert.equal(response.status(),422);
+ response=await p.goto(base+'/app/task-hub/calendar?year=2026&month=3&timezone=Europe%2FBerlin'); assert.equal(response.status(),200);
+ await browser.close(); console.log('PASS month HTTP navigation, timezone, fixture dates and invalid ranges');
+})().catch(e=>{console.error(e);process.exit(1)});

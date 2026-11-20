@@ -31,8 +31,8 @@
         year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
     const get = type => parts.find(part => part.type === type).value;
     const current = `${get('year')}-${get('month')}-${get('day')}`;
-    let year = Number(get('year'));
-    let month = Number(get('month')) - 1;
+    let year = Number(calendar.dataset.year);
+    let month = Number(calendar.dataset.month) - 1;
     const pad = n => String(n).padStart(2, '0');
     const draw = () => {
         heading.textContent = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric', timeZone: 'UTC' })
@@ -69,17 +69,22 @@
             grid.append(cell);
         }
     };
+    const navigate = (targetYear, targetMonth) => {
+        if (targetYear < 1900 || targetYear > 2099) return;
+        const url = new URL(window.location.href);
+        url.search = '';
+        url.searchParams.set('timezone', calendar.dataset.timezone);
+        url.searchParams.set('year', targetYear);
+        url.searchParams.set('month', targetMonth + 1);
+        window.location.assign(url);
+    };
     const shift = amount => {
         const next = new Date(Date.UTC(year, month + amount, 1));
-        year = next.getUTCFullYear();
-        month = next.getUTCMonth();
-        draw();
+        navigate(next.getUTCFullYear(), next.getUTCMonth());
     };
     calendar.querySelector('[data-calendar-prev]').addEventListener('click', () => shift(-1));
     calendar.querySelector('[data-calendar-next]').addEventListener('click', () => shift(1));
-    calendar.querySelector('[data-calendar-today]').addEventListener('click', () => {
-        year = Number(get('year')); month = Number(get('month')) - 1; draw();
-    });
+    calendar.querySelector('[data-calendar-today]').addEventListener('click', () => navigate(Number(get('year')), Number(get('month')) - 1));
     draw();
     calendar.hidden = false;
 })();

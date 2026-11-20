@@ -53,10 +53,14 @@ async def task_hub(request: Request):
 async def task_calendar(
     request: Request,
     timezone_name: str = Query("UTC", alias="timezone", max_length=100),
+    year: int | None = Query(None, ge=1900, le=2099),
+    month: int | None = Query(None, ge=1, le=12),
     before_planner: int | None = Query(None, gt=0),
     before_event: int | None = Query(None, gt=0),
     before_agent: int | None = Query(None, gt=0),
 ):
+    if (year is None) != (month is None):
+        raise HTTPException(422, "Year and month must be supplied together")
     try:
         ZoneInfo(timezone_name)
     except (ZoneInfoNotFoundError, ValueError):
@@ -64,7 +68,7 @@ async def task_calendar(
     from app.services.workspace.task_surface import calendar_view
 
     data = await calendar_view(
-        timezone_name=timezone_name, before_planner=before_planner, before_event=before_event, before_agent=before_agent
+        timezone_name=timezone_name, year=year, month=month, before_planner=before_planner, before_event=before_event, before_agent=before_agent
     )
     return render(
         request, "web/task_calendar.html", section="tasks", tabs=task_tabs(request), active_tab="calendar", **data

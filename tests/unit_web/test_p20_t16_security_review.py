@@ -278,7 +278,7 @@ async def test_calendar_view_preserves_reauth_as_unavailable_not_empty(monkeypat
     monkeypatch.setattr(
         task_surface,
         "planner_service",
-        NS(list=AsyncMock(return_value={"items": [], "next_before_id": None})),
+        NS(calendar_range=AsyncMock(return_value={"items": [], "next_before_id": None})),
     )
     monkeypatch.setattr(
         task_surface,

@@ -4,7 +4,7 @@ Only opaque planner references live in agent payloads. No copied task/calendar
 state, provider content, automatic completion, or additional persistence schema.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -100,8 +100,17 @@ async def _agent_page(session, before_id):
     return rows[:PAGE_SIZE], rows[PAGE_SIZE - 1].id if len(rows) > PAGE_SIZE else None
 
 
-async def calendar_view(*, timezone_name="UTC", before_planner=None, before_event=None, before_agent=None):
+async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_planner=None, before_event=None, before_agent=None):
     zone = ZoneInfo(timezone_name)
+    now = datetime.now(zone)
+    year = now.year if year is None else year
+    month = now.month if month is None else month
+    if type(year) is not int or not 1900 <= year <= 2099 or type(month) is not int or not 1 <= month <= 12:
+        raise ValueError("invalid_month")
+    first_day = date(year, month, 1)
+    next_day = date(year + (month == 12), month % 12 + 1, 1)
+    start_utc = datetime(year, month, 1, tzinfo=zone).astimezone(timezone.utc)
+    end_utc = datetime(next_day.year, next_day.month, 1, tzinfo=zone).astimezone(timezone.utc)
     cursors = {"planner": _cursor(before_planner), "event": _cursor(before_event), "agent": _cursor(before_agent)}
     providers = []
     for kind, permission in (("planner", "plannertask"), ("event", "plannertask"), ("agent", "agenttask")):
@@ -113,7 +122,7 @@ async def calendar_view(*, timezone_name="UTC", before_planner=None, before_even
             async with async_session_maker() as session, session.begin():
                 items = []
                 if kind == "planner":
-                    page = await planner_service.list(session=session, limit=PAGE_SIZE, before_id=cursors[kind])
+                    page = await planner_service.calendar_range(session=session, limit=PAGE_SIZE, before_id=cursors[kind], first_day=first_day, next_day=next_day, start_utc=start_utc, end_utc=end_utc)
                     provider["next_before_id"] = page["next_before_id"]
                     for task in page["items"]:
                         # A calendar-owned planner occurrence is represented by its
@@ -169,7 +178,7 @@ async def calendar_view(*, timezone_name="UTC", before_planner=None, before_even
         except Exception:
             # Discard partial output; failures must never look like an empty source.
             provider.update(status="source_unavailable", items=[], next_before_id=None)
-    return {"timezone": timezone_name, "providers": providers}
+    return {"timezone": timezone_name, "year": year, "month": month, "providers": providers}
 
 
 async def create_linked_assignment(*, task_values, source_ids, tenant_id, planner_id, expected_version):

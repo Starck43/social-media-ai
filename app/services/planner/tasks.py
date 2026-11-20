@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_, select
@@ -200,6 +200,31 @@ class PlannerService:
             "limit": limit,
             "next_before_id": rows[limit - 1].id if len(rows) > limit else None,
         }
+
+    @with_db_session
+    async def calendar_range(self, session, *, first_day, next_day, start_utc, end_utc, limit=50, before_id=None):
+        """Actor-scoped month, with date-only and timestamp deadlines kept distinct."""
+        identity = await self._actor(session, ActionType.VIEW)
+        if (type(first_day) is not date or type(next_day) is not date or first_day.day != 1
+            or next_day != date(first_day.year + (first_day.month == 12), first_day.month % 12 + 1, 1)
+            or not isinstance(start_utc, datetime) or not isinstance(end_utc, datetime)
+            or start_utc.utcoffset() is None or end_utc.utcoffset() is None or start_utc >= end_utc
+            or type(limit) is not int or not 1 <= limit <= 100
+            or (before_id is not None and (type(before_id) is not int or before_id <= 0))):
+            raise ValueError("invalid_calendar_range")
+        query = select(PlannerTask).where(
+            PlannerTask.tenant_id == identity[0], _visibility(identity[1], identity[2]),
+            PlannerTask.status.in_(("todo", "in_progress")), PlannerTask.recurrence_source != "calendar",
+            or_(
+                (PlannerTask.due_at >= start_utc) & (PlannerTask.due_at < end_utc),
+                (PlannerTask.due_at.is_(None)) & (PlannerTask.due_date >= first_day) & (PlannerTask.due_date < next_day),
+            ),
+        )
+        if before_id is not None:
+            query = query.where(PlannerTask.id < before_id)
+        rows = list((await session.scalars(query.order_by(PlannerTask.id.desc()).limit(limit + 1))).all())
+        return {"items": [_projection(row) for row in rows[:limit]],
+                "next_before_id": rows[limit - 1].id if len(rows) > limit else None}
 
     async def _change(self, session, task_id, request, *, reschedule=False):
         identity = await self._actor(session, ActionType.UPDATE)

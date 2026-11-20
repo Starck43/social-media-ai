@@ -6,7 +6,7 @@ No calendar expansion or schedule calculations are done locally.
 
 import base64
 import hashlib
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote, unquote, urljoin, urlsplit
 from xml.etree import ElementTree as ET
 from xml.sax.saxutils import escape
@@ -189,6 +189,98 @@ class YandexCalendar:
             if href not in seen:
                 items.append({"external_id": href, "etag": etag, "deleted": True, "payload": {}})
         return items, {"ctag": ctag, "etags": seen}
+
+    @staticmethod
+    def _range_unavailable(reason):
+        """Return a non-authoritative range result without leaking provider data."""
+        return {"state": "range_unavailable", "items": None, "complete": False, "reason": reason}
+
+    async def range_events(self, *, start, end, max_items=100):
+        """Read a strictly bounded, non-recurring CalDAV range.
+
+        This is deliberately narrower than ``pull``: it uses one read-only
+        calendar-query REPORT, never expands RRULE/RDATE/EXDATE locally, and
+        never returns provider paths, UIDs, ETags or raw iCalendar data. A
+        response at the cap is treated as potentially truncated because REPORT
+        has no portable continuation token. Any recurrence or exception makes
+        the whole result explicitly unavailable rather than returning a partial
+        or falsely complete calendar.
+        """
+        if (
+            not isinstance(start, datetime)
+            or not isinstance(end, datetime)
+            or start.utcoffset() is None
+            or end.utcoffset() is None
+            or type(max_items) is not int
+            or not 1 <= max_items <= 100
+        ):
+            raise ValueError("invalid_calendar_range")
+        start_utc = start.astimezone(timezone.utc)
+        end_utc = end.astimezone(timezone.utc)
+        if not timedelta(0) < end_utc - start_utc <= timedelta(days=33):
+            raise ValueError("invalid_calendar_range")
+
+        def stamp(value):
+            return value.strftime("%Y%m%dT%H%M%SZ")
+
+        body = (
+            '<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">'
+            '<d:prop><d:getetag/><c:calendar-data/></d:prop><c:filter>'
+            '<c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">'
+            f'<c:time-range start="{stamp(start_utc)}" end="{stamp(end_utc)}"/>'
+            '</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>'
+        )
+        rows = await self._report_range(body)
+        # A CalDAV REPORT response has no standard page token. At the cap we
+        # cannot distinguish a complete response from a server-side truncation.
+        if len(rows) >= max_items:
+            return self._range_unavailable("response_completeness_unconfirmed")
+
+        seen = set()
+        projected = []
+        for href, props in rows:
+            if not href.startswith(self.path) or href == self.path or href in seen:
+                return self._range_unavailable("ambiguous_response")
+            seen.add(href)
+            data = props.get(C + "calendar-data")
+            if data is None or not data.text:
+                raise CalendarError("invalid_calendar_response")
+            calendar = validate_ical(data.text)
+            events = calendar.walk("VEVENT")
+            if len(events) != 1:
+                return self._range_unavailable("exceptions_unverified")
+            event = events[0]
+            if any(event.get(key) is not None for key in ("RRULE", "RDATE", "EXDATE", "RECURRENCE-ID")):
+                return self._range_unavailable("recurrence_unverified")
+            if str(event.get("STATUS", "")).upper() == "CANCELLED":
+                continue
+            try:
+                when = event.decoded("DTSTART")
+            except (KeyError, TypeError, ValueError):
+                raise CalendarError("invalid_calendar_response") from None
+            if isinstance(when, datetime):
+                if when.tzinfo is None:
+                    return self._range_unavailable("timezone_unverified")
+                when_value = when.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+            elif isinstance(when, date):
+                when_value = when.isoformat()
+            else:
+                raise CalendarError("invalid_calendar_response")
+            title = str(event.get("SUMMARY", "Событие"))[:500]
+            projected.append(((when_value, title, href), {"title": title, "when": when_value}))
+
+        projected.sort(key=lambda item: item[0])
+        return {"state": "available", "items": [item for _, item in projected], "complete": True}
+
+    async def _report_range(self, body):
+        """Issue the range REPORT through the existing read-only request path."""
+        response = await self._request(
+            "REPORT",
+            self.path,
+            body=body.encode(),
+            headers={"Depth": "1", "Content-Type": "application/xml"},
+        )
+        return xml_rows(response)
 
     def _event_path(self, external_id):
         path = resource_path(external_id)

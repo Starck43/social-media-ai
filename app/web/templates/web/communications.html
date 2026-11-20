@@ -5,9 +5,9 @@
 {% block page_heading %}Входящие{% endblock %}
 
 {% block page_actions %}
-<a href="/app/chat" class="ui-control">← К чату</a>
-<a href="/app/contacts" class="ui-control">Контакты</a>
-<a href="/app/followups" class="ui-control">Договорённости</a>
+<a href="/app/chat" class="ui-button">← К чату</a>
+<a href="/app/contacts" class="ui-button">Контакты</a>
+<a href="/app/followups" class="ui-button">Договорённости</a>
 {% endblock %}
 
 {% block right_panel %}
@@ -20,20 +20,46 @@
 {% endblock %}
 
 {% block content %}
-<div class="space-y-6" data-p12-communications="communications-outbox" data-p15-inbox="unified-inbox">
-    <nav class="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3" aria-label="Разделы переписки" data-inbox-tabs>
-        <a href="/app/communications?tab=inbox&boundary={{ boundary | default('cloud') }}"
-           class="ui-control text-xs {% if (active_tab | default('inbox')) == 'inbox' %}font-semibold{% endif %}"
+{% set communications_legacy = active_tab is not defined %}
+{% set active_tab = active_tab | default('inbox') %}
+{% set boundary = boundary | default('cloud') %}
+{% set inbox_threads = inbox_threads | default([]) %}
+{% set evidence_rows = evidence_rows | default([]) %}
+{% set selected_thread_detail = selected_thread_detail | default(none) %}
+{% set selected_thread_triage = selected_thread_triage | default(none) %}
+{% set triage_by_thread = triage_by_thread | default({}) %}
+{% set merge_suggestions = merge_suggestions | default([]) %}
+{% set triage_load_error = triage_load_error | default(false) %}
+{% set inbox_filter_active = inbox_filter_active | default(false) %}
+{% set inbox_load_error = inbox_load_error | default(false) %}
+{% set can_connect_messages = can_connect_messages | default(false) %}
+{% set contact_id_filter = contact_id_filter | default(none) %}
+{% set is_read_filter = is_read_filter | default(none) %}
+{% set is_archived_filter = is_archived_filter | default(none) %}
+{% set q = q | default('') %}
+{% set channel_filter = channel_filter | default('') %}
+{% set triage_category_filter = triage_category_filter | default('') %}
+{% set before_id = before_id | default(none) %}
+{% set next_before_id = next_before_id | default(none) %}
+{% set communications_data = inbox_threads or evidence_rows or active_tab == 'contacts_merge' %}
+<div class="communications-page space-y-6" data-p12-communications="communications-outbox" data-p15-inbox="unified-inbox">
+    <nav class="ui-segments" aria-label="Разделы переписки" data-inbox-tabs>
+        <a href="/app/communications?tab=inbox&boundary={{ boundary | default('cloud') | urlencode }}"
+           class="ui-segment text-xs {% if (active_tab | default('inbox')) == 'inbox' %}font-semibold{% endif %}"
+           {% if (active_tab | default('inbox')) == 'inbox' %}aria-current="page"{% endif %}
            data-tab="inbox">Входящие цепочки</a>
-        <a href="/app/communications?tab=outbox&boundary={{ boundary | default('cloud') }}"
-           class="ui-control text-xs {% if (active_tab | default('inbox')) == 'outbox' %}font-semibold{% endif %}"
+        <a href="/app/communications?tab=outbox&boundary={{ boundary | default('cloud') | urlencode }}"
+           class="ui-segment text-xs {% if (active_tab | default('inbox')) == 'outbox' %}font-semibold{% endif %}"
+           {% if (active_tab | default('inbox')) == 'outbox' %}aria-current="page"{% endif %}
            data-tab="outbox">Сохранённые записи</a>
         <a href="/app/contacts/merge"
-           class="ui-control text-xs {% if (active_tab | default('inbox')) == 'contacts_merge' %}font-semibold{% endif %}"
+           class="ui-segment text-xs {% if (active_tab | default('inbox')) == 'contacts_merge' %}font-semibold{% endif %}"
+           {% if (active_tab | default('inbox')) == 'contacts_merge' %}aria-current="page"{% endif %}
            data-tab="contacts_merge">Сверка контактов</a>
     </nav>
 
-    <details class="ui-card space-y-4" data-inbox-search-panel><summary class="font-semibold cursor-pointer">Поиск и фильтры</summary>
+    {% if (active_tab | default('inbox')) != 'contacts_merge' %}
+    <details class="ui-filter-panel" data-inbox-search-panel {% if communications_data or inbox_filter_active | default(false) %}open{% endif %}><summary>Поиск и фильтры</summary>
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
                 <h2 class="text-sm font-semibold">Единый входящий поток и поиск по метаданным</h2>
@@ -41,18 +67,18 @@
             </div>
         </div>
 
-        <form method="get" action="/app/communications" class="flex flex-wrap items-end gap-3" data-inbox-filter-form>
+        <form method="get" action="/app/communications" class="ui-filter-row" data-inbox-filter-form>
             <input type="hidden" name="tab" value="{{ active_tab | default('inbox') }}">
             <input type="hidden" name="boundary" value="{{ boundary | default('cloud') }}">
             {% if contact_id_filter %}<input type="hidden" name="contact_id" value="{{ contact_id_filter }}">{% endif %}
             {% if is_read_filter is not none %}<input type="hidden" name="is_read" value="{{ 'true' if is_read_filter else 'false' }}">{% endif %}
-            {% if is_archived_filter %}<input type="hidden" name="is_archived" value="true">{% endif %}
-            <div class="flex-1 min-w-[200px]">
-                <label for="inbox-q" class="block text-xs ui-muted mb-1">Поиск по теме, участникам или контакту</label>
+            {% if is_archived_filter is not none %}<input type="hidden" name="is_archived" value="{{ 'true' if is_archived_filter else 'false' }}">{% endif %}
+            <div class="ui-filter-field ui-filter-field-wide">
+                <label for="inbox-q">Поиск по теме, участникам или контакту</label>
                 <input id="inbox-q" type="search" name="q" value="{{ q | default('') }}" placeholder="Тема, email, телефон, имя..." class="ui-control w-full text-sm">
             </div>
-            <div>
-                <label for="inbox-triage-category" class="block text-xs ui-muted mb-1">Разбор (P20-T09)</label>
+            <div class="ui-filter-field">
+                <label for="inbox-triage-category">Разбор (P20-T09)</label>
                 <select id="inbox-triage-category" name="triage_category" class="ui-control text-sm" data-triage-filter>
                     <option value="">Все категории</option>
                     <option value="needs_reply" {% if triage_category_filter == "needs_reply" %}selected{% endif %}>Нужен ответ</option>
@@ -61,8 +87,8 @@
                     <option value="uncertain" {% if triage_category_filter == "uncertain" %}selected{% endif %}>Не уверен</option>
                 </select>
             </div>
-            <div>
-                <label for="inbox-channel" class="block text-xs ui-muted mb-1">Канал</label>
+            <div class="ui-filter-field">
+                <label for="inbox-channel">Канал</label>
                 <select id="inbox-channel" name="channel" class="ui-control text-sm">
                     <option value="">Все каналы</option>
                     <option value="email" {% if channel_filter == 'email' %}selected{% endif %}>Email</option>
@@ -72,9 +98,10 @@
                     <option value="bitrix24" {% if channel_filter == 'bitrix24' %}selected{% endif %}>Битрикс24</option>
                 </select>
             </div>
-            <button type="submit" class="ui-control text-sm">Найти</button>
+            <button type="submit" class="ui-button ui-button-primary">Найти</button>
         </form>
     </details>
+    {% endif %}
 
     {% if (active_tab | default('inbox')) == 'contacts_merge' %}
     <section class="ui-card space-y-3" data-contacts-merge-panel>
@@ -101,8 +128,31 @@
 
     {% if (active_tab | default('inbox')) == 'inbox' and not inbox_threads %}{% include 'web/_inbox_categories.html' %}{% endif %}
     {% if inbox_load_error %}<p role="alert" class="ui-card">Не удалось загрузить входящие. Повторите попытку.</p>{% endif %}
-    {% if triage_load_error %}<p role="status" class="ui-card">Классификация временно недоступна. Список показан без фильтра категории.</p>{% endif %}
-    {% if (active_tab | default('inbox')) == 'inbox' and not inbox_load_error and not inbox_threads %}<p role="status" class="ui-card">На этой странице входящих цепочек для выбранных фильтров нет.{% if next_before_id %} Проверьте следующие страницы.{% endif %}</p>{% endif %}
+    {% if triage_load_error and communications_data %}<p role="status" class="ui-card">Классификация временно недоступна. Список показан без фильтра категории.</p>{% endif %}
+    {% if (active_tab | default('inbox')) == 'inbox' and not (inbox_load_error | default(false)) and not (inbox_threads | default([])) %}
+    <section class="ui-card space-y-3" data-communications-empty role="status">
+        {% if inbox_filter_active | default(false) %}
+        <h2 class="text-base font-semibold">По этим фильтрам цепочек нет</h2>
+        <p class="ui-muted text-sm">Измените запрос или сбросьте фильтры, чтобы снова показать все входящие.</p>
+        <a href="/app/communications?tab=inbox&amp;boundary={{ boundary | urlencode }}" class="ui-button ui-button-primary">Сбросить фильтры</a>
+        {% else %}
+        <h2 class="text-base font-semibold">Сообщения ещё не подключены</h2>
+        <p class="ui-muted text-sm">Подключите нужный канал, чтобы здесь появились входящие цепочки и метаданные сообщений.</p>
+        {% if can_connect_messages | default(false) %}<a href="/app/settings?tab=connections" class="ui-button ui-button-primary">Подключить сообщения</a>{% else %}<p class="text-xs ui-muted">Подключение доступно владельцу или менеджеру пространства.</p>{% endif %}
+        {% endif %}
+    </section>
+    {% endif %}
+    {% if (active_tab | default('inbox')) == 'outbox' and not evidence_rows %}
+    <section class="ui-card space-y-3" data-communications-empty role="status">
+        <h2 class="text-base font-semibold">Сохранённых сообщений пока нет</h2>
+        {% if can_connect_messages | default(false) %}
+        <p class="ui-muted text-sm">Подключите нужный канал, чтобы начать собирать сообщения и показывать их здесь.</p>
+        <a href="/app/settings?tab=connections" class="ui-button ui-button-primary">Подключить сообщения</a>
+        {% else %}
+        <p class="ui-muted text-sm">Сохранённые записи появятся после подключения канала владельцем или менеджером пространства.</p>
+        {% endif %}
+    </section>
+    {% endif %}
     {% if inbox_threads %}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" data-inbox-workspace>
         <section class="ui-card space-y-3" data-inbox-thread-list>
@@ -175,10 +225,10 @@
     {% if (active_tab | default('inbox')) == 'inbox' and next_before_id %}
     <div class="flex flex-wrap items-center gap-3" data-inbox-pagination>
         <p class="ui-muted text-sm">Фильтр применён к текущей странице; другие результаты могут быть на следующих страницах.</p>
-        <a class="ui-control" href="/app/communications?tab=inbox&amp;boundary={{ boundary | urlencode }}&amp;q={{ q | urlencode }}&amp;channel={{ channel_filter | urlencode }}&amp;triage_category={{ triage_category_filter | urlencode }}&amp;before_id={{ next_before_id }}{% if contact_id_filter %}&amp;contact_id={{ contact_id_filter }}{% endif %}{% if is_read_filter is not none %}&amp;is_read={{ 'true' if is_read_filter else 'false' }}{% endif %}{% if is_archived_filter %}&amp;is_archived=true{% endif %}">Следующие входящие →</a>
+        <a class="ui-control" href="/app/communications?tab=inbox&amp;boundary={{ boundary | urlencode }}&amp;q={{ q | urlencode }}&amp;channel={{ channel_filter | urlencode }}&amp;triage_category={{ triage_category_filter | urlencode }}&amp;before_id={{ next_before_id }}{% if contact_id_filter %}&amp;contact_id={{ contact_id_filter }}{% endif %}{% if is_read_filter is not none %}&amp;is_read={{ 'true' if is_read_filter else 'false' }}{% endif %}{% if is_archived_filter is not none %}&amp;is_archived={{ 'true' if is_archived_filter else 'false' }}{% endif %}">Следующие входящие →</a>
     </div>
     {% endif %}
-    {% include "web/_evidence_rows.html" %}
+    {% if evidence_rows or communications_legacy %}{% set show_boundary_filter = false %}{% include "web/_evidence_rows.html" %}{% endif %}
 
 </div>
 {% endblock %}

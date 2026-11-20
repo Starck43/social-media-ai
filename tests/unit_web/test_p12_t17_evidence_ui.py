@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = ("knowledge", "documents", "communications", "followups", "cases")
+PAGES = ("knowledge", "documents", "followups", "cases")
 BOUNDARIES = ("cloud", "company", "local_only")
 
 
@@ -44,6 +44,27 @@ def test_filter_values_and_selection(page, boundary):
     assert [o["data-popover-option"] for o in options if o["aria-selected"] == "true"] == [boundary]
     assert html.select_one('label[for="evidence-boundary-trigger"]')
     assert not html.select('select[name="boundary"]')
+
+
+def test_communications_hides_boundary_filter_but_keeps_evidence_handoff():
+    row = {
+        "context_id": "11",
+        "context_type": "communication",
+        "title": "Stored communication",
+        "source_ref": "fixture://source/11",
+        "data_boundary": "company",
+        "acl_scope": "collection.source.view",
+        "excerpt": "Test-only evidence text",
+        "citation_anchor": "message 2",
+        "revision_hash": "sha256:fixture",
+        "extraction_limit_note": "",
+        "chat_url": "/app/chat?context_type=communication&context_id=11&boundary=company",
+    }
+    html = BeautifulSoup(render("communications", "company", rows=[row]), "html.parser")
+    assert not html.select("[data-popover-select]")
+    assert not html.select('label[for="evidence-boundary-trigger"]')
+    assert html.select_one('[data-evidence-trigger][data-evidence-boundary="company"]')
+    assert html.select_one('[data-evidence-chat-link][href*="boundary=company"]')
 
 
 def test_search_query_preserved_and_escaped():

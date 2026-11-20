@@ -509,6 +509,8 @@ html[data-sidebar-collapsed="true"] .shell-sidebar .shell-account-row {
 
 html[data-sidebar-collapsed="true"] .shell-sidebar .shell-collapse {
 	align-self: flex-end;
+	background: var(--ui-accent-soft);
+	color: var(--ui-accent);
 }
 
 html[data-sidebar-collapsed="true"] .shell-sidebar .shell-collapse svg {
@@ -756,6 +758,19 @@ html[data-sidebar-collapsed="true"] .shell-sidebar .shell-nav-group {
 dialog.shell-dialog {
     border-radius: var(--cn-radius);
 }
+
+/* Dialog mock visual language for the persistent rail and its icon controls. */
+.shell-brand { display:flex; align-items:center; gap:10px; padding:4px 10px 14px; color:var(--color-text); font:600 .9375rem var(--cn-sans, ui-sans-serif, system-ui, sans-serif); }
+.shell-brand-mark { display:grid; place-items:center; width:30px; height:30px; border-radius:10px; background:var(--ui-accent); color:var(--color-surface); }
+.shell-brand-mark .ui-icon { width:16px; height:16px; }
+.shell-brand-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+html[data-sidebar-collapsed="true"] .shell-sidebar .shell-brand { justify-content:center; padding-inline:0; }
+html[data-sidebar-collapsed="true"] .shell-sidebar .shell-brand-name { position:absolute; width:1px; height:1px; clip-path:inset(50%); }
+.shell-daily-nav > a, .shell-unavailable { gap:10px; border-radius:12px; font-size:.8625rem; }
+.shell-daily-nav > a .ui-icon, .shell-unavailable .ui-icon { width:18px; height:18px; color:currentColor; }
+.shell-daily-nav a[aria-current] { background:var(--ui-accent-soft); box-shadow:none; }
+.shell-nav-group { padding-inline:12px; }
+.shell-sidebar .shell-icon-button { border-radius:12px; }
 
 /* --- Control heights (≥768px). Kept at the very end of shell.css so this
    block stays after .chat-dock-launcher > button { min-height: 44px } and

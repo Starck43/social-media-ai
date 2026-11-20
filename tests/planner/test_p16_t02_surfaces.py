@@ -146,7 +146,7 @@ def test_dispatch_job_is_bootstrapped_each_minute():
     assert DEFAULT_TASKS["planner-reminders-dispatch"] == ("* * * * *", "planner.reminders.dispatch", {})
 
 
-def test_merged_planner_template_keeps_event_forms_and_reminder_controls_safe():
+def test_merged_planner_template_hides_event_controls_and_keeps_reminders_safe():
     from bs4 import BeautifulSoup
 
     from app.web.deps import templates
@@ -183,13 +183,11 @@ def test_merged_planner_template_keeps_event_forms_and_reminder_controls_safe():
         items=[task],
         status_labels=STATUS_LABELS,
         priority_labels=PRIORITY_LABELS,
-        can_create=False,
+        can_create=True,
         can_update=True,
         can_remind=True,
         can_delete=False,
-        can_draft_greeting=True,
-        event_settings=SimpleNamespace(can_configure=True, enabled=True),
-        greeting_ids={3},
+        can_create_agent_task=False,
         reminders=[item],
         reminder_error_labels=REMINDER_ERROR_LABELS,
         delivery_error_labels=DELIVERY_ERROR_LABELS,
@@ -200,8 +198,9 @@ def test_merged_planner_template_keeps_event_forms_and_reminder_controls_safe():
     soup = BeautifulSoup(html, "html.parser")
     assert "blocked" not in soup.text and "channel_not_implemented" not in soup.text
     assert "заблокировано" in soup.text and "Канал пока недоступен" in soup.text
-    assert soup.select_one('form[action="/app/planner/events/settings"]')
-    assert soup.select_one('form[action="/app/planner/events/3/draft"]')
+    assert not soup.select('form[action^="/app/planner/events/"]')
+    assert "Планирование памятных дат" not in soup.text
+    assert soup.select_one('#page-actions button[x-data]').get("@click") == "$dispatch('open-task-modal')"
     forms = soup.select('#reminders form[method="post"]')
     assert len(forms) == 4
     assert all(form.select_one('input[name="_csrf"]')["value"] == "synthetic-csrf" for form in forms)

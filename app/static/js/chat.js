@@ -112,7 +112,7 @@ function chatApp() {
                 try { sessionStorage.setItem('chat.workspace.panel', this.panelOpen ? 'open' : 'closed'); } catch (_) { /* Keep the panel usable without storage. */ }
                 this.$nextTick(() => requestAnimationFrame(() => {
                     // Alpine's x-show schedules visibility in a frame. Focus only
-                    // after the tab/panel is visible, including in Safari.
+                    // after the panel has entered or the stable toggle is available.
                     const target = this.panelOpen ? this.$refs.workspacePanel : this.$refs.panelToggle;
                     target?.focus();
                     this.onScroll();
@@ -247,6 +247,20 @@ function chatApp() {
                 } finally {
                     if (request === this.workspaceTaskRequest) this.workspaceTaskLoading = false;
                 }
+            },
+            handleWorkspaceTabKey(event) {
+                const tabs = Array.from(event.currentTarget.querySelectorAll('[data-workspace-tab]'));
+                const current = tabs.indexOf(event.target);
+                if (current < 0) return;
+                const nextIndex = {
+                    ArrowLeft: (current + tabs.length - 1) % tabs.length,
+                    ArrowRight: (current + 1) % tabs.length,
+                    Home: 0,
+                    End: tabs.length - 1,
+                }[event.key];
+                if (!Number.isInteger(nextIndex)) return;
+                event.preventDefault();
+                tabs[nextIndex].focus();
             },
             selectWorkspaceTab(tab) {
                 if (!['context', 'decisions', 'runs', 'materials'].includes(tab)) return;

@@ -40,7 +40,7 @@
 </style>
 {% endblock %}
 {% block page_heading %}Сегодня{% endblock %}
-{% block page_actions %}{% if perms and perms.can("plannertask", "create") %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new">Подготовить дело</a>{% endif %}{% endblock %}
+{% block page_actions %}{% endblock %}
 {% block content %}
 {% macro render_home_results() %}
         <section data-home-results data-today-section="recent_results" class="ui-card min-w-0">
@@ -106,18 +106,18 @@
         </div>
         {% endif %}
 
-        <div data-today-toolbar class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3">
-            <div class="flex flex-wrap items-center gap-2" data-today-scope-switch role="group" aria-label="Охват страницы Сегодня">
+        <div data-today-toolbar class="ui-filter-panel flex flex-wrap items-center justify-between gap-3">
+            <div class="ui-segments" data-today-scope-switch role="group" aria-label="Охват страницы Сегодня">
                 <a href="/app/?view=today&amp;scope=mine{% if today.include_dismissed %}&amp;show_dismissed=1{% endif %}"
                    data-today-scope="mine"
                    {% if today.scope == 'mine' %}aria-current="true"{% endif %}
-                   class="rounded-lg px-3 py-1.5 text-sm font-medium {% if today.scope == 'mine' %}bg-cyan-500 text-slate-950{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+                   class="ui-segment {% if today.scope == 'mine' %}font-semibold{% endif %}">
                     Моё
                 </a>
                 <a href="/app/?view=today&amp;scope=team{% if today.include_dismissed %}&amp;show_dismissed=1{% endif %}"
                    data-today-scope="team"
                    {% if today.scope == 'team' %}aria-current="true"{% endif %}
-                   class="rounded-lg px-3 py-1.5 text-sm font-medium {% if today.scope == 'team' %}bg-cyan-500 text-slate-950{% else %}text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800{% endif %}">
+                   class="ui-segment {% if today.scope == 'team' %}font-semibold{% endif %}">
                     Команда
                 </a>
             </div>
@@ -182,30 +182,30 @@
                         {% endif %}
                         {% if sec.key == 'decisions' %}<a class="today-decision-open" href="{{ item.href }}">Открыть решение →</a>{% endif %}
                     </div>
-                    <details class="today-item-actions"><summary>Действия</summary><div class="flex flex-wrap items-center gap-2">
-                        <a href="{{ item.href }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-medium text-cyan-700 dark:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>Открыть →</a>
+                    <div class="today-item-actions flex flex-wrap items-center gap-1" aria-label="Действия с элементом">
+                        <a href="{{ item.href }}" class="ui-button ui-button-icon ui-button-quiet" aria-label="Открыть: {{ item.title }}" title="Открыть" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ icon('document') }}</a>
                         {% if can_open_chat and item.chat_url %}
-                        <a href="{{ item.chat_url }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">В чат</a>
+                        <a href="{{ item.chat_url }}" class="ui-button ui-button-icon ui-button-quiet" aria-label="Открыть в чате: {{ item.title }}" title="Открыть в чате">{{ icon('message') }}</a>
                         {% endif %}
                         <form method="post" action="/app/today/item-state" class="inline-flex flex-wrap items-center gap-1">
                             <input type="hidden" name="_csrf" value="{{ csrf }}">
                             <input type="hidden" name="item_key" value="{{ item.item_key }}">
                             <input type="hidden" name="scope" value="{{ today.scope }}">
                             {% if item.actor_state in ('dismissed', 'snoozed') %}
-                            <button type="submit" name="operation" value="restore" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">Вернуть</button>
+                            <button type="submit" name="operation" value="restore" class="ui-button ui-button-icon ui-button-quiet" aria-label="Вернуть: {{ item.title }}" title="Вернуть">{{ icon('arrow') }}</button>
                             {% else %}
-                            <button type="submit" name="operation" value="snooze" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">Отложить</button>
-                            <button type="submit" name="operation" value="dismiss" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">Скрыть</button>
+                            <button type="submit" name="operation" value="snooze" class="ui-button ui-button-icon ui-button-quiet" aria-label="Отложить: {{ item.title }}" title="Отложить">{{ icon('calendar') }}</button>
+                            <button type="submit" name="operation" value="dismiss" class="ui-button ui-button-icon ui-button-quiet" aria-label="Скрыть: {{ item.title }}" title="Скрыть">{{ icon('close') }}</button>
                             {% endif %}
                         </form>
-                    </div></details>
+                    </div>
                 </li>
                 {% endfor %}
             </ul>
             {% else %}
             <p data-today-section-empty="{{ sec.key }}" class="mt-3 text-sm text-slate-500 dark:text-slate-400">Нет элементов, требующих действий.</p>
             {% endif %}
-            {% if sec.key == 'brief' %}<div class="today-brief-actions flex flex-wrap gap-2 mt-3">{% if can_open_chat %}<a class="ui-control" href="/app/chat">Открыть чат</a>{% endif %}<a class="ui-control" href="/app/planner">Мой план на день</a></div>{% endif %}
+            {% if sec.key == 'brief' %}<div class="today-brief-actions ui-toolbar mt-4">{% if can_open_chat %}<a class="ui-button ui-button-primary" href="/app/chat">Открыть чат</a>{% endif %}<a class="ui-button" href="/app/planner">Мой план на день</a></div>{% endif %}
         </section>
         {% endif %}
         {% endfor %}
@@ -222,8 +222,8 @@
         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
             Опишите, что хотите собрать или проанализировать, и агент поможет уточнить план и покажет результат.
         </p>
-        <a href="/app/chat" data-home-chat class="mt-3 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
-            Открыть чат →
+        <a href="/app/chat" data-home-chat class="ui-button ui-button-primary mt-3">
+            Открыть чат <span aria-hidden="true">→</span>
         </a>
     </section>
     {% endif %}

@@ -24,11 +24,10 @@
                 </select>
             </form>
             {% endif %}
-            {% if perms and perms.can('agenttask', 'create') %}
-            <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><button @click="openAdd = true"
-                    class="rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
-                Создать задачу
-            </button></div></template>
+            {% if perms and perms.can('plannertask', 'create') %}
+            <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><a href="/app/planner" class="ui-button ui-button-primary">Новая задача</a></div></template>
+            {% elif perms and perms.can('agenttask', 'create') %}
+            <template x-data="{}" x-teleport="#page-actions"><div class="shell-page-actions"><button type="button" @click="openAdd = true" class="ui-button ui-button-primary">Новая задача</button></div></template>
             {% endif %}
         </div>
     </div>

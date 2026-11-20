@@ -69,11 +69,17 @@ async def planner_page(
     page = await invoke(planner_service.list(limit=50, before_id=before_id))
     editing = await invoke(planner_service.get(task_id)) if task_id is not None else None
     actor = get_current_user()
-    async with async_session_maker() as session, session.begin():
-        event_settings = await invoke(event_planning_service.is_enabled(session=session))
-        greeting_ids = await invoke(
-            event_planning_service.greeting_task_ids([item.id for item in page["items"]], session=session)
-        )
+    can_create_agent_task = has_permission(actor, "agenttask", ActionType.CREATE)
+    task_sources = []
+    task_scenarios = []
+    if can_create_agent_task:
+        from app.models.analysis.agent_scenario import AgentScenario
+        from app.models.collection.source import Source
+
+        task_sources = await Source.objects.filter(tenant_id=request.state.tenant_id, owner_task_id=None).order_by(Source.name)
+        task_scenarios = await AgentScenario.objects.filter(
+            tenant_id=request.state.tenant_id, is_active=True
+        ).order_by(AgentScenario.name)
     reminders = await invoke(reminder_service.list(task_id)) if task_id is not None and can_remind(actor) else []
     if view == "board":
         groups = [
@@ -125,9 +131,9 @@ async def planner_page(
         reminder_error_labels=REMINDER_ERROR_LABELS,
         delivery_error_labels=DELIVERY_ERROR_LABELS,
         can_delete=has_permission(actor, "plannertask", ActionType.DELETE),
-        can_draft_greeting=has_permission(actor, "source", ActionType.CREATE),
-        event_settings=event_settings,
-        greeting_ids=greeting_ids,
+        task_sources=task_sources,
+        task_scenarios=task_scenarios,
+        can_create_agent_task=can_create_agent_task,
         **page,
     )
 

@@ -6,6 +6,31 @@
             <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{% if job %}{{ job.created_at|human_dt(tz=_tz) }}{% elif task.last_run_at %}{{ task.last_run_at|human_dt(tz=_tz) }} · {{ legacy_status_label }}{% else %}Счётчики появятся после запуска задачи.{% endif %}</p>
         </div>
     </div>
+    {% if can_view_sources and summary and summary.get('source_coverage') %}
+        {% set coverage = summary.source_coverage %}
+        <div class="task-source-coverage">
+            <p>Проверено <strong>{{ coverage.checked }} из {{ coverage.total }}</strong> источников</p>
+            <div class="task-source-coverage-bar" aria-hidden="true">
+                {% if coverage.checked %}<span class="task-source-coverage-checked" style="flex-grow: {{ coverage.checked }}"></span>{% endif %}
+                {% if coverage.issue_count %}<span class="task-source-coverage-issue" style="flex-grow: {{ coverage.issue_count }}"></span>{% endif %}
+                {% if coverage.unconfirmed %}<span class="task-source-coverage-unconfirmed" style="flex-grow: {{ coverage.unconfirmed }}"></span>{% endif %}
+            </div>
+            {% if coverage.issues or coverage.unconfirmed %}
+            <ul class="task-source-coverage-notes">
+                {% for name, note in coverage.issues %}
+                    <li>{{ note }}{% if name %} — {{ name }}{% endif %}</li>
+                {% endfor %}
+                {% set remaining_issues = coverage.issue_count - (coverage.issues | length) %}
+                {% if remaining_issues %}
+                    <li>Другие источники с ограничениями · {{ remaining_issues }}</li>
+                {% endif %}
+                {% if coverage.unconfirmed %}
+                    <li>Без подтверждения · {{ coverage.unconfirmed }}</li>
+                {% endif %}
+            </ul>
+            {% endif %}
+        </div>
+    {% endif %}
     {% if not (summary and summary.heartbeat_unconfirmed) %}{{ record_progress(run_progress) }}{% endif %}
     {% if summary and not run_progress and summary.headline %}<p class="mt-3 text-sm">{{ summary.headline.value }} {{ summary.headline.noun }} · {{ summary.headline.label }}</p>{% endif %}
     {% if summary %}

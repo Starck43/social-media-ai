@@ -50,46 +50,9 @@
             </div>
             {% endif %}
         </dl>
-        {% if can_view_tasks %}
-        <div class="scenario-run">
-            {% set run = s.latest_run %}
-            {% if run %}
-                <p class="scenario-run-time">Последний запуск · {{ run.finished_at | human_dt(tz=_tz) }}</p>
-                <p><strong>{{ run.status }}</strong> · {{ run.task_name }}</p>
-                {% if can_view_sources %}
-                    {% set coverage = run.coverage %}
-                    {% if coverage %}
-                        <p class="scenario-coverage-count">Проверено <strong>{{ coverage.checked }} из {{ coverage.total }}</strong> источников</p>
-                        <div class="scenario-coverage-bar" aria-hidden="true">
-                            {% if coverage.checked %}<span class="scenario-coverage-checked" style="flex-grow: {{ coverage.checked }}"></span>{% endif %}
-                            {% if coverage.issue_count %}<span class="scenario-coverage-issue" style="flex-grow: {{ coverage.issue_count }}"></span>{% endif %}
-                            {% if coverage.unconfirmed %}<span class="scenario-coverage-unconfirmed" style="flex-grow: {{ coverage.unconfirmed }}"></span>{% endif %}
-                        </div>
-                        {% if coverage.issues or coverage.unconfirmed %}
-                        <ul class="scenario-coverage-notes">
-                            {% for name, note in coverage.issues %}
-                                <li>{{ note }}{% if name %} — {{ name }}{% endif %}</li>
-                            {% endfor %}
-                            {% if coverage.issue_count > coverage.issues | length %}
-                                <li>Другие источники с ограничениями · {{ coverage.issue_count - coverage.issues | length }}</li>
-                            {% endif %}
-                            {% if coverage.unconfirmed %}
-                                <li>Без подтверждения · {{ coverage.unconfirmed }}</li>
-                            {% endif %}
-                        </ul>
-                        {% endif %}
-                    {% else %}
-                        <p class="scenario-run-time">Нет данных о проверке источников</p>
-                    {% endif %}
-                {% endif %}
-            {% else %}
-                <p class="scenario-run-time">Нет недавних запусков</p>
-            {% endif %}
-        </div>
-        {% endif %}
         <footer class="scenario-card-footer">
-            {% if can_view_tasks and s.latest_run %}
-                <a href="/app/tasks/{{ s.latest_run.task_id }}#run-{{ s.latest_run.id }}" class="scenario-open">Открыть запуск</a>
+            {% if can_view_tasks and s.task_count %}
+                <a href="/app/tasks?scenario_filter={{ s.id }}" class="scenario-open" aria-label="Задачи по сценарию «{{ s.name }}»">Связанные задачи</a>
             {% endif %}
             <a href="/app/scenarios/{{ s.id }}" class="scenario-open" aria-label="Открыть сценарий «{{ s.name }}»">Открыть</a>
         </footer>

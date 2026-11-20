@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
+from fastapi import Query
+
 from .task_forms import (
     TARGET_FIELD_DEFS,
     _activate_selected_sources,
@@ -104,8 +108,16 @@ async def web_vk_search_categories(request: Request):
 
 @router.get("")
 @router.get("/")
-async def tasks_list(request: Request):
+async def tasks_list(request: Request, scenario_filter: Annotated[int | None, Query(ge=1, le=2_147_483_647)] = None):
     tenant_id = request.state.tenant_id
+    scenario_context = None
+    if scenario_filter is not None:
+        if not (perms_can(request, "agentscenario", "view") and perms_can(request, "agenttask", "view")):
+            return RedirectResponse("/app/tasks", status_code=302)
+        scenario_context = await AgentScenario.objects.get(id=scenario_filter, tenant_id=tenant_id)
+        if scenario_context is None:
+            return RedirectResponse("/app/tasks", status_code=302)
+
     user = getattr(request.state, "web_user", None)
     is_superuser = False
     filter_tenant_id, tenants = await tenant_filter_context(request, is_superuser)
@@ -119,11 +131,10 @@ async def tasks_list(request: Request):
                 query = query.filter(tenant_id=filter_tenant_id)
             tasks = await query.order_by(AgentTask.created_at.desc())
     else:
-        tasks = await (
-            AgentTask.objects.filter(tenant_id=tenant_id)
-            .prefetch_related("sources", "agent_scenario")
-            .order_by(AgentTask.created_at.desc())
-        )
+        query = AgentTask.objects.filter(tenant_id=tenant_id)
+        if scenario_context is not None:
+            query = query.filter(agent_scenario_id=scenario_context.id)
+        tasks = await query.prefetch_related("sources", "agent_scenario").order_by(AgentTask.created_at.desc())
     if not _can_manage_job_retention(request):
         tasks = [task for task in tasks if task.job_type != "prune"]
 
@@ -206,6 +217,7 @@ async def tasks_list(request: Request):
         tabs=_task_tabs(request),
         active_tab="tasks",
         tasks=tasks,
+        scenario_context=scenario_context,
         sources=sources,
         source_groups=_group_sources(sources),
         collection_defaults=_collection_edit({}),

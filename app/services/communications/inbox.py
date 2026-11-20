@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models.communications.message import (
     COMMUNICATION_CHANNELS,
@@ -169,13 +169,21 @@ async def list_inbox_threads(
         stmt = stmt.where(MessageThread.is_archived.is_(bool(is_archived)))
     if before_id is not None:
         stmt = stmt.where(MessageThread.id < before_id)
+    if is_read is not None:
+        unread = func.coalesce(MessageThread.unread_count, 0)
+        stmt = stmt.where(unread == 0 if is_read else unread != 0)
     stmt = stmt.order_by(MessageThread.id.desc())
+    # The common metadata-free page can be bounded in SQL. Search and
+    # message-level filters require the existing encrypted-metadata scan.
+    if direction is None and since is None and until is None and not (q and q.strip()):
+        stmt = stmt.limit(limit)
 
     threads = list((await session.execute(stmt)).scalars().all())
     if not threads:
         return {"items": [], "next_before_id": None}
 
-    contacts = list((await session.execute(select(Contact).where(Contact.tenant_id == tenant_id))).scalars().all())
+    contact_ids = [th.contact_id for th in threads if th.contact_id is not None]
+    contacts = list((await session.execute(select(Contact).where(Contact.tenant_id == tenant_id, Contact.id.in_(contact_ids)))).scalars().all()) if contact_ids else []
     contact_names = {c.id: c.display_name_encrypted for c in contacts}
 
     # Optional message-level metadata filters (direction, date range, or sender/recipient metadata search)

@@ -42,6 +42,47 @@
 {% block page_heading %}Сегодня{% endblock %}
 {% block page_actions %}{% if perms and perms.can("plannertask", "create") %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new">Подготовить дело</a>{% endif %}{% endblock %}
 {% block content %}
+{% macro render_home_results() %}
+        <section data-home-results data-today-section="recent_results" class="ui-card min-w-0">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Последние результаты</h2>
+                <div class="flex flex-wrap gap-4 text-sm text-cyan-700 dark:text-cyan-400">
+                    {% if offer.analytics %}<a href="/app/analytics" class="hover:underline">Аналитика →</a>{% endif %}
+                    {% if offer.digests %}<a href="/app/digests" class="hover:underline">Дайджесты →</a>{% endif %}
+                </div>
+            </div>
+            {% if (offer.analytics or offer.digests) and recent_results %}
+            <div class="mt-4 space-y-3">
+                {% for result in recent_results[:5] %}
+                <a href="{{ result.href }}{% if result.kind == 'analysis' %}?return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode|e }}{% endif %}"
+                   class="ui-home-result min-w-0 rounded-xl border border-slate-300 dark:border-slate-800 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
+                    <div class="ui-home-meta flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span class="ui-home-source">{% if result.kind == 'digest' %}Дайджест{% else %}Анализ{% if offer.sources and result.source_name %} · {{ result.source_name }}{% endif %}{% endif %}</span>
+                        <span>Создан {{ result.created_at|human_dt(tz=_tz) }}</span>
+                    </div>
+                    <p title="{{ result.title }}" class="ui-home-result-title mt-2 break-words font-medium text-slate-900 dark:text-slate-100">{{ result.title }}</p>
+                    {% if result.period_label %}
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ result.period_label }}</p>
+                    {% endif %}
+                    {% if result.delivery_status %}
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Доставка: {{ result.delivery_status }}</p>
+                    {% endif %}
+                    {% if result.analysis_incomplete %}
+                    <p class="mt-2">{{ incomplete_analysis_badge(true) }}</p>
+                    {% endif %}
+                    {% if result.summary %}
+                    <p class="ui-home-summary mt-2 break-words text-sm text-slate-600 dark:text-slate-400">{{ result.summary }}</p>
+                    {% endif %}
+                </a>
+                {% endfor %}
+            </div>
+            {% elif offer.analytics or offer.digests %}
+                {{ empty_state("Результатов пока нет.", "Здесь появятся доступные вам результаты.", height="min-h-32 py-6", radius="rounded-xl") }}
+            {% else %}
+                {{ empty_state("Для вашей роли просмотр результатов не разрешён.", "Обратитесь к владельцу пространства, если нужен доступ.", height="min-h-32 py-6", radius="rounded-xl") }}
+            {% endif %}
+        </section>
+{% endmacro %}
 <div class="ui-home">
     {% if is_superuser and tenants %}
     <form method="get" class="mb-6">
@@ -168,9 +209,12 @@
         </section>
         {% endif %}
         {% endfor %}
+        {{ render_home_results() }}
+
         </div>
     </div>
     {% endif %}
+    {% if not today %}{{ render_home_results() }}{% endif %}
 
     {% if can_open_chat %}
     <section data-home-chat-primary class="mb-6 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-5">
@@ -250,45 +294,6 @@
     {% endif %}
 
     <div class="ui-home-grid{% if offer.tasks %} ui-home-grid-split{% endif %}">
-        <section data-home-results data-today-section="recent_results" class="ui-card min-w-0">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Последние результаты</h2>
-                <div class="flex flex-wrap gap-4 text-sm text-cyan-700 dark:text-cyan-400">
-                    {% if offer.analytics %}<a href="/app/analytics" class="hover:underline">Аналитика →</a>{% endif %}
-                    {% if offer.digests %}<a href="/app/digests" class="hover:underline">Дайджесты →</a>{% endif %}
-                </div>
-            </div>
-            {% if (offer.analytics or offer.digests) and recent_results %}
-            <div class="mt-4 space-y-3">
-                {% for result in recent_results[:5] %}
-                <a href="{{ result.href }}{% if result.kind == 'analysis' %}?return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode|e }}{% endif %}"
-                   class="ui-home-result min-w-0 rounded-xl border border-slate-300 dark:border-slate-800 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
-                    <div class="ui-home-meta flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-                        <span class="ui-home-source">{% if result.kind == 'digest' %}Дайджест{% else %}Анализ{% if offer.sources and result.source_name %} · {{ result.source_name }}{% endif %}{% endif %}</span>
-                        <span>Создан {{ result.created_at|human_dt(tz=_tz) }}</span>
-                    </div>
-                    <p title="{{ result.title }}" class="ui-home-result-title mt-2 break-words font-medium text-slate-900 dark:text-slate-100">{{ result.title }}</p>
-                    {% if result.period_label %}
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ result.period_label }}</p>
-                    {% endif %}
-                    {% if result.delivery_status %}
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Доставка: {{ result.delivery_status }}</p>
-                    {% endif %}
-                    {% if result.analysis_incomplete %}
-                    <p class="mt-2">{{ incomplete_analysis_badge(true) }}</p>
-                    {% endif %}
-                    {% if result.summary %}
-                    <p class="ui-home-summary mt-2 break-words text-sm text-slate-600 dark:text-slate-400">{{ result.summary }}</p>
-                    {% endif %}
-                </a>
-                {% endfor %}
-            </div>
-            {% elif offer.analytics or offer.digests %}
-                {{ empty_state("Результатов пока нет.", "Здесь появятся доступные вам результаты.", height="min-h-32 py-6", radius="rounded-xl") }}
-            {% else %}
-                {{ empty_state("Для вашей роли просмотр результатов не разрешён.", "Обратитесь к владельцу пространства, если нужен доступ.", height="min-h-32 py-6", radius="rounded-xl") }}
-            {% endif %}
-        </section>
 
         {% if offer.tasks %}
         <section data-home-tasks class="ui-card min-w-0">

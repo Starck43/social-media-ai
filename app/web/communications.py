@@ -94,6 +94,7 @@ async def communications_page(
                         channel=channel,
                         include_archived=is_archived,
                         limit=50,
+                        thread_ids=[th["id"] for th in inbox_threads if isinstance(th.get("id"), int)],
                     )
                     triage_counts = triage_page.get("counts_by_category", triage_counts)
                     for item in triage_page.get("items", []):
@@ -107,7 +108,13 @@ async def communications_page(
                 if norm_triage_cat is not None and not triage_load_error:
                     inbox_threads = [th for th in inbox_threads if th.get("id") in triage_by_thread]
 
-                active_thread_id = thread_id or (inbox_threads[0]["id"] if inbox_threads else None)
+                # A deep link must not silently select an item excluded by the
+                # active filters. Unfiltered deep links remain usable.
+                visible_ids = {th["id"] for th in inbox_threads}
+                filtering = bool(norm_triage_cat or channel or contact_id or is_read is not None or q or before_id)
+                active_thread_id = thread_id if thread_id and (not filtering or thread_id in visible_ids) else None
+                if active_thread_id is None and inbox_threads:
+                    active_thread_id = inbox_threads[0]["id"]
                 if active_thread_id is not None:
                     selected_thread_detail = await get_thread_detail(session, int(active_thread_id))
                     selected_thread_triage = triage_by_thread.get(int(active_thread_id))
@@ -145,6 +152,7 @@ async def communications_page(
         inbox_load_error=inbox_load_error,
         triage_load_error=triage_load_error,
         next_before_id=next_before_id,
+        before_id=before_id,
         selected_thread_detail=selected_thread_detail,
         selected_thread_triage=selected_thread_triage,
         merge_suggestions=merge_suggestions,

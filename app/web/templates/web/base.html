@@ -38,6 +38,9 @@
     </style>
     {# Page-specific scripts/styles extend this block without replacing the shell. #}
         <link rel="stylesheet" href="{{ static_v('css/shell.css') }}">
+    {% if section in ('dashboard', 'chat', 'communications', 'tasks') %}
+    <link rel="stylesheet" href="{{ static_v('css/work-redesign.css') }}">
+    {% endif %}
     <script src="{{ static_v('js/shell.js') }}"></script>
     <script src="{{ static_v('js/context_panel.js') }}"></script>
     {% block extra_head %}{% endblock %}

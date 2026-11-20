@@ -1,0 +1,20 @@
+.task-calendar { min-width: 0; }
+.task-calendar[hidden] { display: none; }
+.task-calendar-toolbar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.task-calendar-toolbar h3 { margin: 0; min-width: 12rem; text-align: center; font-size: 1rem; font-weight: 600; text-transform: capitalize; }
+.task-calendar-note { margin: .75rem 0; font-size: .875rem; }
+.task-calendar-scroll { overflow-x: auto; }
+.task-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(6.5rem, 1fr)); gap: .25rem; }
+.task-calendar-weekday { text-align: center; color: var(--color-text-secondary); font: .75rem var(--cn-mono); padding: .5rem; }
+.task-calendar-day { min-width: 0; min-height: 6rem; background: var(--color-surface-secondary); border: 1px solid var(--color-border); border-radius: .75rem; padding: .5rem; }
+.task-calendar-day.is-outside { opacity: .6; }
+.task-calendar-day.is-today { border-color: var(--color-cyan-600); }
+.task-calendar-day > time { display: block; font: 600 .75rem var(--cn-mono); font-variant-numeric: tabular-nums; }
+.task-calendar-entry { display: block; margin-top: .25rem; padding: .25rem .4rem; border-radius: .4rem; background: var(--color-surface); color: var(--color-text); font-size: .75rem; overflow-wrap: anywhere; text-decoration: none; border-left: 3px solid var(--color-border-strong); }
+.task-calendar-entry:hover, .task-calendar-entry:focus-visible { text-decoration: underline; outline: 2px solid var(--color-cyan-600); }
+.task-calendar-entry--event { border-left-color: var(--color-cyan-600); }
+.task-calendar-entry--agent { border-left-color: var(--color-success); }
+.task-calendar-legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .75rem; color: var(--color-text-secondary); font-size: .75rem; }
+.task-calendar-legend span::before { content: ''; display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; margin-right: .3rem; background: var(--color-border-strong); }
+.task-calendar-legend span:nth-child(2)::before { background: var(--color-cyan-600); }
+.task-calendar-legend span:nth-child(3)::before { background: var(--color-success); }

@@ -1,0 +1,35 @@
+/* Work surfaces: existing semantic tokens, with no change to message bubbles. */
+.today-bento { display: grid; gap: 1rem; align-items: start; }
+.today-bento > .ui-card, .ui-home [data-home-chat-primary], [data-inbox-workspace] > .ui-card,
+[data-inbox-search-panel], .chat-workspace-panel { border-radius: 1rem; }
+.today-bento > .ui-card { min-width: 0; height: 100%; }
+@media (min-width: 1100px) {
+    .today-bento { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .today-bento [data-today-section="brief"] { grid-column: span 2; }
+    .today-bento [data-today-section="decisions"] { grid-column: 3; grid-row: span 2; }
+    .today-bento [data-today-section="attention"] { grid-column: 1 / -1; }
+}
+.work-task-tabs, .work-triage-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-bottom: 1rem; }
+.work-task-tabs a, .work-triage-tabs a { display: inline-flex; align-items: center; min-height: 40px; padding: .45rem .9rem; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface-secondary); color: var(--color-text-secondary); font-size: .875rem; text-decoration: none; }
+.work-task-tabs a[aria-current], .work-triage-tabs a[aria-current] { background: var(--color-surface); border-color: var(--color-cyan-600); color: var(--color-text); font-weight: 600; }
+.work-task-tabs a:focus-visible, .work-triage-tabs a:focus-visible { outline: 2px solid var(--color-cyan-600); outline-offset: 2px; }
+[data-inbox-thread-item] { border-color: var(--color-border); border-radius: .75rem; background: var(--color-surface-secondary); }
+[data-inbox-workspace] { align-items: start; }
+@media (min-width: 1024px) { [data-inbox-workspace] { grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr); } }
+.chat-panel-tabs { border: 0; background: var(--color-surface-secondary); border-radius: 1rem; padding: .3rem; }
+.chat-panel-tabs button { min-height: 40px; border-radius: 999px; }
+[data-shell-section="dashboard"] [data-today-item], [data-inbox-thread-item] { overflow-wrap: anywhere; }
+/* Keep the table and its headers for assistive technology while presenting each
+   assignment as a card. No progress figure is shown without measured data. */
+.work-agent-tasks table, .work-agent-tasks tbody { display: block; }
+.work-agent-tasks thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.work-agent-tasks tbody { display: grid; gap: 1rem; }
+.work-agent-tasks tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; padding: 1rem; border: 1px solid var(--color-border); border-radius: 1rem; background: var(--color-surface); }
+.work-agent-tasks td { padding: .25rem 0; }
+.work-agent-tasks td:first-child { flex: 1 0 100%; font-size: 1.05rem; overflow-wrap: anywhere; }
+.work-agent-tasks td[data-label]:not(:first-child)::before { content: attr(data-label) ': '; color: var(--color-text-secondary); font: .75rem var(--cn-mono); }
+.work-agent-tasks td:last-child { flex: 1 0 100%; }
+.work-agent-tasks td:last-child button, .work-agent-tasks td:last-child a { min-width: 40px; min-height: 40px; }
+/* Prevent the action group from squeezing a bento item's text into a column. */
+.today-bento [data-today-item] > div:first-child { flex: 1 0 100%; }
+@media (min-width: 1024px) { .ui-shell [data-inbox-workspace] { grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr); } }

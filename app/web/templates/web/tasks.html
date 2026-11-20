@@ -34,7 +34,7 @@
     </div>
 
     {% if tasks %}
-    <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50">
+    <div class="work-agent-tasks">
         <table class="w-full text-sm">
             <thead
                 class="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-600 dark:text-slate-400">
@@ -55,7 +55,7 @@
             <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
             {% for task in tasks %}
             <tr class="hover:bg-slate-50 dark:hover:bg-slate-900/80">
-                <td class="px-4 py-3 font-medium">
+                <td data-label="Название" class="px-4 py-3 font-medium">
                     {% if perms and perms.can('agenttask', 'view') %}
                         <a href="/app/tasks/{{ task.id }}"
                            class="text-left hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline">{{ task.name|e }}</a>
@@ -63,13 +63,13 @@
                         {{ task.name|e }}
                     {% endif %}
                 </td>
-                <td class="px-4 py-3">
+                <td data-label="Тип" class="px-4 py-3">
                                 <span class="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-300">
                                     {% if task.job_type == 'collect' %}Сбор данных{% elif task.job_type == 'analyze' %}Анализ соцсетей{% else %}{{ task.job_type }}{% endif %}
                                 </span>
                 </td>
-                <td class="px-4 py-3 text-slate-700 dark:text-slate-300">{{ cron_to_human(task.cron_expr) }}</td>
-                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
+                <td data-label="Расписание" class="px-4 py-3 text-slate-700 dark:text-slate-300">{{ cron_to_human(task.cron_expr) }}</td>
+                <td data-label="Источники" class="px-4 py-3 text-slate-600 dark:text-slate-400">
                     {% if task.sources %}
                     <span class="rounded-full bg-cyan-50 dark:bg-cyan-950 px-2 py-0.5 text-xs text-cyan-700 dark:text-cyan-400">
                                         {{ task.sources|length }} источников
@@ -78,7 +78,7 @@
                     <span class="text-slate-600 dark:text-slate-400">все</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3">
+                <td data-label="Статус" class="px-4 py-3">
                     {% if task.id in effective_active %}
                     <span class="rounded-full bg-emerald-50 dark:bg-emerald-950 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">активна</span>
                     {% else %}
@@ -101,14 +101,14 @@
                     <span class="ml-1 rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">пропущено</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
+                <td data-label="Последний запуск" class="px-4 py-3 text-slate-600 dark:text-slate-400">
                     {% if task.last_run_at %}
                     {{ task.last_run_at|human_dt(tz=_tz) }}
                     {% else %}
                     <span class="text-slate-600 dark:text-slate-400">—</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
+                <td data-label="Следующий запуск" class="px-4 py-3 text-slate-600 dark:text-slate-400">
                     {% if task.cron_expr == '@once' and task.last_run_at %}
                     <span class="text-slate-600 dark:text-slate-400">—</span>
                     {% elif task.next_run_at %}
@@ -118,9 +118,9 @@
                     {% endif %}
                 </td>
                 {% if is_superuser %}
-                <td class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ task.tenant.name }}</td>
+                <td data-label="Пространство" class="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">{{ task.tenant.name }}</td>
                 {% endif %}
-                <td class="px-4 py-3">
+                <td data-label="Действия" class="px-4 py-3">
                     {# Both remaining controls are `agenttask.update`; delete moved
                        into the edit form, where it sits beside the other
                        destructive action instead of competing with «run now» for

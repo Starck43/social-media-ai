@@ -1,6 +1,6 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import incomplete_analysis_badge, empty_state, icon with context %}
-{% block title %}Обзор — AI Assistant{% endblock %}
+{% block title %}Сегодня — AI Assistant{% endblock %}
 {% block extra_head %}
 <style>
     .ui-home { width: 100%; max-width: none; margin-inline: auto; }
@@ -39,7 +39,7 @@
     :where(.ui-home) .ui-home-result { border-radius: var(--cn-radius-sm); }
 </style>
 {% endblock %}
-{% block page_heading %}Обзор{% endblock %}
+{% block page_heading %}Сегодня{% endblock %}
 {% block content %}
     {% if perms and perms.can("plannertask", "create") %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new">Подготовить дело</a>{% endif %}
 <div class="ui-home">
@@ -111,6 +111,7 @@
             </div>
         </div>
 
+        <div class="today-bento">
         {% for sec in today.sections %}
         {% if sec.key != 'recent_results' %}
         <section data-today-section="{{ sec.key }}" class="ui-card min-w-0" aria-label="{{ sec.title }}">
@@ -182,6 +183,7 @@
         </section>
         {% endif %}
         {% endfor %}
+        </div>
     </div>
     {% endif %}
 

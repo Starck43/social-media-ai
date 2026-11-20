@@ -1,7 +1,7 @@
 {% extends "web/base.html" %}
 
-{% block title %}Переписка — AI Assistant{% endblock %}
-{% block page_heading %}Переписка{% endblock %}
+{% block title %}Входящие — AI Assistant{% endblock %}
+{% block page_heading %}Входящие{% endblock %}
 
 {% block page_actions %}
 <a href="/app/chat" class="ui-control">← К чату</a>
@@ -32,6 +32,14 @@
            data-tab="contacts_merge">Сверка контактов</a>
     </nav>
 
+    {% if (active_tab | default('inbox')) == 'inbox' %}
+    <nav class="work-triage-tabs" aria-label="Категории входящих">
+        {% for value, label in [('', 'Все'), ('needs_reply', 'Нужен ответ'), ('fyi', 'К сведению'), ('can_wait', 'Подождёт'), ('uncertain', 'Не уверен')] %}
+        <a href="/app/communications?tab=inbox&amp;boundary={{ boundary | default('cloud') | urlencode }}&amp;q={{ q | default('') | urlencode }}&amp;channel={{ channel_filter | default('') | urlencode }}&amp;triage_category={{ value }}"
+           {% if (triage_category_filter | default('')) == value %}aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+    </nav>
+    {% endif %}
     <section class="ui-card space-y-4" data-inbox-search-panel>
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>

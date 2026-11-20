@@ -415,12 +415,6 @@ function chatApp() {
             activeBoundary() {
                 return this.evidenceContext?.boundary || 'cloud';
             },
-            boundaryBadgeLabel() {
-                const b = this.activeBoundary();
-                if (b === 'local_only') return 'Контур: local_only (облако заблокировано)';
-                if (b === 'company') return 'Контур: company (корпоративный)';
-                return 'Контур: cloud (облачная модель)';
-            },
             isLocalOnlyBlocked() {
                 if (this.awaitingConfirmation) return false;
                 const b = this.activeBoundary();

@@ -39,6 +39,14 @@ def test_calendar_keeps_metadata_only_events_visible_in_grid():
     assert "titleNode.textContent.trim()" in script
 
 
+def test_task_tabs_share_the_home_segmented_control_style():
+    tabs = read("app/web/templates/web/_task_tabs.html")
+    css = read("app/static/css/work-redesign.css")
+    assert "ui-segments" in tabs and "ui-segment" in tabs
+    assert ".work-task-tabs a" not in css
+    assert ".work-task-tabs { width:fit-content" not in css
+
+
 def test_calendar_has_no_client_timezone_or_time_calculation():
     template = read("app/web/templates/web/task_calendar.html")
     script = read("app/static/js/task-calendar.js")

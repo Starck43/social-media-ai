@@ -97,3 +97,12 @@ async def test_google_start_inclusive_and_dst_offset_normalized():
         {'summary':'DST','start':{'dateTime':'2026-03-08T03:30:00-04:00'}}]})
     result=await adapter.range_events(start=START,end=END)
     assert result['complete'] and [item['title'] for item in result['items']] == ['Start','DST']
+
+@pytest.mark.asyncio
+async def test_google_overlap_from_previous_month_is_not_provider_failure():
+    adapter = GoogleCalendar.__new__(GoogleCalendar)
+    adapter._request = AsyncMock(return_value={'items': [
+        {'summary': 'Starts earlier', 'start': {'dateTime': '2026-02-28T23:00:00Z'}, 'end': {'dateTime': '2026-03-01T01:00:00Z'}},
+        {'summary': 'Starts in month', 'start': {'dateTime': '2026-03-01T00:00:00Z'}}]})
+    result = await adapter.range_events(start=START, end=END)
+    assert result == {'items': [{'title': 'Starts in month', 'when': '2026-03-01T00:00:00Z'}], 'complete': True}

@@ -123,8 +123,21 @@ class GoogleCalendar:
                     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", start_value):
                         raise ValueError
                     instant = datetime.fromisoformat(start_value.replace("Z", "+00:00"))
-                    if instant.utcoffset() is None or not start <= instant < end:
+                    if instant.utcoffset() is None or instant >= end:
                         raise ValueError
+                    if instant < start:
+                        # Google timeMin filters by *end*, so an event which
+                        # began earlier may validly overlap this month. This
+                        # projection lists starts, not spanning day blocks.
+                        bound = value.get("end")
+                        ending = bound.get("dateTime") if isinstance(bound, dict) else None
+                        if (not isinstance(ending, str) or bound.get("date") is not None
+                                or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", ending)):
+                            raise ValueError
+                        end_instant = datetime.fromisoformat(ending.replace("Z", "+00:00"))
+                        if end_instant.utcoffset() is None or end_instant <= start or end_instant <= instant:
+                            raise ValueError
+                        continue
                 except (ValueError, TypeError, OverflowError):
                     raise CalendarError("invalid_calendar_response") from None
                 items.append({"title": title[:500], "when": start_value})

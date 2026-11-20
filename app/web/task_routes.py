@@ -297,7 +297,7 @@ async def task_detail(request: Request, task_id: int):
                 agent_task_id=task_id,
                 tenant_id=source.tenant_id,
                 status__in=["pending", "running"],
-            ).first()
+            ).order_by(Job.created_at.desc(), Job.id.desc()).first()
             if running_job is not None:
                 running_job_id = running_job.id
                 running_job_status = running_job.status

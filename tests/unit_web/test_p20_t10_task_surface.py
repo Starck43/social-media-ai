@@ -742,3 +742,17 @@ async def test_calendar_agent_next_cursor_is_month_scoped_and_propagated(monkeyp
         await surface.calendar_view(year=2026, month=10, after_agent_at=at.isoformat(), after_agent_id=77)
     with pytest.raises(ValueError, match='invalid_agent_cursor'):
         await surface.calendar_view(year=2026, month=11, after_agent_at=at.isoformat())
+
+@pytest.mark.asyncio
+async def test_incomplete_google_range_is_list_only_not_month_grid(monkeypatch):
+    monkeypatch.setattr(surface, 'has_permission', FakePermission({'plannertask'}))
+    monkeypatch.setattr(surface, 'get_current_user', lambda: object())
+    monkeypatch.setattr(surface, 'async_session_maker', FakeSession)
+    monkeypatch.setattr(surface, 'planner_service', NS(calendar_range=AsyncMock(return_value={'items': [], 'next_before_id': None})))
+    monkeypatch.setattr(surface, 'calendar_service', NS(events_range=AsyncMock(return_value={
+        'state': 'available', 'complete': False, 'items': [{'title': 'Partial', 'when': '2026-11-10T09:00:00Z'}]})))
+    result = await surface.calendar_view(timezone_name='UTC', year=2026, month=11)
+    event = result['providers'][1]
+    assert event['status'] == 'available' and event['range_complete'] is False
+    assert event['grid_eligible'] is False and event['items'][0]['title'] == 'Partial'
+    assert not event.get('inventory_only', False)

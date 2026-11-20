@@ -174,6 +174,7 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
                             continue
                         provider["range_complete"] = False
                         provider["grid_eligible"] = False
+                        provider["inventory_only"] = True
                         provider["next_before_id"] = page["next_before_id"]
                         for row in page["items"]:
                             if row["source"].get("deleted"):
@@ -186,6 +187,8 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
                         continue
                     else:
                         provider["range_complete"] = page["complete"]
+                        if not page["complete"]:
+                            provider["grid_eligible"] = False
                         for index, row in enumerate(page["items"]):
                             items.append({"key": f"event-range:{index}", "title": row["title"], "href": None,
                                           "settings_href": "/app/settings?tab=connections", "when": display_time(row["when"], zone)})

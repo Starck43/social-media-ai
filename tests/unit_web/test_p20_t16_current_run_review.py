@@ -138,3 +138,11 @@ def test_presenter_uses_same_freshness_guard_for_live_snapshot(monkeypatch):
     monkeypatch.setattr(task_progress, "read_snapshot", lambda *_args: (_ for _ in ()).throw(AssertionError()))
 
     assert task_presenters._progress_view(job) is None
+
+
+def test_detail_fallback_orders_active_jobs_outside_recent_window():
+    source = (ROOT / "app/web/task_routes.py").read_text(encoding="utf-8")
+    detail = source.split("async def task_detail(", 1)[1].split("async def task_latest_progress(", 1)[0]
+    fallback = detail.split("# The running job may be outside the recent-10 window.", 1)[1].split("if running_job is not None:", 1)[0]
+    assert 'status__in=["pending", "running"]' in fallback
+    assert '.order_by(Job.created_at.desc(), Job.id.desc()).first()' in fallback

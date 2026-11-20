@@ -61,6 +61,8 @@ async def task_calendar(
 ):
     if (year is None) != (month is None):
         raise HTTPException(422, "Year and month must be supplied together")
+    if before_agent is not None:
+        raise HTTPException(422, "Agent calendar cursors are not supported")
     try:
         ZoneInfo(timezone_name)
     except (ZoneInfoNotFoundError, ValueError):

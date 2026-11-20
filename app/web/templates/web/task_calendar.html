@@ -17,7 +17,7 @@
       <button type="button" class="ui-control" data-calendar-next aria-label="Следующий месяц">→</button>
       <button type="button" class="ui-control" data-calendar-today>Сегодня</button>
     </div>
-    <p class="ui-muted task-calendar-note">Дела загружаются за выбранный месяц. События и поручения показаны только из загруженной страницы; повторы событий не развёрнуты. Состояния и дополнительные страницы — ниже.</p>
+    <p class="ui-muted task-calendar-note">Дела и доступные расписания загружаются за выбранный месяц. Некоторые календари могут показывать неполную страницу без развёрнутых повторов. Состояния и дополнительные страницы — ниже.</p>
     <div class="task-calendar-scroll">
       <div class="task-calendar-grid" data-calendar-grid aria-label="Месячный календарь"></div>
     </div>
@@ -31,6 +31,7 @@
     {% elif provider['items'] %}{% if provider['kind'] == 'event' and provider.get('range_complete') == false %}<p role="status" class="ui-muted">Список событий может быть неполным; повторы календаря могут быть не развёрнуты.</p>{% endif %}{% if provider['kind'] == 'event' %}<a class="underline" href="/app/settings?tab=connections">Настройки календаря</a>{% endif %}<ul class="space-y-2">{% for item in provider['items'] %}<li class="flex flex-wrap justify-between gap-3 rounded border p-3" data-calendar-item>{% if item.href %}<a class="underline" data-calendar-link href="{{ item.href }}">{{ item.title }}</a>{% else %}<span data-calendar-title>{{ item.title }}</span>{% endif %}<time datetime="{{ item.when }}">{{ item.when }}</time></li>{% endfor %}</ul>
     {% elif provider['kind'] == 'event' %}{% if provider.get('range_complete') == false %}<p role="status" class="ui-muted">Список событий может быть неполным; повторы календаря могут быть не развёрнуты.</p>{% endif %}<a class="underline" href="/app/settings?tab=connections">Настройки календаря</a><p class="ui-muted">На этой странице элементов нет.</p>
     {% else %}<p class="ui-muted">На этой странице элементов нет.</p>{% endif %}
+    {% if provider['kind'] == 'agent' and provider.get('range_complete') == false %}<p role="status" class="ui-muted">Показаны не все расписания за месяц: превышен лимит выборки.</p>{% endif %}
     {% if provider['next_before_id'] %}<a class="ui-control inline-flex min-h-[44px] items-center" href="?timezone={{ timezone|urlencode }}&year={{ year }}&month={{ month }}&before_{{ provider['kind'] }}={{ provider['next_before_id'] }}">Показать более ранние</a>{% endif %}
   </section>{% endfor %}
 </section></div>

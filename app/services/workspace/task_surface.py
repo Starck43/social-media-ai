@@ -89,15 +89,22 @@ def event_schedule(row):
     return payload.get("summary") or "Событие", start.get("dateTime") or start["date"]
 
 
-async def _agent_page(session, before_id):
+async def _agent_page(session, start_utc, end_utc):
+    """Month schedules share the scheduler's eligibility and source visibility."""
+    from app.models.managers.agent_task_manager import AgentTaskManager
+
     identity = await actor_identity(session, "agenttask")
-    query = select(AgentTask).where(AgentTask.tenant_id == identity[0], AgentTask.is_active.is_(True))
-    if ("job", ActionType.UPDATE) not in workspace_grants(identity[2]):
-        query = query.where(AgentTask.job_type != "prune")
-    if before_id is not None:
-        query = query.where(AgentTask.id < before_id)
-    rows = list((await session.scalars(query.order_by(AgentTask.id.desc()).limit(PAGE_SIZE + 1))).all())
-    return rows[:PAGE_SIZE], rows[PAGE_SIZE - 1].id if len(rows) > PAGE_SIZE else None
+    grants = workspace_grants(identity[2])
+    include_sources = ("source", ActionType.VIEW) in grants and has_permission(
+        get_current_user(), "source", ActionType.VIEW
+    )
+    page = await AgentTaskManager().upcoming_effective_range(
+        start=start_utc, end=end_utc, include_source_based=include_sources, limit=PAGE_SIZE
+    )
+    rows = page["items"]
+    if ("job", ActionType.UPDATE) not in grants:
+        rows = [task for task in rows if task.job_type != "prune"]
+    return rows, page["complete"]
 
 
 async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_planner=None, before_event=None, before_agent=None):
@@ -111,7 +118,9 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
     next_day = date(year + (month == 12), month % 12 + 1, 1)
     start_utc = datetime(year, month, 1, tzinfo=zone).astimezone(timezone.utc)
     end_utc = datetime(next_day.year, next_day.month, 1, tzinfo=zone).astimezone(timezone.utc)
-    cursors = {"planner": _cursor(before_planner), "event": _cursor(before_event), "agent": _cursor(before_agent)}
+    if before_agent is not None:
+        raise ValueError("agent_cursor_unsupported")
+    cursors = {"planner": _cursor(before_planner), "event": _cursor(before_event)}
     providers = []
     for kind, permission in (("planner", "plannertask"), ("event", "plannertask"), ("agent", "agenttask")):
         provider = {"kind": kind, "status": "denied", "items": [], "next_before_id": None}
@@ -165,7 +174,7 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
                             items.append({"key": f"event-range:{index}", "title": row["title"], "href": None,
                                           "settings_href": "/app/settings?tab=connections", "when": display_time(row["when"], zone)})
                 else:
-                    rows, provider["next_before_id"] = await _agent_page(session, cursors[kind])
+                    rows, provider["range_complete"] = await _agent_page(session, start_utc, end_utc)
                     for task in rows:
                         if task.next_run_at is not None:
                             items.append(

@@ -17,7 +17,7 @@ const assert=require('node:assert/strict');
  assert.equal(new URL(p.url()).searchParams.get('timezone'),'Europe/Moscow');
  await p.waitForSelector('[data-calendar-grid] .task-calendar-day');
  assert(!(await p.locator('[data-calendar-grid]').innerText()).includes('Проверить цифры'));
- assert((await p.locator('.task-calendar-note').innerText()).includes('только из загруженной страницы'));
+ assert((await p.locator('.task-calendar-note').innerText()).includes('неполную страницу'));
  response=await p.goto(base+'/app/task-hub/calendar?year=2026'); assert.equal(response.status(),422);
  response=await p.goto(base+'/app/task-hub/calendar?year=2026&month=13'); assert.equal(response.status(),422);
  response=await p.goto(base+'/app/task-hub/calendar?year=2026&month=3&timezone=Europe%2FBerlin'); assert.equal(response.status(),200);

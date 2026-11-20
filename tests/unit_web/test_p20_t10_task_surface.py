@@ -66,18 +66,18 @@ async def test_calendar_filters_each_kind_by_its_own_permission(monkeypatch):
     monkeypatch.setattr(surface, "has_permission", FakePermission({"agenttask"}))
     monkeypatch.setattr(surface, "get_current_user", lambda: object())
     monkeypatch.setattr(surface, "async_session_maker", FakeSession)
-    planner = NS(list=AsyncMock())
-    calendar = NS(events=AsyncMock())
+    planner = NS(calendar_range=AsyncMock())
+    calendar = NS(events_range=AsyncMock())
     monkeypatch.setattr(surface, "planner_service", planner)
     monkeypatch.setattr(surface, "calendar_service", calendar)
-    agent_page = AsyncMock(return_value=([], None))
+    agent_page = AsyncMock(return_value=([], True))
     monkeypatch.setattr(surface, "_agent_page", agent_page)
 
     result = await surface.calendar_view(timezone_name="UTC")
 
     assert [provider["status"] for provider in result["providers"]] == ["denied", "denied", "available"]
-    planner.list.assert_not_awaited()
-    calendar.events.assert_not_awaited()
+    planner.calendar_range.assert_not_awaited()
+    calendar.events_range.assert_not_awaited()
     agent_page.assert_awaited_once()
 
 
@@ -87,11 +87,11 @@ async def test_unavailable_calendar_is_not_projected_as_empty(monkeypatch, state
     monkeypatch.setattr(surface, "has_permission", FakePermission({"plannertask", "agenttask"}))
     monkeypatch.setattr(surface, "get_current_user", lambda: object())
     monkeypatch.setattr(surface, "async_session_maker", FakeSession)
-    planner = NS(list=AsyncMock(return_value={"items": [], "next_before_id": None}))
-    calendar = NS(events=AsyncMock(return_value={"state": state, "items": None, "next_before_id": None}))
+    planner = NS(calendar_range=AsyncMock(return_value={"items": [], "next_before_id": None}))
+    calendar = NS(events_range=AsyncMock(return_value={"state": state, "items": None, "complete": False}))
     monkeypatch.setattr(surface, "planner_service", planner)
     monkeypatch.setattr(surface, "calendar_service", calendar)
-    monkeypatch.setattr(surface, "_agent_page", AsyncMock(return_value=([], None)))
+    monkeypatch.setattr(surface, "_agent_page", AsyncMock(return_value=([], True)))
 
     result = await surface.calendar_view()
 
@@ -106,11 +106,11 @@ async def test_calendar_source_exception_discards_partial_provider_items(monkeyp
     monkeypatch.setattr(surface, "has_permission", FakePermission({"plannertask", "agenttask"}))
     monkeypatch.setattr(surface, "get_current_user", lambda: object())
     monkeypatch.setattr(surface, "async_session_maker", FakeSession)
-    planner = NS(list=AsyncMock(return_value={"items": [], "next_before_id": None}))
-    calendar = NS(events=AsyncMock(side_effect=RuntimeError("provider down")))
+    planner = NS(calendar_range=AsyncMock(return_value={"items": [], "next_before_id": None}))
+    calendar = NS(events_range=AsyncMock(side_effect=RuntimeError("provider down")))
     monkeypatch.setattr(surface, "planner_service", planner)
     monkeypatch.setattr(surface, "calendar_service", calendar)
-    monkeypatch.setattr(surface, "_agent_page", AsyncMock(return_value=([], None)))
+    monkeypatch.setattr(surface, "_agent_page", AsyncMock(return_value=([], True)))
 
     result = await surface.calendar_view()
 
@@ -142,17 +142,17 @@ async def test_calendar_keeps_only_owned_planner_items_and_preserves_independent
     planner_list = AsyncMock(return_value={"items": planner_items, "next_before_id": 11})
     calendar_events = AsyncMock(return_value={"state": "available", "items": [], "next_before_id": 22})
     agent_page = AsyncMock(
-        return_value=([NS(id=7, name="Run", next_run_at=datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc))], 33)
+        return_value=([NS(id=7, name="Run", next_run_at=datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc))], True)
     )
     monkeypatch.setattr(surface, "has_permission", FakePermission({"plannertask", "agenttask"}))
     monkeypatch.setattr(surface, "get_current_user", lambda: object())
     monkeypatch.setattr(surface, "async_session_maker", FakeSession)
-    monkeypatch.setattr(surface, "planner_service", NS(list=planner_list))
-    monkeypatch.setattr(surface, "calendar_service", NS(events=calendar_events))
+    monkeypatch.setattr(surface, "planner_service", NS(calendar_range=planner_list))
+    monkeypatch.setattr(surface, "calendar_service", NS(events_range=AsyncMock(return_value={"state": "range_unavailable"}), events=calendar_events))
     monkeypatch.setattr(surface, "_agent_page", agent_page)
 
     result = await surface.calendar_view(
-        timezone_name="America/New_York", before_planner=10, before_event=20, before_agent=30
+        timezone_name="America/New_York", year=2026, month=11, before_planner=10, before_event=20
     )
 
     planner = next(row for row in result["providers"] if row["kind"] == "planner")
@@ -160,8 +160,8 @@ async def test_calendar_keeps_only_owned_planner_items_and_preserves_independent
     assert planner["items"][0]["when"] == "2026-11-01T01:30-05:00"
     assert len({item["key"] for row in result["providers"] for item in row["items"]}) == 2
     assert [planner_list.await_args.kwargs["before_id"], calendar_events.await_args.kwargs["before_id"]] == [10, 20]
-    assert agent_page.await_args.args[1] == 30
-    assert [row["next_before_id"] for row in result["providers"]] == [11, 22, 33]
+    assert agent_page.await_args.args[1] == datetime(2026, 11, 1, 4, tzinfo=timezone.utc)
+    assert [row["next_before_id"] for row in result["providers"]] == [11, 22, None]
 
 
 @pytest.mark.asyncio
@@ -397,7 +397,7 @@ def test_calendar_template_exposes_unavailable_provider_state(status):
     env = _task_surface_templates()
     context = _tab_context()
     context.update(
-        timezone="America/New_York",
+        timezone="America/New_York", year=2026, month=11,
         providers=[
             {"kind": "planner", "status": "available", "items": [], "next_before_id": None},
             {"kind": "event", "status": status, "items": [], "next_before_id": None},

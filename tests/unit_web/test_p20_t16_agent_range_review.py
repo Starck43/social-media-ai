@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace as NS
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy.dialects import sqlite
@@ -118,11 +119,9 @@ async def test_range_reuses_source_eligibility_switch_without_source_subqueries(
 
 
 def test_manager_query_retains_context_tenant_guard(monkeypatch):
-    monkeypatch.setattr(tenant_context, "current_tenant_id", lambda: 42)
-    monkeypatch.setattr(tenant_context, "is_bypass", lambda: False)
-
     manager = AgentTaskManager()
-    query = manager.get_queryset()
+    with tenant_context.tenant_scope(42):
+        query = manager.get_queryset()
     sql = "\n".join(
         str(criterion.compile(dialect=sqlite.dialect())) for criterion in query._criterion
     )
@@ -152,3 +151,17 @@ async def test_range_rejects_naive_or_empty_intervals(start, end):
             end=end,
             include_source_based=False,
         )
+
+@pytest.mark.asyncio
+async def test_calendar_agent_caller_requires_source_permission_and_filters_prune(monkeypatch):
+    from app.services.workspace import task_surface
+    from app.types import ActionType
+    monkeypatch.setattr(task_surface, 'actor_identity', AsyncMock(return_value=(42,8,'member')))
+    monkeypatch.setattr(task_surface, 'workspace_grants', lambda role: {('source',ActionType.VIEW)})
+    monkeypatch.setattr(task_surface, 'get_current_user', lambda: object())
+    monkeypatch.setattr(task_surface, 'has_permission', lambda *args: False)
+    mock=AsyncMock(return_value={'items':[NS(job_type='prune'),NS(job_type='notify')], 'complete':False})
+    monkeypatch.setattr(AgentTaskManager, 'upcoming_effective_range', mock)
+    rows, complete = await task_surface._agent_page(object(), datetime(2026,11,1,tzinfo=timezone.utc), datetime(2026,12,1,tzinfo=timezone.utc))
+    assert [row.job_type for row in rows] == ['notify'] and complete is False
+    assert mock.await_args.kwargs['include_source_based'] is False

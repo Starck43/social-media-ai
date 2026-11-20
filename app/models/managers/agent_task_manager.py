@@ -537,6 +537,93 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
 
         return await self.filter(*eligibility).order_by(AgentTask.next_run_at.asc(), AgentTask.id.asc()).limit(limit)
 
+    async def upcoming_effective_range(
+        self,
+        *,
+        start: datetime,
+        end: datetime,
+        include_source_based: bool,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Return effective schedules in the half-open UTC interval ``[start, end)``.
+
+        This is deliberately a separate read contract so existing callers of
+        :meth:`upcoming_effective` keep their list return shape and limit
+        semantics.  ``complete`` is false when the bounded query found more
+        rows than the requested limit; callers must not present that page as a
+        complete range.  Callers without ``source.view`` must pass
+        ``include_source_based=False``; that path does not build source
+        eligibility subqueries.
+        """
+        from sqlalchemy import and_, exists, literal, not_, or_, select
+
+        from ..analysis.agent_scenario import AgentScenario
+        from ..collection.source import Source
+        from ..scheduling.agent_task import AgentTask, agent_task_sources
+
+        if not isinstance(start, datetime) or not isinstance(end, datetime):
+            raise ValueError("start and end must be datetime values")
+        if (
+            start.tzinfo is None
+            or start.utcoffset() is None
+            or end.tzinfo is None
+            or end.utcoffset() is None
+        ):
+            raise ValueError("start and end must be timezone-aware")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+
+        start_utc = start.astimezone(timezone.utc)
+        end_utc = end.astimezone(timezone.utc)
+        if start_utc >= end_utc:
+            raise ValueError("end must be after start")
+
+        active_scenario = exists(
+            select(literal(1)).where(
+                AgentScenario.id == AgentTask.agent_scenario_id,
+                AgentScenario.tenant_id == AgentTask.tenant_id,
+                AgentScenario.is_active.is_(True),
+            )
+        )
+        eligibility = [
+            AgentTask.is_active.is_(True),
+            AgentTask.next_run_at.is_not(None),
+            or_(AgentTask.agent_scenario_id.is_(None), active_scenario),
+            AgentTask.next_run_at >= start_utc,
+            AgentTask.next_run_at < end_utc,
+        ]
+
+        source_types = tuple(sorted(SOURCE_BASED_JOB_TYPES))
+        if include_source_based:
+            linked_source = exists(
+                select(literal(1))
+                .select_from(agent_task_sources.join(Source, Source.id == agent_task_sources.c.source_id))
+                .where(
+                    agent_task_sources.c.agent_task_id == AgentTask.id,
+                    Source.tenant_id == AgentTask.tenant_id,
+                    Source.is_active.is_(True),
+                )
+            )
+            any_link = exists(select(literal(1)).where(agent_task_sources.c.agent_task_id == AgentTask.id))
+            workspace_source = exists(
+                select(literal(1)).where(
+                    Source.tenant_id == AgentTask.tenant_id,
+                    Source.is_active.is_(True),
+                )
+            )
+            source_task_eligible = or_(linked_source, and_(not_(any_link), workspace_source))
+            eligibility.append(or_(AgentTask.job_type.not_in(source_types), source_task_eligible))
+        else:
+            eligibility.append(AgentTask.job_type.not_in(source_types))
+
+        rows = await (
+            self.filter(*eligibility)
+            .order_by(AgentTask.next_run_at.asc(), AgentTask.id.asc())
+            .limit(limit + 1)
+        )
+        complete = len(rows) <= limit
+        return {"items": rows[:limit], "complete": complete}
+
     async def get_sources(self, task_id: int) -> list[int]:
         """Source ids linked to the task through the m2m table."""
         return (await self._linked_source_ids([task_id])).get(task_id, [])

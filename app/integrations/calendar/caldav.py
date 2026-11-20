@@ -201,10 +201,11 @@ class YandexCalendar:
         This is deliberately narrower than ``pull``: it uses one read-only
         calendar-query REPORT, never expands RRULE/RDATE/EXDATE locally, and
         never returns provider paths, UIDs, ETags or raw iCalendar data. A
-        response at the cap is treated as potentially truncated because REPORT
-        has no portable continuation token. Any recurrence or exception makes
-        the whole result explicitly unavailable rather than returning a partial
-        or falsely complete calendar.
+        response is explicitly unavailable unless a provider-specific,
+        independently verified completeness signal is added; REPORT itself has
+        no portable continuation token. Any recurrence, exception, date-only
+        value, or range mismatch makes the whole result unavailable rather than
+        returning a partial or falsely complete calendar.
         """
         if (
             not isinstance(start, datetime)
@@ -231,9 +232,11 @@ class YandexCalendar:
             '</c:comp-filter></c:comp-filter></c:filter></c:calendar-query>'
         )
         rows = await self._report_range(body)
-        # A CalDAV REPORT response has no standard page token. At the cap we
-        # cannot distinguish a complete response from a server-side truncation.
-        if len(rows) >= max_items:
+        # A CalDAV REPORT response has no standard page token. An empty
+        # response is not proof that the calendar is empty, and a non-empty
+        # response below our cap is not proof that the server did not truncate
+        # it. Keep the response unavailable and never expose a partial list.
+        if not rows or len(rows) >= max_items:
             return self._range_unavailable("response_completeness_unconfirmed")
 
         seen = set()
@@ -261,16 +264,22 @@ class YandexCalendar:
             if isinstance(when, datetime):
                 if when.tzinfo is None:
                     return self._range_unavailable("timezone_unverified")
-                when_value = when.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                when_utc = when.astimezone(timezone.utc)
+                if not start_utc <= when_utc < end_utc:
+                    return self._range_unavailable("event_out_of_range")
+                when_value = when_utc.isoformat().replace("+00:00", "Z")
             elif isinstance(when, date):
-                when_value = when.isoformat()
+                return self._range_unavailable("date_only_timezone_unverified")
             else:
                 raise CalendarError("invalid_calendar_response")
             title = str(event.get("SUMMARY", "Событие"))[:500]
             projected.append(((when_value, title, href), {"title": title, "when": when_value}))
 
         projected.sort(key=lambda item: item[0])
-        return {"state": "available", "items": [item for _, item in projected], "complete": True}
+        # There is no portable CalDAV proof of completeness for this REPORT.
+        # Keep the deterministic projection for the future verified provider
+        # contract, but fail closed until that proof exists.
+        return self._range_unavailable("response_completeness_unconfirmed")
 
     async def _report_range(self, body):
         """Issue the range REPORT through the existing read-only request path."""

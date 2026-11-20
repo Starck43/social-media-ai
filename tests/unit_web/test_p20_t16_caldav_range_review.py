@@ -66,6 +66,18 @@ def calendar_data(raw):
     return b"<c:calendar-data>" + raw + b"</c:calendar-data>"
 
 
+def date_event(uid, start, *, summary="Событие"):
+    return (
+        b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:"
+        + uid.encode()
+        + b"\r\nDTSTART;VALUE=DATE:"
+        + start.encode()
+        + b"\r\nSUMMARY:"
+        + summary.encode()
+        + b"\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+    )
+
+
 START = datetime(2026, 11, 1, tzinfo=timezone.utc)
 END = datetime(2026, 12, 1, tzinfo=timezone.utc)
 
@@ -90,14 +102,11 @@ async def test_range_projects_only_bounded_nonrecurring_events_and_never_writes(
     result = await client.range_events(start=START, end=END, max_items=10)
 
     assert result == {
-        "state": "available",
-        "items": [
-            {"title": "Earlier", "when": "2026-11-02T10:00:00Z"},
-            {"title": "Later", "when": "2026-11-20T09:00:00Z"},
-        ],
-        "complete": True,
+        "state": "range_unavailable",
+        "items": None,
+        "complete": False,
+        "reason": "response_completeness_unconfirmed",
     }
-    assert all(set(item) == {"title", "when"} for item in result["items"])
     assert [call[0] for call in transport.calls] == ["REPORT"]
     body = transport.calls[0][2].decode()
     headers = transport.calls[0][3]
@@ -209,6 +218,64 @@ async def test_range_rejects_unsafe_bounds_before_provider_request(start, end, m
         await client.range_events(start=start, end=end, max_items=max_items)
 
     assert transport.calls == []
+
+
+@pytest.mark.asyncio
+async def test_range_empty_report_is_not_proof_of_complete_empty_calendar():
+    transport = Transport([response(207, multistatus())])
+    client = YandexCalendar("alice", "password", "/cal/alice/work/", transport=transport)
+
+    result = await client.range_events(start=START, end=END)
+
+    assert result == {
+        "state": "range_unavailable",
+        "items": None,
+        "complete": False,
+        "reason": "response_completeness_unconfirmed",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("start_value", ["20261031T230000Z", "20261201T000000Z"])
+async def test_range_rejects_aware_dtstart_outside_half_open_range(start_value):
+    report = multistatus(
+        prop_response(
+            "/cal/alice/work/outside.ics",
+            calendar_data(event("outside", start_value)),
+        ),
+    )
+    transport = Transport([response(207, report)])
+    client = YandexCalendar("alice", "password", "/cal/alice/work/", transport=transport)
+
+    result = await client.range_events(start=START, end=END)
+
+    assert result == {
+        "state": "range_unavailable",
+        "items": None,
+        "complete": False,
+        "reason": "event_out_of_range",
+    }
+
+
+@pytest.mark.asyncio
+async def test_range_rejects_date_only_until_timezone_contract_is_verified():
+    report = multistatus(
+        prop_response(
+            "/cal/alice/work/all-day.ics",
+            calendar_data(date_event("all-day", "20261115")),
+        ),
+    )
+    transport = Transport([response(207, report)])
+    client = YandexCalendar("alice", "password", "/cal/alice/work/", transport=transport)
+
+    result = await client.range_events(start=START, end=END)
+
+    assert result == {
+        "state": "range_unavailable",
+        "items": None,
+        "complete": False,
+        "reason": "date_only_timezone_unverified",
+    }
 
 
 @pytest.mark.asyncio

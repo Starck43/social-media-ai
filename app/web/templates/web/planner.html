@@ -22,6 +22,10 @@
         </div>
     </div>
 
+    {% if next_before_id %}
+    <p class="ui-muted text-sm" role="status" data-planner-page-limit>Показана текущая страница (до 50 задач); группы по срокам неполные. Загрузите следующие задачи ниже.</p>
+    {% endif %}
+
     {% if editing and can_update %}
     <section class="ui-card space-y-4" aria-labelledby="edit-heading">
         <h2 id="edit-heading" class="text-lg font-semibold">Изменить задачу №{{ editing.id }}</h2>

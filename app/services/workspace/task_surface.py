@@ -144,7 +144,8 @@ async def calendar_view(*, timezone_name="UTC", before_planner=None, before_even
                             {
                                 "key": f"event:{row['id']}",
                                 "title": title,
-                                "href": "/app/settings?tab=connections",
+                                "href": None,
+                                "settings_href": "/app/settings?tab=connections",
                                 "when": display_time(when, zone),
                             }
                         )

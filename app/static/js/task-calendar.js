@@ -8,10 +8,10 @@
     const entries = [];
     document.querySelectorAll('[data-calendar-provider]').forEach(provider => {
         provider.querySelectorAll('[data-calendar-item]').forEach(row => {
-            const link = row.querySelector('a');
+            const titleNode = row.querySelector('[data-calendar-link], [data-calendar-title]');
             const time = row.querySelector('time');
             const when = time && time.getAttribute('datetime');
-            if (!link || !when || !/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(when)) return;
+            if (!titleNode || !when || !/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(when)) return;
             let date = when.slice(0, 10);
             let timeLabel = '';
             if (when.includes('T')) {
@@ -24,7 +24,7 @@
                 timeLabel = `${part('hour')}:${part('minute')}`;
             }
             entries.push({ date, time: timeLabel,
-                title: link.textContent.trim(), href: link.getAttribute('href'), kind: provider.dataset.calendarProvider });
+                title: titleNode.textContent.trim(), href: titleNode.getAttribute('href'), kind: provider.dataset.calendarProvider });
         });
     });
     const parts = new Intl.DateTimeFormat('en-CA', { timeZone: calendar.dataset.timezone,
@@ -60,11 +60,11 @@
             number.textContent = date.getUTCDate();
             cell.append(number);
             entries.filter(entry => entry.date === iso).forEach(entry => {
-                const a = document.createElement('a');
-                a.href = entry.href;
-                a.className = `task-calendar-entry task-calendar-entry--${entry.kind}`;
-                a.textContent = `${entry.time ? entry.time + ' ' : ''}${entry.title}`;
-                cell.append(a);
+                const entryNode = entry.href ? document.createElement('a') : document.createElement('span');
+                if (entry.href) entryNode.href = entry.href;
+                entryNode.className = `task-calendar-entry task-calendar-entry--${entry.kind}`;
+                entryNode.textContent = `${entry.time ? entry.time + ' ' : ''}${entry.title}`;
+                cell.append(entryNode);
             });
             grid.append(cell);
         }

@@ -135,6 +135,9 @@ management extending the P12-T03/T11 document store, and a local file connector
 reusing the P12-T12 file-workspace contracts once [PR #327](https://github.com/Starck43/social-media-ai/pull/327)
 is integrated. P12 tasks keep their own scope and status.
 
-- [P12-T19](../tasks/p12-t19.md): cloud disk connections UX — provider folder
-  picker after Yandex consent, setup guidance, and owner-activated Mail.ru Cloud
-  over WebDAV. Claimed by Codex on 2026-11-20; building on the accepted P8-T34 Settings OAuth increment.
+- [P12-T19](../archive/tasks/p12-t19.md) DONE 2026-11-20: cloud disk connections
+  with provider folder pickers — Yandex consent now ends in a click-through folder
+  selection instead of a hand-typed path, and Mail.ru Cloud joins as a read-only
+  WebDAV provider behind the same picker. Accepted `1517d45b`, merged `54369334`;
+  [audit](../audit/p12/p12-t19.md). Live provider connection remains the owner's
+  own step.

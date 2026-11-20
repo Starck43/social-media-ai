@@ -64,7 +64,11 @@ async def communications_page(
     triage_by_thread: dict[int, dict[str, Any]] = {}
     triage_counts: dict[str, int] = {cat: 0 for cat in TRIAGE_CATEGORIES}
     merge_suggestions: list[dict[str, Any]] = []
+    inbox_load_error = False
+    triage_load_error = False
 
+    # Empty selects and links represent “all channels”, not an invalid channel.
+    channel = channel or None
     norm_triage_cat = triage_category if triage_category in TRIAGE_CATEGORIES else None
 
     if current_tenant_id() is not None:
@@ -98,8 +102,9 @@ async def communications_page(
                             triage_by_thread[tid] = item
                 except Exception:  # noqa: BLE001
                     logger.warning("Failed to list triaged threads on communications page", exc_info=True)
+                    triage_load_error = True
 
-                if norm_triage_cat is not None:
+                if norm_triage_cat is not None and not triage_load_error:
                     inbox_threads = [th for th in inbox_threads if th.get("id") in triage_by_thread]
 
                 active_thread_id = thread_id or (inbox_threads[0]["id"] if inbox_threads else None)
@@ -118,6 +123,7 @@ async def communications_page(
             raise HTTPException(status_code=403) from None
         except Exception:  # noqa: BLE001
             logger.warning("Failed to load communications page data", exc_info=True)
+            inbox_load_error = True
 
     return render(
         request,
@@ -136,6 +142,8 @@ async def communications_page(
         is_archived_filter=is_archived,
         q=q or "",
         inbox_threads=inbox_threads,
+        inbox_load_error=inbox_load_error,
+        triage_load_error=triage_load_error,
         next_before_id=next_before_id,
         selected_thread_detail=selected_thread_detail,
         selected_thread_triage=selected_thread_triage,

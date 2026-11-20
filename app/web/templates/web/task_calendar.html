@@ -9,7 +9,7 @@
 <div class="space-y-6">
 {% include "web/_task_tabs.html" %}
 <section class="ui-card space-y-4" aria-labelledby="calendar-title">
-  <div class="flex flex-wrap items-end justify-between gap-4"><div><h2 id="calendar-title" class="text-lg font-semibold">Календарь</h2><p class="ui-muted">Показано до 50 записей каждого раздела; остальные — на следующих страницах. Время показано в {{ timezone }}. Для повторяющихся событий показан исходный срок.</p></div><form method="get"><label>Часовой пояс <input class="ui-control min-h-[44px]" name="timezone" value="{{ timezone }}" maxlength="100"></label><button class="ui-control min-h-[44px]">Показать</button></form></div>
+  <div class="flex flex-wrap items-center justify-between gap-3"><h2 id="calendar-title" class="text-lg font-semibold">Календарь</h2><details><summary class="ui-control cursor-pointer">Часовой пояс: {{ timezone }}</summary><p class="ui-muted text-sm">До 50 записей каждого раздела. Для повторяющихся событий показан исходный срок.</p><form method="get"><label>Часовой пояс <input class="ui-control min-h-[44px]" name="timezone" value="{{ timezone }}" maxlength="100"></label><button class="ui-control min-h-[44px]">Показать</button></form></details></div>
   <div class="task-calendar" data-task-calendar data-timezone="{{ timezone }}" hidden>
     <div class="task-calendar-toolbar">
       <button type="button" class="ui-control" data-calendar-prev aria-label="Предыдущий месяц">←</button>

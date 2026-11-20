@@ -33,3 +33,41 @@
 /* Prevent the action group from squeezing a bento item's text into a column. */
 .today-bento [data-today-item] > div:first-child { flex: 1 0 100%; }
 @media (min-width: 1024px) { .ui-shell [data-inbox-workspace] { grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr); } }
+.ui-home [data-today-workspace] { margin-top: 0; }
+.ui-home [data-today-toolbar] { border: 0; background: transparent; padding: 0; }
+.ui-home [data-today-item] { padding-block: .65rem; }
+.ui-home [data-today-item] > div:first-child { flex: 1 0 100%; }
+.ui-home [data-today-item] > div:first-child > div > a { min-height: 0; }
+.ui-home [data-today-item] .today-item-actions { margin-top: .25rem; }
+.ui-home [data-today-item] .today-item-actions a, .ui-home [data-today-item] .today-item-actions button { min-height: 40px; }
+.planner-page { max-width: 78rem; margin-inline: auto; }
+.planner-toolbar { margin-block: .5rem 1rem; }
+.planner-page section[aria-label="Задачи"] > .ui-card { border-radius: 1rem; }
+.planner-page section[aria-label="Задачи"] > .ui-card > h2 { font: 600 .75rem var(--cn-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-secondary); }
+.planner-task { display:flex; flex-wrap:wrap; align-items:flex-start; gap:.35rem .7rem; padding-block:.7rem; min-width:0; }
+.planner-task-content { flex:1 1 15rem; min-width:0; overflow-wrap:anywhere; }
+.planner-meta { font-family:var(--cn-mono); font-variant-numeric:tabular-nums; margin-top:.3rem; }
+.planner-task-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
+.planner-delegate { color:var(--color-cyan-600); text-decoration:underline; min-height:40px; display:inline-flex; align-items:center; }
+.planner-task-actions details summary, .today-more summary { cursor:pointer; list-style:none; }
+.planner-task-actions details summary::-webkit-details-marker, .today-more summary::-webkit-details-marker { display:none; }
+.planner-complete button { width:40px; height:40px; display:grid; place-items:center; }
+.planner-complete span { display:block; border:1px solid var(--color-text-secondary); border-radius:50%; width:22px; height:22px; }
+.today-more summary { min-height:40px; display:flex; align-items:center; }
+.today-more[open] form { margin-left:.4rem; }
+.ui-home [data-today-section="brief"] .today-brief-actions a { border-radius:999px; }
+[data-inbox-search-panel] summary { min-height:40px; display:flex; align-items:center; }
+[data-inbox-thread-list] > h2 { font-size:1rem; }
+[data-inbox-thread-item] h3 a { text-decoration:none; }
+[data-inbox-thread-detail] > div:first-child h2 { font-size:1.25rem; }
+@media (max-width: 767px) { .planner-task-actions { flex-basis:100%; padding-left:3rem; } .planner-page { margin-inline:0; } }
+
+.task-sources-link { display:inline-flex; align-items:center; min-height:40px; color:var(--color-text-secondary); font-size:.875rem; text-decoration:underline; }
+.ui-home [data-today-section="brief"] > div:first-child h2 { font:600 .75rem var(--cn-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-secondary); }
+.ui-home [data-today-section="brief"] [data-today-item] > div:first-child > div > a { font-size:1.5rem; line-height:1.25; }
+.ui-home [data-today-item] { gap:.25rem .5rem; }
+.ui-home [data-today-item] > div:first-child { flex:1 1 12rem; }
+.ui-home [data-today-item] .today-item-actions summary { list-style:none; cursor:pointer; min-height:40px; display:flex; align-items:center; color:var(--color-text-secondary); font-size:.8rem; }
+.ui-home [data-today-item] .today-item-actions summary::-webkit-details-marker { display:none; }
+.ui-home [data-today-item] .today-item-actions[open] { flex-basis:100%; }
+.ui-home [data-today-section="brief"] .today-brief-actions a:first-child { background:var(--color-cyan-600); color:var(--color-surface); }

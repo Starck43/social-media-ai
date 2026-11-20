@@ -12,7 +12,18 @@
             const time = row.querySelector('time');
             const when = time && time.getAttribute('datetime');
             if (!link || !when || !/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(when)) return;
-            entries.push({ date: when.slice(0, 10), time: when.includes('T') ? when.slice(11, 16) : '',
+            let date = when.slice(0, 10);
+            let timeLabel = '';
+            if (when.includes('T')) {
+                const instant = new Date(when);
+                if (Number.isNaN(instant.getTime())) return;
+                const local = new Intl.DateTimeFormat('en-GB', { timeZone: calendar.dataset.timezone,
+                    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(instant);
+                const part = type => local.find(p => p.type === type).value;
+                date = `${part('year')}-${part('month')}-${part('day')}`;
+                timeLabel = `${part('hour')}:${part('minute')}`;
+            }
+            entries.push({ date, time: timeLabel,
                 title: link.textContent.trim(), href: link.getAttribute('href'), kind: provider.dataset.calendarProvider });
         });
     });

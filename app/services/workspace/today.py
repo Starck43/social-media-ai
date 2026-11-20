@@ -438,16 +438,18 @@ class TodayRepository:
         )
 
     async def planner_tasks(self, workspace_id: int, limit: int = PROVIDER_LIMIT) -> list[Any]:
-        from app.models import PlannerTask
+        from types import SimpleNamespace
 
-        return (
-            await PlannerTask.objects.filter(
-                tenant_id=workspace_id,
-                status__in=["todo", "in_progress"],
-            )
-            .order_by(PlannerTask.id.desc())
-            .limit(limit * 3)
-        )
+        from app.core.tenant_context import current_tenant_id, is_bypass
+        from app.services.planner.tasks import planner_service
+
+        if is_bypass() or current_tenant_id() != workspace_id:
+            raise PermissionError("planner_scope_denied")
+        page_limit = min(limit * 3, 100)
+        todo = await planner_service.list(limit=page_limit, status="todo")
+        in_progress = await planner_service.list(limit=page_limit, status="in_progress")
+        active = sorted(todo["items"] + in_progress["items"], key=lambda item: item.id, reverse=True)[:page_limit]
+        return [SimpleNamespace(tenant_id=workspace_id, **task.model_dump()) for task in active]
 
     async def planner_schedule(self, task_id: int):
         from app.services.planner.tasks import planner_service
@@ -481,12 +483,15 @@ class TodayRepository:
             .limit(limit * 2)
         )
 
-    async def upcoming_agent_tasks(
-        self, workspace_id: int, show_sources: bool = False, limit: int = 3
-    ) -> list[dict[str, Any]]:
-        from app.models.managers.agent_task_manager import tasks as task_manager
+    async def upcoming_agent_tasks(self, workspace_id: int, show_sources: bool = False, limit: int = 3) -> list[Any]:
+        from app.core.tenant_context import current_tenant_id, is_bypass
+        from app.models.managers.agent_task_manager import AgentTaskManager
 
-        return await task_manager.dashboard_upcoming(workspace_id, limit=limit, include_sources=show_sources)
+        if is_bypass() or current_tenant_id() != workspace_id:
+            raise PermissionError("agent_task_scope_denied")
+        return await AgentTaskManager().upcoming_effective(
+            now=datetime.now(timezone.utc), include_source_based=show_sources, limit=limit
+        )
 
     async def unread_threads(
         self,
@@ -1056,9 +1061,13 @@ class TodayProjection:
                         (atask.get("name") if isinstance(atask, dict) else getattr(atask, "name", ""))
                         or f"Запуск #{tid}"
                     )[:120]
-                    is_due = bool(atask.get("is_due") if isinstance(atask, dict) else getattr(atask, "is_due", False))
                     next_run = (
                         atask.get("next_run_at") if isinstance(atask, dict) else getattr(atask, "next_run_at", None)
+                    )
+                    is_due = (
+                        bool(atask.get("is_due"))
+                        if isinstance(atask, dict)
+                        else (isinstance(next_run, datetime) and next_run.tzinfo is not None and next_run <= self.now)
                     )
                     items.append(
                         {
@@ -1066,7 +1075,11 @@ class TodayProjection:
                             "kind": "agent_task",
                             "id": tid,
                             "title": name,
-                            "summary": "Ожидает запуска" if is_due else f"Следующий запуск: {_iso_or_empty(next_run)}",
+                            "summary": (
+                                "Расписание пространства · ожидает запуска"
+                                if is_due
+                                else f"Расписание пространства · следующий запуск: {_iso_or_empty(next_run)}"
+                            ),
                             "status_label": "Ожидает запуска" if is_due else "По расписанию",
                             "href": f"/app/tasks/{tid}",
                             "chat_url": "/app/chat?"

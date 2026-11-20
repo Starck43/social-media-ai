@@ -1,6 +1,8 @@
 """Authenticated, CSRF-protected planner list/board and explicit edits."""
 
+from datetime import datetime
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request
 from fastapi.responses import RedirectResponse
@@ -73,6 +75,33 @@ async def planner_page(
             event_planning_service.greeting_task_ids([item.id for item in page["items"]], session=session)
         )
     reminders = await invoke(reminder_service.list(task_id)) if task_id is not None and can_remind(actor) else []
+    if view == "board":
+        groups = [
+            (label, [item for item in page["items"] if item.status == status])
+            for status, label in STATUS_LABELS.items()
+        ]
+    else:
+        try:
+            zone = ZoneInfo(getattr(getattr(request.state, "tenant", None), "timezone", None) or "UTC")
+        except ZoneInfoNotFoundError:
+            zone = ZoneInfo("UTC")
+        today = datetime.now(zone).date()
+        groups_by_name = {name: [] for name in ("Просрочено", "Сегодня", "Скоро", "Без срока", "Завершённые")}
+        for item in page["items"]:
+            due = item.due_date or (item.due_at.astimezone(zone).date() if item.due_at else None)
+            group = (
+                "Завершённые"
+                if item.status in ("done", "cancelled")
+                else (
+                    "Без срока"
+                    if due is None
+                    else "Просрочено" if due < today else "Сегодня" if due == today else "Скоро"
+                )
+            )
+            groups_by_name[group].append(item)
+        groups = [(label, group) for label, group in groups_by_name.items() if group]
+        if not groups:
+            groups = [("Мои дела", [])]
     return render(
         request,
         "web/planner.html",
@@ -87,6 +116,7 @@ async def planner_page(
         view=view,
         editing=editing,
         status_labels=STATUS_LABELS,
+        planner_groups=groups,
         priority_labels=PRIORITY_LABELS,
         can_create=has_permission(actor, "plannertask", ActionType.CREATE),
         can_update=has_permission(actor, "plannertask", ActionType.UPDATE),

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from types import SimpleNamespace as NS
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -89,7 +89,7 @@ def _planner_item(task_id, *, owner=8, status="todo", title="Task"):
         "due_date": date(2026, 11, 20),
         "recurrence_source": "planner",
     }
-    return NS(id=task_id, **values, model_dump=lambda: dict(values))
+    return NS(**values, model_dump=lambda: dict(values))
 
 
 @pytest.mark.asyncio
@@ -157,7 +157,7 @@ async def test_today_projection_surfaces_planner_denial_as_unavailable(monkeypat
 
 @pytest.mark.asyncio
 async def test_inbox_permission_is_checked_before_any_query(monkeypatch):
-    permission = AsyncMock(side_effect=PermissionError("message_denied"))
+    permission = Mock(side_effect=PermissionError("message_denied"))
     monkeypatch.setattr(inbox, "require_message_permission", permission)
     session = AsyncMock()
 
@@ -165,7 +165,7 @@ async def test_inbox_permission_is_checked_before_any_query(monkeypatch):
         await inbox.list_inbox_threads(session, limit=10)
 
     session.execute.assert_not_awaited()
-    permission.assert_awaited_once()
+    permission.assert_called_once()
 
 
 @pytest.mark.asyncio

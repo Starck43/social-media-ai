@@ -1,0 +1,36 @@
+<p class="mt-3 text-sm ui-muted">Подключите папку для просмотра списка файлов. Приложение ограничит просмотр выбранной папкой.</p>
+{% for row in workspace_connection_rows|default([]) if row.provider_id == 'mailru_cloud' %}
+<article class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+    <h3 class="font-medium">{{ row.label }}</h3>
+    <p role="status">{{ 'Доступ к папке проверен при подключении' if row.is_active and row.state == "verified" else ('Сохранено · доступ не проверен' if row.is_active else 'Отключено') }}</p>
+    {% if row.is_active %}
+    <form method="post" action="/app/settings/mailru-cloud-connections/{{ row.id }}/browse">
+        <input type="hidden" name="_csrf" value="{{ yandex_browse_csrf }}">
+        <button class="ui-control">Просмотреть папку</button>
+    </form>
+    {% if workspace_connection_write|default(false) %}
+    <form method="post" action="/app/settings/mailru-cloud-connections/{{ row.id }}/disable">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="ui-control">Отключить</button>
+    </form>
+    {% endif %}
+    {% endif %}
+</article>
+{% endfor %}
+{% if workspace_connection_write|default(false) %}
+<details class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 p-3">
+    <summary>Подключить Облако Mail.ru</summary>
+    <form method="post" action="/app/settings/mailru-cloud-connections/start" class="mt-3 space-y-3">
+        <input type="hidden" name="_csrf" value="{{ yandex_browse_csrf }}">
+        <label class="block text-sm" for="mailru-cloud-account">Адрес электронной почты</label>
+        <input class="ui-control w-full" id="mailru-cloud-account" name="account" type="email"
+               value="{{ mailru_cloud_email|default('') }}" maxlength="254" required>
+        <label class="block text-sm" for="mailru-cloud-password">Пароль приложения</label>
+        <a href="{{ card.provider.source_url }}" target="_blank" rel="noopener noreferrer">Инструкция: как получить пароль приложения</a>
+        <p class="text-sm ui-muted">В разделе «Пароли приложений» выберите «Полный доступ к почте, облаку и календарю». Пароль только для Облака может не подойти. Пароль даёт широкие права, а приложение использует его только для просмотра списка файлов и хранит в зашифрованном виде.</p>
+        <input class="ui-control w-full" id="mailru-cloud-password" name="password" type="password"
+               autocomplete="new-password" maxlength="512" required>
+        <button class="ui-control">Проверить и подключить</button>
+    </form>
+</details>
+{% endif %}

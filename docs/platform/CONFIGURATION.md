@@ -324,8 +324,20 @@ Yandex can cover the disk. The app applies its read-only policy to the selected
 folder. A successful folder check records access at setup time. When the access
 token expires, connect again and disconnect the previous entry. Disconnecting
 deletes the local token; the account holder can revoke the grant in Yandex ID.
-The authorization must start and return to the same application process and
-browser session during its ten-minute lifetime.
+OAuth authorization and folder selection must finish in the same application
+process and browser session within ten minutes of starting OAuth. The access
+token lives in that process until selection, cancellation, failure or expiry.
+A restart requires starting setup again.
+
+Mail.ru Cloud uses the fixed HTTPS authority `webdav.cloud.mail.ru`. Users
+enter their account and an external app password, verify access, then confirm a
+folder. The Settings hint describes the full mail, cloud and calendar password
+option. The connector sends only bounded WebDAV metadata requests. The app
+password is held in process memory during selection (ten minutes maximum), then
+stored encrypted only after confirmation. Disconnecting deletes the local
+credential; the account holder can revoke it in Mail.ru. Both pickers require
+a single application process or routing that keeps the whole setup on one
+process.
 
 ### Registering the Yandex application
 

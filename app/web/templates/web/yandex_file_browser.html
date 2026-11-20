@@ -1,10 +1,13 @@
+{% set mailru = provider|default("yandex_disk") == "mailru_cloud" %}
+{% set cloud_name = "Облака Mail.ru" if mailru else "Яндекс.Диска" %}
+{% set route = "mailru-cloud-connections" if mailru else "yandex-connections" %}
 <!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Папка Яндекс.Диска</title>
+<title>Папка {{ cloud_name }}</title>
 <style>
   :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; background: #f9f8f7; color: #2c2c2b; }
   * { box-sizing: border-box; }
@@ -29,17 +32,17 @@
 </head>
 <body>
 <main>
-  <a href="/app/settings?tab=connections#conn-ws-yandex_disk">← К подключениям</a>
+  <a href="/app/settings?tab=connections#conn-ws-{{ "mailru_cloud" if mailru else "yandex_disk" }}">← К подключениям</a>
   <p class="eyebrow">ЛИЧНОЕ ПОДКЛЮЧЕНИЕ · ТОЛЬКО ЧТЕНИЕ</p>
-  <h1>Папка Яндекс.Диска</h1>
+  <h1>Папка {{ cloud_name }}</h1>
   {% if error %}
   <p role="alert">{{ error }}</p>
   {% else %}
   <p class="muted">Только просмотр названий. Открытие и анализ файлов пока недоступны; запись и удаление отключены.</p>
   <p class="path"><strong>Папка:</strong> {{ page.current_path }}</p>
-  <p class="muted">Список запрашивается у Диска и может меняться между страницами.</p>
+  <p class="muted">Список запрашивается у провайдера и может меняться между страницами.</p>
   {% if parent %}
-  <form method="post" action="/app/settings/yandex-connections/{{ connection_id }}/browse">
+  <form method="post" action="/app/settings/{{ route }}/{{ connection_id }}/browse">
     <input type="hidden" name="_csrf" value="{{ csrf }}">
     <input type="hidden" name="folder" value="{{ parent }}">
     <input type="hidden" name="offset" value="0">
@@ -50,7 +53,7 @@
   <ul aria-label="Содержимое папки">
     {% for item in page.items %}
     <li>{% if item.kind == 'dir' %}
-      <form method="post" action="/app/settings/yandex-connections/{{ connection_id }}/browse">
+      <form method="post" action="/app/settings/{{ route }}/{{ connection_id }}/browse">
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         <input type="hidden" name="folder" value="{{ item.path }}">
         <input type="hidden" name="offset" value="0">
@@ -64,13 +67,13 @@
   {% if page.truncated %}<p role="status">Достигнут предел просмотра списка; продолжение недоступно.</p>{% endif %}
   <nav class="navigation" aria-label="Страницы папки">
     {% if previous_offset is not none %}
-    <form method="post" action="/app/settings/yandex-connections/{{ connection_id }}/browse">
+    <form method="post" action="/app/settings/{{ route }}/{{ connection_id }}/browse">
       <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="folder" value="{{ page.current_path }}"><input type="hidden" name="offset" value="{{ previous_offset }}">
       <button type="submit">Предыдущая страница</button>
     </form>
     {% endif %}
     {% if page.next_offset is not none %}
-    <form method="post" action="/app/settings/yandex-connections/{{ connection_id }}/browse">
+    <form method="post" action="/app/settings/{{ route }}/{{ connection_id }}/browse">
       <input type="hidden" name="_csrf" value="{{ csrf }}"><input type="hidden" name="folder" value="{{ page.current_path }}"><input type="hidden" name="offset" value="{{ page.next_offset }}">
       <button type="submit">Следующая страница</button>
     </form>

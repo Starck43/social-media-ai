@@ -272,11 +272,12 @@ YANDEX_DISK = replace(
 )
 MAILRU_CLOUD = replace(
     MAILRU_CLOUD,
-    description="Подключение папок Облака Mail.ru пока не реализовано.",
+    description="Подключение папки Облака Mail.ru для просмотра списка файлов.",
     category="Облачный диск и документы",
     icon_asset="icons/providers/mailru-cloud.svg",
-    setup_hint="Форма и транспорт пока недоступны.",
-    auth_protocol="WebDAV (планируется)",
+    setup_hint="Войдите с паролем внешнего приложения.",
+    auth_protocol="WebDAV",
+    source_url="https://id.mail.ru/security",
 )
 BITRIX24 = replace(
     BITRIX24,

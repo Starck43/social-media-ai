@@ -92,7 +92,9 @@ def _encode_request(request: httpx.Request) -> tuple[h11.Connection, bytes]:
     return protocol, result
 
 
-async def _exchange(protocol, reader, writer, request: bytes, max_response_bytes: int) -> _Response:
+async def _exchange(
+    protocol, reader, writer, request: bytes, max_response_bytes: int, *, success_status: int = 200
+) -> _Response:
     writer.write(request)
     await writer.drain()
     status = None
@@ -124,7 +126,7 @@ async def _exchange(protocol, reader, writer, request: bytes, max_response_bytes
             # Non-200 bodies are drained, never returned: the reader reports the
             # status alone, and leaving the message unconsumed would not be a
             # bounded single-use exchange.
-            keep_body = status == 200
+            keep_body = status == success_status
             for name, value in event.headers:
                 if name.lower() == b"content-length" and int(value) > max_response_bytes:
                     raise MetadataError("response_too_large")
@@ -161,11 +163,13 @@ class YandexMetadataClient:
         yield await _request_once(protocol, request, self._opener, _MAX_RESPONSE_BYTES)
 
 
-async def _request_once(protocol, request: bytes, opener: Callable, max_response_bytes: int) -> _Response:
+async def _request_once(
+    protocol, request: bytes, opener: Callable, max_response_bytes: int, *, success_status: int = 200
+) -> _Response:
     writer = None
     try:
         reader, writer = await opener()
-        return await _exchange(protocol, reader, writer, request, max_response_bytes)
+        return await _exchange(protocol, reader, writer, request, max_response_bytes, success_status=success_status)
     except (TimeoutError, OSError, ValueError, h11.ProtocolError, NetworkUnavailable):
         raise httpx.HTTPError("provider_unavailable") from None
     finally:

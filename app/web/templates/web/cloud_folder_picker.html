@@ -15,6 +15,8 @@
 {% endmacro %}
 {% if parent is not none %}
     {{ picker_button('На уровень выше', parent) }}
+{% endif %}
+{% if can_confirm %}
     {{ picker_button('Использовать эту папку', folder, 'confirm') }}
 {% endif %}
 {% for item in items %}

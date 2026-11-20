@@ -8,6 +8,7 @@ No share policy is supported in this first slice.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from dataclasses import replace
 
@@ -70,6 +71,7 @@ async def list_owned_folder(
     client: httpx.AsyncClient | YandexMetadataClient | None = None,
     offset: int = 0,
     limit: int = 100,
+    provider: str = "yandex_disk",
 ) -> DiskPage:
     """List one authorized page, re-reading membership, connection and policy.
 
@@ -83,6 +85,11 @@ async def list_owned_folder(
     gated on combined transport and route review. This service does not create,
     update or validate provider credentials.
     """
+    from app.integrations.file_workspace.mailru_webdav import list_mailru_folder
+
+    methods = {"yandex_disk": "oauth_token", "mailru_cloud": "webdav_password"}
+    if provider not in methods:
+        raise ConnectionDenied()
     if client is None:
         client = YandexMetadataClient()
     async with async_session_maker() as session, session.begin():
@@ -91,9 +98,10 @@ async def list_owned_folder(
         if (
             not connection.is_active
             or connection.state not in {"unverified", "verified"}
-            or connection.provider_id != "yandex_disk"
-            or connection.platform != "yandex_disk"
-            or connection.auth_method != "oauth_token"
+            or connection.provider_id != provider
+            or connection.platform != provider
+            or connection.auth_method != methods[provider]
+            or (provider == "mailru_cloud" and connection.state != "verified")
             or connection.schema_version != CATALOG_VERSION
         ):
             raise ConnectionDenied()
@@ -114,7 +122,25 @@ async def list_owned_folder(
             raise ConnectionDenied() from None
         try:
             async with asyncio.timeout(_TOTAL_TIMEOUT):
-                page = await list_folder(client, token=token, folder=folder, policy=policy, offset=offset, limit=limit)
+                if provider == "mailru_cloud":
+                    try:
+                        account, password = json.loads(token)
+                        if not isinstance(account, str) or not isinstance(password, str):
+                            raise ValueError
+                    except (ValueError, TypeError):
+                        raise ConnectionDenied() from None
+                    page = await list_mailru_folder(
+                        account=account,
+                        password=password,
+                        folder=folder,
+                        policy=policy,
+                        offset=offset,
+                        limit=limit,
+                    )
+                else:
+                    page = await list_folder(
+                        client, token=token, folder=folder, policy=policy, offset=offset, limit=limit
+                    )
                 return replace(
                     page, current_path=_disk_path(_components(folder)), root_path=_disk_path(_components(root))
                 )

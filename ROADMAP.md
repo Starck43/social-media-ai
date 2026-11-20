@@ -47,7 +47,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-- [P20-T18](docs/tasks/p20-t18.md) Scenario overview cards from the owner prototype — **READY** · Codex · local owner chat 2026-11-20 · `P2` · `C2`
 
 
 

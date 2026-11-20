@@ -24,7 +24,7 @@
 
 15. [P20-T16](../audit/p20/p20-t16.md) — **DONE 2026-11-20**, redesigned Today, chat, inbox, and tasks from the owner PDF while preserving the sidebar, page navigation, and chat message styling. Accepted `e8656a9874ea6dd1132c876aa5b9276763e5a03a`.
 16. [P20-T17](../audit/p20/p20-t17.md) — **DONE 2026-11-20**, shared Work controls and refinements to Today, chat, inbox, and tasks. Accepted `be851078e33aada3adfdfaebe1155c827e98fbd2`.
-17. [P20-T18](../tasks/p20-t18.md) — Scenario overview cards from the owner prototype.
+17. [P20-T18](../audit/p20/p20-t18.md) — **DONE 2026-11-20**, responsive scenario cards, filtered links to related tasks, and source coverage in task run details. Accepted `233d9f98291342b787f3c101ff814de13f0829cf`.
 
 ## Waves
 

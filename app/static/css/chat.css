@@ -183,6 +183,8 @@
 }
 .chat-header-hint { color:var(--color-text-secondary); font-size:.75rem; }
 .chat-header-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.chat-header-button { min-height:36px; padding:6px 14px; border-radius:999px; font-size:.8125rem; font-weight:600; }
+.chat-model-line { color:var(--color-text-secondary); }
 .chat-boundary-badge { display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:999px; font:600 .75rem var(--cn-mono); }
 .chat-boundary-badge .ui-icon { width:13px; height:13px; }
 .chat-boundary-badge-cloud { color:var(--ui-accent); background:var(--ui-accent-soft); }
@@ -429,18 +431,17 @@ html.dark .chat-boundary-badge-warning { color:#fde68a; background:#451a03; }
     width: 44px;
     min-height: 44px;
     padding: 0;
-    border: 1px solid var(--color-border-strong);
+    border: 0;
     border-radius: var(--cn-radius-sm);
-    background: var(--color-surface);
+    background: transparent;
     color: var(--color-text-secondary);
     cursor: pointer;
-    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+    transition: background-color 150ms ease, color 150ms ease;
 }
 
-.ui-shell .chat-panel-tab:is(:hover, [aria-expanded="true"]) {
-    border-color: var(--ui-accent);
-    background: var(--ui-accent-soft);
-    color: var(--ui-accent);
+.ui-shell .chat-panel-tab:hover {
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
 }
 
 .ui-shell .chat-panel-toggle-icon { width: 20px; height: 20px; }

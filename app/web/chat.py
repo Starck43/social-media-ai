@@ -269,6 +269,7 @@ async def chat_page(
             scoped_context=scoped_context,
             active_boundary=active_boundary,
             connector_search=connector_search,
+            chat_model={"label": "", "is_auto": True},
         )
 
     connector_search = await _company_connector_search_options(user.id)
@@ -315,7 +316,15 @@ async def chat_page(
         scoped_context=scoped_context,
         active_boundary=active_boundary,
         connector_search=connector_search,
+        chat_model=_chat_model_context(request, policy_dict),
     )
+
+
+def _chat_model_context(request: Request, policy: dict) -> dict:
+    """Model badge for the chat heading: explicit choice or the automatic default."""
+    tenant = getattr(getattr(request, "state", None), "tenant", None)
+    selected = getattr(tenant, "agent_model_id", None) if tenant is not None else None
+    return {"label": str(policy.get("model_name") or ""), "is_auto": selected is None}
 
 
 async def _company_connector_search_options(owner_id: int) -> dict:

@@ -22,6 +22,10 @@
 {% endblock %}
 
 {% block page_heading %}Чат с агентом{% endblock %}
+{% block page_context %}
+{% set cm = chat_model if chat_model is defined and chat_model else none %}
+{{ tenant.name if tenant else 'Нет пространства' }} · <span class="chat-model-line" data-chat-model>{% if cm and cm.label %}Модель: {% if cm.is_auto %}автовыбор · {% endif %}{{ cm.label }}{% else %}Модель не выбрана{% endif %}</span>
+{% endblock %}
 {% block content %}
 <div class="chat-page flex flex-col" x-data="chatApp()">
     {# The shell page heading owns the title; only the workspace controls move into
@@ -30,13 +34,15 @@
         <div class="chat-header-actions" data-chat-header-actions>
             <span
                 class="chat-boundary-badge"
+                x-show="activeBoundary() !== 'cloud'"
+                x-cloak
                 :class="activeBoundary() === 'local_only'
                     ? 'chat-boundary-badge-warning'
-                    : (activeBoundary() === 'company' ? 'chat-boundary-badge-company' : 'chat-boundary-badge-cloud')"
+                    : 'chat-boundary-badge-company'"
                 data-chat-boundary-badge
                 :data-boundary="activeBoundary()"
             >{{ icon('intent') }}<span x-text="boundaryBadgeLabel()">Контур: {{ active_boundary | default(scoped_context.boundary if scoped_context else 'cloud') }}</span></span>
-            {% if messages %}<button type="button" class="ui-button ui-button-quiet" x-on:click="requestConfirmation('clear')">Очистить историю</button>{% endif %}
+            {% if messages %}<button type="button" class="ui-button chat-header-button" x-on:click="requestConfirmation('clear')">Очистить историю</button>{% endif %}
             <button type="button" class="chat-panel-tab" x-ref="panelToggle" @click="toggleWorkspacePanel()"
                     aria-controls="chat-workspace-panel" :aria-expanded="panelOpen"
                     :aria-label="panelOpen ? 'Свернуть рабочий контекст' : 'Развернуть рабочий контекст'"

@@ -105,7 +105,12 @@
                 if (chipTitleEl) chipTitleEl.textContent = title;
             }
             if (boundaryBadge) {
-                boundaryBadge.textContent = boundary;
+                // Routing jargon stays out of the UI: only a restricted route needs a label.
+                const label = boundary === 'local_only'
+                    ? 'Локальный контур'
+                    : (boundary === 'company' ? 'Корпоративный контур' : '');
+                boundaryBadge.hidden = !label;
+                boundaryBadge.textContent = label;
                 boundaryBadge.setAttribute('data-boundary', boundary);
             }
             const blocked = Boolean(!ctx?.cleared && boundary !== 'cloud');

@@ -185,13 +185,6 @@
 .chat-header-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .chat-header-button { min-height:36px; padding:6px 14px; border-radius:999px; font-size:.8125rem; font-weight:600; }
 .chat-model-line { color:var(--color-text-secondary); }
-.chat-boundary-badge { display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:999px; font:600 .75rem var(--cn-mono); }
-.chat-boundary-badge .ui-icon { width:13px; height:13px; }
-.chat-boundary-badge-cloud { color:var(--ui-accent); background:var(--ui-accent-soft); }
-.chat-boundary-badge-company { color:#3730a3; background:#eef2ff; }
-.chat-boundary-badge-warning { color:#92400e; background:#fef3c7; }
-html.dark .chat-boundary-badge-company { color:#c7d2fe; background:#312e81; }
-html.dark .chat-boundary-badge-warning { color:#fde68a; background:#451a03; }
 .chat-header-hint { margin:6px 4px 0; }
 /* Open layout: no card background, no frame — messages breathe on the page. */
 .chat-window { display:flex; flex-direction:column; min-height:0; border:0; border-radius:0; background:transparent; overflow:visible; }

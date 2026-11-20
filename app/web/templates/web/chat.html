@@ -32,16 +32,6 @@
        its action row, so there is one heading text and one line of controls. #}
     <template x-teleport="#page-actions">
         <div class="chat-header-actions" data-chat-header-actions>
-            <span
-                class="chat-boundary-badge"
-                x-show="activeBoundary() !== 'cloud'"
-                x-cloak
-                :class="activeBoundary() === 'local_only'
-                    ? 'chat-boundary-badge-warning'
-                    : 'chat-boundary-badge-company'"
-                data-chat-boundary-badge
-                :data-boundary="activeBoundary()"
-            >{{ icon('intent') }}<span x-text="boundaryBadgeLabel()">Контур: {{ active_boundary | default(scoped_context.boundary if scoped_context else 'cloud') }}</span></span>
             {% if messages %}<button type="button" class="ui-button chat-header-button" x-on:click="requestConfirmation('clear')">Очистить историю</button>{% endif %}
             <button type="button" class="chat-panel-tab" x-ref="panelToggle" @click="toggleWorkspacePanel()"
                     aria-controls="chat-workspace-panel" :aria-expanded="panelOpen"
@@ -83,12 +73,8 @@
                     <span class="font-mono text-[11px] text-slate-500 dark:text-slate-400">({{ scoped_context.ref }})</span>
                     {% endif %}
                     {% if scoped_context.is_local_only %}
-                    <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200" data-local-only-badge>
-                        local_only: отправка в чат заблокирована
-                    </span>
-                    {% else %}
-                    <span class="px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                        контур: {{ scoped_context.boundary }}
+                    <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200" data-local-only-badge>
+                        Локальный контур: отправка заблокирована
                     </span>
                     {% endif %}
                 </div>

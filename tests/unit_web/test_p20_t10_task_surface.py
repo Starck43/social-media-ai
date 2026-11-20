@@ -756,3 +756,45 @@ async def test_incomplete_google_range_is_list_only_not_month_grid(monkeypatch):
     assert event['status'] == 'available' and event['range_complete'] is False
     assert event['grid_eligible'] is False and event['items'][0]['title'] == 'Partial'
     assert not event.get('inventory_only', False)
+
+@pytest.mark.asyncio
+async def test_calendar_route_mixed_google_transport_falls_back_to_labelled_inventory(task_surface_client, monkeypatch):
+    """Exercise HTTP route, range adapter and fallback with no provider I/O."""
+    from fastapi.responses import JSONResponse
+    from app.integrations.calendar.google import GoogleCalendar
+    from app.services.calendar.service import CalendarService
+    from app.services.planner.tasks import planner_service
+
+    class ChoiceSession(FakeSession):
+        async def scalar(self, _query):
+            return NS(connection_id=7)
+
+    monkeypatch.setattr(surface, 'async_session_maker', ChoiceSession)
+    monkeypatch.setattr(surface, 'has_permission', FakePermission({'plannertask'}))
+    monkeypatch.setattr(surface, 'get_current_user', lambda: NS(id=8))
+    monkeypatch.setattr(planner_service, '_actor', AsyncMock(return_value=(42, 8, 'member')))
+    monkeypatch.setattr(planner_service, 'calendar_range', AsyncMock(return_value={'items': [], 'next_before_id': None}))
+    adapter = GoogleCalendar('synthetic-token', 'primary')
+    adapter._request = AsyncMock(return_value={'items': [
+        {'summary': 'Timed event', 'start': {'dateTime': '2026-03-02T10:00:00Z'}},
+        {'summary': 'All day', 'start': {'date': '2026-03-08'}},
+    ]})
+    svc = CalendarService()
+    monkeypatch.setattr(svc, '_connection', AsyncMock(return_value=NS(id=7, is_active=True, state='verified', provider_id='google_calendar')))
+    monkeypatch.setattr(svc, '_adapter', AsyncMock(return_value=adapter))
+    inventory = [
+        {'id': 1, 'source': {'deleted': False, 'payload': {'summary': 'Timed event', 'start': {'dateTime': '2026-03-02T10:00:00Z'}}}},
+        {'id': 2, 'source': {'deleted': False, 'payload': {'summary': 'All day', 'start': {'date': '2026-03-08'}}}},
+    ]
+    monkeypatch.setattr(svc, 'events', AsyncMock(return_value={'state': 'available', 'items': inventory, 'next_before_id': None}))
+    monkeypatch.setattr(surface, 'calendar_service', svc)
+    monkeypatch.setattr(task_surface_client.routes, 'render', lambda _request, _template, **context: JSONResponse(context['providers'][1]))
+
+    response = await task_surface_client.client.get('/task-hub/calendar?timezone=UTC&year=2026&month=3')
+    assert response.status_code == 200
+    provider = response.json()
+    assert provider['status'] == 'available' and provider['inventory_only'] is True
+    assert provider['grid_eligible'] is False and provider['range_complete'] is False
+    assert [item['title'] for item in provider['items']] == ['Timed event', 'All day']
+    svc.events.assert_awaited_once()
+    adapter._request.assert_awaited_once()

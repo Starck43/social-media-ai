@@ -78,7 +78,7 @@ async def test_range_skips_cancelled_occurrence():
 @pytest.mark.parametrize("start_value", [
     {"dateTime": "2026-02-28T23:59:59Z"}, {"dateTime": "2026-04-01T00:00:00Z"},
     {"dateTime": "2026-03-08T02:30:00"}, {"dateTime": "not-a-date"},
-    {"dateTime": "2026-03-01 00:00:00+00:00"}, {"date": "2026-03-08"},
+    {"dateTime": "2026-03-01 00:00:00+00:00"}, {"date": "2026-02-30"},
     {"dateTime": "2026-03-01T00:00:00Z", "date": "2026-03-01"},
 ])
 async def test_google_rejects_unverified_event_instead_of_partial_success(start_value):
@@ -106,3 +106,16 @@ async def test_google_overlap_from_previous_month_is_not_provider_failure():
         {'summary': 'Starts in month', 'start': {'dateTime': '2026-03-01T00:00:00Z'}}]})
     result = await adapter.range_events(start=START, end=END)
     assert result == {'items': [{'title': 'Starts in month', 'when': '2026-03-01T00:00:00Z'}], 'complete': True}
+
+
+@pytest.mark.asyncio
+async def test_mixed_all_day_range_requests_inventory_not_partial_or_error(monkeypatch):
+    adapter=GoogleCalendar('fake','primary')
+    adapter._request=AsyncMock(return_value={'items':[
+        {'summary':'Timed','start':{'dateTime':'2026-03-02T10:00:00Z'}},
+        {'summary':'All day','start':{'date':'2026-03-08'}}]})
+    svc=CalendarService()
+    monkeypatch.setattr(planner_service, '_actor', AsyncMock(return_value=(42,8,'member')))
+    monkeypatch.setattr(svc,'_connection',AsyncMock(return_value=NS(id=7,is_active=True,state='verified',provider_id='google_calendar')))
+    monkeypatch.setattr(svc,'_adapter',AsyncMock(return_value=adapter))
+    assert await svc.events_range(session=Session(),start=START,end=END) == {'state':'range_unavailable','items':None,'complete':False}

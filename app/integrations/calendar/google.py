@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from urllib.parse import quote
 
 from app.integrations.calendar.transport import CalendarTransport
@@ -115,9 +115,21 @@ class GoogleCalendar:
                 # an inferred UTC midnight. Fail the whole range rather than
                 # claiming an incomplete month as successful.
                 start_value = value["start"].get("dateTime")
+                all_day = value["start"].get("date")
                 title = value.get("summary") or "Событие"
+                if all_day is not None and start_value is None and isinstance(title, str):
+                    try:
+                        if not isinstance(all_day, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", all_day):
+                            raise ValueError
+                        date.fromisoformat(all_day)
+                    except ValueError:
+                        raise CalendarError("invalid_calendar_response") from None
+                    # Civil dates belong to the calendar's own timezone, which
+                    # this connection has not verified. Request the explicitly
+                    # labelled inventory instead of hiding the entire source.
+                    raise CalendarError("calendar_range_unavailable")
                 if (not isinstance(start_value, str) or not isinstance(title, str)
-                    or value["start"].get("date") is not None):
+                    or all_day is not None):
                     raise CalendarError("invalid_calendar_response")
                 try:
                     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})", start_value):

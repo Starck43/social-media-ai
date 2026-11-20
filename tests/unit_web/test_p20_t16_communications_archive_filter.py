@@ -104,6 +104,8 @@ async def test_archive_filter_and_unfiltered_deep_links_select_detail_and_triage
 ):
     result = await routes.communications_page(
         communications_doubles.request(params),
+        boundary="cloud", tab="inbox", channel=None, triage_category=None,
+        contact_id=None, is_read=None, q=None, before_id=None,
         thread_id=thread_id,
         is_archived=archive_value if params else None,
     )
@@ -122,6 +124,8 @@ async def test_explicit_archive_filter_cannot_select_nonarchived_deep_link(
 ):
     result = await routes.communications_page(
         communications_doubles.request({"is_archived": "true"}),
+        boundary="cloud", tab="inbox", channel=None, triage_category=None,
+        contact_id=None, is_read=None, q=None, before_id=None,
         thread_id=101,
         is_archived=True,
     )

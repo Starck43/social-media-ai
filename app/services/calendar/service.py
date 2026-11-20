@@ -500,8 +500,9 @@ class CalendarService:
         except ReauthRequired:
             conn.state = "reauth"
             return {"state": "reauth", "items": None, "complete": False}
-        except CalendarError:
-            return {"state": "source_unavailable", "items": None, "complete": False}
+        except CalendarError as exc:
+            state = "range_unavailable" if exc.code == "calendar_range_unavailable" else "source_unavailable"
+            return {"state": state, "items": None, "complete": False}
 
     @staticmethod
     def _writable(conn, identity):

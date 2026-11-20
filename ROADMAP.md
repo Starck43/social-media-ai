@@ -57,6 +57,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: contract ownership and gated remainder after accepted increment and S1/S2 hardening (S3 version freshness, S4 measurement harness, P8-T34 byte authority, local-only execution with P18, mutations per D21) — **TODO** (gate: owner activation / P8-T34 resume / consumer contract request; not claimable before it; S1/S2 delivered 2026-11-19, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · unassigned · [residual slices](docs/tasks/p12-t12.md#residual-slices-unblock-or-owner-prioritize-first) · [increment audit](docs/audit/p12/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot and Settings OAuth — **IN_PROGRESS** · Codex · `codex resume 01a1f7d1-8006-75a3-ac37-05c3d89df357` · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`
+- [P12-T19](docs/tasks/p12-t19.md) Cloud disk connections UX: provider folder picker after Yandex consent, clarity fixes, Mail.ru Cloud WebDAV (owner-gated) — **TODO** · unassigned · local owner chat 2026-11-20 · `P2` · `C4`
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 

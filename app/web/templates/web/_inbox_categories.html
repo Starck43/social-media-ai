@@ -1,0 +1,6 @@
+    <nav class="work-triage-tabs" aria-label="Категории входящих">
+        {% for value, label in [('', 'Все'), ('needs_reply', 'Нужен ответ'), ('fyi', 'К сведению'), ('can_wait', 'Подождёт'), ('uncertain', 'Не уверен')] %}
+        <a href="/app/communications?tab=inbox&amp;boundary={{ boundary | default('cloud') | urlencode }}&amp;q={{ q | default('') | urlencode }}&amp;channel={{ channel_filter | default('') | urlencode }}&amp;triage_category={{ value }}{% if contact_id_filter %}&amp;contact_id={{ contact_id_filter }}{% endif %}{% if is_read_filter is not none %}&amp;is_read={{ 'true' if is_read_filter else 'false' }}{% endif %}{% if is_archived_filter %}&amp;is_archived=true{% endif %}"
+           {% if (triage_category_filter | default('')) == value %}aria-current="page"{% endif %}>{{ label }}</a>
+        {% endfor %}
+    </nav>

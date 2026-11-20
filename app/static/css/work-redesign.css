@@ -140,3 +140,9 @@
     body:has(.work-mobile-nav) .shell-content { margin-bottom: calc(140px + env(safe-area-inset-bottom)); }
     body:has(.work-mobile-nav) .shell-attention-popup { bottom: calc(136px + env(safe-area-inset-bottom)); }
 }
+
+/* Inbox categories belong to the thread list as in the supplied prototype. */
+[data-inbox-thread-list] { padding: 0; background: transparent; border: 0; box-shadow: none; }
+[data-inbox-thread-list] .work-triage-tabs { margin-bottom: .75rem; }
+[data-inbox-thread-list] > h2 { font: 600 .75rem var(--cn-mono); color:var(--color-text-secondary); }
+[data-inbox-thread-item] { background:var(--color-surface); }

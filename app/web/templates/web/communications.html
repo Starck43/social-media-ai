@@ -33,14 +33,6 @@
            data-tab="contacts_merge">Сверка контактов</a>
     </nav>
 
-    {% if (active_tab | default('inbox')) == 'inbox' %}
-    <nav class="work-triage-tabs" aria-label="Категории входящих">
-        {% for value, label in [('', 'Все'), ('needs_reply', 'Нужен ответ'), ('fyi', 'К сведению'), ('can_wait', 'Подождёт'), ('uncertain', 'Не уверен')] %}
-        <a href="/app/communications?tab=inbox&amp;boundary={{ boundary | default('cloud') | urlencode }}&amp;q={{ q | default('') | urlencode }}&amp;channel={{ channel_filter | default('') | urlencode }}&amp;triage_category={{ value }}{% if contact_id_filter %}&amp;contact_id={{ contact_id_filter }}{% endif %}{% if is_read_filter is not none %}&amp;is_read={{ 'true' if is_read_filter else 'false' }}{% endif %}{% if is_archived_filter %}&amp;is_archived=true{% endif %}"
-           {% if (triage_category_filter | default('')) == value %}aria-current="page"{% endif %}>{{ label }}</a>
-        {% endfor %}
-    </nav>
-    {% endif %}
     <details class="ui-card space-y-4" data-inbox-search-panel><summary class="font-semibold cursor-pointer">Поиск и фильтры</summary>
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
@@ -107,12 +99,14 @@
     </section>
     {% endif %}
 
+    {% if (active_tab | default('inbox')) == 'inbox' and not inbox_threads %}{% include 'web/_inbox_categories.html' %}{% endif %}
     {% if inbox_load_error %}<p role="alert" class="ui-card">Не удалось загрузить входящие. Повторите попытку.</p>{% endif %}
     {% if triage_load_error %}<p role="status" class="ui-card">Классификация временно недоступна. Список показан без фильтра категории.</p>{% endif %}
     {% if (active_tab | default('inbox')) == 'inbox' and not inbox_load_error and not inbox_threads %}<p role="status" class="ui-card">На этой странице входящих цепочек для выбранных фильтров нет.{% if next_before_id %} Проверьте следующие страницы.{% endif %}</p>{% endif %}
     {% if inbox_threads %}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" data-inbox-workspace>
         <section class="ui-card space-y-3" data-inbox-thread-list>
+            {% if (active_tab | default('inbox')) == 'inbox' %}{% include 'web/_inbox_categories.html' %}{% endif %}
             <h2 class="text-sm font-semibold">Цепочки сообщений</h2>
             <div class="space-y-2">
                 {% for th in inbox_threads %}

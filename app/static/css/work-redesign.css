@@ -1,0 +1,302 @@
+/* P20-T16 work surfaces: layout-only treatment for Today, Inbox and Tasks.
+ * Keep the existing slate/cyan tokens and leave the global shell + chat feed alone. */
+
+:where(body[data-shell-section="dashboard"], body[data-shell-section="communications"], body[data-shell-section="tasks"]) {
+    --work-card-radius: 16px;
+    --work-control-radius: 999px;
+    --work-gap: clamp(16px, 2vw, 24px);
+}
+
+:where(body[data-shell-section="dashboard"], body[data-shell-section="communications"], body[data-shell-section="tasks"]) .ui-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--work-card-radius);
+    background: var(--color-surface);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 12px 28px rgba(15, 23, 42, .04);
+}
+
+:where(body[data-shell-section="dashboard"], body[data-shell-section="communications"], body[data-shell-section="tasks"]) .ui-control {
+    border-radius: var(--work-control-radius);
+    border-color: var(--color-border-strong);
+    min-height: 40px;
+}
+
+:where(body[data-shell-section="dashboard"], body[data-shell-section="communications"], body[data-shell-section="tasks"]) :is(a, button, input, select, textarea):focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--ui-accent) 30%, transparent);
+    outline-offset: 2px;
+}
+
+/* Today: turn the projection into a calm bento board. */
+body[data-shell-section="dashboard"] .ui-home {
+    display: grid;
+    gap: var(--work-gap);
+}
+
+body[data-shell-section="dashboard"] [data-home-chat-primary] {
+    margin: 0;
+    padding: clamp(20px, 3vw, 32px);
+    border: 1px solid var(--ui-accent);
+    border-radius: var(--work-card-radius);
+    background: var(--ui-accent-soft);
+}
+
+body[data-shell-section="dashboard"] [data-home-chat-primary] a {
+    border-radius: var(--work-control-radius);
+    background: var(--ui-accent);
+    color: var(--color-surface);
+}
+
+body[data-shell-section="dashboard"] [data-today-toolbar] {
+    margin: 0;
+    border: 0;
+    border-radius: var(--work-control-radius);
+    background: var(--color-surface-secondary);
+    box-shadow: inset 0 0 0 1px var(--color-border);
+}
+
+body[data-shell-section="dashboard"] [data-today-scope-switch] a,
+body[data-shell-section="dashboard"] [data-today-toggle-dismissed] {
+    border-radius: var(--work-control-radius);
+}
+
+body[data-shell-section="dashboard"] [data-today-section] {
+    padding: clamp(18px, 2.5vw, 28px);
+}
+
+body[data-shell-section="dashboard"] [data-today-workspace] {
+    display: grid;
+    gap: var(--work-gap);
+}
+
+@media (min-width: 980px) {
+    body[data-shell-section="dashboard"] [data-today-workspace] {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: start;
+    }
+
+    body[data-shell-section="dashboard"] [data-today-toolbar],
+    body[data-shell-section="dashboard"] [data-start-page-fallback] {
+        grid-column: 1 / -1;
+    }
+}
+
+body[data-shell-section="dashboard"] [data-today-item] {
+    min-height: 64px;
+    align-items: center;
+    border-color: var(--color-border);
+}
+
+body[data-shell-section="dashboard"] [data-today-item] > div:last-child {
+    margin-left: auto;
+}
+
+body[data-shell-section="dashboard"] [data-home-pipeline] {
+    margin: 0;
+    padding: clamp(18px, 2.5vw, 28px);
+}
+
+body[data-shell-section="dashboard"] .ui-home-grid {
+    gap: var(--work-gap);
+}
+
+body[data-shell-section="dashboard"] [data-home-results],
+body[data-shell-section="dashboard"] [data-home-tasks] {
+    padding: clamp(18px, 2.5vw, 28px);
+}
+
+body[data-shell-section="dashboard"] .ui-home-result {
+    border-color: var(--color-border);
+    border-radius: 12px;
+    background: var(--color-surface-secondary);
+}
+
+body[data-shell-section="dashboard"] .ui-home-result:hover {
+    border-color: var(--ui-accent);
+    background: var(--ui-accent-soft);
+}
+
+/* Unified inbox: filters and the list/detail split read as one workspace. */
+body[data-shell-section="communications"] .shell-content > .space-y-6 {
+    display: grid;
+    gap: var(--work-gap);
+}
+
+body[data-shell-section="communications"] [data-inbox-tabs] {
+    order: -2;
+    padding: 4px;
+    border: 0;
+    border-radius: var(--work-control-radius);
+    background: var(--color-surface-secondary);
+}
+
+body[data-shell-section="communications"] [data-inbox-tabs] a {
+    border: 0;
+    border-radius: var(--work-control-radius);
+    background: transparent;
+}
+
+body[data-shell-section="communications"] [data-inbox-tabs] a[aria-current="page"],
+body[data-shell-section="communications"] [data-inbox-tabs] a:hover {
+    background: var(--color-surface);
+    color: var(--ui-accent);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .10);
+}
+
+body[data-shell-section="communications"] [data-inbox-search-panel] {
+    margin: 0;
+    padding: clamp(18px, 2.5vw, 28px);
+}
+
+body[data-shell-section="communications"] [data-inbox-filter-form] {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) repeat(2, minmax(150px, .35fr)) auto;
+    align-items: end;
+}
+
+body[data-shell-section="communications"] [data-inbox-filter-form] > div:first-child {
+    min-width: 0;
+}
+
+body[data-shell-section="communications"] [data-inbox-workspace] {
+    display: grid;
+    grid-template-columns: minmax(260px, .78fr) minmax(0, 1.45fr);
+    gap: var(--work-gap);
+}
+
+body[data-shell-section="communications"] [data-inbox-thread-list],
+body[data-shell-section="communications"] [data-inbox-thread-detail] {
+    min-width: 0;
+    padding: clamp(18px, 2.5vw, 28px);
+}
+
+body[data-shell-section="communications"] [data-inbox-thread-item] {
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: var(--color-surface-secondary);
+    transition: border-color .15s ease, background .15s ease;
+}
+
+body[data-shell-section="communications"] [data-inbox-thread-item]:hover,
+body[data-shell-section="communications"] [data-inbox-thread-item]:has(a[aria-current]) {
+    border-color: var(--ui-accent);
+    background: var(--ui-accent-soft);
+}
+
+body[data-shell-section="communications"] [data-inbox-thread-detail] {
+    min-height: 360px;
+}
+
+body[data-shell-section="communications"] [data-inbox-thread-detail] [data-unified-message] {
+    border: 0;
+    border-radius: 12px;
+    background: var(--color-surface-secondary);
+}
+
+body[data-shell-section="communications"] [data-thread-triage-panel],
+body[data-shell-section="communications"] [data-triage-proposal] {
+    border-color: var(--color-border);
+    border-radius: 12px;
+    background: var(--color-surface-secondary);
+}
+
+@media (max-width: 899px) {
+    body[data-shell-section="communications"] [data-inbox-filter-form],
+    body[data-shell-section="communications"] [data-inbox-workspace] {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Tasks: the existing operational tables/forms become a task hub without
+ * changing routes, permissions, forms, or external-write behavior. */
+body[data-shell-section="tasks"] .shell-content > :is(.planner-page, [x-data="tasksPage()"], .space-y-6) {
+    display: grid;
+    gap: var(--work-gap);
+}
+
+body[data-shell-section="tasks"] .shell-content > :is(.planner-page, [x-data="tasksPage()"], .space-y-6) > .flex.flex-wrap,
+body[data-shell-section="tasks"] .shell-content > :is(.planner-page, [x-data="tasksPage()"], .space-y-6) > nav,
+body[data-shell-section="tasks"] [aria-label="Разделы задач"] {
+    margin: 0;
+}
+
+body[data-shell-section="tasks"] [aria-label="Разделы задач"] {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    border-radius: var(--work-control-radius);
+    background: var(--color-surface-secondary);
+}
+
+body[data-shell-section="tasks"] [aria-label="Разделы задач"] a {
+    justify-content: center;
+    border: 0;
+    border-radius: var(--work-control-radius);
+    background: transparent;
+}
+
+body[data-shell-section="tasks"] [aria-label="Разделы задач"] a[aria-current="page"],
+body[data-shell-section="tasks"] [aria-label="Разделы задач"] a:hover {
+    background: var(--color-surface);
+    color: var(--ui-accent);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, .10);
+}
+
+body[data-shell-section="tasks"] .planner-page > section,
+body[data-shell-section="tasks"] [x-data="tasksPage()"] > .ui-card,
+body[data-shell-section="tasks"] [x-data="tasksPage()"] > .overflow-x-auto,
+body[data-shell-section="tasks"] .planner-page > section.ui-card {
+    padding: clamp(18px, 2.5vw, 28px);
+}
+
+body[data-shell-section="tasks"] .planner-page > section[aria-label="Задачи"] {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+body[data-shell-section="tasks"] .planner-page > section[aria-label="Задачи"] > .ui-card {
+    min-height: 170px;
+}
+
+body[data-shell-section="tasks"] [x-data="tasksPage()"] > .overflow-x-auto {
+    overflow-x: auto;
+}
+
+body[data-shell-section="tasks"] [x-data="tasksPage()"] table {
+    min-width: 880px;
+}
+
+body[data-shell-section="tasks"] [x-data="tasksPage()"] tbody tr:hover {
+    background: var(--color-surface-secondary);
+}
+
+body[data-shell-section="tasks"] .planner-page article {
+    padding: 16px 0 0;
+}
+
+body[data-shell-section="tasks"] .planner-page article h3 {
+    font-size: 1.05rem;
+}
+
+body[data-shell-section="tasks"] .planner-page article + article {
+    margin-top: 8px;
+}
+
+body[data-shell-section="tasks"] .planner-page .ui-control,
+body[data-shell-section="tasks"] [x-data="tasksPage()"] .ui-control {
+    min-height: 40px;
+}
+
+@media (max-width: 639px) {
+    body[data-shell-section="tasks"] [aria-label="Разделы задач"] {
+        grid-template-columns: 1fr;
+    }
+
+    body[data-shell-section="tasks"] [data-today-item] > div:last-child {
+        width: 100%;
+        margin-left: 0;
+    }
+}
+
+/* Keep the chat feed untouched: no selectors target .chat-message/.chat-window. */

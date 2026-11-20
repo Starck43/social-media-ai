@@ -2,7 +2,7 @@
 {% extends "web/base.html" %}
 {% block title %}Задачи — AI Monitor{% endblock %}
 {% block page_heading %}Задачи{% endblock %}
-{% block extra_head %}<link rel="stylesheet" href="{{ static_v('css/task-run-progress.css') }}">{% endblock %}
+{% block extra_head %}<link rel="stylesheet" href="{{ static_v('css/task-run-progress.css') }}"><link rel="stylesheet" href="{{ static_v('css/work-redesign.css') }}">{% endblock %}
 {% block content %}
 <div x-data="tasksPage()">
     {% include "web/_task_tabs.html" %}

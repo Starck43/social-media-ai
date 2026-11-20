@@ -3,6 +3,7 @@
 {% block page_heading %}Планировщик{% endblock %}
 {% block extra_head %}
 {{ super() }}
+<link rel="stylesheet" href="{{ static_v('css/work-redesign.css') }}">
 <style>
     /* The shared ui-control minimum is 40px; planner forms use touch-sized targets. */
     .planner-page .ui-control { min-height: 44px; }

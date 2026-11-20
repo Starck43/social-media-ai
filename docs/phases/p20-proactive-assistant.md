@@ -22,6 +22,8 @@
 
 14. ~~P20-T14 — console-direction web shell restyle.~~ **CLOSED 2026-11-19 without audit** (owner decision; integrated in merge `cab5516c`) — [note](../audit/p20/p20-t14.md).
 
+15. [P20-T16](../tasks/p20-t16.md) — Work section redesign from owner PDF, preserving existing behavior and theme tokens.
+
 ## Waves
 
 | Wave | Tasks | Needs |

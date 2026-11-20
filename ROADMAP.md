@@ -47,6 +47,8 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
+- [P20-T16](docs/tasks/p20-t16.md) Work section redesign from owner PDF — **IN_PROGRESS** · notion-agent · [request](https://app.notion.com/chat?t=413d351bbdd980a2baf800a9221246d0) · `P2` · `C5`
+
 
 
 

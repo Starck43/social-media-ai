@@ -138,8 +138,14 @@
         </section>
     </div>
 
+    <p x-show="workspaceTab !== 'context' && panelLoading" x-cloak role="status" class="chat-panel-hint">Загружаю рабочий контекст…</p>
+    <div x-show="workspaceTab !== 'context' && panelError" x-cloak role="alert" class="chat-panel-hint" data-chat-panel-error>
+        <span x-text="panelError"></span>
+        <button type="button" @click="loadWorkspacePanel()" :disabled="panelLoading">Повторить</button>
+    </div>
+
     <!-- Tab 2: Ждут решения -->
-    <div x-show="workspaceTab === 'decisions'" x-cloak role="tabpanel" data-workspace-tabpanel="decisions">
+    <div x-show="workspaceTab === 'decisions' && !panelLoading && !panelError" x-cloak role="tabpanel" data-workspace-tabpanel="decisions">
         <section aria-labelledby="chat-decisions-title">
             <div class="flex items-center justify-between gap-2">
                 <h3 id="chat-decisions-title">Ждут решения</h3>
@@ -164,7 +170,7 @@
     </div>
 
     <!-- Tab 3: В работе -->
-    <div x-show="workspaceTab === 'runs'" x-cloak role="tabpanel" data-workspace-tabpanel="runs">
+    <div x-show="workspaceTab === 'runs' && !panelLoading && !panelError" x-cloak role="tabpanel" data-workspace-tabpanel="runs">
         <section aria-labelledby="chat-runs-title">
             <div class="flex items-center justify-between gap-2">
                 <h3 id="chat-runs-title">В работе</h3>
@@ -196,7 +202,7 @@
     </div>
 
     <!-- Tab 4: Материалы -->
-    <div x-show="workspaceTab === 'materials'" x-cloak role="tabpanel" data-workspace-tabpanel="materials">
+    <div x-show="workspaceTab === 'materials' && !panelLoading && !panelError" x-cloak role="tabpanel" data-workspace-tabpanel="materials">
         <section aria-labelledby="chat-materials-title">
             <h3 id="chat-materials-title">Материалы и источники</h3>
             <template x-if="evidenceContext">

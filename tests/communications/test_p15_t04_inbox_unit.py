@@ -128,7 +128,8 @@ class _FakeInboxSession:
         if entity is Contact:
             rows = [c for c in self.contacts if c.tenant_id == tenant_id]
             if "id" in eq and eq["id"] is not None:
-                rows = [c for c in rows if c.id == int(eq["id"])]
+                ids = eq["id"] if isinstance(eq["id"], list) else [eq["id"]]
+                rows = [c for c in rows if c.id in {int(value) for value in ids}]
             return _FakeExecuteResult(rows)
 
         if entity is UnifiedMessage:

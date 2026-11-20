@@ -1,6 +1,6 @@
 {% extends "web/base.html" %}
 {% from "web/_macros.html" import incomplete_analysis_badge, empty_state, icon with context %}
-{% block title %}Обзор — AI Assistant{% endblock %}
+{% block title %}Сегодня — AI Assistant{% endblock %}
 {% block extra_head %}
 <style>
     .ui-home { width: 100%; max-width: none; margin-inline: auto; }
@@ -35,13 +35,54 @@
        its inline font-size/line-height/font-weight stay authoritative. */
     .ui-home-meta { font-family: var(--cn-mono); font-size: .6875rem; }
     .ui-home .text-2xl { font-family: var(--cn-mono); letter-spacing: -.01em; }
-    .ui-home h2 { font-family: var(--cn-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-secondary); }
+    .ui-home h2 { letter-spacing: 0; text-transform: none; color: var(--color-text); }
     :where(.ui-home) .ui-home-result { border-radius: var(--cn-radius-sm); }
 </style>
 {% endblock %}
-{% block page_heading %}Обзор{% endblock %}
+{% block page_heading %}Сегодня{% endblock %}
+{% block page_actions %}{% if perms and perms.can("plannertask", "create") %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new">Подготовить дело</a>{% endif %}{% endblock %}
 {% block content %}
-    {% if perms and perms.can("plannertask", "create") %}<a class="ui-control inline-flex min-h-[44px] items-center" href="/app/task-hub/new">Подготовить дело</a>{% endif %}
+{% macro render_home_results() %}
+        <section data-home-results data-today-section="recent_results" class="ui-card min-w-0">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Последние результаты</h2>
+                <div class="flex flex-wrap gap-4 text-sm text-cyan-700 dark:text-cyan-400">
+                    {% if offer.analytics %}<a href="/app/analytics" class="hover:underline">Аналитика →</a>{% endif %}
+                    {% if offer.digests %}<a href="/app/digests" class="hover:underline">Дайджесты →</a>{% endif %}
+                </div>
+            </div>
+            {% if (offer.analytics or offer.digests) and recent_results %}
+            <div class="mt-4 space-y-3">
+                {% for result in recent_results[:5] %}
+                <a href="{{ result.href }}{% if result.kind == 'analysis' %}?return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode|e }}{% endif %}"
+                   class="ui-home-result min-w-0 rounded-xl border border-slate-300 dark:border-slate-800 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
+                    <div class="ui-home-meta flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <span class="ui-home-source">{% if result.kind == 'digest' %}Дайджест{% else %}Анализ{% if offer.sources and result.source_name %} · {{ result.source_name }}{% endif %}{% endif %}</span>
+                        <span>Создан {{ result.created_at|human_dt(tz=_tz) }}</span>
+                    </div>
+                    <p title="{{ result.title }}" class="ui-home-result-title mt-2 break-words font-medium text-slate-900 dark:text-slate-100">{{ result.title }}</p>
+                    {% if result.period_label %}
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ result.period_label }}</p>
+                    {% endif %}
+                    {% if result.delivery_status %}
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Доставка: {{ result.delivery_status }}</p>
+                    {% endif %}
+                    {% if result.analysis_incomplete %}
+                    <p class="mt-2">{{ incomplete_analysis_badge(true) }}</p>
+                    {% endif %}
+                    {% if result.summary %}
+                    <p class="ui-home-summary mt-2 break-words text-sm text-slate-600 dark:text-slate-400">{{ result.summary }}</p>
+                    {% endif %}
+                </a>
+                {% endfor %}
+            </div>
+            {% elif offer.analytics or offer.digests %}
+                {{ empty_state("Результатов пока нет.", "Здесь появятся доступные вам результаты.", height="min-h-32 py-6", radius="rounded-xl") }}
+            {% else %}
+                {{ empty_state("Для вашей роли просмотр результатов не разрешён.", "Обратитесь к владельцу пространства, если нужен доступ.", height="min-h-32 py-6", radius="rounded-xl") }}
+            {% endif %}
+        </section>
+{% endmacro %}
 <div class="ui-home">
     {% if is_superuser and tenants %}
     <form method="get" class="mb-6">
@@ -54,27 +95,6 @@
             {% endfor %}
         </select>
     </form>
-    {% endif %}
-
-    {% if can_open_chat %}
-    <section data-home-chat-primary class="mb-6 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-5">
-        <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">Начните с разговора</h2>
-        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
-            Опишите, что хотите собрать или проанализировать, и агент поможет уточнить план и покажет результат.
-        </p>
-        <a href="/app/chat" data-home-chat class="mt-3 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
-            Открыть чат →
-        </a>
-    </section>
-    {% endif %}
-
-    {% if next_step %}
-    <div data-home-next-step class="mb-6 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-4">
-        <p class="text-sm text-slate-600 dark:text-slate-400">Начните с одного шага</p>
-        <a href="{{ next_step.href }}" class="mt-1 inline-block text-sm font-medium text-cyan-700 dark:text-cyan-400 hover:underline">
-            {{ next_step.label }} →
-        </a>
-    </div>
     {% endif %}
 
     {# Extension point: actionable attention projection (P20-T07 «Сегодня»). #}
@@ -111,15 +131,20 @@
             </div>
         </div>
 
+        <div class="today-bento">
         {% for sec in today.sections %}
         {% if sec.key != 'recent_results' %}
         <section data-today-section="{{ sec.key }}" class="ui-card min-w-0" aria-label="{{ sec.title }}">
             <div class="flex flex-wrap items-center justify-between gap-2">
-                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">{{ sec.title }}</h2>
+                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">{% if sec.key == 'brief' %}Сводка дня{% else %}{{ sec.title }}{% endif %}</h2>
+                {% if sec['items'] %}<span class="today-count" aria-label="Элементов: {{ sec['items']|length }}">{{ sec['items']|length }}</span>{% endif %}
                 {% if sec.hidden_count %}
                 <span class="text-xs text-slate-500 dark:text-slate-400" data-today-hidden-count="{{ sec.key }}">Скрыто: {{ sec.hidden_count }}</span>
                 {% endif %}
             </div>
+            {% if sec.key == 'brief' and can_open_chat %}
+            <p class="ui-muted text-sm mt-2">Сводка дня · данные и рекомендации требуют проверки.</p>
+            {% endif %}
             {% if sec.status == 'unavailable' %}
             <p data-today-section-unavailable="{{ sec.key }}" role="status" class="mt-3 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm text-amber-900 dark:text-amber-200">
                 {{ sec.reason or 'Раздел временно недоступен.' }}
@@ -155,13 +180,14 @@
                         {% if item.summary %}
                         <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ item.summary }}</p>
                         {% endif %}
+                        {% if sec.key == 'decisions' %}<a class="today-decision-open" href="{{ item.href }}">Открыть решение →</a>{% endif %}
                     </div>
-                    <div class="flex flex-wrap items-center gap-2">
+                    <details class="today-item-actions"><summary>Действия</summary><div class="flex flex-wrap items-center gap-2">
                         <a href="{{ item.href }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs font-medium text-cyan-700 dark:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>Открыть →</a>
                         {% if can_open_chat and item.chat_url %}
                         <a href="{{ item.chat_url }}" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2.5 py-1 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">В чат</a>
                         {% endif %}
-                        <form method="post" action="/app/today/item-state" class="inline-flex items-center gap-1">
+                        <form method="post" action="/app/today/item-state" class="inline-flex flex-wrap items-center gap-1">
                             <input type="hidden" name="_csrf" value="{{ csrf }}">
                             <input type="hidden" name="item_key" value="{{ item.item_key }}">
                             <input type="hidden" name="scope" value="{{ today.scope }}">
@@ -172,16 +198,42 @@
                             <button type="submit" name="operation" value="dismiss" class="rounded-lg border border-slate-300 dark:border-slate-700 px-2 py-1 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">Скрыть</button>
                             {% endif %}
                         </form>
-                    </div>
+                    </div></details>
                 </li>
                 {% endfor %}
             </ul>
             {% else %}
             <p data-today-section-empty="{{ sec.key }}" class="mt-3 text-sm text-slate-500 dark:text-slate-400">Нет элементов, требующих действий.</p>
             {% endif %}
+            {% if sec.key == 'brief' %}<div class="today-brief-actions flex flex-wrap gap-2 mt-3">{% if can_open_chat %}<a class="ui-control" href="/app/chat">Открыть чат</a>{% endif %}<a class="ui-control" href="/app/planner">Мой план на день</a></div>{% endif %}
         </section>
         {% endif %}
         {% endfor %}
+        {{ render_home_results() }}
+
+        </div>
+    </div>
+    {% endif %}
+    {% if not today %}{{ render_home_results() }}{% endif %}
+
+    {% if can_open_chat %}
+    <section data-home-chat-primary class="mb-6 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-5">
+        <h2 class="text-base font-semibold text-slate-900 dark:text-slate-100">Начните с разговора</h2>
+        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            Опишите, что хотите собрать или проанализировать, и агент поможет уточнить план и покажет результат.
+        </p>
+        <a href="/app/chat" data-home-chat class="mt-3 rounded-lg bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-cyan-400">
+            Открыть чат →
+        </a>
+    </section>
+    {% endif %}
+
+    {% if next_step %}
+    <div data-home-next-step class="mb-6 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-4">
+        <p class="text-sm text-slate-600 dark:text-slate-400">Начните с одного шага</p>
+        <a href="{{ next_step.href }}" class="mt-1 inline-block text-sm font-medium text-cyan-700 dark:text-cyan-400 hover:underline">
+            {{ next_step.label }} →
+        </a>
     </div>
     {% endif %}
 
@@ -242,45 +294,6 @@
     {% endif %}
 
     <div class="ui-home-grid{% if offer.tasks %} ui-home-grid-split{% endif %}">
-        <section data-home-results data-today-section="recent_results" class="ui-card min-w-0">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">Последние результаты</h2>
-                <div class="flex flex-wrap gap-4 text-sm text-cyan-700 dark:text-cyan-400">
-                    {% if offer.analytics %}<a href="/app/analytics" class="hover:underline">Аналитика →</a>{% endif %}
-                    {% if offer.digests %}<a href="/app/digests" class="hover:underline">Дайджесты →</a>{% endif %}
-                </div>
-            </div>
-            {% if (offer.analytics or offer.digests) and recent_results %}
-            <div class="mt-4 space-y-3">
-                {% for result in recent_results[:5] %}
-                <a href="{{ result.href }}{% if result.kind == 'analysis' %}?return_to={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode|e }}{% endif %}"
-                   class="ui-home-result min-w-0 rounded-xl border border-slate-300 dark:border-slate-800 p-4 transition hover:border-cyan-500 dark:hover:border-cyan-700">
-                    <div class="ui-home-meta flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
-                        <span class="ui-home-source">{% if result.kind == 'digest' %}Дайджест{% else %}Анализ{% if offer.sources and result.source_name %} · {{ result.source_name }}{% endif %}{% endif %}</span>
-                        <span>Создан {{ result.created_at|human_dt(tz=_tz) }}</span>
-                    </div>
-                    <p title="{{ result.title }}" class="ui-home-result-title mt-2 break-words font-medium text-slate-900 dark:text-slate-100">{{ result.title }}</p>
-                    {% if result.period_label %}
-                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">{{ result.period_label }}</p>
-                    {% endif %}
-                    {% if result.delivery_status %}
-                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">Доставка: {{ result.delivery_status }}</p>
-                    {% endif %}
-                    {% if result.analysis_incomplete %}
-                    <p class="mt-2">{{ incomplete_analysis_badge(true) }}</p>
-                    {% endif %}
-                    {% if result.summary %}
-                    <p class="ui-home-summary mt-2 break-words text-sm text-slate-600 dark:text-slate-400">{{ result.summary }}</p>
-                    {% endif %}
-                </a>
-                {% endfor %}
-            </div>
-            {% elif offer.analytics or offer.digests %}
-                {{ empty_state("Результатов пока нет.", "Здесь появятся доступные вам результаты.", height="min-h-32 py-6", radius="rounded-xl") }}
-            {% else %}
-                {{ empty_state("Для вашей роли просмотр результатов не разрешён.", "Обратитесь к владельцу пространства, если нужен доступ.", height="min-h-32 py-6", radius="rounded-xl") }}
-            {% endif %}
-        </section>
 
         {% if offer.tasks %}
         <section data-home-tasks class="ui-card min-w-0">

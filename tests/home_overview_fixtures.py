@@ -132,7 +132,13 @@ base = {
     "source_schedule_status_unknown": False,
     "_tz": "Europe/Moscow",
     "request": SimpleNamespace(url=SimpleNamespace(path="/app/", query=""), query_params={}),
-    "perms": SimpleNamespace(can_manage_workspace=lambda target: target == 7, is_owner=True, workspace_role="owner"),
+    "perms": SimpleNamespace(
+        can=lambda *args: True,
+        can_manage_workspace=lambda target: target == 7,
+        can_open_chat=True,
+        is_owner=True,
+        workspace_role="owner",
+    ),
     "member_level": None,
 }
 states = {

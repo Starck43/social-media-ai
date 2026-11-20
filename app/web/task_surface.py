@@ -53,19 +53,34 @@ async def task_hub(request: Request):
 async def task_calendar(
     request: Request,
     timezone_name: str = Query("UTC", alias="timezone", max_length=100),
+    year: int | None = Query(None, ge=1900, le=2099),
+    month: int | None = Query(None, ge=1, le=12),
     before_planner: int | None = Query(None, gt=0),
     before_event: int | None = Query(None, gt=0),
     before_agent: int | None = Query(None, gt=0),
+    after_agent_at: str | None = Query(None, max_length=80),
+    after_agent_id: int | None = Query(None, gt=0),
 ):
+    if (year is None) != (month is None):
+        raise HTTPException(422, "Year and month must be supplied together")
+    if before_agent is not None:
+        raise HTTPException(422, "Agent calendar cursors are not supported")
     try:
         ZoneInfo(timezone_name)
     except (ZoneInfoNotFoundError, ValueError):
         raise HTTPException(422, "Invalid timezone") from None
     from app.services.workspace.task_surface import calendar_view
 
-    data = await calendar_view(
-        timezone_name=timezone_name, before_planner=before_planner, before_event=before_event, before_agent=before_agent
-    )
+    try:
+        data = await calendar_view(
+            timezone_name=timezone_name, year=year, month=month, before_planner=before_planner,
+            before_event=before_event, before_agent=before_agent,
+            after_agent_at=after_agent_at, after_agent_id=after_agent_id,
+        )
+    except ValueError as exc:
+        if str(exc) == "invalid_agent_cursor":
+            raise HTTPException(422, "Invalid agent calendar cursor") from None
+        raise
     return render(
         request, "web/task_calendar.html", section="tasks", tabs=task_tabs(request), active_tab="calendar", **data
     )

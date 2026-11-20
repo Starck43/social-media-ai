@@ -1206,6 +1206,7 @@ async def list_triaged_threads(
     channel: str | None = None,
     include_archived: bool = False,
     limit: int = 25,
+    thread_ids: list[int] | None = None,
     model_callable: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     allow_paid_model: bool = False,
     budget_allowed: bool = True,
@@ -1220,7 +1221,14 @@ async def list_triaged_threads(
     if category is not None and category not in TRIAGE_CATEGORIES:
         raise ValueError("Unsupported triage category filter")
 
+    if thread_ids is not None:
+        if len(thread_ids) > 100 or any(not _positive_int(tid) for tid in thread_ids):
+            raise ValueError("thread_ids must contain at most 100 positive ids")
+        if not thread_ids:
+            return {"items": [], "counts_by_category": {cat: 0 for cat in TRIAGE_CATEGORIES}, "skipped_revoked_connections": 0}
     stmt = select(MessageThread).where(MessageThread.tenant_id == tenant_id)
+    if thread_ids is not None:
+        stmt = stmt.where(MessageThread.id.in_(thread_ids))
     if not include_archived:
         stmt = stmt.where(MessageThread.is_archived.is_(False))
     if channel is not None:

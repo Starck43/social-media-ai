@@ -1,0 +1,12 @@
+{# Use the same permission-filtered items as the shell; the drawer retains all other sections. #}
+<nav class="work-mobile-nav" aria-label="Разделы работы" data-work-mobile-nav>
+    {% for item in mobile_nav %}
+    <a href="{{ item.href }}" {% if section == item.key %}aria-current="page"{% endif %}>
+        {{ icon(item.icon|default('circle')) }}
+        <span>{{ 'Чат' if item.key == 'chat' else item.label }}</span>
+    </a>
+    {% endfor %}
+    <button type="button" data-dialog-open="navigation-drawer" aria-controls="navigation-drawer" aria-expanded="false">
+        {{ icon('menu') }}<span>Ещё</span>
+    </button>
+</nav>

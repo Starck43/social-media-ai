@@ -1,7 +1,8 @@
 {% extends "web/base.html" %}
 
-{% block title %}Переписка — AI Assistant{% endblock %}
-{% block page_heading %}Переписка{% endblock %}
+{% block title %}Входящие — AI Assistant{% endblock %}
+{% block extra_head %}<script defer src="{{ static_v('js/inbox-reply-draft.js') }}"></script>{% endblock %}
+{% block page_heading %}Входящие{% endblock %}
 
 {% block page_actions %}
 <a href="/app/chat" class="ui-control">← К чату</a>
@@ -32,7 +33,7 @@
            data-tab="contacts_merge">Сверка контактов</a>
     </nav>
 
-    <section class="ui-card space-y-4" data-inbox-search-panel>
+    <details class="ui-card space-y-4" data-inbox-search-panel><summary class="font-semibold cursor-pointer">Поиск и фильтры</summary>
         <div class="flex flex-wrap items-center justify-between gap-4">
             <div>
                 <h2 class="text-sm font-semibold">Единый входящий поток и поиск по метаданным</h2>
@@ -43,6 +44,9 @@
         <form method="get" action="/app/communications" class="flex flex-wrap items-end gap-3" data-inbox-filter-form>
             <input type="hidden" name="tab" value="{{ active_tab | default('inbox') }}">
             <input type="hidden" name="boundary" value="{{ boundary | default('cloud') }}">
+            {% if contact_id_filter %}<input type="hidden" name="contact_id" value="{{ contact_id_filter }}">{% endif %}
+            {% if is_read_filter is not none %}<input type="hidden" name="is_read" value="{{ 'true' if is_read_filter else 'false' }}">{% endif %}
+            {% if is_archived_filter %}<input type="hidden" name="is_archived" value="true">{% endif %}
             <div class="flex-1 min-w-[200px]">
                 <label for="inbox-q" class="block text-xs ui-muted mb-1">Поиск по теме, участникам или контакту</label>
                 <input id="inbox-q" type="search" name="q" value="{{ q | default('') }}" placeholder="Тема, email, телефон, имя..." class="ui-control w-full text-sm">
@@ -70,7 +74,7 @@
             </div>
             <button type="submit" class="ui-control text-sm">Найти</button>
         </form>
-    </section>
+    </details>
 
     {% if (active_tab | default('inbox')) == 'contacts_merge' %}
     <section class="ui-card space-y-3" data-contacts-merge-panel>
@@ -95,19 +99,24 @@
     </section>
     {% endif %}
 
+    {% if (active_tab | default('inbox')) == 'inbox' and not inbox_threads %}{% include 'web/_inbox_categories.html' %}{% endif %}
+    {% if inbox_load_error %}<p role="alert" class="ui-card">Не удалось загрузить входящие. Повторите попытку.</p>{% endif %}
+    {% if triage_load_error %}<p role="status" class="ui-card">Классификация временно недоступна. Список показан без фильтра категории.</p>{% endif %}
+    {% if (active_tab | default('inbox')) == 'inbox' and not inbox_load_error and not inbox_threads %}<p role="status" class="ui-card">На этой странице входящих цепочек для выбранных фильтров нет.{% if next_before_id %} Проверьте следующие страницы.{% endif %}</p>{% endif %}
     {% if inbox_threads %}
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4" data-inbox-workspace>
         <section class="ui-card space-y-3" data-inbox-thread-list>
+            {% if (active_tab | default('inbox')) == 'inbox' %}{% include 'web/_inbox_categories.html' %}{% endif %}
             <h2 class="text-sm font-semibold">Цепочки сообщений</h2>
             <div class="space-y-2">
                 {% for th in inbox_threads %}
-                <article class="rounded border border-slate-800 p-3 text-xs space-y-1" data-inbox-thread-item="{{ th.id }}">
+                <article class="rounded border border-slate-800 p-3 text-xs space-y-1" data-inbox-thread-item="{{ th.id }}" {% if selected_thread_detail and selected_thread_detail.thread.id == th.id %}data-selected="true"{% endif %}>
                     <div class="flex items-center justify-between gap-2">
                         <span class="px-2 py-0.5 rounded border border-slate-700 font-medium {{ th.channel_badge }}" data-channel-badge="{{ th.channel }}">{{ th.channel_label }}</span>
                         <span class="ui-muted">{{ th.message_count }} сообщ.{% if th.unread_count %} · непрочитано: {{ th.unread_count }}{% endif %}</span>
                     </div>
                     <h3 class="text-sm font-semibold">
-                        <a href="/app/communications?tab=inbox&thread_id={{ th.id }}&boundary={{ boundary | default('cloud') }}" class="underline">{{ th.subject or th.thread_key }}</a>
+                        <a href="/app/communications?tab=inbox&thread_id={{ th.id }}&boundary={{ boundary | default('cloud') | urlencode }}&q={{ q | default('') | urlencode }}&channel={{ channel_filter | default('') | urlencode }}&triage_category={{ triage_category_filter | default('') | urlencode }}{% if before_id %}&before_id={{ before_id }}{% endif %}{% if contact_id_filter %}&contact_id={{ contact_id_filter }}{% endif %}{% if is_read_filter is not none %}&is_read={{ 'true' if is_read_filter else 'false' }}{% endif %}{% if is_archived_filter %}&is_archived=true{% endif %}" class="underline">{{ th.subject or th.thread_key }}</a>
                     </h3>
                     {% if th.contact_display_name %}
                     <p class="ui-muted">Контакт: {{ th.contact_display_name }}</p>
@@ -126,66 +135,7 @@
                 {% endfor %}
             </div>
 
-            {% if selected_thread_triage %}
-            <div class="rounded border border-slate-800 p-3 space-y-3 text-xs" data-thread-triage-panel="{{ selected_thread_triage.thread_id }}">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                        <span class="font-semibold" data-triage-badge="{{ selected_thread_triage.category }}">{{ selected_thread_triage.category_label }}</span>
-                        <span class="ml-2 ui-muted">Основание: {{ selected_thread_triage.basis }}{% if not selected_thread_triage.is_model_fact %} (не факт модели){% endif %}</span>
-                    </div>
-                    {% if selected_thread_triage.assignee %}
-                    <span class="px-2 py-0.5 rounded border border-slate-700" data-triage-assignee>Ответственный: {{ selected_thread_triage.assignee.name }}</span>
-                    {% endif %}
-                </div>
-                <p class="ui-muted" data-triage-reason>{{ selected_thread_triage.reason }}</p>
-                {% if selected_thread_triage.model_notice %}
-                <p class="text-amber-300" data-triage-model-notice>{{ selected_thread_triage.model_notice }}</p>
-                {% endif %}
-
-                <form method="post" action="/app/communications/threads/{{ selected_thread_triage.thread_id }}/triage" class="flex flex-wrap items-end gap-2 pt-1" data-triage-override-form>
-                    <input type="hidden" name="_csrf" value="{{ csrf }}">
-                    <div>
-                        <label for="triage-override-cat" class="block ui-muted mb-1">Исправить классификацию (наше решение)</label>
-                        <select id="triage-override-cat" name="category" class="ui-control text-xs">
-                            <option value="needs_reply" {% if selected_thread_triage.category == "needs_reply" %}selected{% endif %}>Нужен ответ</option>
-                            <option value="fyi" {% if selected_thread_triage.category == "fyi" %}selected{% endif %}>К сведению</option>
-                            <option value="can_wait" {% if selected_thread_triage.category == "can_wait" %}selected{% endif %}>Подождёт</option>
-                            <option value="uncertain" {% if selected_thread_triage.category == "uncertain" %}selected{% endif %}>Не уверен</option>
-                        </select>
-                    </div>
-                    <div class="flex-1 min-w-[160px]">
-                        <label for="triage-override-reason" class="block ui-muted mb-1">Причина</label>
-                        <input id="triage-override-reason" type="text" name="reason" value="" placeholder="Комментарий к решению..." class="ui-control w-full text-xs">
-                    </div>
-                    <button type="submit" class="ui-control text-xs">Сохранить решение</button>
-                </form>
-
-                {% if selected_thread_triage.proposals %}
-                <div class="space-y-2 pt-2 border-t border-slate-800" data-triage-proposals>
-                    <h3 class="font-semibold">Предложения следующего шага (редактируемые, без автоотправки)</h3>
-                    {% for prop in selected_thread_triage.proposals %}
-                    <div class="rounded border border-slate-800 p-2 space-y-2" data-triage-proposal="{{ prop.kind }}">
-                        <div class="flex flex-wrap items-center justify-between gap-2">
-                            <span class="font-medium">{{ prop.label }}: {{ prop.title }}</span>
-                            <a href="{{ prop.target_route }}" class="underline">{{ prop.target_route }}</a>
-                        </div>
-                        <p class="ui-muted">{{ prop.summary }}</p>
-                        {% if prop.kind == "reply_draft" and prop.fields.inbound_message_id %}
-                        <form method="post" action="/app/communications/reply" class="space-y-2" data-triage-reply-draft-form>
-                            <input type="hidden" name="_csrf" value="{{ csrf }}">
-                            <input type="hidden" name="thread_id" value="{{ selected_thread_triage.thread_id }}">
-                            <input type="hidden" name="inbound_message_id" value="{{ prop.fields.inbound_message_id }}">
-                            <input type="text" name="subject" value="{{ prop.fields.subject }}" class="ui-control w-full text-xs" aria-label="Тема черновика ответа">
-                            <textarea name="body" rows="3" class="ui-control w-full text-xs" aria-label="Текст черновика ответа">{{ prop.fields.body }}</textarea>
-                            <button type="submit" class="ui-control text-xs">Создать черновик в Outbox (без отправки)</button>
-                        </form>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-                </div>
-                {% endif %}
-            </div>
-            {% endif %}
+            {% if not selected_thread_detail %}{% include "web/_inbox_triage.html" %}{% endif %}
         </section>
 
         {% if selected_thread_detail %}
@@ -194,6 +144,7 @@
                 <h2 class="text-sm font-semibold">{{ selected_thread_detail.thread.subject or selected_thread_detail.thread.thread_key }}</h2>
                 <span class="px-2 py-0.5 rounded border border-slate-700 text-xs {{ selected_thread_detail.thread.channel_badge }}" data-channel-badge="{{ selected_thread_detail.thread.channel }}">{{ selected_thread_detail.thread.channel_label }}</span>
             </div>
+            <p class="ui-muted text-sm">Здесь доступны только метаданные. Текст и вложения хранятся в исходном сервисе.</p>
             <div class="space-y-2" data-thread-messages>
                 {% for msg in selected_thread_detail.messages %}
                 <article class="rounded border border-slate-800 p-3 text-xs space-y-1" data-unified-message="{{ msg.id }}">
@@ -215,11 +166,18 @@
                 </article>
                 {% endfor %}
             </div>
+            {% include "web/_inbox_triage.html" %}
         </section>
         {% endif %}
     </div>
     {% endif %}
 
+    {% if (active_tab | default('inbox')) == 'inbox' and next_before_id %}
+    <div class="flex flex-wrap items-center gap-3" data-inbox-pagination>
+        <p class="ui-muted text-sm">Фильтр применён к текущей странице; другие результаты могут быть на следующих страницах.</p>
+        <a class="ui-control" href="/app/communications?tab=inbox&amp;boundary={{ boundary | urlencode }}&amp;q={{ q | urlencode }}&amp;channel={{ channel_filter | urlencode }}&amp;triage_category={{ triage_category_filter | urlencode }}&amp;before_id={{ next_before_id }}{% if contact_id_filter %}&amp;contact_id={{ contact_id_filter }}{% endif %}{% if is_read_filter is not none %}&amp;is_read={{ 'true' if is_read_filter else 'false' }}{% endif %}{% if is_archived_filter %}&amp;is_archived=true{% endif %}">Следующие входящие →</a>
+    </div>
+    {% endif %}
     {% include "web/_evidence_rows.html" %}
 
 </div>

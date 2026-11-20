@@ -3,6 +3,8 @@ function chatApp() {
             panelOpen: true,
             workspaceTab: 'context',
             panelLoading: false,
+            panelError: '',
+            panelRequest: 0,
             panelData: { decisions: [], runs: [], materials: [] },
             evidenceContext: window.__chatEvidenceContext || null,
             workspaceCards: [],
@@ -63,6 +65,7 @@ function chatApp() {
                 } catch (_) { /* Storage may be unavailable in private sessions. */ }
                 this.syncCardsFromState();
                 this.loadWorkspaceTasks();
+                if (this.workspaceTab !== 'context') this.loadWorkspacePanel();
                 // Event delegation for JSON copy buttons (added via x-html)
                 document.addEventListener('click', (e) => {
                     const btn = e.target.closest('[data-copy-json]')
@@ -250,9 +253,18 @@ function chatApp() {
                 this.workspaceTab = tab;
                 try { sessionStorage.setItem('chat.workspace.tab', tab); } catch (_) {}
                 if (tab !== 'context') this.loadWorkspacePanel();
+                else {
+                    ++this.panelRequest;
+                    this.panelLoading = false;
+                    this.panelError = '';
+                    this.panelData = { decisions: [], runs: [], materials: [] };
+                }
             },
             async loadWorkspacePanel() {
+                const request = ++this.panelRequest;
                 this.panelLoading = true;
+                this.panelError = '';
+                this.panelData = { decisions: [], runs: [], materials: [] };
                 try {
                     const params = new URLSearchParams();
                     if (this.workspaceTaskId) params.set('task_id', String(this.workspaceTaskId));
@@ -262,15 +274,19 @@ function chatApp() {
                         params.set('boundary', this.evidenceContext.boundary || 'cloud');
                     }
                     const data = await this.workspaceRead('/app/chat/workspace/panel?' + params.toString());
+                    if (request !== this.panelRequest) return;
                     this.panelData = {
                         decisions: data.decisions || [],
                         runs: data.runs || [],
                         materials: data.materials || [],
                     };
-                } catch (_) {
-                    // Panel fallback uses local state
+                } catch (error) {
+                    if (request !== this.panelRequest) return;
+                    this.panelError = [403, 404].includes(error.status)
+                        ? 'Доступ к рабочему контексту изменился.'
+                        : 'Не удалось загрузить рабочий контекст.';
                 } finally {
-                    this.panelLoading = false;
+                    if (request === this.panelRequest) this.panelLoading = false;
                 }
             },
             syncCardsFromState() {
@@ -308,7 +324,7 @@ function chatApp() {
                             id: 'result:task:' + snap.id,
                             card_type: 'result',
                             title: 'Результат: ' + snap.name,
-                            status: snap.latest.status || 'done',
+                            status: snap.latest.status || 'unknown',
                             limitations: snap.latest.coverage === 'partial_or_bounded' ? 'Охват ограничен параметрами запуска; полнота данных не подтверждена.' : '',
                             authoritative_ref: 'agent_task:' + snap.id,
                             authoritative_url: snap.task_url || ('/app/tasks/' + snap.id),
@@ -440,6 +456,7 @@ function chatApp() {
                     failed: 'Ошибка',
                     local_only: 'Только локально',
                     unavailable: 'Недоступно',
+                    unknown: 'Неизвестно',
                 })[status] || status || '';
             },
             workspaceContextBlocked() {

@@ -51,11 +51,15 @@ async def communications_page(
     contact_id: int | None = Query(None, gt=0),
     thread_id: int | None = Query(None, gt=0),
     is_read: bool | None = Query(None),
-    is_archived: bool = Query(False),
+    is_archived: bool | None = Query(None),
     q: str | None = Query(None, max_length=200),
     before_id: int | None = Query(None, gt=0),
 ):
     """Render unified inbox tabs, triage classifications/proposals, chronological thread messages, and outbox catalog."""
+    # ``None`` means the archive parameter was omitted.  The inbox still
+    # defaults to non-archived rows, but an ordinary deep link must remain
+    # usable; an explicitly supplied archive filter must constrain selection.
+    archive_filter = False if is_archived is None else is_archived
     evidence_rows = await snippet_rows("communication", boundary)
     inbox_threads: list[dict[str, Any]] = []
     next_before_id: int | None = None
@@ -64,7 +68,11 @@ async def communications_page(
     triage_by_thread: dict[int, dict[str, Any]] = {}
     triage_counts: dict[str, int] = {cat: 0 for cat in TRIAGE_CATEGORIES}
     merge_suggestions: list[dict[str, Any]] = []
+    inbox_load_error = False
+    triage_load_error = False
 
+    # Empty selects and links represent “all channels”, not an invalid channel.
+    channel = channel or None
     norm_triage_cat = triage_category if triage_category in TRIAGE_CATEGORIES else None
 
     if current_tenant_id() is not None:
@@ -75,7 +83,7 @@ async def communications_page(
                     channel=channel,
                     contact_id=contact_id,
                     is_read=is_read,
-                    is_archived=is_archived,
+                    is_archived=archive_filter,
                     q=q,
                     limit=50,
                     before_id=before_id,
@@ -88,8 +96,9 @@ async def communications_page(
                         session,
                         category=norm_triage_cat,
                         channel=channel,
-                        include_archived=is_archived,
+                        include_archived=archive_filter,
                         limit=50,
+                        thread_ids=[th["id"] for th in inbox_threads if isinstance(th.get("id"), int)],
                     )
                     triage_counts = triage_page.get("counts_by_category", triage_counts)
                     for item in triage_page.get("items", []):
@@ -98,11 +107,26 @@ async def communications_page(
                             triage_by_thread[tid] = item
                 except Exception:  # noqa: BLE001
                     logger.warning("Failed to list triaged threads on communications page", exc_info=True)
+                    triage_load_error = True
 
-                if norm_triage_cat is not None:
+                if norm_triage_cat is not None and not triage_load_error:
                     inbox_threads = [th for th in inbox_threads if th.get("id") in triage_by_thread]
 
-                active_thread_id = thread_id or (inbox_threads[0]["id"] if inbox_threads else None)
+                # A deep link must not silently select an item excluded by the
+                # active filters. Unfiltered deep links remain usable.
+                visible_ids = {th["id"] for th in inbox_threads}
+                filtering = bool(
+                    norm_triage_cat
+                    or channel
+                    or contact_id
+                    or is_read is not None
+                    or q
+                    or before_id
+                    or is_archived is not None
+                )
+                active_thread_id = thread_id if thread_id and (not filtering or thread_id in visible_ids) else None
+                if active_thread_id is None and inbox_threads:
+                    active_thread_id = inbox_threads[0]["id"]
                 if active_thread_id is not None:
                     selected_thread_detail = await get_thread_detail(session, int(active_thread_id))
                     selected_thread_triage = triage_by_thread.get(int(active_thread_id))
@@ -118,6 +142,7 @@ async def communications_page(
             raise HTTPException(status_code=403) from None
         except Exception:  # noqa: BLE001
             logger.warning("Failed to load communications page data", exc_info=True)
+            inbox_load_error = True
 
     return render(
         request,
@@ -133,10 +158,13 @@ async def communications_page(
         triage_by_thread=triage_by_thread,
         contact_id_filter=contact_id,
         is_read_filter=is_read,
-        is_archived_filter=is_archived,
+        is_archived_filter=archive_filter,
         q=q or "",
         inbox_threads=inbox_threads,
+        inbox_load_error=inbox_load_error,
+        triage_load_error=triage_load_error,
         next_before_id=next_before_id,
+        before_id=before_id,
         selected_thread_detail=selected_thread_detail,
         selected_thread_triage=selected_thread_triage,
         merge_suggestions=merge_suggestions,

@@ -1,0 +1,157 @@
+/* Work surfaces: existing semantic tokens, with no change to message bubbles. */
+.today-bento { display: grid; gap: 1rem; align-items: start; }
+.today-bento > .ui-card, .ui-home [data-home-chat-primary], [data-inbox-workspace] > .ui-card,
+[data-inbox-search-panel], .chat-workspace-panel { border-radius: 1rem; }
+.today-bento > .ui-card { min-width: 0; height: 100%; }
+@media (min-width: 1100px) {
+    .today-bento { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .today-bento [data-today-section="brief"] { grid-column: span 2; }
+    .today-bento [data-today-section="decisions"] { grid-column: 3; grid-row: span 2; }
+    .today-bento [data-today-section="attention"] { grid-column: 1 / -1; }
+}
+.work-task-tabs, .work-triage-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-bottom: 1rem; }
+.work-task-tabs a, .work-triage-tabs a { display: inline-flex; align-items: center; min-height: 40px; padding: .45rem .9rem; border: 1px solid var(--color-border); border-radius: 999px; background: var(--color-surface-secondary); color: var(--color-text-secondary); font-size: .875rem; text-decoration: none; }
+.work-task-tabs a[aria-current], .work-triage-tabs a[aria-current] { background: var(--color-surface); border-color: var(--color-cyan-600); color: var(--color-text); font-weight: 600; }
+.work-task-tabs a:focus-visible, .work-triage-tabs a:focus-visible { outline: 2px solid var(--color-cyan-600); outline-offset: 2px; }
+[data-inbox-thread-item] { border-color: var(--color-border); border-radius: .75rem; background: var(--color-surface-secondary); }
+[data-inbox-workspace] { align-items: start; }
+@media (min-width: 1024px) { [data-inbox-workspace] { grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr); } }
+.chat-panel-tabs { border: 0; background: var(--color-surface-secondary); border-radius: 1rem; padding: .3rem; }
+.chat-panel-tabs button { min-height: 40px; border-radius: 999px; }
+[data-shell-section="dashboard"] [data-today-item], [data-inbox-thread-item] { overflow-wrap: anywhere; }
+/* Keep the table and its headers for assistive technology while presenting each
+   assignment as a card. No progress figure is shown without measured data. */
+.work-agent-tasks table, .work-agent-tasks tbody { display: block; }
+.work-agent-tasks thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.work-agent-tasks tbody { display: grid; gap: 1rem; }
+.work-agent-tasks tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; padding: 1rem; border: 1px solid var(--color-border); border-radius: 1rem; background: var(--color-surface); }
+.work-agent-tasks td { padding: .25rem 0; }
+.work-agent-tasks td:first-child { flex: 1 0 100%; font-size: 1.05rem; overflow-wrap: anywhere; }
+.work-agent-tasks td[data-label]:not(:first-child)::before { content: attr(data-label) ': '; color: var(--color-text-secondary); font: .75rem var(--cn-mono); }
+.work-agent-tasks td:last-child { flex: 1 0 100%; }
+.work-agent-tasks td:last-child button, .work-agent-tasks td:last-child a { min-width: 40px; min-height: 40px; }
+/* Prevent the action group from squeezing a bento item's text into a column. */
+.today-bento [data-today-item] > div:first-child { flex: 1 0 100%; }
+@media (min-width: 1024px) { .ui-shell [data-inbox-workspace] { grid-template-columns: minmax(16rem, 1fr) minmax(0, 2fr); } }
+.ui-home [data-today-workspace] { margin-top: 0; }
+.ui-home [data-today-toolbar] { border: 0; background: transparent; padding: 0; }
+.ui-home [data-today-item] { padding-block: .65rem; }
+.ui-home [data-today-item] > div:first-child { flex: 1 0 100%; }
+.ui-home [data-today-item] > div:first-child > div > a { min-height: 0; }
+.ui-home [data-today-item] .today-item-actions { margin-top: .25rem; }
+.ui-home [data-today-item] .today-item-actions a, .ui-home [data-today-item] .today-item-actions button { min-height: 40px; }
+.planner-page { max-width: 78rem; margin-inline: auto; }
+.planner-toolbar { margin-block: .5rem 1rem; }
+.planner-page section[aria-label="Задачи"] > .ui-card { border-radius: 1rem; }
+.planner-page section[aria-label="Задачи"] > .ui-card > h2 { font: 600 .75rem var(--cn-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--color-text-secondary); }
+.planner-task { display:flex; flex-wrap:wrap; align-items:flex-start; gap:.35rem .7rem; padding-block:.7rem; min-width:0; }
+.planner-task-content { flex:1 1 15rem; min-width:0; overflow-wrap:anywhere; }
+.planner-meta { font-family:var(--cn-mono); font-variant-numeric:tabular-nums; margin-top:.3rem; }
+.planner-task-actions { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; }
+.planner-delegate { color:var(--color-cyan-600); text-decoration:underline; min-height:40px; display:inline-flex; align-items:center; }
+.planner-task-actions details summary, .today-more summary { cursor:pointer; list-style:none; }
+.planner-task-actions details summary::-webkit-details-marker, .today-more summary::-webkit-details-marker { display:none; }
+.planner-complete button { width:40px; height:40px; display:grid; place-items:center; }
+.planner-complete span { display:block; border:1px solid var(--color-text-secondary); border-radius:50%; width:22px; height:22px; }
+.today-more summary { min-height:40px; display:flex; align-items:center; }
+.today-more[open] form { margin-left:.4rem; }
+.ui-home [data-today-section="brief"] .today-brief-actions a { border-radius:999px; }
+[data-inbox-search-panel] summary { min-height:40px; display:flex; align-items:center; }
+[data-inbox-thread-list] > h2 { font-size:1rem; }
+[data-inbox-thread-item] h3 a { text-decoration:none; }
+[data-inbox-thread-detail] > div:first-child h2 { font-size:1.25rem; }
+@media (max-width: 767px) { .planner-task-actions { flex-basis:100%; padding-left:3rem; } .planner-page { margin-inline:0; } }
+
+.task-sources-link { display:inline-flex; align-items:center; min-height:40px; color:var(--color-text-secondary); font-size:.875rem; text-decoration:underline; }
+.ui-home [data-today-section="brief"] > div:first-child h2 { font:600 .75rem var(--cn-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-secondary); }
+.ui-home [data-today-section="brief"] [data-today-item] > div:first-child > div > a { font-size:1.5rem; line-height:1.25; }
+.ui-home [data-today-item] { gap:.25rem .5rem; }
+.ui-home [data-today-item] > div:first-child { flex:1 1 12rem; }
+.ui-home [data-today-item] .today-item-actions summary { list-style:none; cursor:pointer; min-height:40px; display:flex; align-items:center; color:var(--color-text-secondary); font-size:.8rem; }
+.ui-home [data-today-item] .today-item-actions summary::-webkit-details-marker { display:none; }
+.ui-home [data-today-item] .today-item-actions[open] { flex-basis:100%; }
+.ui-home [data-today-section="brief"] .today-brief-actions a:first-child { background:var(--color-cyan-600); color:var(--color-surface); }
+
+/* Rounded inbox detail surfaces, using the existing theme tokens. */
+[data-inbox-thread-detail] [data-unified-message],
+[data-thread-triage-panel], [data-triage-proposal] {
+    border-radius: .75rem;
+    background: var(--color-surface-secondary);
+    border-color: var(--color-border);
+}
+[data-inbox-thread-item]:hover, [data-inbox-thread-item]:has(a[aria-current]) {
+    border-color: var(--ui-accent);
+    background: var(--ui-accent-soft);
+}
+
+/* Agent assignment cards retain the operational table and its real statuses.
+   The ring shows validated per-source progress or a dash when unknown. */
+.work-agent-tasks tbody tr { position:relative; padding:1.25rem 1.25rem 1.25rem 5.5rem; gap:.2rem 1rem; }
+.work-agent-tasks td:first-child { padding-right:7rem; font-weight:600; }
+.work-task-ring { position:absolute; top:1.25rem; left:1.25rem; width:3rem; height:3rem; border:4px solid var(--color-border); border-radius:50%; display:grid; place-items:center; color:var(--color-text-secondary); font:600 .8rem var(--cn-mono); }
+.work-task-ring-progress { position:absolute; inset:-4px; width:calc(100% + 8px); height:calc(100% + 8px); color:var(--ui-accent); pointer-events:none; }
+.work-agent-tasks td[data-label="Статус"] { position:absolute; top:1.1rem; right:1.2rem; text-align:right; }
+.work-agent-tasks td[data-label="Статус"]::before, .work-agent-tasks td[data-label="Действия"]::before { content:none; }
+.work-agent-tasks td[data-label="Действия"] button, .work-agent-tasks td[data-label="Действия"] a { border-radius:999px; padding:.45rem .8rem; gap:.35rem; }
+.work-agent-tasks td[data-label="Действия"] button svg { width:1rem; height:1rem; }
+.work-agent-tasks td[data-label="Действия"] button span { font-size:.875rem; }
+[data-inbox-thread-item][data-selected="true"] { border:2px solid var(--ui-accent); }
+@media (max-width:639px) {
+ .work-agent-tasks tbody tr { padding:1rem 1rem 1rem 4.75rem; }
+ .work-task-ring { left:1rem; top:1rem; width:2.75rem; height:2.75rem; }
+ .work-agent-tasks td:first-child { padding-right:0; }
+ .work-agent-tasks td[data-label="Статус"] { position:static; text-align:left; }
+ .work-agent-tasks td[data-label="Статус"]::before { content:attr(data-label) ': '; }
+}
+
+.today-count { min-width:1.75rem; padding:.2rem .5rem; border-radius:999px; text-align:center; background:var(--color-surface-secondary); color:var(--color-text-secondary); font:600 .75rem var(--cn-mono); font-variant-numeric:tabular-nums; }
+.ui-home [data-today-section="decisions"] ul { display:grid; gap:.65rem; }
+.ui-home [data-today-section="decisions"] [data-today-item] { padding:1rem; border:0; border-radius:.75rem; background:var(--color-surface-secondary); }
+.ui-home .today-decision-open { margin-top:.35rem; color:var(--color-cyan-600); text-decoration:underline; font-weight:600; font-size:.875rem; }
+@media (min-width:769px) {
+ .ui-home [data-today-section="attention"] ul { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem; }
+ .ui-home [data-today-section="attention"] [data-today-item] { padding:1rem; border:0; border-radius:.75rem; background:var(--color-surface-secondary); }
+}
+
+@media (min-width:1100px) { .today-bento [data-home-results] { grid-column:1 / -1; } }
+@media (min-width:769px) { .today-bento [data-home-results] > .space-y-3 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; } .today-bento [data-home-results] > .space-y-3 > * { margin-top:0; } }
+
+/* The PDF's mobile navigation reuses the permission-filtered shell items and drawer. */
+.work-mobile-nav { display: none; }
+@media (max-width: 767px) {
+    .work-mobile-nav {
+        position: fixed; z-index: 40; inset: auto 0 0;
+        display: flex; align-items: stretch; justify-content: space-around;
+        min-height: calc(64px + env(safe-area-inset-bottom));
+        padding: 4px max(4px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(4px, env(safe-area-inset-left));
+        border-top: 1px solid var(--color-border); background: var(--color-surface);
+    }
+    .work-mobile-nav :is(a, button) {
+        flex: 1 1 0; min-width: 0; min-height: 48px; display: flex;
+        flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+        color: var(--color-text-secondary); font-size: .7rem; text-decoration: none;
+        background: transparent; border: 0; cursor: pointer;
+    }
+    .work-mobile-nav [aria-current="page"] { color: var(--color-cyan-600); font-weight: 600; }
+    .work-mobile-nav :is(a, button):focus-visible { outline: 2px solid var(--color-cyan-600); outline-offset: -2px; }
+    .work-mobile-nav svg { width: 20px; height: 20px; stroke-width: 1.7; }
+    body:has(.work-mobile-nav) .shell-notification-dock,
+    body:has(.work-mobile-nav) .chat-dock-launcher { bottom: calc(76px + env(safe-area-inset-bottom)); }
+    body:has(.work-mobile-nav) .shell-content { margin-bottom: calc(140px + env(safe-area-inset-bottom)); }
+    body:has(.work-mobile-nav) .shell-attention-popup { bottom: calc(136px + env(safe-area-inset-bottom)); }
+}
+
+/* Inbox categories belong to the thread list as in the supplied prototype. */
+[data-inbox-thread-list] { padding: 0; background: transparent; border: 0; box-shadow: none; }
+[data-inbox-thread-list] .work-triage-tabs { margin-bottom: .75rem; }
+[data-inbox-thread-list] > h2 { font: 600 .75rem var(--cn-mono); color:var(--color-text-secondary); }
+[data-inbox-thread-item] { background:var(--color-surface); }
+/* Shared task hub uses the compact segmented control shown in the reference. */
+.work-task-tabs { width:fit-content; max-width:100%; padding:.25rem; gap:.15rem; border-radius:1.5rem; background:var(--color-surface-secondary); }
+.work-task-tabs a { border-color:transparent; background:transparent; }
+.work-task-tabs a[aria-current] { border-color:var(--color-border); background:var(--color-surface); }
+.planner-page { max-width:64rem; }
+/* Attention items form individual cards rather than a long list on desktop. */
+.today-bento [data-today-section="attention"] > ul { display:grid; gap:.75rem; }
+.today-bento [data-today-section="attention"] > ul > li { margin:0; padding:.9rem; border:1px solid var(--color-border); border-radius:.75rem; background:var(--color-surface-secondary); }
+@media (min-width:769px) { .today-bento [data-today-section="attention"] > ul { grid-template-columns:repeat(3,minmax(0,1fr)); } }

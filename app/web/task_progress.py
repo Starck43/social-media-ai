@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from app.jobs.progress import read_snapshot
@@ -12,6 +13,35 @@ from app.jobs.progress_metrics import count, record_metrics
 # Colors identify sources, never success/failure. Outcome also has explicit text.
 COLORS = ("#087f98", "#3579a2", "#6964a5", "#526c42", "#91604c", "#886080")
 UNSUCCESSFUL = {"error", "auth_required", "rate_limited"}
+PROGRESS_HEARTBEAT_MAX_AGE = timedelta(seconds=90)
+
+
+def progress_heartbeat_fresh(job, *, now=None) -> bool:
+    """Whether a live job has a recent worker heartbeat.
+
+    Terminal jobs keep their persisted result available for diagnosis. Only a
+    running job needs a fresh heartbeat before its snapshot can be presented as
+    current progress. Naive, future, or missing timestamps fail closed.
+    """
+    if job is None or getattr(job, "status", None) != "running":
+        return True
+    heartbeat = getattr(job, "locked_at", None)
+    if not isinstance(heartbeat, datetime) or heartbeat.tzinfo is None:
+        return False
+    current = now if now is not None else datetime.now(timezone.utc)
+    if not isinstance(current, datetime) or current.tzinfo is None:
+        return False
+    age = current.astimezone(timezone.utc) - heartbeat.astimezone(timezone.utc)
+    return timedelta(0) <= age <= PROGRESS_HEARTBEAT_MAX_AGE
+
+
+def current_attempt_snapshot(job):
+    """Read only the snapshot belonging to this Job's current attempt."""
+    if job is None or not progress_heartbeat_fresh(job):
+        return None
+    result = getattr(job, "result", None)
+    result = result if isinstance(result, dict) else {}
+    return read_snapshot(result, getattr(job, "attempts", None))
 
 
 def _rows(value):
@@ -26,13 +56,13 @@ def _rows(value):
 
 def source_statuses(job) -> dict:
     """Latest run only, fixed action labels, never raw error messages or hints."""
-    if job is None or job.status == 'pending':
+    if job is None or job.status == 'pending' or not progress_heartbeat_fresh(job):
         return {}
     result = job.result if isinstance(job.result, dict) else {}
     if job.status == 'done':
         rows = _rows(result.get('per_source'))
     else:
-        snapshot = read_snapshot(result, getattr(job, 'attempts', None))
+        snapshot = current_attempt_snapshot(job)
         rows = _rows((snapshot or {}).get('items'))
     statuses = {}
     for row in rows:
@@ -147,13 +177,15 @@ def project_run(job, task=None, *, authorized=True):
         dry_run = dry_run or getattr(task, 'dry_run', False) is True
     status = getattr(job, 'status', None)
     state = status if status in {'pending', 'running', 'done', 'failed', 'cancelled'} else 'unknown'
+    if status == 'running' and not progress_heartbeat_fresh(job):
+        return None
     if status == 'failed' and getattr(job, 'error', None) in {CANCELLED_BEFORE_START_ERROR, OPERATOR_CANCELLED_ERROR}:
         state = 'cancelled'
     metrics = {}
     if authorized and status == 'done':
         metrics = {key: _final_metrics(result, key, job_type) for key in ('collection', 'analysis')}
     elif authorized and status in {'running', 'failed', 'cancelled'}:
-        snap = read_snapshot(result, getattr(job, 'attempts', None))
+        snap = current_attempt_snapshot(job)
         if snap:
             metrics = snap.get('records') or {}
             if not metrics and snap['first'] == 0 and snap['total'] == len(snap['items']):

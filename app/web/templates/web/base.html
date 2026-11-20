@@ -38,6 +38,9 @@
     </style>
     {# Page-specific scripts/styles extend this block without replacing the shell. #}
         <link rel="stylesheet" href="{{ static_v('css/shell.css') }}">
+    {% if section in ('dashboard', 'chat', 'communications', 'tasks') %}
+    <link rel="stylesheet" href="{{ static_v('css/work-redesign.css') }}">
+    {% endif %}
     <script src="{{ static_v('js/shell.js') }}"></script>
     <script src="{{ static_v('js/context_panel.js') }}"></script>
     {% block extra_head %}{% endblock %}
@@ -83,6 +86,9 @@
 {% if user and tenant and request.query_params.get('embedded') != '1' %}
 {% include "web/_shell_notifications.html" %}
 {% include "web/_chat_dock.html" %}
+{% if section in ('dashboard', 'chat', 'communications', 'tasks') %}
+{% include "web/_work_mobile_nav.html" %}
+{% endif %}
 {% if perms and perms.can_manage_workspace(tenant.id) %}
 <dialog id="invite-dialog" class="shell-dialog" aria-labelledby="invite-dialog-title" data-invite-dialog {% if request.query_params.get('invite_dialog') == '1' %}data-auto-open{% endif %}>
     <div class="shell-dialog-heading"><h2 id="invite-dialog-title">Приглашения</h2><button type="button" class="shell-icon-button" data-dialog-close aria-label="Закрыть приглашения">{{ icon('close') }}</button></div>

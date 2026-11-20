@@ -472,6 +472,38 @@ class CalendarService:
         except CalendarError:
             return {"state": "source_unavailable", "items": None, "next_before_id": None}
 
+    @with_db_session
+    async def events_range(self, session, *, start, end):
+        """Read a bounded Google month for the actor's selected connection.
+
+        Other providers retain the existing paginated view until their recurrence
+        semantics can be represented without asserting false completeness.
+        """
+        identity = await planner_service._actor(session, ActionType.VIEW)
+        choice = await session.scalar(select(CalendarChoice).where(
+            CalendarChoice.tenant_id == identity[0], CalendarChoice.owner_user_id == identity[1]))
+        if choice is None or choice.connection_id is None:
+            raise PlannerConflict("calendar_choice_required")
+        conn = await self._connection(session, choice.connection_id, identity, verified=False)
+        if not conn.is_active:
+            return {"state": "source_unavailable", "items": None, "complete": False}
+        if conn.state == "reauth":
+            return {"state": "reauth", "items": None, "complete": False}
+        if conn.state != "verified":
+            return {"state": "source_unavailable", "items": None, "complete": False}
+        if conn.provider_id != "google_calendar":
+            return {"state": "range_unavailable", "items": None, "complete": False}
+        try:
+            adapter = await self._adapter(session, conn, identity)
+            result = await adapter.range_events(start=start, end=end)
+            return {"state": "available", **result}
+        except ReauthRequired:
+            conn.state = "reauth"
+            return {"state": "reauth", "items": None, "complete": False}
+        except CalendarError as exc:
+            state = "range_unavailable" if exc.code == "calendar_range_unavailable" else "source_unavailable"
+            return {"state": state, "items": None, "complete": False}
+
     @staticmethod
     def _writable(conn, identity):
         if (

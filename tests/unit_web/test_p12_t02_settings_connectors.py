@@ -376,7 +376,12 @@ async def test_settings_page_connections_tab_populates_workspace_connectors(monk
     assert resp.context["tab"] == "connections"
     assert resp.context["workspace_connection_rows"] == [{"id": 900, "state": "unverified"}]
     email_card = next(c for c in resp.context["connections"] if c["platform"] == "email")
-    assert {p.id for p in email_card["provider_forms"]} == {"yandex_mail", "mailru_mail"}
+    assert {p.id for p in email_card["provider_forms"]} == {
+        "yandex_mail",
+        "mailru_mail",
+        "gmail",
+        "custom_mail",
+    }
     assert email_card["manual_kinds"] == ()
     assert "workspace_connectors" not in resp.context
     assert len(resp.context["connections"]) == 8

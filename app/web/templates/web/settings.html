@@ -329,10 +329,10 @@
                     Сохранение данных не означает, что подключение проверено.
                 </p>
 
-                <div class="mt-4 grid grid-cols-1 items-start lg:grid-cols-2"
+                <div class="settings-connectors-grid mt-4 grid grid-cols-1 items-start lg:grid-cols-2"
                      data-p12-connectors="workspace-connectors">
                     {% for card in connections %}
-                        <section class="ui-card flex h-full flex-col"
+                        <section class="settings-connector-card ui-card flex h-full flex-col"
                                  id="conn-ws-{{ card.platform }}"
                                  data-connector-platform="{{ card.platform }}"
                                  aria-labelledby="conn-{{ card.platform }}">
@@ -352,7 +352,13 @@
                                 {% include 'web/_yandex_disk_connections.html' %}
                             {% elif card.platform == 'mailru_cloud' %}
                                 {% include 'web/_mailru_cloud_connections.html' %}
-                            {% elif card.platform not in ('vk', 'telegram') %}
+                            {% elif card.platform == 'local_gateway' %}
+                                <div class="settings-connector-notice mt-4" role="status">
+                                    <strong>Подключение с компьютера</strong>
+                                    <p class="mt-1">Локальный шлюз подключается через отдельное приложение для macOS или Windows с парным mTLS-сеансом.</p>
+                                    <p class="mt-2">Сейчас в веб-приложении нет безопасной формы сопряжения. Старый личный ключ здесь не используется и не проверяет доступ к шлюзу.</p>
+                                </div>
+                            {% elif card.platform not in ('vk', 'telegram', 'local_gateway') %}
                                 <p class="mt-3 text-xs text-amber-700 dark:text-amber-300">
                                     Адаптер и форма этого сервиса пока недоступны. Старый ключ не настраивает подключение
                                     пространства и не проверяет доступ к сервису.
@@ -363,7 +369,7 @@
                                 <p class="mt-3 text-xs text-slate-600 dark:text-slate-400">{{ card.status.detail }}</p>
                             {% endif %}
 
-                            {% if card.details is defined and card.details and card.platform != 'email' %}
+                            {% if card.details is defined and card.details and card.platform not in ('email', 'local_gateway') %}
                                 {# Facts an operator does not act on: collapsed so the card
                                    reads as "connect your account", not as a catalog dump. #}
                                 <details class="mt-3 text-xs">
@@ -437,7 +443,7 @@
                                deliberate escape hatch otherwise. Expanded when it is the
                                only route, so it is never hidden behind a click the user
                                does not know exists. #}
-                            {% if card.manual_kinds %}
+                            {% if card.manual_kinds and card.platform != 'local_gateway' %}
                                 {% set manual_open = not card.is_oauth or not card.status.is_configured or not card.rows %}
                                 <details class="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/40 p-4" {% if manual_open %}open{% endif %}>
                                     <summary class="cursor-pointer text-xs text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200">

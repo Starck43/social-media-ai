@@ -401,8 +401,10 @@ async def canonical_task_actions(task_id, *, perms=None, boundary="cloud"):
         )
         active_work = task.status in {"todo", "in_progress"} and task.recurrence_source == "planner"
         actions = []
-        if active_work and task_service.action_allowed(identity, ActionType.UPDATE) and await task_service._can_edit(
-            session, task, identity
+        if (
+            active_work
+            and task_service.action_allowed(identity, ActionType.UPDATE)
+            and await task_service._can_edit(session, task, identity)
         ):
             actions += [
                 {"reference": "edit", "label": "Редактировать"},

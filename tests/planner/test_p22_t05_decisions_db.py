@@ -173,9 +173,7 @@ async def test_task_command_decision_uses_original_ledger(task_world, monkeypatc
             item = await approval_inbox.get_item(command["id"])
             reference = item["item_id"]
             assert await decisions.pending(task.id) == []
-            await decisions.bind_produced_review(
-                task.id, expected_version=task.version, reference=reference
-            )
+            await decisions.bind_produced_review(task.id, expected_version=task.version, reference=reference)
             (pending,) = await decisions.pending(task.id)
             assert pending["reference"] == reference
             preview = await decisions.preview(task.id, reference, outcome="rejected")

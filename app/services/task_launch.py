@@ -307,3 +307,10 @@ async def launch_social_task(
             raise
         raise TaskLaunchError("request_invalid", cause=error) from None
     return present_task_launch_result(await execute_task_launch(command))
+
+
+async def launch_published_task(task_id: int, *, expected_revision: int, request_key: str):
+    """Manual and conversational launch of an existing canonical Task."""
+    from app.services.task_run_admission import task_run_service
+
+    return await task_run_service.admit_manual(task_id, expected_revision=expected_revision, request_key=request_key)

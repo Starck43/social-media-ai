@@ -117,7 +117,14 @@ class PreflightTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.gather(task, return_exceptions=True)
         self.assertEqual(receipt.acknowledgement, CLAIMS.OutcomeAck.DONE)
         self.handler.assert_awaited_once_with(
-            {"safe": "input", "job_id": 11, "agent_task_id": 7, "_trusted_initiated_by_user_id": None}
+            {
+                "safe": "input",
+                "job_id": 11,
+                "agent_task_id": 7,
+                "attempts": 2,
+                "_prior_result": {},
+                "_trusted_initiated_by_user_id": None,
+            }
         )
         self.jobs.mark_done.assert_awaited_once()
 

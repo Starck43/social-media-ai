@@ -30,6 +30,7 @@ class JobRow(Model):
     id = Column(Integer, primary_key=True)
     tenant_id = Column(Integer)
     agent_task_id = Column(Integer)
+    task_run_id = Column(Integer)
     status = Column(String)
     locked_at = Column(DateTime(timezone=True))
     run_at = Column(DateTime(timezone=True))
@@ -168,8 +169,8 @@ class ReapTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("2026-10-09 23:55:00", sql(statement))
 
     async def test_stopped_rows_project_task_with_newer_evidence_guard(self):
-        stopped = (31, 9, STARTED, self.budget.ATTEMPT_BUDGET_STOP_PREFIX + "old")
-        reaped = [(31, 10, STARTED, UNCONFIRMED), (31, None, STARTED, UNCONFIRMED)]
+        stopped = (31, 9, STARTED, self.budget.ATTEMPT_BUDGET_STOP_PREFIX + "old", None, 1)
+        reaped = [(31, 10, STARTED, UNCONFIRMED, None, 2), (31, None, STARTED, UNCONFIRMED, None, 3)]
         self.results = [[stopped], reaped]
         self.assertEqual(await self.manager.reap_stale(), 2)
         # Two job writes, then exactly one Task write per stopped row that has a Task.
@@ -191,14 +192,14 @@ class ReapTests(unittest.IsolatedAsyncioTestCase):
     async def test_bypass_is_cross_workspace_and_projects_each_owner(self):
         self.bypass = True
         self.tenant_id = None
-        self.results = [[], [(31, 9, STARTED, UNCONFIRMED), (32, 9, STARTED, UNCONFIRMED)]]
+        self.results = [[], [(31, 9, STARTED, UNCONFIRMED, None, 1), (32, 9, STARTED, UNCONFIRMED, None, 2)]]
         self.assertEqual(await self.manager.reap_stale(), 2)
         self.assertNotIn("jobs.tenant_id =", sql(self.statements[0]))
         self.assertIn("agent_tasks.tenant_id = 31", sql(self.statements[2]))
         self.assertIn("agent_tasks.tenant_id = 32", sql(self.statements[3]))
 
     async def test_task_write_failure_propagates_inside_the_same_transaction(self):
-        self.results = [[], [(31, 9, STARTED, UNCONFIRMED)]]
+        self.results = [[], [(31, 9, STARTED, UNCONFIRMED, None, 1)]]
         self.fail_on = 3
         with self.assertRaisesRegex(RuntimeError, "storage_write_failed"):
             await self.manager.reap_stale()

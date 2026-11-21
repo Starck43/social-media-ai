@@ -355,6 +355,7 @@ async def task_create(
 
     try:
         with tenant_scope(tenant_id):
+            from app.core.permissions import get_current_user
             from app.services.task_creation import create_task_with_sources
 
             create = create_task_with_sources
@@ -364,6 +365,8 @@ async def task_create(
 
                 create = create_linked_assignment
                 link_args = {"planner_id": planner_id, "expected_version": planner_version}
+            else:
+                link_args["canonical_owner_id"] = getattr(get_current_user(), "id", None)
             task = await create(
                 task_values={
                     "name": name.strip()[:100],

@@ -557,7 +557,7 @@ async def _add_task(
             next_run = next_run_at(cron, plan_tz)
         if isinstance(parsed_payload.get("task_plan"), dict):
             from app.core.database import new_session
-            from app.core.permissions import service_permission_scope
+            from app.core.permissions import get_current_user, service_permission_scope
 
             session = new_session()
             try:
@@ -577,6 +577,7 @@ async def _add_task(
                         },
                         source_ids=None,
                         tenant_id=tenant_id,
+                        canonical_owner_id=getattr(get_current_user(), "id", None),
                     )
                     with service_permission_scope("agenttask", "update"):
                         await AgentTaskManager().set_sources(task.id, parsed_source_ids, session=session)
@@ -587,6 +588,7 @@ async def _add_task(
             )
         else:
             from app.core.database import new_session
+            from app.core.permissions import get_current_user
             from app.models.managers.agent_task_manager import AgentTaskManager
             from app.services.task_creation import persist_task_create
 
@@ -606,6 +608,7 @@ async def _add_task(
                         },
                         source_ids=None,
                         tenant_id=tenant_id,
+                        canonical_owner_id=getattr(get_current_user(), "id", None),
                     )
                     if parsed_source_ids:
                         await AgentTaskManager().set_sources(task.id, parsed_source_ids, session=session)

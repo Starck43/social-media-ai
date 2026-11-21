@@ -5,9 +5,13 @@ from __future__ import annotations
 import secrets
 
 import pytest
+from sqlalchemy import func, select
 
+from app.core.database import new_session
 from app.core.tenant_context import tenant_scope
+from app.models import LegacyTaskId
 from app.models.managers.agent_task_manager import AgentTaskManager
+from app.models.planner.canonical_task import Task
 from tests.api.test_api_permissions import _auth_headers, _client, _drop, _platform_value, _register_owner
 
 
@@ -202,6 +206,98 @@ async def test_duplicate_concurrent_creates_commit_one_task() -> None:
                         matches = await AgentTaskManager().filter(name=name).all()
                     for task in matches:
                         await client.delete(f"/api/v1/tasks/{task.id}", headers=headers)
+                if source_id is not None:
+                    await client.delete(f"/api/v1/sources/{source_id}", headers=headers)
+            await _drop(owner, tenant_id)
+
+
+@pytest.mark.tenancy
+async def test_ordinary_api_create_writes_scoped_alias_and_rolls_back_mapping(monkeypatch) -> None:
+    """The ordinary agent-create path owns its canonical write atomically."""
+    async with await _client() as client:
+        owner = None
+        tenant_id = None
+        source_id = None
+        created_id = None
+        try:
+            owner, tenant_id = await _register_owner(client, "P22T06Create")
+            headers = await _auth_headers(client, owner.username)
+            response = await client.post(
+                "/api/v1/tasks",
+                json={
+                    "name": f"p22-t06-create-{secrets.token_hex(3)}",
+                    "cron_expr": "@once",
+                    "job_type": "collect",
+                    "payload": {},
+                    "is_active": False,
+                },
+                headers=headers,
+            )
+            assert response.status_code == 201, response.text
+            created_id = response.json()["id"]
+            with tenant_scope(tenant_id):
+                async with new_session() as session:
+                    mapping = await session.scalar(
+                        select(LegacyTaskId).where(
+                            LegacyTaskId.tenant_id == tenant_id,
+                            LegacyTaskId.legacy_namespace == "agent",
+                            LegacyTaskId.legacy_id == created_id,
+                        )
+                    )
+                assert mapping is not None
+                assert mapping.task_id is not None
+                async with new_session() as session:
+                    canonical = await session.scalar(
+                        select(Task).where(Task.tenant_id == tenant_id, Task.id == mapping.task_id)
+                    )
+                assert canonical is not None
+                assert canonical.tenant_id == tenant_id
+                async with new_session() as session:
+                    planner_mapping = await session.scalar(
+                        select(LegacyTaskId).where(
+                            LegacyTaskId.tenant_id == tenant_id,
+                            LegacyTaskId.legacy_namespace == "planner",
+                            LegacyTaskId.legacy_id == created_id,
+                        )
+                    )
+                assert planner_mapping is None
+
+            source_id = await _create_source(client, headers)
+            original = AgentTaskManager.set_sources
+
+            async def fail_after_task_write(self, task_id, source_ids, session=None):
+                await original(self, task_id, source_ids, session=session)
+                raise ValueError("injected source-link failure")
+
+            monkeypatch.setattr(AgentTaskManager, "set_sources", fail_after_task_write)
+            rollback_name = f"p22-t06-rollback-{secrets.token_hex(3)}"
+            response = await client.post(
+                "/api/v1/tasks",
+                json={
+                    "name": rollback_name,
+                    "cron_expr": "@once",
+                    "job_type": "collect",
+                    "source_ids": [source_id],
+                    "payload": {},
+                    "is_active": False,
+                },
+                headers=headers,
+            )
+            assert response.status_code == 400, response.text
+            with tenant_scope(tenant_id):
+                assert await AgentTaskManager().filter(name=rollback_name).first() is None
+                async with new_session() as session:
+                    alias_count = await session.scalar(
+                        select(func.count())
+                        .select_from(LegacyTaskId)
+                        .where(LegacyTaskId.tenant_id == tenant_id, LegacyTaskId.legacy_namespace == "agent")
+                    )
+                assert alias_count == 1
+        finally:
+            if owner is not None:
+                headers = await _auth_headers(client, owner.username)
+                if created_id is not None:
+                    await client.delete(f"/api/v1/tasks/{created_id}", headers=headers)
                 if source_id is not None:
                     await client.delete(f"/api/v1/sources/{source_id}", headers=headers)
             await _drop(owner, tenant_id)

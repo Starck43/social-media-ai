@@ -25,7 +25,6 @@ EXPECTED = {
     "communications": ("/app/communications", "scheduling.action.view"),
     "tasks": ("/app/task-hub", "scheduling.task.view"),
     "contacts": ("/app/contacts", "contacts.contact.view"),
-    "followups": ("/app/followups", "scheduling.task.view"),
     "cases": ("/app/cases", "scheduling.action.view"),
     "knowledge": ("/app/knowledge", "analysis.result.view"),
     "documents": ("/app/documents", "analysis.result.view"),
@@ -68,7 +67,6 @@ def test_all_routes_are_unique_ready_and_keep_permissions():
 def test_group_order_and_mobile_order_are_stable():
     assert list(dict.fromkeys(item.group for item in nav.NAV_ITEMS)) == [
         "pinned",
-        "tasks",
         "messages",
         "docs",
         "analytics",

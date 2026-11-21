@@ -33,52 +33,42 @@ class NavItem(NamedTuple):
 # person opens first (home, chat, contacts). Empty label means "no heading".
 NAV_GROUP_LABELS: dict[str, str] = {
     "pinned": "",
-    "tasks": "Задачи",
-    "messages": "Переписка",
+    "messages": "Общение",
     "docs": "Документация",
     "analytics": "Отчёты",
     "assistant": "Ассистент",
 }
 
 
-# Proposal v6: home and chat are pinned above the groups; correspondence holds
-# the inbox, the approvals and the contact cards they come from. The rest is
-# grouped by the work it belongs to -- tasks, documentation (with the
-# document-backed supplier comparison), reports and the assistant's
-# inputs/scenarios. Connection setup (1C) and the job queue stay
+# Proposal v7: home, chat and tasks are pinned above the groups as everyday
+# entries. Communication holds the correspondence registry, the approvals and the
+# contact cards they come from. The rest is grouped by the work it belongs to --
+# documentation (with the document-backed supplier comparison), reports and the
+# assistant's inputs/scenarios. Commitments are not a section: P22-T15 turns them
+# into dated tasks, so the legacy catalogue keeps its URL without a menu slot. Connection setup (1C) and the job queue stay
 # out of the sidebar: they are operator settings reached from the account menu.
 NAV_ITEMS: tuple[NavItem, ...] = (
     # Pinned: the entries opened every day, above the first group heading.
     NavItem("dashboard", "/app/", "Сегодня", icon="home", group="pinned", group_label=""),
     NavItem("chat", "/app/chat", "Чат с агентом", icon="chat", group="pinned", group_label=""),
-    # Задачи
     NavItem(
         "tasks",
         "/app/task-hub",
         "Задачи",
         required_permission="scheduling.task.view",
         icon="calendar",
-        group="tasks",
-        group_label="Задачи",
+        group="pinned",
+        group_label="",
     ),
-    NavItem(
-        "followups",
-        "/app/followups",
-        "Договорённости",
-        required_permission="scheduling.task.view",
-        icon="clock",
-        group="tasks",
-        group_label="Задачи",
-    ),
-    # Переписка
+    # Общение
     NavItem(
         "communications",
         "/app/communications",
-        "Входящие",
+        "Переписка",
         required_permission="scheduling.action.view",
         icon="inbox",
         group="messages",
-        group_label="Переписка",
+        group_label="Общение",
     ),
     NavItem(
         "actions",
@@ -87,7 +77,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="scheduling.action.view",
         icon="check",
         group="messages",
-        group_label="Переписка",
+        group_label="Общение",
     ),
     NavItem(
         "contacts",
@@ -96,7 +86,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="contacts.contact.view",
         icon="users",
         group="messages",
-        group_label="Переписка",
+        group_label="Общение",
     ),
     # Документация
     NavItem(

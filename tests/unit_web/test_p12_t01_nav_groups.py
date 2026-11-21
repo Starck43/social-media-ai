@@ -66,7 +66,6 @@ class _StubPerms:
 def test_every_nav_item_belongs_to_a_declared_domain_group() -> None:
     assert set(NAV_GROUP_LABELS) == {
         "pinned",
-        "tasks",
         "messages",
         "docs",
         "analytics",
@@ -88,7 +87,6 @@ def test_p12_sections_are_live_and_gated() -> None:
         "knowledge": "/app/knowledge",
         "documents": "/app/documents",
         "communications": "/app/communications",
-        "followups": "/app/followups",
         "cases": "/app/cases",
     }
     for key, href in p12.items():
@@ -113,7 +111,6 @@ def test_ready_routes_remain_and_mobile_bar_is_daily_loop() -> None:
         "knowledge": "/app/knowledge",
         "documents": "/app/documents",
         "communications": "/app/communications",
-        "followups": "/app/followups",
         "cases": "/app/cases",
         "contacts": "/app/contacts",
         "files": "/app/knowledge/files",

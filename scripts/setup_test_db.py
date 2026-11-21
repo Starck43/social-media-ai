@@ -63,6 +63,8 @@ LEGACY_CATALOG_OWNER_ID = 2
 # backfill, while the metadata stays nullable because workspaces are also
 # created before a payer exists. Recorded here so the preflight can accept the
 # known difference and still refuse any new one. Owner: the named migration.
+# The same accepted difference is tolerated in `scripts/migrations/
+# q14_validate_baseline.py` as the dormant service-plan relaxation (P11-T37).
 KNOWN_STRICT_COLUMNS = {
     ("tenants", "plan_holder_user_id"): "0155_p2t17_service_plan_finalize",
 }

@@ -226,7 +226,13 @@ async def resolve_legacy_task(
     mapping = await session.scalar(query.with_for_update() if lock else query)
     if mapping is None:
         return None
-    return await session.scalar(select(Task).where(Task.tenant_id == reference.tenant_id, Task.id == mapping.task_id))
+    return await session.scalar(
+        select(Task).where(
+            Task.tenant_id == reference.tenant_id,
+            Task.id == mapping.task_id,
+            Task.deleted_at.is_(None),
+        )
+    )
 
 
 class LegacyCompatibilityWriter:
@@ -423,6 +429,27 @@ class LegacyCompatibilityWriter:
             owner_user_id=task.owner_user_id,
             attach_to_task_id=task.id if (mapping.details or {}).get("attached") else None,
         )
+
+    async def delete_agent(self, session: AsyncSession, row: AgentTask) -> None:
+        """Tombstone an agent mirror before the legacy row is physically deleted."""
+
+        if not self._database_session(session):
+            return
+        reference = _validate_reference(row.tenant_id, AGENT_NAMESPACE, row.id)
+        mapping = await self._mapping(session, reference)
+        if mapping is None or mapping.task_id is None:
+            return
+        task = await session.scalar(
+            select(Task).where(Task.tenant_id == row.tenant_id, Task.id == mapping.task_id).with_for_update()
+        )
+        if task is None:
+            raise LegacyMappingConflict("canonical_task_missing")
+        task.deleted_at = datetime.now(timezone.utc)
+        details = dict(mapping.details or {})
+        details["deleted"] = True
+        mapping.details = details
+        mapping.resolution_reason = "legacy_deleted"
+        await session.flush()
 
     async def _alias_unresolved(self, session, *, row: AgentTask, reason: str, details: dict):
         reference = _validate_reference(row.tenant_id, AGENT_NAMESPACE, row.id)

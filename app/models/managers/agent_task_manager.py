@@ -323,6 +323,9 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         # SET NULL, so without this the occurrence would still execute with the
         # removed task's payload. Claimed rows keep their own recovery policy.
         await JobManager().delete_pending_for_task(session, tenant_id=current.tenant_id, task_id=current.id)
+        from app.services.planner.legacy_migration import compatibility_writer
+
+        await compatibility_writer.delete_agent(session, current)
         return await super().delete_by_id(instance_id, session=session)
 
     @require_permission("agenttask", ActionType.DELETE)
@@ -370,8 +373,11 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         from .job_manager import JobManager
 
         job_manager = JobManager()
+        from app.services.planner.legacy_migration import compatibility_writer
+
         for task in matching:
             await job_manager.delete_pending_for_task(session, tenant_id=task.tenant_id, task_id=task.id)
+            await compatibility_writer.delete_agent(session, task)
             await session.delete(task)
         await session.flush()
         return len(matching)

@@ -539,6 +539,54 @@ async def _seed_permissions() -> None:
 
     with engine.begin() as conn:
         register_model_types(conn, is_upgrade=True)
+        _seed_capability_resources(conn)
+
+
+def _capability_registry():
+    """The capability-only catalogue identities migration 0156 owns.
+
+    Read from the migration module itself: a re-seed must restore exactly what
+    history inserted, and a copied literal list would drift from it. The module
+    has no import-time side effects; it only defines its revision and helpers.
+    """
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "setup_test_db_capability_registry", PROJECT_ROOT / "migrations/versions/p17t05_onec_audit_export.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.CAPABILITY_RESOURCES
+
+
+def _seed_capability_resources(conn) -> None:
+    """Restore catalogue rows whose table name is a contract, not a physical table.
+
+    Migration 0156 inserts them once; ``--reset`` truncates ``model_types`` and
+    the ordinary registration path skips every resource whose table is absent, so
+    without this step the schema loses ``onec.data``/``onec.command`` and
+    ``tests/conftest.py`` refuses it. Additive and idempotent.
+    """
+    from sqlalchemy import select
+
+    from app.models import ModelType
+    from app.services.crud import create_permissions_for_model
+
+    for key, model_name, table_name, _actions in _capability_registry():
+        identity = conn.execute(select(ModelType.id).where(ModelType.resource_key == key)).scalar_one_or_none()
+        if identity is None:
+            identity = conn.execute(
+                ModelType.__table__.insert()
+                .values(
+                    resource_key=key,
+                    model_name=model_name,
+                    table_name=table_name,
+                    description="OneC workspace capability",
+                    is_managed=True,
+                )
+                .returning(ModelType.id)
+            ).scalar_one()
+        create_permissions_for_model(conn, identity, key.split(".")[0], model_name)
 
 
 def _insert_ignoring_conflicts(table):

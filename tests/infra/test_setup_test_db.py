@@ -93,3 +93,71 @@ async def test_nullability_drift_names_both_directions_and_honours_the_recorded_
             assert unrecorded == ["tenants.extra"]
         finally:
             await trans.rollback()
+
+
+def test_capability_registry_matches_the_catalog_and_the_migration():
+    """A re-seed restores history's rows, and the catalog still owns their grants."""
+    from app.core.access_catalog import RESOURCES
+    from scripts.setup_test_db import _capability_registry
+
+    registry = _capability_registry()
+    keys = {key for key, _model, _table, _actions in registry}
+    assert keys == {"onec.data", "onec.command"}
+    assert keys <= {resource.key for resource in RESOURCES}
+
+
+async def test_capability_rows_and_permissions_come_back_after_a_reset():
+    """`--reset` truncates model_types; the re-seed must restore 0156's rows."""
+    from sqlalchemy import create_engine, select
+    from sqlalchemy import text as sql_text
+
+    from app.models import ModelType, Permission
+    from scripts.ci.schema_inventory import libpq_dsn
+    from scripts.setup_test_db import _seed_capability_resources
+
+    engine = create_engine(
+        libpq_dsn(async_engine.url.render_as_string(hide_password=False)).replace(
+            "postgresql://", "postgresql+psycopg2://", 1
+        )
+    )
+    schema = ModelType.__table__.schema
+    with engine.connect() as conn:
+        trans = conn.begin()
+        try:
+            # Schema-qualified: an unqualified statement would target `public`.
+            # Grant links go first, exactly like the migration's own downgrade.
+            for link in ("role_permission", "workspace_role_permission"):
+                conn.execute(
+                    sql_text(
+                        f'delete from "{schema}".{link} l using "{schema}".permissions p, "{schema}".model_types m '
+                        "where l.permission_id = p.id and p.model_type_id = m.id and m.resource_key like 'onec.%'"
+                    )
+                )
+            conn.execute(
+                sql_text(
+                    f'delete from "{schema}".permissions p using "{schema}".model_types m '
+                    "where p.model_type_id = m.id and m.resource_key like 'onec.%'"
+                )
+            )
+            conn.execute(sql_text(f"delete from \"{schema}\".model_types where resource_key like 'onec.%'"))
+            assert (
+                conn.execute(select(ModelType.id).where(ModelType.resource_key == "onec.data")).scalar_one_or_none()
+                is None
+            )
+
+            _seed_capability_resources(conn)
+
+            keys = set(
+                conn.execute(select(ModelType.resource_key).where(ModelType.resource_key.like("onec.%"))).scalars()
+            )
+            assert keys == {"onec.data", "onec.command"}
+            actions = set(
+                conn.execute(
+                    select(Permission.action_type)
+                    .join(ModelType, ModelType.id == Permission.model_type_id)
+                    .where(ModelType.resource_key == "onec.data")
+                ).scalars()
+            )
+            assert {getattr(action, "db_value", action) for action in actions} == {"view", "export"}
+        finally:
+            trans.rollback()

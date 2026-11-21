@@ -17,6 +17,7 @@ from .commands import (
     roles,
     scenarios,
     tasks,
+    work_tasks,
 )
 from .commands.tasks import (
     _add_task,
@@ -56,6 +57,7 @@ app.command(name="learn")(direct.cmd_learn)
 app.command(name="reflect")(direct.cmd_reflect)
 
 app.add_typer(task_app, name="task")
+app.add_typer(work_tasks.app, name="worktasks")
 
 digest_app = typer.Typer(help="Digest operations")
 

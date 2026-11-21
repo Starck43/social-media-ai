@@ -68,6 +68,8 @@ async def test_cli_command_runs_as_the_declared_member(workspace, monkeypatch, c
         created = await tool.work_task_create({"title": "Synthetic CLI task"})
     cli._SCOPE.update({"tenant": str(workspace.tenants[0].id), "user": str(workspace.user.id)})
     try:
+        # Deliberately outside workspace.scope(): the CLI must supply the member's
+        # own grants, not inherit an ambient one from the test harness.
         await __import__("asyncio").to_thread(cli.show_cmd, created["id"])
     except typer.Exit as exit_code:  # a refusal would exit non-zero; success must not
         raise AssertionError(f"CLI refused a permitted read: {exit_code.exit_code}") from None

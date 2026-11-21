@@ -9,7 +9,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 ## Implementation order
 
 1. [P22-T01 — Task identity, ownership and human work](../tasks/p22-t01.md). Independent foundation.
-2. [P22-T02 — Connector capabilities, installations and account grants](../tasks/p22-t02.md). Independent foundation.
+2. [P22-T02 — Connector capabilities, installations and account grants](../audit/p22/p22-t02.md). DONE 2026-11-21 at `f85ee56e`. Scoped resolver and explicit account bindings.
 3. [P22-T03 — Task execution profiles, steps and resource bindings](../tasks/p22-t03.md). Depends on P22-T01, P22-T02.
 4. [P22-T04 — Run admission, scheduler and worker integration](../tasks/p22-t04.md). Depends on P22-T03.
 5. [P22-T05 — Task actions, decisions and confirmed deletion](../tasks/p22-t05.md). Depends on P22-T01, P22-T04.

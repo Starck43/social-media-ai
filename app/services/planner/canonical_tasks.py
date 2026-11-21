@@ -77,7 +77,7 @@ class CanonicalTaskService(PlannerService):
         team = [Task.visibility == "workspace"]
         if role in MANAGERS:
             team.append(Task.visibility == "shared")
-        return or_(_mine(actor_id), *team)
+        return and_(Task.deleted_at.is_(None), or_(_mine(actor_id), *team))
 
     def filter_list(self, query, identity, view):
         if view == "mine":
@@ -116,6 +116,18 @@ class CanonicalTaskService(PlannerService):
     async def check_changed_references(self, session, request, identity, row, changes):
         new_links = {field: None for field in ("assignee_id", "contact_id", "parent_id") if field not in changes}
         await self._references(session, request.model_copy(update=new_links), identity, own_id=row.id)
+
+    @staticmethod
+    def action_allowed(identity, action):
+        return ("plannertask", action) in workspace_grants(identity[2]) and has_permission(
+            get_current_user(), "plannertask", action
+        )
+
+    async def action_actor(self, session, action):
+        identity = await self._actor(session, action)
+        if not self.action_allowed(identity, action):
+            raise PermissionError("task_action_denied")
+        return identity
 
     async def _task(self, session, task_id, identity, *, lock=False):
         row = await super()._task(session, task_id, identity, lock=lock)
@@ -198,7 +210,7 @@ class CanonicalTaskService(PlannerService):
         if template.parent_id is not None:
             parent = await session.scalar(
                 select(Task.id)
-                .where(Task.tenant_id == tenant_id, Task.id == template.parent_id)
+                .where(Task.tenant_id == tenant_id, Task.id == template.parent_id, Task.deleted_at.is_(None))
                 .with_for_update(read=True)
             )
             if parent is None:

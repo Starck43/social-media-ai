@@ -1,6 +1,8 @@
 """Local Task identity and participation."""
 
-from sqlalchemy import CheckConstraint, ForeignKey, ForeignKeyConstraint, Index, String
+from datetime import datetime
+
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TenantScopedMixin, TimestampMixin
@@ -18,6 +20,7 @@ class Task(TaskColumns, Base, TenantScopedMixin, TimestampMixin):
     )
 
     visibility: Mapped[str] = mapped_column(String(16), nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TaskParticipant(Base, TenantScopedMixin):

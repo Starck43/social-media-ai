@@ -246,7 +246,7 @@ async def _notice(session, row, event):
 class ApprovalService:
     """Tenant-scoped, transactional approval requests and decisions."""
 
-    async def pending(self, *, boundary="cloud", limit=50, before_id=None, session=None):
+    async def pending(self, *, boundary="cloud", limit=50, before_id=None, approval_id=None, session=None):
         from datetime import datetime, timezone
 
         from sqlalchemy import select
@@ -257,7 +257,9 @@ class ApprovalService:
         if session is None:
             from app.core.database import with_db_session
 
-            return await with_db_session(type(self).pending)(self, boundary=boundary, limit=limit, before_id=before_id)
+            return await with_db_session(type(self).pending)(
+                self, boundary=boundary, limit=limit, before_id=before_id, approval_id=approval_id
+            )
         if boundary not in BOUNDARIES or type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("invalid_query")
         if before_id is not None and (type(before_id) is not int or before_id <= 0):
@@ -288,6 +290,10 @@ class ApprovalService:
                 KnowledgeDocument.data_boundary.in_(BOUNDARIES[boundary]),
             )
         )
+        if approval_id is not None:
+            if type(approval_id) is not int or approval_id <= 0:
+                raise ValueError("invalid_query")
+            query = query.where(DocumentApproval.id == approval_id)
         if before_id is not None:
             query = query.where(DocumentApproval.id < before_id)
         rows = (await session.scalars(query.order_by(DocumentApproval.id.desc()).limit(limit + 1))).all()

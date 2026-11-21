@@ -367,3 +367,74 @@ async def linked_planner(agent):
     except (LookupError, ValueError, PermissionError):
         return {"status": "unavailable"}
     return {"status": "available", "task": task}
+
+
+async def canonical_task_actions(task_id, *, perms=None, boundary="cloud"):
+    """Actor-specific projection for task detail, agent tools and the task API."""
+    from app.models.planner import TaskRun, TaskTrigger
+    from app.services.commands.task_decisions import task_decision_service
+    from app.services.execution_plan_contracts import ExecutionPlanError
+    from app.services.planner.canonical_tasks import task_service
+    from app.services.task_execution_plans import execution_plan_service
+    from app.services.task_run_admission import TaskRunAdmissionError, authorize_task_run, validate_admissible_plan
+
+    async with async_session_maker() as session, session.begin():
+        identity = await task_service.action_actor(session, ActionType.VIEW)
+        task = await task_service._task(session, task_id, identity)
+        latest = await session.scalar(
+            select(TaskRun)
+            .where(TaskRun.tenant_id == task.tenant_id, TaskRun.task_id == task.id)
+            .order_by(TaskRun.id.desc())
+            .limit(1)
+        )
+        active_run = await session.scalar(
+            select(TaskRun.id).where(
+                TaskRun.tenant_id == task.tenant_id,
+                TaskRun.task_id == task.id,
+                TaskRun.status.in_(("pending", "running")),
+            )
+        )
+        next_due_at = await session.scalar(
+            select(TaskTrigger.next_due_at).where(
+                TaskTrigger.tenant_id == task.tenant_id, TaskTrigger.task_id == task.id, TaskTrigger.enabled
+            )
+        )
+        active_work = task.status in {"todo", "in_progress"} and task.recurrence_source == "planner"
+        actions = []
+        if (
+            active_work
+            and task_service.action_allowed(identity, ActionType.UPDATE)
+            and await task_service._can_edit(session, task, identity)
+        ):
+            actions += [
+                {"reference": "edit", "label": "Редактировать"},
+                {"reference": "complete", "label": "Завершить"},
+            ]
+            if active_run is None:
+                try:
+                    await authorize_task_run(session, task.id)
+                    reference = await execution_plan_service.get_reference(task.id, session=session)
+                    if reference is not None:
+                        admitted = await execution_plan_service.load_for_admission(
+                            task.id, reference.revision, session=session
+                        )
+                        validate_admissible_plan(admitted.plan)
+                        actions.append({"reference": "run", "label": "Запустить", "revision": reference.revision})
+                except (ExecutionPlanError, TaskRunAdmissionError, PermissionError):
+                    pass
+        if (
+            task.recurrence_source == "planner"
+            and task_service.action_allowed(identity, ActionType.DELETE)
+            and task_service._can_share(task, identity)
+        ):
+            actions.append({"reference": "delete", "label": "Удалить", "confirmation_required": True})
+        decisions = await task_decision_service.pending(task_id, perms=perms, boundary=boundary, session=session)
+        return {
+            "task_id": task.id,
+            "version": task.version,
+            "work_status": task.status,
+            "latest_run": {"run_id": latest.id, "status": latest.status} if latest is not None else None,
+            "next_due_at": next_due_at,
+            "actions": actions,
+            "pending_decisions": decisions,
+        }

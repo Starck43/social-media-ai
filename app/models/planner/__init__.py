@@ -5,6 +5,7 @@ from .events import PlannerEventClaim, PlannerEventGroup, PlannerEventRun, Plann
 from .execution_plan import TaskPlanBinding, TaskPlanRevision
 from .reminder import PlannerReminder
 from .task import PlannerTask
+from .task_decision import TaskDecision, TaskDecisionLink
 from .task_run import TaskRun, TaskTrigger
 
 __all__ = [
@@ -13,6 +14,8 @@ __all__ = [
     "TaskParticipant",
     "TaskPlanBinding",
     "TaskPlanRevision",
+    "TaskDecision",
+    "TaskDecisionLink",
     "TaskRun",
     "TaskTrigger",
     "PlannerEventRun",

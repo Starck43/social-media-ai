@@ -188,7 +188,8 @@ async def test_migration_refuses_populated_downgrade(workspace):
     config = Config("alembic.ini")
     with engine.begin() as connection:
         config.attributes["connection"] = connection
-        with pytest.raises(RuntimeError, match="Downgrade refused"):
+        # Roll back any newer revisions visited before 0160 refuses.
+        with pytest.raises(RuntimeError, match="Downgrade refused"), connection.begin_nested():
             command.downgrade(config, "0159")
     async with async_session_maker() as session:
         assert await session.scalar(select(TaskTrigger.id).where(TaskTrigger.task_id == task.id)) is not None

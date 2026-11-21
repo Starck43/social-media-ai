@@ -36,7 +36,7 @@ NAV_GROUP_LABELS: dict[str, str] = {
     "tasks": "Задачи",
     "messages": "Сообщения",
     "docs": "Документация",
-    "analytics": "Аналитика",
+    "analytics": "Отчёты",
     "assistant": "Ассистент",
 }
 
@@ -134,7 +134,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         group="docs",
         group_label="Документация",
     ),
-    # Аналитика
+    # Отчёты: the results workspace and the delivered digests.
     NavItem(
         "analytics",
         "/app/analytics",
@@ -142,7 +142,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="analysis.result.view",
         icon="chart",
         group="analytics",
-        group_label="Аналитика",
+        group_label="Отчёты",
     ),
     NavItem(
         "digests",
@@ -151,7 +151,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="notifications.digest_run.view",
         icon="document",
         group="analytics",
-        group_label="Аналитика",
+        group_label="Отчёты",
     ),
     # Ассистент
     NavItem(

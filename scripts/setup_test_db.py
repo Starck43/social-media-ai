@@ -546,8 +546,9 @@ def _capability_registry():
     """The capability-only catalogue identities migration 0156 owns.
 
     Read from the migration module itself: a re-seed must restore exactly what
-    history inserted, and a copied literal list would drift from it. The module
-    has no import-time side effects; it only defines its revision and helpers.
+    history inserted, and a copied literal list would drift from it. Importing the
+    module executes no DDL: it defines its revision, constants and helpers, and
+    imports ``settings``/``alembic.op`` only.
     """
     import importlib.util
 

@@ -161,3 +161,36 @@ async def test_capability_rows_and_permissions_come_back_after_a_reset():
             assert {getattr(action, "db_value", action) for action in actions} == {"view", "export"}
         finally:
             trans.rollback()
+
+
+def test_permission_seeding_calls_the_capability_restore(monkeypatch):
+    """The restore is only useful if the seed path actually calls it."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from scripts import setup_test_db as bootstrap
+
+    class Connection:
+        pass
+
+    class Begin:
+        def __enter__(self):
+            return Connection()
+
+        def __exit__(self, *args):
+            return False
+
+    recorded = {}
+    monkeypatch.setattr(
+        "app.core.database.engine",
+        SimpleNamespace(begin=lambda: Begin()),
+    )
+    monkeypatch.setattr(
+        "scripts.migrations.register_model_types.register_model_types",
+        lambda conn, is_upgrade=True: None,
+    )
+    monkeypatch.setattr(bootstrap, "_seed_capability_resources", lambda conn: recorded.update(conn=conn))
+
+    asyncio.run(bootstrap._seed_permissions())
+
+    assert isinstance(recorded.get("conn"), Connection)

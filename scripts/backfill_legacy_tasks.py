@@ -55,10 +55,14 @@ async def _run(args: argparse.Namespace) -> int:
                         select(TaskBackfillRun)
                         .where(TaskBackfillRun.tenant_id == args.tenant_id, TaskBackfillRun.id == run_id)
                         .with_for_update()
+                        .execution_options(populate_existing=True)
                     )
                     if run is None:
                         raise LegacyIdentityError("backfill_run_unavailable")
-                result = await legacy_backfill_service.process(session, run, limit=args.batch_size)
+                if run.status == "completed":
+                    result = {"run_id": run.id, "status": run.status, "counts": run.counts, "processed": 0}
+                else:
+                    result = await legacy_backfill_service.process(session, run, limit=args.batch_size)
             print(json.dumps(result, sort_keys=True, default=str))
             if args.once or result["status"] == "completed":
                 break

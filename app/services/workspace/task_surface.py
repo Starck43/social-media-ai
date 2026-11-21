@@ -289,7 +289,7 @@ async def create_linked_assignment(*, task_values, source_ids, tenant_id, planne
             task_values={**task_values, "payload": payload},
             source_ids=source_ids,
             tenant_id=tenant_id,
-            canonical_owner_id=task.owner_user_id,
+            canonical_owner_id=identity[1],
             attach_to_task_id=canonical_planner.id,
         )
 

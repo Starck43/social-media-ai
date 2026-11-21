@@ -462,17 +462,9 @@ class PlannerService:
         if identity[1] != row.owner_user_id and identity[2] not in MANAGERS:
             raise PermissionError("planner_denied")
         if self.model is PlannerTask:
-            from app.services.planner.legacy_migration import resolve_legacy_task
+            from app.services.planner.legacy_migration import compatibility_writer
 
-            canonical = await resolve_legacy_task(
-                session,
-                tenant_id=row.tenant_id,
-                namespace="planner",
-                legacy_id=row.id,
-                lock=True,
-            )
-            if canonical is not None:
-                canonical.deleted_at = datetime.now(timezone.utc)
+            await compatibility_writer.delete_planner(session, row)
         await session.delete(row)
         await session.flush()
         return {"deleted": True}

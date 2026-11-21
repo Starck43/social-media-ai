@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import func, inspect, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.planner import (
@@ -44,7 +44,7 @@ class LegacyReference:
 def _validate_reference(tenant_id: int, namespace: str, legacy_id: int) -> LegacyReference:
     if type(tenant_id) is not int or tenant_id <= 0:
         raise LegacyIdentityError("invalid_workspace")
-    if type(namespace) is not str or not namespace or len(namespace) > 64 or namespace != namespace.strip():
+    if type(namespace) is not str or namespace not in _NAMESPACES:
         raise LegacyIdentityError("invalid_legacy_namespace")
     if type(legacy_id) is not int or legacy_id <= 0:
         raise LegacyIdentityError("invalid_legacy_id")
@@ -118,6 +118,11 @@ def _agent_fingerprint(row: AgentTask) -> str:
             "trigger_config": row.trigger_config,
             "action_type": row.action_type,
             "dry_run": row.dry_run,
+            "rate_limit_per_hour": row.rate_limit_per_hour,
+            "cooldown_seconds": row.cooldown_seconds,
+            "launch_fingerprint": row.launch_fingerprint,
+            "launch_job_id": row.launch_job_id,
+            "last_error": row.last_error,
         }
     )
 
@@ -242,6 +247,12 @@ class LegacyCompatibilityWriter:
     def _database_session(session: AsyncSession) -> bool:
         return isinstance(session, AsyncSession)
 
+    @staticmethod
+    async def _source_updated_at(session, row):
+        if "updated_at" in inspect(row).expired_attributes:
+            await session.refresh(row, attribute_names=["updated_at"])
+        return row.updated_at
+
     async def _mapping(self, session, reference: LegacyReference, *, lock: bool = True):
         query = select(LegacyTaskId).where(
             LegacyTaskId.tenant_id == reference.tenant_id,
@@ -274,6 +285,7 @@ class LegacyCompatibilityWriter:
                 task_id=task_id,
             )
             session.add(mapping)
+        mapping.task_id = task_id
         mapping.source_fingerprint = source_fingerprint
         mapping.access_fingerprint = access_fingerprint
         mapping.source_updated_at = source_updated_at
@@ -308,7 +320,7 @@ class LegacyCompatibilityWriter:
             task_id=task.id,
             source_fingerprint=_planner_fingerprint(row),
             access_fingerprint=_planner_access_fingerprint(row),
-            source_updated_at=row.updated_at,
+            source_updated_at=await self._source_updated_at(session, row),
             details={"source_table": "planner_tasks"},
         )
         await session.flush()
@@ -348,6 +360,7 @@ class LegacyCompatibilityWriter:
                 details={"source_table": "agent_tasks", "job_type": row.job_type},
             )
             return None
+        mapping = await self._mapping(session, reference)
         task = None
         if attach_to_task_id is not None:
             task = await session.scalar(
@@ -355,26 +368,39 @@ class LegacyCompatibilityWriter:
             )
             if task is None:
                 raise LegacyMappingConflict("linked_canonical_task_missing")
+            # The locked planner task serializes assignment creation. An additional
+            # schedule owns its own identity and links back to the human work.
+            restricted_target = task.id if owner_user_id != task.owner_user_id else None
+            occupied = await session.scalar(
+                select(LegacyTaskId.id)
+                .where(
+                    LegacyTaskId.tenant_id == row.tenant_id,
+                    LegacyTaskId.legacy_namespace == AGENT_NAMESPACE,
+                    LegacyTaskId.legacy_id != row.id,
+                    LegacyTaskId.task_id == task.id,
+                )
+                .limit(1)
+            )
+            if mapping is None or mapping.task_id != task.id:
+                if restricted_target is not None or occupied is not None or (mapping and mapping.task_id is not None):
+                    execution_for_task_id = None if restricted_target else task.id
+                    attach_to_task_id = None
+                    task = None
         else:
-            mapping = await self._mapping(session, reference)
-            if mapping is not None:
-                if mapping.task_id is not None:
-                    task = await session.scalar(
-                        select(Task).where(Task.tenant_id == row.tenant_id, Task.id == mapping.task_id)
-                    )
-                    if task is None:
-                        raise LegacyMappingConflict("canonical_task_missing")
-                else:
-                    task = Task(**_canonical_values_from_agent(row, owner_user_id))
-                    session.add(task)
-                    await session.flush()
+            restricted_target = None
+        if task is None:
+            if mapping is not None and mapping.task_id is not None:
+                task = await session.scalar(
+                    select(Task).where(Task.tenant_id == row.tenant_id, Task.id == mapping.task_id)
+                )
+                if task is None:
+                    raise LegacyMappingConflict("canonical_task_missing")
             else:
                 task = Task(**_canonical_values_from_agent(row, owner_user_id))
                 session.add(task)
                 await session.flush()
         owner_user_id = task.owner_user_id
-        mapping = await self._mapping(session, reference)
-        attached = bool(mapping and (mapping.details or {}).get("attached"))
+        attached = attach_to_task_id is not None or bool(mapping and (mapping.details or {}).get("attached"))
         if not attached and task.title_encrypted != row.name:
             task.title_encrypted = row.name
             task.version += 1
@@ -386,7 +412,7 @@ class LegacyCompatibilityWriter:
             "next_run_at": _timestamp(row.next_run_at),
             "agent_scenario_id": row.agent_scenario_id,
             "payload_keys": sorted((row.payload or {}).keys()),
-            "attached": attach_to_task_id is not None or attached,
+            "attached": attached,
         }
         source_ids = await _agent_source_ids(session, row)
         details["source_ids"] = source_ids
@@ -396,7 +422,7 @@ class LegacyCompatibilityWriter:
             task_id=task.id,
             source_fingerprint=_agent_fingerprint(row),
             access_fingerprint=_agent_access_fingerprint(row, owner_user_id, source_ids),
-            source_updated_at=row.updated_at,
+            source_updated_at=await self._source_updated_at(session, row),
             details=details,
         )
         if execution_for_task_id is not None and execution_for_task_id != task.id:
@@ -407,6 +433,16 @@ class LegacyCompatibilityWriter:
                 to_task_id=execution_for_task_id,
                 legacy_id=row.id,
                 details=details,
+            )
+        if restricted_target is not None and restricted_target != task.id:
+            await self.link(
+                session,
+                tenant_id=row.tenant_id,
+                from_task_id=task.id,
+                relation="related",
+                to_task_id=restricted_target,
+                legacy_id=row.id,
+                details={"restricted": True, "reason": "visibility_boundary"},
             )
         return task
 
@@ -428,6 +464,40 @@ class LegacyCompatibilityWriter:
             row,
             owner_user_id=task.owner_user_id,
             attach_to_task_id=task.id if (mapping.details or {}).get("attached") else None,
+        )
+
+    async def delete_planner(self, session: AsyncSession, row: PlannerTask) -> None:
+        if not self._database_session(session):
+            return
+        # PostgreSQL cascades through all three planner self-references. Resolve
+        # their aliases before the delete while the legacy identities still exist.
+        affected = (
+            select(PlannerTask.id)
+            .where(PlannerTask.tenant_id == row.tenant_id, PlannerTask.id == row.id)
+            .cte(recursive=True)
+        )
+        affected = affected.union(
+            select(PlannerTask.id)
+            .join(
+                affected,
+                or_(
+                    PlannerTask.parent_id == affected.c.id,
+                    PlannerTask.series_id == affected.c.id,
+                    PlannerTask.previous_occurrence_id == affected.c.id,
+                ),
+            )
+            .where(PlannerTask.tenant_id == row.tenant_id)
+        )
+        task_ids = select(LegacyTaskId.task_id).where(
+            LegacyTaskId.tenant_id == row.tenant_id,
+            LegacyTaskId.legacy_namespace == PLANNER_NAMESPACE,
+            LegacyTaskId.legacy_id.in_(select(affected.c.id)),
+        )
+        await session.execute(
+            update(Task)
+            .where(Task.tenant_id == row.tenant_id, Task.id.in_(task_ids), Task.deleted_at.is_(None))
+            .values(deleted_at=datetime.now(timezone.utc))
+            .execution_options(synchronize_session=False)
         )
 
     async def delete_agent(self, session: AsyncSession, row: AgentTask) -> None:
@@ -473,7 +543,7 @@ class LegacyCompatibilityWriter:
         mapping.resolution_reason = reason
         mapping.source_fingerprint = _agent_fingerprint(row)
         mapping.access_fingerprint = _agent_access_fingerprint(row, None, await _agent_source_ids(session, row))
-        mapping.source_updated_at = row.updated_at
+        mapping.source_updated_at = await self._source_updated_at(session, row)
         mapping.details = details
         await session.flush()
         return mapping
@@ -565,15 +635,6 @@ class LegacyCompatibilityWriter:
 compatibility_writer = LegacyCompatibilityWriter()
 
 
-def _agent_owner(row: AgentTask) -> int | None:
-    payload = row.payload if isinstance(row.payload, dict) else {}
-    for key in ("owner_user_id", "created_by_user_id", "initiated_by_user_id", "system_principal_id"):
-        value = payload.get(key)
-        if type(value) is int and value > 0:
-            return value
-    return None
-
-
 def _planner_reference(row: AgentTask) -> int | None:
     payload = row.payload if isinstance(row.payload, dict) else {}
     reference = payload.get("planner_reference")
@@ -602,27 +663,17 @@ async def _workspace_owner(session: AsyncSession, tenant_id: int, user_id: int |
 
 
 async def _proven_agent_owner(session: AsyncSession, row: AgentTask) -> int | None:
-    owner = await _workspace_owner(session, row.tenant_id, _agent_owner(row))
-    if owner is not None:
-        return owner
-    from app.models.billing import TaskBillingPayer
+    # The payer, a job initiator and IDs supplied in an editable payload
+    # establish no ownership of a schedule. A verified brief binds its recipient.
+    if row.job_type == "social.brief":
+        from app.services.social.brief_schedule import schedule_for_task
 
-    payer = await session.scalar(
-        select(TaskBillingPayer.payer_user_id)
-        .where(TaskBillingPayer.tenant_id == row.tenant_id, TaskBillingPayer.agent_task_id == row.id)
-        .order_by(TaskBillingPayer.consent_version.desc())
-    )
-    owner = await _workspace_owner(session, row.tenant_id, payer)
-    if owner is not None:
-        return owner
-    from app.models import Job
-
-    initiated = await session.scalar(
-        select(Job.initiated_by_user_id)
-        .where(Job.tenant_id == row.tenant_id, Job.agent_task_id == row.id, Job.initiated_by_user_id.is_not(None))
-        .order_by(Job.id.desc())
-    )
-    return await _workspace_owner(session, row.tenant_id, initiated)
+        try:
+            signed_owner = schedule_for_task(row).user_id
+        except ValueError:
+            return None
+        return await _workspace_owner(session, row.tenant_id, signed_owner)
+    return None
 
 
 class LegacyBackfillService:
@@ -631,6 +682,10 @@ class LegacyBackfillService:
     async def start(self, session: AsyncSession, *, tenant_id: int, watermark: datetime | None = None):
         if type(tenant_id) is not int or tenant_id <= 0:
             raise LegacyIdentityError("invalid_workspace")
+        from app.models import Tenant
+
+        if await session.scalar(select(Tenant.id).where(Tenant.id == tenant_id).with_for_update()) is None:
+            raise LegacyIdentityError("backfill_workspace_unavailable")
         existing = await session.scalar(
             select(TaskBackfillRun)
             .where(TaskBackfillRun.tenant_id == tenant_id, TaskBackfillRun.status.in_(("running", "paused")))
@@ -694,9 +749,21 @@ class LegacyBackfillService:
             )
         )
         if not planner_left and not agent_left and not replay_planner_left and not replay_agent_left:
-            await self._reconcile_planner_relations(session, run.tenant_id)
-            run.status = "completed"
-            run.completed_at = datetime.now(timezone.utc)
+            used, complete = await self._reconcile_planner_relations(session, run, limit - processed)
+            processed += used
+            run.status = "completed" if complete else "paused"
+            if complete:
+                run.completed_at = datetime.now(timezone.utc)
+                outcomes = await session.execute(
+                    select(TaskBackfillRecord.outcome, func.count())
+                    .where(TaskBackfillRecord.tenant_id == run.tenant_id, TaskBackfillRecord.run_id == run.id)
+                    .group_by(TaskBackfillRecord.outcome)
+                )
+                run.counts = {
+                    **run.counts,
+                    **dict.fromkeys(("mapped", "restricted", "unresolved", "replayed"), 0),
+                    **dict(outcomes.all()),
+                }
         else:
             run.status = "paused"
         await session.flush()
@@ -709,22 +776,42 @@ class LegacyBackfillService:
             "counts": dict(run.counts or {}),
         }
 
-    async def _reconcile_planner_relations(self, session: AsyncSession, tenant_id: int) -> None:
+    async def _reconcile_planner_relations(self, session, run, limit: int) -> tuple[int, bool]:
+        from app.models import CalendarEvent
+
+        tenant_id = run.tenant_id
+        counts = dict(run.counts)
         rows = list(
             await session.scalars(
-                select(PlannerTask).where(PlannerTask.tenant_id == tenant_id).order_by(PlannerTask.id)
+                select(PlannerTask)
+                .where(PlannerTask.tenant_id == tenant_id, PlannerTask.id > counts.get("planner_relation_cursor", 0))
+                .order_by(PlannerTask.id)
+                .limit(limit)
+                .with_for_update()
             )
         )
         for row in rows:
             await compatibility_writer.planner(session, row)
-        from app.models import CalendarEvent
-
+            counts["planner_relation_cursor"] = row.id
+        run.counts = dict(counts)
+        remaining = limit - len(rows)
+        if remaining == 0:
+            return len(rows), False
         events = list(
             await session.scalars(
-                select(CalendarEvent).where(CalendarEvent.tenant_id == tenant_id, CalendarEvent.task_id.is_not(None))
+                select(CalendarEvent)
+                .where(
+                    CalendarEvent.tenant_id == tenant_id,
+                    CalendarEvent.task_id.is_not(None),
+                    CalendarEvent.id > counts.get("event_relation_cursor", 0),
+                )
+                .order_by(CalendarEvent.id)
+                .limit(remaining)
+                .with_for_update()
             )
         )
         for event in events:
+            counts["event_relation_cursor"] = event.id
             mapping = await session.scalar(
                 select(LegacyTaskId).where(
                     LegacyTaskId.tenant_id == tenant_id,
@@ -743,6 +830,9 @@ class LegacyBackfillService:
                 relation="calendar_event",
                 details={"calendar_event_id": event.id, "origin": event.origin, "state": event.state},
             )
+
+        run.counts = dict(counts)
+        return len(rows) + len(events), len(events) < remaining
 
     @staticmethod
     async def _source_link(session, *, tenant_id, task_id, source_object_id, relation, details):
@@ -829,45 +919,47 @@ class LegacyBackfillService:
             attach_to = None
             execution_for = None
             reason = None
-            proven_owner = await _proven_agent_owner(session, row)
-            owner = proven_owner
+            reference = _validate_reference(row.tenant_id, AGENT_NAMESPACE, row.id)
+            mapping = await compatibility_writer._mapping(session, reference)
+            mapped = await resolve_legacy_task(
+                session, tenant_id=row.tenant_id, namespace=AGENT_NAMESPACE, legacy_id=row.id
+            )
+            owner = mapped.owner_user_id if mapped is not None else await _proven_agent_owner(session, row)
             restricted = False
             planner_canonical = None
-            if planner_id is not None:
+            if mapping is not None and mapping.task_id is not None and mapped is None:
+                reason = "canonical_task_unavailable"
+            elif planner_id is not None:
                 planner_task = await session.scalar(
                     select(PlannerTask).where(PlannerTask.tenant_id == row.tenant_id, PlannerTask.id == planner_id)
                 )
                 if planner_task is None:
                     reason = "planner_reference_unavailable"
                 else:
-                    planner_canonical = await compatibility_writer.planner(session, planner_task)
-                    related_count = await session.scalar(
-                        select(func.count(AgentTask.id)).where(
-                            AgentTask.tenant_id == row.tenant_id,
-                            AgentTask.payload["planner_reference"]["task_id"].as_integer() == planner_id,
-                        )
+                    planner_canonical = await resolve_legacy_task(
+                        session, tenant_id=row.tenant_id, namespace=PLANNER_NAMESPACE, legacy_id=planner_task.id
                     )
-                    if related_count == 1:
-                        if proven_owner is not None and proven_owner not in {
-                            planner_task.owner_user_id,
-                            planner_task.assignee_id,
-                        }:
+                    if planner_canonical is None:
+                        reason = "planner_reference_unavailable"
+                    else:
+                        related_count = await session.scalar(
+                            select(func.count(AgentTask.id)).where(
+                                AgentTask.tenant_id == row.tenant_id,
+                                AgentTask.payload["planner_reference"]["task_id"].as_integer() == planner_id,
+                            )
+                        )
+                        if owner is None:
+                            # A linked planner task supplies the canonical owner.
+                            owner = planner_task.owner_user_id
+                        if owner not in {planner_task.owner_user_id, planner_task.assignee_id}:
                             restricted = True
-                            owner = proven_owner
-                        else:
+                        elif related_count == 1:
                             attach_to = planner_canonical.id
                             owner = planner_task.owner_user_id
-                    else:
-                        if proven_owner is not None and proven_owner not in {
-                            planner_task.owner_user_id,
-                            planner_task.assignee_id,
-                        }:
-                            restricted = True
-                            owner = proven_owner
                         else:
                             execution_for = planner_canonical.id
                             owner = owner or planner_task.owner_user_id
-            if reason is None and owner is None:
+            elif owner is None:
                 reason = "owner_unproven"
             source_ids = await _agent_source_ids(session, row)
             task = None
@@ -879,7 +971,12 @@ class LegacyBackfillService:
                     attach_to_task_id=attach_to,
                     execution_for_task_id=execution_for,
                 )
-                if restricted and task is not None and planner_canonical is not None:
+                if (
+                    restricted
+                    and task is not None
+                    and planner_canonical is not None
+                    and task.id != planner_canonical.id
+                ):
                     await compatibility_writer.link(
                         session,
                         tenant_id=row.tenant_id,
@@ -914,8 +1011,12 @@ class LegacyBackfillService:
                 reason=reason,
                 details={
                     "planner_id": planner_id,
-                    "attached": attach_to is not None,
-                    "execution_for": execution_for,
+                    "attached": task is not None and planner_canonical is not None and task.id == planner_canonical.id,
+                    "execution_for": (
+                        execution_for
+                        if task is not None and planner_canonical is not None and task.id != planner_canonical.id
+                        else None
+                    ),
                     "restricted": restricted,
                     "source_ids": source_ids,
                 },
@@ -927,11 +1028,12 @@ class LegacyBackfillService:
         return len(rows)
 
     async def _record(self, session, run, **values):
+        namespace = values.pop("namespace")
         existing = await session.scalar(
             select(TaskBackfillRecord).where(
                 TaskBackfillRecord.tenant_id == run.tenant_id,
                 TaskBackfillRecord.run_id == run.id,
-                TaskBackfillRecord.legacy_namespace == values["namespace"],
+                TaskBackfillRecord.legacy_namespace == namespace,
                 TaskBackfillRecord.legacy_id == values["legacy_id"],
             )
         )
@@ -940,7 +1042,7 @@ class LegacyBackfillService:
                 TaskBackfillRecord(
                     tenant_id=run.tenant_id,
                     run_id=run.id,
-                    legacy_namespace=values.pop("namespace"),
+                    legacy_namespace=namespace,
                     legacy_id=values.pop("legacy_id"),
                     **values,
                 )

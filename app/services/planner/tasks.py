@@ -215,6 +215,10 @@ class PlannerService:
         await session.flush()
         row.series_id = row.id
         await session.flush()
+        if self.model is PlannerTask:
+            from app.services.planner.legacy_migration import compatibility_writer
+
+            await compatibility_writer.planner(session, row)
         (result,) = await self.project_for_actor([row], session, identity)
         return result
 
@@ -339,6 +343,10 @@ class PlannerService:
             row.status = request.status
         row.version += 1
         await session.flush()
+        if self.model is PlannerTask:
+            from app.services.planner.legacy_migration import compatibility_writer
+
+            await compatibility_writer.planner(session, row)
         (result,) = await self.project_for_actor([row], session, identity)
         return result
 
@@ -408,6 +416,10 @@ class PlannerService:
         )
         session.add(successor)
         await session.flush()
+        if self.model is PlannerTask:
+            from app.services.planner.legacy_migration import compatibility_writer
+
+            await compatibility_writer.planner(session, successor)
         await self.copy_occurrence_participants(session, row, successor)
         await session.flush()
         return successor
@@ -433,6 +445,10 @@ class PlannerService:
         next_row = await self.advance_occurrence(session, row, identity, now)
         row.status, row.completed_at, row.version = "done", now, row.version + 1
         await session.flush()
+        if self.model is PlannerTask:
+            from app.services.planner.legacy_migration import compatibility_writer
+
+            await compatibility_writer.planner(session, row)
         if next_row is not None:
             next_row = await self.visible_successor(session, identity, next_row)
         return await self.completion_response(session, identity, row, next_row)
@@ -445,6 +461,18 @@ class PlannerService:
             raise PlannerConflict("stale_version")
         if identity[1] != row.owner_user_id and identity[2] not in MANAGERS:
             raise PermissionError("planner_denied")
+        if self.model is PlannerTask:
+            from app.services.planner.legacy_migration import resolve_legacy_task
+
+            canonical = await resolve_legacy_task(
+                session,
+                tenant_id=row.tenant_id,
+                namespace="planner",
+                legacy_id=row.id,
+                lock=True,
+            )
+            if canonical is not None:
+                canonical.deleted_at = datetime.now(timezone.utc)
         await session.delete(row)
         await session.flush()
         return {"deleted": True}

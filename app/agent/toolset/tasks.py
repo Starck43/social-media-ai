@@ -401,6 +401,7 @@ async def task_add(
             type(value) is not int or not 0 < value <= _MAX_PG_INTEGER for value in source_ids
         ):
             return {"error": "Source ids must be positive PostgreSQL INTEGER values"}
+        from app.core.permissions import get_current_user
         from app.services.task_creation import create_task_with_sources
 
         task = await create_task_with_sources(
@@ -415,6 +416,7 @@ async def task_add(
             },
             source_ids=source_ids,
             tenant_id=current_tenant_id(),
+            canonical_owner_id=getattr(get_current_user(), "id", None),
         )
     except ValueError as error:
         return {"error": str(error)}

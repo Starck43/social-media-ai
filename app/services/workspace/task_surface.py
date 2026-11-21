@@ -16,6 +16,7 @@ from app.core.tenant_context import current_tenant_id, is_bypass
 from app.models import AgentTask, Job, Tenant, TenantUser, User, WorkspaceRole
 from app.services.calendar.service import calendar_service
 from app.services.planner.contracts import TaskCreate, TaskUpdate
+from app.services.planner.legacy_migration import compatibility_writer
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable, planner_service
 from app.services.task_creation import persist_task_create
 from app.types import ActionType
@@ -111,8 +112,12 @@ async def _agent_page(session, start_utc, end_utc, after=None):
         get_current_user(), "source", ActionType.VIEW
     )
     page = await AgentTaskManager().upcoming_effective_range(
-        start=start_utc, end=end_utc, include_source_based=include_sources, limit=PAGE_SIZE,
-        after=after, include_prune=("job", ActionType.UPDATE) in grants,
+        start=start_utc,
+        end=end_utc,
+        include_source_based=include_sources,
+        limit=PAGE_SIZE,
+        after=after,
+        include_prune=("job", ActionType.UPDATE) in grants,
     )
     rows = page["items"]
     if ("job", ActionType.UPDATE) not in grants:
@@ -120,7 +125,17 @@ async def _agent_page(session, start_utc, end_utc, after=None):
     return rows, page["complete"]
 
 
-async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_planner=None, before_event=None, before_agent=None, after_agent_at=None, after_agent_id=None):
+async def calendar_view(
+    *,
+    timezone_name="UTC",
+    year=None,
+    month=None,
+    before_planner=None,
+    before_event=None,
+    before_agent=None,
+    after_agent_at=None,
+    after_agent_id=None,
+):
     zone = ZoneInfo(timezone_name)
     now = datetime.now(zone)
     year = now.year if year is None else year
@@ -158,7 +173,15 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
             async with async_session_maker() as session, session.begin():
                 items = []
                 if kind == "planner":
-                    page = await planner_service.calendar_range(session=session, limit=PAGE_SIZE, before_id=cursors[kind], first_day=first_day, next_day=next_day, start_utc=start_utc, end_utc=end_utc)
+                    page = await planner_service.calendar_range(
+                        session=session,
+                        limit=PAGE_SIZE,
+                        before_id=cursors[kind],
+                        first_day=first_day,
+                        next_day=next_day,
+                        start_utc=start_utc,
+                        end_utc=end_utc,
+                    )
                     provider["next_before_id"] = page["next_before_id"]
                     for task in page["items"]:
                         # A calendar-owned planner occurrence is represented by its
@@ -192,8 +215,15 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
                             if row["source"].get("deleted"):
                                 continue
                             title, when = event_schedule(row)
-                            items.append({"key": f"event:{row['id']}", "title": title, "href": None,
-                                          "settings_href": "/app/settings?tab=connections", **calendar_schedule(when, zone)})
+                            items.append(
+                                {
+                                    "key": f"event:{row['id']}",
+                                    "title": title,
+                                    "href": None,
+                                    "settings_href": "/app/settings?tab=connections",
+                                    **calendar_schedule(when, zone),
+                                }
+                            )
                     elif page["state"] != "available":
                         provider["status"] = page["state"]
                         continue
@@ -202,10 +232,21 @@ async def calendar_view(*, timezone_name="UTC", year=None, month=None, before_pl
                         if not page["complete"]:
                             provider["grid_eligible"] = False
                         for index, row in enumerate(page["items"]):
-                            items.append({"key": f"event-range:{index}", "title": row["title"], "href": None,
-                                          "settings_href": "/app/settings?tab=connections", **calendar_schedule(row["when"], zone)})
+                            items.append(
+                                {
+                                    "key": f"event-range:{index}",
+                                    "title": row["title"],
+                                    "href": None,
+                                    "settings_href": "/app/settings?tab=connections",
+                                    **calendar_schedule(row["when"], zone),
+                                }
+                            )
                 else:
-                    rows, provider["range_complete"] = await _agent_page(session, start_utc, end_utc, agent_cursor) if agent_cursor else await _agent_page(session, start_utc, end_utc)
+                    rows, provider["range_complete"] = (
+                        await _agent_page(session, start_utc, end_utc, agent_cursor)
+                        if agent_cursor
+                        else await _agent_page(session, start_utc, end_utc)
+                    )
                     if not provider["range_complete"] and rows:
                         provider["next_agent_at"] = rows[-1].next_run_at.astimezone(timezone.utc).isoformat()
                         provider["next_agent_id"] = rows[-1].id
@@ -240,10 +281,16 @@ async def create_linked_assignment(*, task_values, source_ids, tenant_id, planne
         task = await planner_service._task(session, planner_id, identity, lock=True)
         if tenant_id != identity[0] or task.version != expected_version:
             raise PlannerConflict("planner_changed")
+        canonical_planner = await compatibility_writer.planner(session, task)
         payload = dict(task_values.get("payload") or {})
         payload[REFERENCE_KEY] = {"tenant_id": identity[0], "task_id": task.id}
         return await persist_task_create(
-            session, task_values={**task_values, "payload": payload}, source_ids=source_ids, tenant_id=tenant_id
+            session,
+            task_values={**task_values, "payload": payload},
+            source_ids=source_ids,
+            tenant_id=tenant_id,
+            canonical_owner_id=task.owner_user_id,
+            attach_to_task_id=canonical_planner.id,
         )
 
 

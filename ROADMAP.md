@@ -45,7 +45,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
 
-- [P22-T06](docs/tasks/p22-t06.md) Legacy ID mapping, compatibility writers and backfill — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C5`
+- [P22-T06](docs/tasks/p22-t06.md) Legacy ID mapping, compatibility writers and backfill — **READY** · OpenCode · `codex resume ses_e015bb931ffeO0eJF9bNoRxYQU` · PR [#521](https://github.com/Starck43/social-media-ai/pull/521) · `P1` · `C5`
 - [P22-T07](docs/tasks/p22-t07.md) Unified API, CLI and AI toolset — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
 - [P22-T14](docs/tasks/p22-t14.md) Task-scoped agent chat and shared transcript UI — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
 - [P22-T08](docs/tasks/p22-t08.md) Unify task navigation, labels, creation and detail views — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`

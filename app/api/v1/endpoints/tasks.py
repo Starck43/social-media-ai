@@ -361,6 +361,7 @@ async def create_task(
                     },
                     source_ids=None,
                     tenant_id=tid,
+                    canonical_owner_id=_user.id,
                 )
                 if source_ids:
                     with tenant_scope(task.tenant_id), service_permission_scope("agenttask", "update"):
@@ -393,6 +394,7 @@ async def create_task(
                     },
                     source_ids=None,
                     tenant_id=tid,
+                    canonical_owner_id=_user.id,
                 )
                 with tenant_scope(task.tenant_id), service_permission_scope("agenttask", "update"):
                     await AgentTaskManager().set_sources(task.id, source_ids, session=session)
@@ -663,6 +665,7 @@ async def run_task_oneoff(
         },
         source_ids=source_ids if source_ids else None,
         tenant_id=current_tenant_id(),
+        canonical_owner_id=getattr(_user, "id", None),
     )
 
     from app.jobs.source_activity import SourceJobBusy

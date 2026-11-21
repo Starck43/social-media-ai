@@ -32,7 +32,9 @@ async def test_occurrence_delete_and_series_confirmation(task_world, monkeypatch
         )
         preview = await task_deletion_service.preview(task.id, scope="occurrence")
         assert preview.effects.next_occurrence is not None
-        await task_service.update(task.id, UpdateTask(expected_version=task.version, title="Edited review"))
+        await task_service.update(
+            task.id, UpdateTask(expected_version=task.version, scope="occurrence", title="Edited review")
+        )
         with pytest.raises(PlannerConflict, match="preview_changed"):
             await task_deletion_service.confirm(task.id, scope="occurrence", confirmation=preview.confirmation)
         preview = await task_deletion_service.preview(task.id, scope="occurrence")

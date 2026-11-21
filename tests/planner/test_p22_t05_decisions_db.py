@@ -143,3 +143,48 @@ async def test_document_review_uses_existing_ledger_and_requires_explicit_bindin
     async with async_session_maker() as session:
         stored = await session.get(DocumentApproval, approval["id"])
         assert stored.comment_encrypted == "Revise wording"
+
+
+async def test_task_command_decision_uses_original_ledger(task_world, monkeypatch):  # noqa: F811
+    from base64 import urlsafe_b64encode
+    from os import urandom
+
+    from app.models import Contact
+    from app.services.commands import ledger
+    from app.services.commands.approval_inbox import approval_inbox
+    from tests.p11_t12_audit_cleanup import purge_tenant_audit_events
+
+    require_isolated_schema()
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    monkeypatch.setattr(settings, "PII_INDEX_KEY", urlsafe_b64encode(urandom(32)).decode())
+    monkeypatch.setattr(ledger, "RUNTIME_KILL_SWITCHES", {})
+    monkeypatch.setattr(ledger, "RUNTIME_ENABLED_CAPABILITIES", {"crm.greeting_send.v1"})
+    tenant = task_world.tenants[0]
+    try:
+        with actor(task_world, 0):
+            task = await task_service.create(CreateTask(title="Synthetic command review"))
+            contact = await Contact.objects.create(display_name="Synthetic review contact")
+            command = await approval_inbox._ledger.preview_command(
+                capability="crm.greeting_send.v1",
+                idempotency_key=f"p22-t05-{tenant.id}",
+                target_refs=[f"contact:{contact.id}"],
+                payload={"subject": "Synthetic task review"},
+            )
+            item = await approval_inbox.get_item(command["id"])
+            reference = item["item_id"]
+            assert await decisions.pending(task.id) == []
+            await decisions.bind_produced_review(
+                task.id, expected_version=task.version, reference=reference
+            )
+            (pending,) = await decisions.pending(task.id)
+            assert pending["reference"] == reference
+            preview = await decisions.preview(task.id, reference, outcome="rejected")
+            result = await decisions.decide(
+                task.id, confirmation=preview["confirmation"], reason="Declined synthetic command"
+            )
+            assert result["outcome"] == (await approval_inbox.get_item(command["id"]))["status"]
+            assert (await approval_inbox.get_item(command["id"]))["raw_state"] == "cancelled"
+            assert await decisions.pending(task.id) == []
+            assert (await task_service.get(task.id)).status == "todo"
+    finally:
+        await purge_tenant_audit_events(tenant.id)

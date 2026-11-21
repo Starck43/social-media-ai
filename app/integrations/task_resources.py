@@ -5,15 +5,19 @@ from enum import StrEnum
 
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.integrations.catalog import CATALOG_VERSION
 from app.integrations.catalog.task_capabilities import CAPABILITIES, Direction, ResourceKind
 from app.integrations.email.imap_sync import get_imap_folders
 from app.integrations.file_workspace.policy import FileOperation
-from app.models import WorkspaceConnectionSecret
+from app.models import Platform, Source, WorkspaceConnectionSecret
 from app.models.managers.workspace_connection_manager import ConnectionDenied, _authorize, _connection
 from app.services.file_workspace.yandex_reader import _stored_policy
 from app.services.local_connector.runtime import get_gateway
 from app.services.local_connector.wire import ConnectorUnavailable
+from app.services.social.connector_authorizations import AuthorizationUnavailable
+from app.services.social.telegram_grant_access import _inspect_source_grant, source_grant_selection
+from app.types import PlatformType
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,41 @@ class ResolutionIssue(StrEnum):
     SELECT_RESOURCE = "select_resource"
     UNAVAILABLE = "resource_unavailable"
     REAUTH = "reauth_required"
+    INSTALLATION = "installation_required"
+
+
+async def _social_issue(session, tenant_id, actor_id, capability, selection):
+    if selection.path is not None:
+        return ResolutionIssue.SELECT_RESOURCE
+    platform_type = PlatformType.VK if capability.provider == "vk" else PlatformType.TELEGRAM
+    source = await session.scalar(
+        select(Source)
+        .join(Platform)
+        .where(
+            Source.id == selection.resource_id,
+            Source.tenant_id == tenant_id,
+            Source.is_active.is_(True),
+            Source.owner_task_id.is_(None),
+            Platform.platform_type == platform_type,
+            Platform.is_active.is_(True),
+        )
+    )
+    if source is None:
+        return ResolutionIssue.UNAVAILABLE
+    if platform_type is PlatformType.VK:
+        # This capability only admits existing deployment-credential lanes.
+        if source.owner_user_id is not None or (source.params or {}).get("token_owner") is not None:
+            return ResolutionIssue.UNSUPPORTED
+        if any(not getattr(settings, key, None) for key in capability.installation_keys):
+            return ResolutionIssue.INSTALLATION
+    else:
+        if not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED:
+            return ResolutionIssue.UNAVAILABLE
+        grant = source_grant_selection(source)
+        if grant.owner_user_id != actor_id:
+            return ResolutionIssue.UNAVAILABLE
+        await _inspect_source_grant(session, grant)
+    return None
 
 
 async def resolve_task_resource(
@@ -63,7 +102,11 @@ async def resolve_task_resource(
             or selection.resource_id <= 0
         ):
             return ResolutionIssue.SELECT_RESOURCE
-        if capability.kind == ResourceKind.PAIRED_ROOT:
+        if capability.kind == ResourceKind.SOCIAL_SOURCE:
+            issue = await _social_issue(session, tenant_id, actor_id, capability, selection)
+            if issue is not None:
+                return issue
+        elif capability.kind == ResourceKind.PAIRED_ROOT:
             if not selection.path:
                 return ResolutionIssue.SELECT_RESOURCE
             await get_gateway().store.authorize(
@@ -106,5 +149,7 @@ async def resolve_task_resource(
             if exists is None:
                 return ResolutionIssue.REAUTH
         return ScopedResource(tenant_id, actor_id, capability_id, selection)
+    except AuthorizationUnavailable:
+        return ResolutionIssue.REAUTH
     except (ConnectionDenied, ConnectorUnavailable, ValueError):
         return ResolutionIssue.UNAVAILABLE

@@ -40,8 +40,10 @@ CAPABILITIES = MappingProxyType(
         ),
         "bitrix24.tasks.list": Capability("bitrix24", ResourceKind.PORTAL, "bitrix24_task_projection"),
         "local_gateway.search": Capability("local_gateway", ResourceKind.PAIRED_ROOT, "connector_gateway"),
-        "vk.posts.read": Capability("vk", ResourceKind.SOCIAL_SOURCE, None, installation_keys=("VK_APP_ID",)),
-        "telegram.session.read": Capability("telegram", ResourceKind.SOCIAL_SOURCE, None, "session"),
+        "vk.posts.read": Capability(
+            "vk", ResourceKind.SOCIAL_SOURCE, "social_collection", installation_keys=("VK_SERVICE_KEY",)
+        ),
+        "telegram.session.read": Capability("telegram", ResourceKind.SOCIAL_SOURCE, "social_collection", "session"),
         "telegram.bot.read": Capability(
             "telegram", ResourceKind.SOCIAL_SOURCE, None, installation_keys=("TELEGRAM_BOT_TOKEN",)
         ),

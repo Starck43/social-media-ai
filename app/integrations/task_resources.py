@@ -24,11 +24,22 @@ from app.types import ActionType, PlatformType
 
 
 @dataclass(frozen=True)
+class TelegramGrantPin:
+    grant_id: int
+    authorization_revision: int
+
+    def __post_init__(self) -> None:
+        if any(type(value) is not int or value <= 0 for value in (self.grant_id, self.authorization_revision)):
+            raise ValueError("invalid_telegram_grant_pin")
+
+
+@dataclass(frozen=True)
 class ResourceSelection:
     kind: ResourceKind
     resource_id: int
     path: str | None = None
     vk_access: VKSelection | None = None
+    telegram_grant: TelegramGrantPin | None = None
 
 
 @dataclass(frozen=True)
@@ -91,9 +102,13 @@ async def _social_issue(session, tenant_id, actor_id, capability, selection):
     else:
         if not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED:
             return ResolutionIssue.UNAVAILABLE
+        if selection.telegram_grant is None:
+            return ResolutionIssue.SELECT_RESOURCE
         grant = source_grant_selection(source)
         if grant.owner_user_id != actor_id:
             return ResolutionIssue.UNAVAILABLE
+        if selection.telegram_grant != TelegramGrantPin(grant.grant_id, grant.authorization_revision):
+            return ResolutionIssue.REAUTH
         await _inspect_source_grant(session, grant)
     return None
 
@@ -121,6 +136,10 @@ async def resolve_task_resource(
                 selection.vk_access is not None
                 and (capability.provider != "vk" or not isinstance(selection.vk_access, VKSelection))
             )
+            or (
+                selection.telegram_grant is not None
+                and (capability.provider != "telegram" or not isinstance(selection.telegram_grant, TelegramGrantPin))
+            )
             or (selection.path is not None and not isinstance(selection.path, str))
             or selection.kind != capability.kind
             or type(selection.resource_id) is not int
@@ -134,6 +153,8 @@ async def resolve_task_resource(
         elif capability.kind == ResourceKind.PAIRED_ROOT:
             if not selection.path:
                 return ResolutionIssue.SELECT_RESOURCE
+            if not settings.LOCAL_CONNECTOR_ENABLED or not settings.LOCAL_CONNECTOR_SECURITY_REVIEWED:
+                return ResolutionIssue.UNAVAILABLE
             await get_gateway().store.authorize(
                 owner_id=actor_id, device_id=selection.resource_id, roots=(selection.path,)
             )

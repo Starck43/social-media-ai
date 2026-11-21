@@ -98,8 +98,11 @@ async def test_vk_resolution_keeps_the_exact_selected_identity(monkeypatch):
 @pytest.mark.asyncio
 async def test_paired_root_reauthorizes_and_does_not_substitute_another_root(monkeypatch):
     monkeypatch.setattr(resources, "_authorize", AsyncMock())
+    monkeypatch.setattr(resources.settings, "LOCAL_CONNECTOR_ENABLED", True)
+    monkeypatch.setattr(resources.settings, "LOCAL_CONNECTOR_SECURITY_REVIEWED", True)
     check = AsyncMock()
-    monkeypatch.setattr(resources, "get_gateway", lambda: SimpleNamespace(store=SimpleNamespace(authorize=check)))
+    gateway = SimpleNamespace(store=SimpleNamespace(authorize=check))
+    monkeypatch.setattr(resources, "get_gateway", lambda: gateway)
     choice = resources.ResourceSelection(ResourceKind.PAIRED_ROOT, 7, "root-1")
     request = dict(tenant_id=1, actor_id=2, capability_id="local_gateway.search", direction=Direction.READ)
     resolved = await resources.resolve_task_resource(None, **request, selection=choice)
@@ -152,7 +155,9 @@ async def test_telegram_requires_current_runtime_and_exact_source_grant(monkeypa
         params={"mode": "user", "telegram_authorization": {"grant_id": 17, "authorization_revision": 3}},
     )
     session = SimpleNamespace(scalar=AsyncMock(return_value=source))
-    selection = resources.ResourceSelection(ResourceKind.SOCIAL_SOURCE, 7)
+    selection = resources.ResourceSelection(
+        ResourceKind.SOCIAL_SOURCE, 7, telegram_grant=resources.TelegramGrantPin(17, 3)
+    )
     request = dict(
         tenant_id=1, actor_id=2, capability_id="telegram.session.read", direction=Direction.READ, selection=selection
     )
@@ -188,3 +193,58 @@ async def test_invalid_root_value_is_rejected_before_gateway_lookup(monkeypatch)
         )
         == resources.ResolutionIssue.SELECT_RESOURCE
     )
+
+
+@pytest.mark.parametrize("flag", ["LOCAL_CONNECTOR_ENABLED", "LOCAL_CONNECTOR_SECURITY_REVIEWED"])
+@pytest.mark.asyncio
+async def test_paired_gateway_checks_live_flags_before_using_cached_gateway(monkeypatch, flag):
+    monkeypatch.setattr(resources, "_authorize", AsyncMock())
+    monkeypatch.setattr(resources.settings, "LOCAL_CONNECTOR_ENABLED", True)
+    monkeypatch.setattr(resources.settings, "LOCAL_CONNECTOR_SECURITY_REVIEWED", True)
+    check = AsyncMock()
+    gateway = SimpleNamespace(store=SimpleNamespace(authorize=check))
+    monkeypatch.setattr(resources, "get_gateway", lambda: gateway)
+    request = dict(
+        tenant_id=1,
+        actor_id=2,
+        capability_id="local_gateway.search",
+        direction=Direction.READ,
+        selection=resources.ResourceSelection(ResourceKind.PAIRED_ROOT, 7, "root-1"),
+    )
+    assert isinstance(await resources.resolve_task_resource(None, **request), resources.ScopedResource)
+    monkeypatch.setattr(resources.settings, flag, False)
+    assert await resources.resolve_task_resource(None, **request) == resources.ResolutionIssue.UNAVAILABLE
+    check.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "replacement", [{"grant_id": 18, "authorization_revision": 3}, {"grant_id": 17, "authorization_revision": 4}]
+)
+@pytest.mark.asyncio
+async def test_telegram_source_rebinding_cannot_redirect_a_previously_pinned_selection(monkeypatch, replacement):
+    monkeypatch.setattr(resources, "_authorize", AsyncMock())
+    monkeypatch.setattr(resources.settings, "TELEGRAM_ACCOUNT_RUNTIME_ENABLED", True)
+    inspect_grant = AsyncMock()
+    monkeypatch.setattr(resources, "_inspect_source_grant", inspect_grant)
+    source = SimpleNamespace(
+        id=7,
+        tenant_id=1,
+        platform_id=3,
+        external_id="test",
+        owner_user_id=2,
+        params={"mode": "user", "telegram_authorization": replacement},
+    )
+    session = SimpleNamespace(scalar=AsyncMock(return_value=source))
+    request = dict(tenant_id=1, actor_id=2, capability_id="telegram.session.read", direction=Direction.READ)
+    missing = resources.ResourceSelection(ResourceKind.SOCIAL_SOURCE, 7)
+    assert (
+        await resources.resolve_task_resource(session, **request, selection=missing)
+        == resources.ResolutionIssue.SELECT_RESOURCE
+    )
+    pinned = resources.ResourceSelection(
+        ResourceKind.SOCIAL_SOURCE, 7, telegram_grant=resources.TelegramGrantPin(17, 3)
+    )
+    assert (
+        await resources.resolve_task_resource(session, **request, selection=pinned) == resources.ResolutionIssue.REAUTH
+    )
+    inspect_grant.assert_not_awaited()

@@ -33,19 +33,13 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P0
 
-
-
-
-
-
 ### Priority P1
-
 
 - [P4-T01](docs/tasks/p4-t01.md) staging operator-recovery evidence — **BLOCKED** · unassigned · — · `P1` · `C3`
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
 
-- [P22-T04](docs/tasks/p22-t04.md) Run admission, scheduler and worker integration — **IN_PROGRESS** · Codex · `codex resume 01a1fdbb-2b67-75d1-8ce4-f5e9aacdb9b6` · `P1` · `C5` · [PR #519](https://github.com/Starck43/social-media-ai/pull/519)
+- [P22-T04](docs/tasks/p22-t04.md) Run admission, scheduler and worker integration — **IN_PROGRESS** · Notion AI · [handover](https://github.com/Starck43/social-media-ai/pull/519#issuecomment-7063317315) · `P1` · `C5` · [PR #519](https://github.com/Starck43/social-media-ai/pull/519)
 - [P22-T05](docs/tasks/p22-t05.md) Task actions, decisions and confirmed deletion — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
 - [P22-T06](docs/tasks/p22-t06.md) Legacy ID mapping, compatibility writers and backfill — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C5`
 - [P22-T07](docs/tasks/p22-t07.md) Unified API, CLI and AI toolset — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
@@ -55,13 +49,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 ### Priority P2
 
-
-
-
-
 - [P2-T09](docs/tasks/p2-t09.md) production billing verification — **TODO** (gate: production activation/cutover; not claimable before it) · unassigned · — · `P2` · `C4`
-
-
 
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: owner-prioritized slice S4 (fixed-corpus measurement harness); remaining scope stays gated (S3 version freshness, P8-T34 byte authority, local-only execution with P18, activation, D21 mutations) — **IN_PROGRESS** (S1/S2 delivered 2026-11-19, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · ai-studio · branch `feat/p12-t12-s4-measurement-harness` · [residual slices](docs/tasks/p12-t12.md#residual-slices-unblock-or-owner-prioritize-first) · [increment audit](docs/audit/p12/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot and Settings OAuth — **IN_PROGRESS** · Codex · `codex resume 01a1f7d1-8006-75a3-ac37-05c3d89df357` · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`
@@ -74,16 +62,13 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
-
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):
 
 - [P14-T08](docs/tasks/p14-t08.md) Bitrix24 on-premise authorization form on top of the P14-T09 seam — **DEFERRED** (owner, 2026-11-04: no on-premise customer; resumes with P14-T09) · `P2` · `C3`
 
-
 ### Priority P3
 
 - [P20-T05](docs/tasks/p20-t05.md) Review-gated isolated browser execution pilot — **DEFERRED** (owner, 2026-11-14: P20-T12 named no source where an official API and plain fetch fail, and disabled the unconfined Chromium fallback; resume only with an evidenced named source + a new owner decision on infrastructure and cost) · unassigned · [request](https://app.notion.com/chat?t=40fa7457748980d094a100a930619250) · `P3` · `C5`
-
 
 - [P22-T13](docs/tasks/p22-t13.md) Jira issue adapter and Slack task context — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P3` · `C4`
 

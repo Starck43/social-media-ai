@@ -101,5 +101,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("task_participants", schema=settings.DB_SCHEMA)
-    op.drop_table("tasks", schema=settings.DB_SCHEMA)
+    schema = settings.DB_SCHEMA
+    bind = op.get_bind()
+    quoted = bind.dialect.identifier_preparer.quote_schema(schema)
+    bind.execute(sa.text(f"LOCK TABLE {quoted}.tasks, {quoted}.task_participants IN ACCESS EXCLUSIVE MODE"))
+    if bind.scalar(sa.text(f"SELECT EXISTS (SELECT 1 FROM {quoted}.tasks)")):
+        raise RuntimeError("Downgrade refused: tasks contains durable records")
+    op.drop_table("task_participants", schema=schema)
+    op.drop_table("tasks", schema=schema)

@@ -59,7 +59,10 @@ async def task_world():
         try:
             yield SimpleNamespace(tenants=tenants, users=users)
         finally:
-            for row in (*tenants, *users):
+            for row in tenants:
+                await session.delete(row)
+            await session.flush()
+            for row in users:
                 await session.delete(row)
             await session.commit()
 

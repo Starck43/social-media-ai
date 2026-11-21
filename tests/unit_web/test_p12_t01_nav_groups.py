@@ -65,12 +65,12 @@ class _StubPerms:
 
 def test_every_nav_item_belongs_to_a_declared_domain_group() -> None:
     assert set(NAV_GROUP_LABELS) == {
-        "assistant",
-        "dashboard",
+        "pinned",
         "tasks",
         "messages",
         "docs",
-        "clients",
+        "analytics",
+        "assistant",
     }
     for item in NAV_ITEMS:
         assert item.group in NAV_GROUP_LABELS, f"{item.key} has unknown group {item.group!r}"

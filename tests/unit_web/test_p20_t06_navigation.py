@@ -67,12 +67,12 @@ def test_all_routes_are_unique_ready_and_keep_permissions():
 
 def test_group_order_and_mobile_order_are_stable():
     assert list(dict.fromkeys(item.group for item in nav.NAV_ITEMS)) == [
-        "assistant",
-        "dashboard",
+        "pinned",
         "tasks",
         "messages",
         "docs",
-        "clients",
+        "analytics",
+        "assistant",
     ]
     assert [item.key for item in nav.MOBILE_NAV_ITEMS] == ["dashboard", "chat", "communications", "tasks"]
     assert all(item.ready for item in nav.MOBILE_NAV_ITEMS)
@@ -89,7 +89,11 @@ def test_template_orders_accessible_groups_and_exposes_drawer_button():
     # With a tenant, headings and links use the same source order.
     tenant = SimpleNamespace(id=1, name="Example")
     html = template.render(menu_id="desktop", user=user, tenant=tenant, nav=nav.NAV_ITEMS, workspaces=[], perms=None)
-    offsets = [html.index(f'class="shell-nav-group">{label}</h2>') for label in nav.NAV_GROUP_LABELS.values()]
+    offsets = [
+        html.index(f'class="shell-nav-group">{label}</h2>')
+        for label in nav.NAV_GROUP_LABELS.values()
+        if label
+    ]
     assert offsets == sorted(offsets)
     base = (ROOT / "app/web/templates/web/base.html").read_text()
     assert 'aria-label="Быстрая навигация"' not in base

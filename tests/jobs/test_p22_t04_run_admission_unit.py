@@ -178,3 +178,28 @@ def test_unsupported_provider_effects_fail_closed(operation):
     plan = SimpleNamespace(steps=[SimpleNamespace(operation=operation)], legacy_effects=None)
     with pytest.raises(ExecutionPlanError, match="unsupported_execution_operation"):
         validate_runtime_plan(plan)
+
+
+def test_mail_adapter_uses_read_only_select_and_peek(monkeypatch):
+    from unittest.mock import MagicMock, call
+
+    from app.services import task_run_operations
+
+    client = MagicMock()
+    client.select.return_value = ("OK", [])
+    client.untagged_responses = {"UIDVALIDITY": [b"42"]}
+    client.uid.side_effect = [
+        ("OK", [b"1"]),
+        ("OK", [(b"1 (UID 1 BODY[HEADER] {25}", b"From: user@example.invalid\r\n")]),
+    ]
+    monkeypatch.setattr(task_run_operations, "_open_pinned_imap_client", lambda *_: client)
+    close = MagicMock()
+    monkeypatch.setattr(task_run_operations, "_close_imap_client", close)
+    rows = task_run_operations._read_folder("fake", "login", "password", "INBOX", 5, ("ALL",))
+    assert rows == [(42, 1, "user@example.invalid")]
+    client.select.assert_called_once_with('"INBOX"', readonly=True)
+    assert client.uid.call_args_list == [
+        call("SEARCH", None, "ALL"),
+        call("FETCH", "1", "(UID BODY.PEEK[HEADER.FIELDS (FROM)]<0.4096>)"),
+    ]
+    close.assert_called_once_with(client)

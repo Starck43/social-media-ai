@@ -98,8 +98,20 @@ async def _locked_run(session, claim):
     return run
 
 
-async def _resolve_bindings(session, run, plan, step):
+def _input_bindings(plan, step, outputs):
+    # The plan is topologically ordered. Walk backwards from this step over
+    # the outputs it will actually use, including their original resources.
     names = set(step.bindings)
+    upstream = {name for names in step.inputs.values() for name in names if name in outputs}
+    for producer in reversed(plan.steps):
+        if producer.name in upstream:
+            names.update(producer.bindings)
+            upstream.update(name for names in producer.inputs.values() for name in names if name in outputs)
+    return names
+
+
+async def _resolve_bindings(session, run, plan, step, outputs):
+    names = _input_bindings(plan, step, outputs)
     resources = []
     for binding in plan.bindings:
         if binding.name not in names:
@@ -130,10 +142,10 @@ async def _perform_step(session, run, plan, methodology, step, outputs):
         with permission_scope(user):
             identity = await task_service._actor(session, ActionType.VIEW, member_channel="web")
         with permission_scope(user, member_grants=workspace_grants(identity[2])):
-            task = await authorize_task_run(session, run.task_id)
+            task = await authorize_task_run(session, run.task_id, member_channel="web")
             if task.status in {"done", "cancelled"}:
                 raise TaskRunStopped("task_authorization_lost")
-            resources = await _resolve_bindings(session, run, plan, step)
+            resources = await _resolve_bindings(session, run, plan, step, outputs)
             context = StepContext(
                 run.id, run.tenant_id, run.principal_id, run.payer_user_id, run.effective_at, methodology, plan
             )

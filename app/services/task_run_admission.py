@@ -109,8 +109,11 @@ def _digest(*values) -> str:
 
 
 async def authorize_task_run(session, task_id: int, *, lock: bool = False, member_channel: str | None = None) -> Task:
-    identity = await task_service._actor(session, ActionType.UPDATE, member_channel=member_channel)
-    if not has_permission(get_current_user(), "plannertask", ActionType.UPDATE):
+    action = ActionType.UPDATE if lock else ActionType.VIEW
+    identity = await task_service._actor(session, action, member_channel=member_channel)
+    if ("plannertask", ActionType.UPDATE) not in workspace_grants(identity[2]) or not has_permission(
+        get_current_user(), "plannertask", ActionType.UPDATE
+    ):
         raise PermissionError("task_run_denied")
     task = await task_service._task(session, task_id, identity, lock=lock)
     if not lock and not await task_service._can_edit(session, task, identity):
@@ -118,13 +121,17 @@ async def authorize_task_run(session, task_id: int, *, lock: bool = False, membe
     return task
 
 
-async def _insert_run(session, *, task, admitted, principal_id, effective_at, fingerprint, **origin):
+def validate_admissible_plan(plan):
     from app.services.task_run_worker import validate_runtime_plan
 
-    plan = admitted.plan
     if any(OPERATIONS[step.operation].llm for step in plan.steps):
         raise TaskRunAdmissionError("payer_unavailable")
     validate_runtime_plan(plan)
+
+
+async def _insert_run(session, *, task, admitted, principal_id, effective_at, fingerprint, **origin):
+    plan = admitted.plan
+    validate_admissible_plan(plan)
     snapshot = {
         "plan": plan.model_dump(mode="json"),
         "methodology": json.loads(admitted.methodology_json),

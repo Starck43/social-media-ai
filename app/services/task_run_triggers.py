@@ -16,7 +16,7 @@ from app.services.execution_plan_contracts import ExecutionPlanError
 from app.services.planner.canonical_tasks import task_service
 from app.services.planner.tasks import PlannerUnavailable
 from app.services.task_execution_plans import _permits, execution_plan_service
-from app.services.task_run_admission import TaskRunAdmissionError, task_run_service
+from app.services.task_run_admission import TaskRunAdmissionError, task_run_service, validate_admissible_plan
 from app.tasks.cron import next_run_at
 from app.types import ActionType
 
@@ -91,6 +91,7 @@ class TaskTriggerService:
             if stored.scheduled_principal_id != identity[1]:
                 raise PermissionError("scheduled_principal_unavailable")
             plan = (await execution_plan_service.load_for_admission(task.id, revision, session=session)).plan
+            validate_admissible_plan(plan)
             schedule = plan.trigger
             if schedule.type != "schedule" or not schedule.cron or not schedule.timezone:
                 raise ExecutionPlanError("schedule_unavailable")
@@ -178,7 +179,7 @@ class TaskTriggerService:
                 .execution_options(populate_existing=True)
             )
         workspace = await session.scalar(
-            select(Tenant.id).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)).with_for_update(read=True)
+            select(Tenant.id).where(Tenant.id == tenant_id, Tenant.is_active.is_(True)).with_for_update()
         )
         if workspace is None:
             return None

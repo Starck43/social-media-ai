@@ -320,16 +320,19 @@ async def test_manual_scheduler_race_keeps_one_active_job_and_advances_cursor(wo
         assert current.next_due_at > trigger.next_due_at
 
 
-async def test_mid_run_membership_revocation_stops_the_next_step(workspace, monkeypatch):
+@pytest.mark.parametrize(
+    ("revoked", "expected_code"), [("membership", "task_authorization_lost"), ("connection", "reauth_required")]
+)
+async def test_mid_run_revocation_stops_the_next_step(workspace, monkeypatch, revoked, expected_code):
     from unittest.mock import AsyncMock, MagicMock
 
     from app.jobs.dispatcher import _execute_claimed
-    from app.models import TenantUser
+    from app.models import TenantUser, WorkspaceConnection
     from app.models.managers.job_manager import JobManager
     from app.services import task_run_operations, task_run_worker
 
     require_isolated_schema()
-    task, reference, _ = await _publish(workspace)
+    task, reference, connection_id = await _publish(workspace)
     with workspace.scope():
         receipt = await task_run_service.admit_manual(task.id, expected_revision=reference.revision, request_key="loss")
     provider = MagicMock(return_value=[(42, 1, "a@example.invalid")])
@@ -345,12 +348,16 @@ async def test_mid_run_membership_revocation_stops_the_next_step(workspace, monk
         await original_execute(claim, plan, methodology, step)
         if step.name == "read":
             async with async_session_maker() as session, session.begin():
-                membership = await session.scalar(
-                    select(TenantUser).where(
-                        TenantUser.tenant_id == workspace.tenants[0].id, TenantUser.user_id == workspace.user.id
+                if revoked == "connection":
+                    connection = await session.get(WorkspaceConnection, connection_id)
+                    connection.state = "reauth"
+                else:
+                    membership = await session.scalar(
+                        select(TenantUser).where(
+                            TenantUser.tenant_id == workspace.tenants[0].id, TenantUser.user_id == workspace.user.id
+                        )
                     )
-                )
-                membership.is_active = False
+                    membership.is_active = False
 
     monkeypatch.setattr(task_run_worker, "_execute_step", revoke_after_first_step)
     job = await JobManager.claim_job(receipt.job_id)
@@ -362,7 +369,7 @@ async def test_mid_run_membership_revocation_stops_the_next_step(workspace, monk
     async with async_session_maker() as session:
         run = await session.get(TaskRun, receipt.run_id)
         assert run.status == "failed"
-        assert run.result == {"steps": {"read": {"status": "done", "count": 1}}, "code": "task_authorization_lost"}
+        assert run.result == {"steps": {"read": {"status": "done", "count": 1}}, "code": expected_code}
         assert run.checkpoint_encrypted is None
 
 
@@ -574,3 +581,76 @@ async def test_paid_plan_fails_admission_without_creating_run_or_job(workspace, 
     async with async_session_maker() as session:
         assert (await session.scalars(select(TaskRun).where(TaskRun.task_id == task.id))).all() == []
         assert (await session.scalars(select(Job).where(Job.tenant_id == workspace.tenants[0].id))).all() == []
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "expected_status"),
+    [
+        ("header_search_failed", "done"),
+        ("authentication_failed", "failed"),
+    ],
+)
+async def test_imap_partial_read_only_skips_operational_failure(
+    workspace, monkeypatch, provider_error, expected_status
+):
+    from unittest.mock import MagicMock
+
+    from app.integrations.email.imap_sync import ImapSyncError
+    from app.jobs.dispatcher import _execute_claimed
+    from app.models.managers.job_manager import JobManager
+    from app.services import task_run_operations
+
+    require_isolated_schema()
+    connection_id, pin = await _connection(workspace)
+    plan = mail_plan(connection_id, pin)
+    first, group, _ = plan["steps"]
+    first["on_failure"] = "continue_partial"
+    second = {**first, "name": "other_read", "on_failure": "stop"}
+    group["inputs"] = {"mail": [first["name"], second["name"]]}
+    plan["steps"] = [first, second, group]
+    with workspace.scope():
+        task = await task_service.create(CreateTask(title="Synthetic partial read task"))
+        reference = await execution_plan_service.publish(task.id, task.version, json.dumps(plan))
+        receipt = await task_run_service.admit_manual(
+            task.id, expected_revision=reference.revision, request_key="partial"
+        )
+    provider = MagicMock(side_effect=[ImapSyncError(provider_error), [(42, 1, "sender@example.invalid")]])
+    monkeypatch.setattr(task_run_operations, "_read_folder", provider)
+    monkeypatch.setattr(task_run_operations, "decrypt_secret", lambda _: "synthetic-password")
+
+    job = await JobManager.claim_job(receipt.job_id)
+    assert job is not None
+    await _execute_claimed(job)
+    with workspace.scope():
+        completed = await task_run_service.get_receipt(receipt.run_id)
+    assert completed.status == expected_status
+    if expected_status == "done":
+        assert completed.result == {
+            "coverage": "partial",
+            "steps": {
+                "read": {"status": "unavailable"},
+                "other_read": {"status": "done", "count": 1},
+                "group": {"status": "done", "count": 1},
+            },
+        }
+        assert provider.call_count == 2
+    else:
+        assert completed.result == {"code": "reauth_required"}
+        provider.assert_called_once()
+
+
+async def test_unsupported_scheduled_plan_cannot_arm_trigger(workspace):
+    from app.services.execution_plan_contracts import ExecutionPlanError
+
+    connection_id, pin = await _connection(workspace)
+    plan = mail_plan(connection_id, pin)
+    plan["trigger"] = {"type": "schedule", "cron": "* * * * *", "timezone": "UTC"}
+    with workspace.scope():
+        task = await task_service.create(CreateTask(title="Unsupported scheduled sink"))
+        reference = await execution_plan_service.publish(task.id, task.version, json.dumps(plan))
+        with pytest.raises(ExecutionPlanError, match="unsupported_execution_operation"):
+            await task_trigger_service.configure(
+                task.id, revision=reference.revision, expected_version=reference.task_version, enabled=True
+            )
+    async with async_session_maker() as session:
+        assert await session.scalar(select(TaskTrigger.id).where(TaskTrigger.task_id == task.id)) is None

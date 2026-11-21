@@ -5,7 +5,7 @@ from alembic import op
 
 from app.core.config import settings
 
-revision = "p22t04_task_runs"
+revision = "0160"
 down_revision = "0159"
 branch_labels = None
 depends_on = None

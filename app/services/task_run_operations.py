@@ -133,15 +133,24 @@ async def read_headers(session, context, step, inputs, resources):
     if not password:
         raise PermissionError("reauth_required")
     login = str((connection.config or {}).get("account_login") or connection.account_key)
-    rows = await asyncio.to_thread(
-        _read_folder,
-        connection.provider_id,
-        login,
-        password,
-        folder,
-        step.max_items,
-        _criteria(step.window, context.effective_at),
-    )
+    from app.services.task_run_worker import TaskRunStopped, TaskStepUnavailable
+
+    try:
+        rows = await asyncio.to_thread(
+            _read_folder,
+            connection.provider_id,
+            login,
+            password,
+            folder,
+            step.max_items,
+            _criteria(step.window, context.effective_at),
+        )
+    except ImapSyncError as error:
+        if error.code == "authentication_failed":
+            raise TaskRunStopped("reauth_required") from None
+        raise TaskStepUnavailable("header_read_unavailable") from None
+    except (imaplib.IMAP4.error, OSError):
+        raise TaskStepUnavailable("header_read_unavailable") from None
     output = []
     for validity, uid, address in rows:
         # A sender key is meaningful only inside its original account. An

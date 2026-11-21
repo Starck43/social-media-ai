@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.models import Base
 
 __source_only__ = True
-migration = import_module("migrations.versions.p22t04_task_runs")
+migration = import_module("migrations.versions.0160_p22t04_task_runs")
 
 
 def test_create_table_columns_match_models(monkeypatch):

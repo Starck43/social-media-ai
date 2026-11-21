@@ -1,5 +1,7 @@
 # Agent Task Plans
 
+The P8 plan below governs social collection and analysis. In [P22](../product/UNIVERSAL_TASKS.md), this becomes optional execution on a Task.
+
 ## Explicit task plans
 
 Owner-approved direction (2026-10-25), tracked by the accepted [P8-T29](../audit/p8/p8-t29.md) and
@@ -23,7 +25,7 @@ management surfaces over the same persisted state. Preserve the existing design.
 | Resource | General input/output object; social Sources are the first input type |
 | Source | Concrete social input target or query lane |
 | Scenario | Reusable analysis methodology and result requirements |
-| Task | Declarative goal, sources, scenario, window, trigger, limits and output |
+| Social task definition | Declarative goal, sources, scenario, window, trigger, limits and output |
 | Execution plan | Concrete bounded operations reusing the existing runtime/jobs |
 | Run | One task occurrence with effective configuration snapshot, progress, payer, cost and outcomes; may use multiple jobs |
 | Result | Evidence-backed output, source identity, dates and links |

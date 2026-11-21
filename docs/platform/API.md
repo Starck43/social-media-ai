@@ -1328,6 +1328,8 @@ Deleting a source also deletes its analytics rows.
 
 ## Tasks
 
+P22 reserves a versioned API for canonical Task IDs. Existing v1 social and planner routes keep their own ID namespaces and response shapes. [P22 interface contract](../product/UNIVERSAL_TASKS.md#shared-interfaces)
+
 ### List Tasks
 
 ```

@@ -7,8 +7,9 @@ chat. Product direction makes the AI chat the primary workspace for clarifying
 requests, previewing and launching work, checking progress/results and following
 up; the permitted social-task journey is accepted in [P8-T39](docs/audit/p8/p8-t39.md).
 Dedicated source, scenario, task, schedule and digest pages remain directly
-accessible for setup and management. The planned workspace ([design](docs/product/WORKSPACE_UX.md))
-adds «Сегодня», an inbox and a universal task surface beside the chat; managed,
+accessible for setup and management. The planned [P22 task model](docs/product/UNIVERSAL_TASKS.md)
+gives personal, team and automated work one identity. The existing task hub is the migration baseline.
+For navigation see [workspace design](docs/product/WORKSPACE_UX.md). Managed,
 self-hosted and hybrid core/data-node deployments, own models and a desktop client
 are future directions ([topology](docs/product/PLATFORM_TOPOLOGY.md)), not shipped features.
 MAX transport does not imply MAX collection;

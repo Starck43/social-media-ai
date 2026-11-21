@@ -14,6 +14,8 @@ what a new connector or job type may add, and that no capability is selected yet
 
 ## Storage boundaries
 
+For [P22 task bindings](../product/UNIVERSAL_TASKS.md#platform-connector-connection-and-resource), Platform identifies the ecosystem, the connector defines supported operations, and the connection identifies the authorized account. Each task selects resources and read/write capabilities. Shared application credentials belong to deployment configuration.
+
 | Layer | Owner and implementation |
 | --- | --- |
 | Shared platform configuration | Global `Platform.params`: existing platform API endpoints, versions and OAuth URLs, managed by the operator; no new credentials. |

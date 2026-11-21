@@ -12,6 +12,8 @@ or Redis. The runtime, worker and web app share the same tables:
 The process split matters: heavy collection runs in `worker`, so a chat reply
 is never blocked behind a long collection.
 
+Under the [P22 target](../product/UNIVERSAL_TASKS.md), manual and scheduled launches share run admission. Jobs retain worker attempts and outcomes. Standalone maintenance jobs stay operator-only.
+
 ## Tables
 
 - `agent_tasks` — one cron definition **and the reaction it produces**:

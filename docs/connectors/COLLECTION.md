@@ -699,7 +699,7 @@ covered separately by `tests/test_analysis_receipts.py`.
 
 ## Universal task boundary (P8-T29)
 
-The [universal task contract](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans) reuses these collectors. First delivery covers VK post search, community discovery and wall collection. Source-level platform/connection identity remains independent from task-owned queries, dates and methodology. Existing Telegram behavior is preserved. Search availability depends on Q-5; a successful login or wall read is not proof of global search access.
+The [social execution plan](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans) reuses these collectors. First delivery covers VK post search, community discovery and wall collection. Source-level platform/connection identity remains independent from task-owned queries, dates and methodology. Existing Telegram behavior is preserved. Search availability depends on Q-5; a successful login or wall read is not proof of global search access.
 
 
 ## Task selection contract

@@ -59,7 +59,7 @@ Tracked as [Q-5](../audit/q/q-5.md) in [ROADMAP](../../ROADMAP.md#questions).
 
 ## P8-T29 activation evidence
 
-The [universal task contract](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans)
+The [social execution plan](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans)
 requires separate evidence for social API search and known-wall access.
 Historical profile error 1051 is resolved for the three search methods by the
 2026-11-17 live probe above; that run did not probe wall access and a successful

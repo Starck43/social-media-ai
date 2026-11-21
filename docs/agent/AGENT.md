@@ -368,7 +368,8 @@ or whole-gate acceptance claim.
 
 ## Universal social task interface (P8-T29)
 
-Target contract: [universal tasks](AGENT_TASKS_PLAN.md#explicit-task-plans). Chat is
+For P22 tools, use the shared [task command contract](../product/UNIVERSAL_TASKS.md#shared-interfaces).
+The current [social task tools](AGENT_TASKS_PLAN.md#explicit-task-plans) support the P8 workflow. Chat is
 the primary workspace for the task lifecycle; dedicated pages remain directly
 accessible for source, scenario, task, schedule and digest management. Current
 chat task tools edit the same configuration as those pages; the permitted

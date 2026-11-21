@@ -851,6 +851,8 @@ multi-select deletion as one atomic transaction.
 
 ## Universal social task parity (P8-T29)
 
+Under P22, admin exposes redacted run and connection diagnostics. Task mutations use the same authorized commands and confirmations as the workspace UI. [P22 interface contract](../product/UNIVERSAL_TASKS.md#shared-interfaces)
+
 Task plans follow the shared [task contract](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans).
 Console forms do not edit collector/runtime evidence or secrets; Run now uses the
 standard admission path. Implementation evidence belongs to the task record.

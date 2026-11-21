@@ -155,6 +155,8 @@ python -m cli.main collect --src 739 --force-refresh --start-date 01-05-2025
 
 ## Task
 
+P22 task commands use the shared application service within the existing operator and workspace scope. Preserve legacy command arguments and ID resolution. [P22 interface contract](../product/UNIVERSAL_TASKS.md#shared-interfaces)
+
 Manage the cron tasks that drive the task runner. Tasks are rows in the
 `agent_tasks` table.
 

@@ -7,10 +7,10 @@ Owner estimate (TZ): 4–5 weeks — not a repository commitment.
 
 **Goal:** Personal and team tasks with priorities, reminders and recurrence, plus two-way sync with Google Calendar and Yandex Calendar and automatic planning of contact events.
 
-## Baseline: done and arriving
+## Baseline at P16 planning
 
-- In `dev`: notifications service and preferences, follow-up quiet hours (P12-T04), runtime scheduler. No user to-do model or calendar integration.
-- Name collision: `agent_tasks`/`/api/v1/tasks`/`/app/tasks` are agent jobs; this phase uses the `planner` namespace (R-03).
+- At the start of P16: notifications service and preferences, follow-up quiet hours (P12-T04), runtime scheduler. No user to-do model or calendar integration.
+- Name collision: `agent_tasks`/`/api/v1/tasks`/`/app/tasks` are agent jobs; P16 introduced the `planner` namespace (R-03). [P22](p22-universal-tasks.md) owns migration of both namespaces.
 
 ## Adapted requirements
 

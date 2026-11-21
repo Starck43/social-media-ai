@@ -34,6 +34,10 @@ The task-plan CREATE core has a [scoped package import contract](PACKAGE_BOUNDAR
 separate from its compatibility/persistence shell. Other aggregates are not assigned
 blanket layer rules.
 
+## Task ownership in P22
+
+A local Task owns the work, its participants and its deadline. An optional execution plan binds authorized resources to service or agent steps. Runs own execution outcomes, Jobs own worker attempts, and the relevant workflow owns each approval. External trackers own their issue state. All interfaces call the same permission-scoped commands. Use the [target model](UNIVERSAL_TASKS.md) for design and the [phase cards](../phases/p22-universal-tasks.md) for implementation.
+
 ## Development hierarchy
 
 Product direction → numbered phase plan → active task card → accepted audit summary.

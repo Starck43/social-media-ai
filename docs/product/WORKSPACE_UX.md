@@ -17,10 +17,9 @@ where owner decisions are recorded below.
    calendar, documents and inbox work without the agent; the agent sits beside
    them through context handoff (P12-T06). Nothing is
    available only through a prompt.
-3. **The UI may join, storage may not** ([Q-20 D23](../audit/q/q-20-notification-surface.md),
-   [Q-21 D24/D25](../audit/q/q-21-source-authority.md)). «Сегодня», the unified task
-   list and the calendar view are read-time projections over the owning modules.
-   Our own stored state is only what we decided: dismissed, snoozed, seen.
+3. **Read each fact from its owner.** Today, Tasks and Calendar project local work,
+   authorized upstream items and pending decisions. External issues and events retain
+   their source identity and access rules. [Source authority](../audit/q/q-21-source-authority.md)
 4. **One decision, one authority.** An approve/reject control anywhere (Today,
    chat card, inbox, document, bot) calls the owning ledger with the exact item;
    no surface keeps its own approval state.
@@ -38,7 +37,7 @@ where owner decisions are recorded below.
 | Работа | Сегодня | Current dashboard `/app/`, [P20-T07](../audit/p20/p20-t07.md) | Default landing; user can choose another in settings |
 | Работа | Чат с агентом | `/app/chat`, [P20-T08](../audit/p20/p20-t08.md) | Same conversation as the Telegram/MAX bot |
 | Работа | Входящие | `/app/communications` inbox, P15-T04, triage [P20-T09 accepted](../audit/p20/p20-t09.md) | Inbound and outbound in one thread |
-| Работа | Задачи | hub over `/app/planner` (P16-T01) and `/app/tasks`, [P20-T10 accepted](../audit/p20/p20-t10.md) | Tabs «Мои дела», «Поручения агенту», «Календарь» |
+| Работа | Задачи | hub over `/app/planner` (P16-T01) and `/app/tasks`, [P20-T10 accepted](../audit/p20/p20-t10.md) | P22 target: one list and one create/edit flow |
 | Клиенты | Контакты, Договорённости, Предложения | `/app/contacts`, `/app/followups`, `/app/cases` | CRM/1C data appears inside these as context |
 | Знания | База знаний, Документы, Файлы | `/app/knowledge`, `/app/documents`, file workspace | |
 | Мониторинг | Источники, Сценарии, Аналитика, Дайджесты | existing routes | Specialist area of the first vertical |
@@ -121,20 +120,13 @@ approval; notifying a workspace user never uses the outbox (D19).
 
 ## Tasks as the universal tool
 
-The [P22 target](UNIVERSAL_TASKS.md) gives personal, team and automated work one Task identity with optional execution, progressive editing and explicit decisions. The following describes the delivered P20 baseline during migration ([R-03](BUSINESS_MODULES.md#review-findings-corrections-to-the-tz)).
+In [P22](UNIVERSAL_TASKS.md), a title is enough to save a task. The same card can gain
+people, a deadline or automated steps later. The editor asks only for fields relevant
+to earlier choices and supports Back. Detail shows Run now for runnable tasks,
+Accept/Reject for eligible reviewers, and a confirmation before deletion.
 
-- **Planner task** — a human to-do with due date, priority, reminders,
-  recurrence and links to a contact, thread or document; its source may be
-  external (calendar, CRM, tracker) per D25.
-- **Agent task** — an executable plan with preview, schedule and run history:
-  social collection/analysis today; later message analysis, web research
-  ([P20-T12 audit](../audit/p20/p20-t12.md)), 1C queries ([P17-T03 accepted](../audit/p17/p17-t03.md)), document
-  drafts ([P19-T02](../audit/p19/p19-t02.md)) and delegated research.
-
-«Поручить агенту» on a planner task creates a linked agent task; its result may
-annotate or complete the planner task after the user confirms. The calendar is a
-view over planner items, calendar events and scheduled runs, not a second store.
-Tasks can be created from chat, a message, a document or «Сегодня».
+The [P20 hub](../audit/p20/p20-t10.md) remains the compatibility baseline for planner
+and agent links, calendar views and confirmed application of run results.
 
 ## Team work
 

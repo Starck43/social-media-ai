@@ -81,6 +81,17 @@ _MAIL_FIELDS = (
         hint="Создайте отдельный пароль для почтового приложения. Основной пароль от почты не подходит.",
     ),
 )
+_CUSTOM_MAIL_FIELDS = (
+    Field("account_login", "Адрес электронной почты", kind="email", example="name@example.com"),
+    Field("imap_host", "Сервер IMAP", kind="hostname", example="imap.example.com"),
+    Field("smtp_host", "Сервер SMTP", kind="hostname", example="smtp.example.com"),
+    Field(
+        "app_password",
+        "Пароль приложения",
+        kind="secret",
+        hint="Используйте отдельный пароль приложения или пароль внешнего клиента.",
+    ),
+)
 MAILRU = Provider(
     id="mailru_mail",
     platform="email",
@@ -126,6 +137,42 @@ YANDEX_MAIL = Provider(
         ("send_enabled", False),
     ),
     source_url="https://yandex.ru/support/yandex-360/customers/mail/ru/mail-clients/others",
+)
+GMAIL = Provider(
+    id="gmail",
+    platform="email",
+    label="Gmail",
+    methods=(
+        Method(
+            "app_password",
+            "Пароль приложения",
+            _MAIL_FIELDS,
+            hint="Включите двухэтапную проверку Google и создайте пароль приложения для Почты.",
+        ),
+    ),
+    defaults=(
+        ("imap_host", "imap.gmail.com"),
+        ("imap_port", 993),
+        ("imap_tls", True),
+        ("smtp_host", "smtp.gmail.com"),
+        ("smtp_port", 465),
+        ("smtp_tls", True),
+        ("send_enabled", False),
+    ),
+    source_url="https://support.google.com/accounts/answer/185833",
+)
+CUSTOM_MAIL = Provider(
+    id="custom_mail",
+    platform="email",
+    label="Другой почтовый сервис",
+    methods=(Method("app_password", "IMAP/SMTP", _CUSTOM_MAIL_FIELDS),),
+    defaults=(
+        ("imap_port", 993),
+        ("imap_tls", True),
+        ("smtp_port", 465),
+        ("smtp_tls", True),
+        ("send_enabled", False),
+    ),
 )
 VK = Provider(
     id="vk",
@@ -243,7 +290,7 @@ TELEGRAM = replace(
 )
 MAILRU = replace(
     MAILRU,
-    description="Настройка ящика и проверка входа по IMAP; отправка и синхронизация недоступны.",
+    description="Настройка ящика и проверка входа по IMAP.",
     category="Почтовый коннектор",
     icon_asset="icons/providers/mailru-mail.svg",
     availability="mail_check",
@@ -253,7 +300,7 @@ MAILRU = replace(
 )
 YANDEX_MAIL = replace(
     YANDEX_MAIL,
-    description="Настройка ящика и проверка входа по IMAP; отправка и синхронизация недоступны.",
+    description="Настройка ящика и проверка входа по IMAP.",
     category="Почтовый коннектор",
     icon_asset="icons/providers/yandex-mail.svg",
     availability="mail_check",
@@ -261,21 +308,43 @@ YANDEX_MAIL = replace(
     setup_hint="Разрешите IMAP и создайте пароль приложения.",
     auth_protocol="IMAP TLS",
 )
+GMAIL = replace(
+    GMAIL,
+    description="Настройка Gmail и проверка входа по IMAP.",
+    category="Почтовый коннектор",
+    icon_asset="icons/providers/gmail.svg",
+    availability="mail_check",
+    capabilities=("save_configuration", "imap_login_check"),
+    setup_hint="Включите IMAP в Gmail и используйте пароль приложения.",
+    auth_protocol="IMAP TLS",
+)
+CUSTOM_MAIL = replace(
+    CUSTOM_MAIL,
+    description="Подключение любого почтового сервиса с IMAP через TLS.",
+    category="Почтовый коннектор",
+    icon_asset="icons/providers/custom-mail.svg",
+    availability="mail_check",
+    capabilities=("save_configuration", "imap_login_check"),
+    setup_hint="Уточните IMAP/SMTP-сервер у своего почтового провайдера.",
+    auth_protocol="IMAP TLS",
+)
 YANDEX_DISK = replace(
     YANDEX_DISK,
-    description="Подключение папок Яндекс.Диска пока не реализовано.",
+    description="Подключение папки Яндекс.Диска для просмотра списка файлов.",
     category="Облачный диск и документы",
     icon_asset="icons/providers/yandex-disk.svg",
-    setup_hint="Форма и транспорт пока недоступны.",
-    auth_protocol="OAuth-токен (планируется)",
+    setup_hint="Войдите через Яндекс или используйте личный токен на чтение.",
+    auth_protocol="OAuth 2.0",
+    source_url="https://yandex.ru/dev/disk/rest/",
 )
 MAILRU_CLOUD = replace(
     MAILRU_CLOUD,
-    description="Подключение папок Облака Mail.ru пока не реализовано.",
+    description="Подключение папки Облака Mail.ru для просмотра списка файлов.",
     category="Облачный диск и документы",
     icon_asset="icons/providers/mailru-cloud.svg",
-    setup_hint="Форма и транспорт пока недоступны.",
-    auth_protocol="WebDAV (планируется)",
+    setup_hint="Войдите с паролем внешнего приложения.",
+    auth_protocol="WebDAV",
+    source_url="https://id.mail.ru/security",
 )
 BITRIX24 = replace(
     BITRIX24,
@@ -297,11 +366,11 @@ ONEC = replace(
 )
 LOCAL_GATEWAY = replace(
     LOCAL_GATEWAY,
-    description="Подключение локального шлюза пока не реализовано.",
+    description="Подключение устройства через отдельное приложение для macOS или Windows.",
     category="Локальный шлюз",
     icon_asset="icons/providers/local-gateway.svg",
-    setup_hint="Форма и транспорт пока недоступны.",
-    auth_protocol="Парный mTLS (планируется)",
+    setup_hint="Веб-сопряжение пока недоступно; используется отдельный клиент с парным mTLS.",
+    auth_protocol="Парный mTLS",
 )
 
 GOOGLE_CALENDAR = Provider(
@@ -333,6 +402,8 @@ PROVIDERS: Mapping[str, Provider] = MappingProxyType(
             TELEGRAM,
             MAILRU,
             YANDEX_MAIL,
+            GMAIL,
+            CUSTOM_MAIL,
             YANDEX_DISK,
             MAILRU_CLOUD,
             BITRIX24,
@@ -343,7 +414,7 @@ PROVIDERS: Mapping[str, Provider] = MappingProxyType(
 )
 
 
-WORKSPACE_PROVIDERS = (MAILRU, YANDEX_MAIL)
+WORKSPACE_PROVIDERS = (MAILRU, YANDEX_MAIL, GMAIL, CUSTOM_MAIL)
 WORKSPACE_PROVIDER_IDS = frozenset(p.id for p in WORKSPACE_PROVIDERS)
 
 
@@ -392,6 +463,13 @@ def validate_input(provider_id: str, method_id: str, values: Mapping[str, object
                 or not re.fullmatch(
                     r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+", domain
                 )
+            ):
+                raise InvalidConnectorInput(f"invalid_{field.name}")
+        if field.kind == "hostname":
+            if (
+                len(value) > 253
+                or value.endswith(".")
+                or not re.fullmatch(r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}", value)
             ):
                 raise InvalidConnectorInput(f"invalid_{field.name}")
         if field.kind == "secret":

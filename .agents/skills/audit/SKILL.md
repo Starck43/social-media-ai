@@ -13,6 +13,12 @@ finds corrections, decide whether focused checks are needed; do not run tests
 solely as routine audit. Full suites require owner request. Do not take feature
 implementation beyond authorized corrections/refactoring/docs.
 
+When a bounded review unit is delegated to a subagent, use the order defined by
+[task](../task/SKILL.md#delegation-order): Perch, then `hy4`
+(`opencode/hy4-flash-free`), then `free-pi`
+(`free-pi/deepseek-v4.1-flash#medium`). Fall to the next route only when the
+previous one is unavailable or fails, and report which route ran.
+
 Before acceptance closeout, follow [verified integration](../../../docs/process/COLLABORATION.md#acceptance):
 require PR `mergedAt`/merge commit, fetch origin, prove ancestry and inspect
 `git ls-tree origin/dev -- <delivered-file>` plus accepted content. Closed is not

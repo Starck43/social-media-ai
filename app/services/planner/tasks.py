@@ -66,6 +66,14 @@ class PlannerService:
             raise ValueError("invalid_task_view")
         return query
 
+    async def project_for_actor(self, rows, session, identity, *, authoritative=False):
+        if authoritative:
+            return [await self.authoritative(row, session, identity) for row in rows]
+        return [self.project(row) for row in rows]
+
+    async def check_changed_references(self, session, request, identity, row, changes):
+        await self._references(session, request, identity, own_id=row.id)
+
     async def check_edit_fields(self, session, row, identity, changes):
         """Apply additional aggregate-specific authorization."""
 
@@ -97,6 +105,7 @@ class PlannerService:
             select(TenantUser)
             .where(TenantUser.tenant_id == tenant, TenantUser.user_id == actor.id, TenantUser.is_active.is_(True))
             .with_for_update(read=True)
+            .execution_options(populate_existing=True)
         )
         role = (
             None
@@ -113,8 +122,10 @@ class PlannerService:
         tenant, actor, role = identity
         if type(task_id) is not int or task_id <= 0:
             raise PlannerUnavailable("planner_unavailable")
-        query = select(self.model).where(
-            self.model.tenant_id == tenant, self.model.id == task_id, self.visibility(actor, role)
+        query = (
+            select(self.model)
+            .where(self.model.tenant_id == tenant, self.model.id == task_id, self.visibility(actor, role))
+            .execution_options(populate_existing=True)
         )
         row = await session.scalar(query.with_for_update() if lock else query)
         if row is None:
@@ -201,13 +212,15 @@ class PlannerService:
         await session.flush()
         row.series_id = row.id
         await session.flush()
-        return self.project(row)
+        (result,) = await self.project_for_actor([row], session, identity)
+        return result
 
     @with_db_session
     async def get(self, task_id, session):
         identity = await self._actor(session, ActionType.VIEW)
         row = await self._task(session, task_id, identity)
-        return await self.authoritative(row, session, identity)
+        (result,) = await self.project_for_actor([row], session, identity, authoritative=True)
+        return result
 
     @with_db_session
     async def list(self, session, *, limit=50, before_id=None, status=None, view=None):
@@ -226,8 +239,14 @@ class PlannerService:
             query = query.where(self.model.id < before_id)
         if status is not None:
             query = query.where(self.model.status == status)
-        rows = list((await session.scalars(query.order_by(self.model.id.desc()).limit(limit + 1))).all())
-        items = [await self.authoritative(row, session, identity) for row in rows[:limit]]
+        rows = list(
+            (
+                await session.scalars(
+                    query.order_by(self.model.id.desc()).limit(limit + 1).execution_options(populate_existing=True)
+                )
+            ).all()
+        )
+        items = await self.project_for_actor(rows[:limit], session, identity, authoritative=True)
         return {
             "items": items,
             "limit": limit,
@@ -265,9 +284,15 @@ class PlannerService:
         )
         if before_id is not None:
             query = query.where(self.model.id < before_id)
-        rows = list((await session.scalars(query.order_by(self.model.id.desc()).limit(limit + 1))).all())
+        rows = list(
+            (
+                await session.scalars(
+                    query.order_by(self.model.id.desc()).limit(limit + 1).execution_options(populate_existing=True)
+                )
+            ).all()
+        )
         return {
-            "items": [self.project(row) for row in rows[:limit]],
+            "items": await self.project_for_actor(rows[:limit], session, identity),
             "next_before_id": rows[limit - 1].id if len(rows) > limit else None,
         }
 
@@ -295,7 +320,7 @@ class PlannerService:
             and (updated.due_at is not None) != (template.due_at is not None)
         ):
             raise PlannerConflict("deadline_kind_requires_series_scope")
-        await self._references(session, updated, identity, own_id=row.id)
+        await self.check_changed_references(session, updated, identity, row, changes)
         if request.scope == "series":
             # Apply to this open occurrence and future generated occurrences,
             # never rewrite historical completed rows or precreate a series.
@@ -309,7 +334,8 @@ class PlannerService:
             row.status = request.status
         row.version += 1
         await session.flush()
-        return self.project(row)
+        (result,) = await self.project_for_actor([row], session, identity)
+        return result
 
     @with_db_session
     async def update(self, task_id, request: TaskUpdate, session):
@@ -323,22 +349,27 @@ class PlannerService:
         await self._references(session, template, identity)
         return template
 
+    async def completion_response(self, session, identity, row, following):
+        rows = [row] if following is None else [row, following]
+        results = await self.project_for_actor(rows, session, identity)
+        return self.complete_schema(task=results[0], next_task=results[1] if following is not None else None)
+
     @with_db_session
     async def complete(self, task_id, expected_version, session):
         identity = await self._actor(session, ActionType.UPDATE)
         row = await self._task(session, task_id, identity, lock=True)
         if row.status == "done":
             following = await session.scalar(
-                select(self.model).where(
+                select(self.model)
+                .where(
                     self.model.tenant_id == identity[0],
                     self.model.previous_occurrence_id == row.id,
                     self.visibility(identity[1], identity[2]),
                 )
+                .execution_options(populate_existing=True)
             )
             # Retrying completion reads the existing successor; never inserts it.
-            return self.complete_schema(
-                task=self.project(row), next_task=self.project(following) if following is not None else None
-            )
+            return await self.completion_response(session, identity, row, following)
         self._editable(row, expected_version)
         now = datetime.now(timezone.utc)
         template = self.create_schema.model_validate_json(row.series_template_encrypted)
@@ -390,7 +421,7 @@ class PlannerService:
             await self.copy_occurrence_participants(session, row, next_row)
             await session.flush()
             next_row = await self.visible_successor(session, identity, next_row)
-        return self.complete_schema(task=self.project(row), next_task=self.project(next_row) if next_row else None)
+        return await self.completion_response(session, identity, row, next_row)
 
     @with_db_session
     async def delete(self, task_id, expected_version, session):

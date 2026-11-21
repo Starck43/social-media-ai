@@ -68,10 +68,10 @@ async def task_world():
 
 
 @contextmanager
-def actor(world, user_idx, workspace=0):
+def actor(world, user_idx, workspace=0, *, role="owner"):
     with (
         tenant_scope(world.tenants[workspace].id),
-        permission_scope(world.users[user_idx], member_grants=workspace_grants("owner")),
+        permission_scope(world.users[user_idx], member_grants=workspace_grants(role)),
     ):
         yield
 
@@ -174,3 +174,54 @@ async def test_recurring_task_drops_stale_assignee_and_merged_contact(task_world
         following = await task_service.complete(completion.next_task.id, completion.next_task.version)
         assert following.next_task.assignee_id is None
         assert following.next_task.contact_id is None
+
+
+async def test_assignee_can_edit_and_complete_without_seeing_restricted_links(task_world, monkeypatch):
+    require_isolated_schema()
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    world = task_world
+    tenant_id, assignee_id = world.tenants[0].id, world.users[1].id
+    async with async_session_maker() as session:
+        analyst_role = await session.scalar(select(WorkspaceRole.id).where(WorkspaceRole.codename == "analyst"))
+        membership = await session.scalar(
+            select(TenantUser).where(TenantUser.tenant_id == tenant_id, TenantUser.user_id == assignee_id)
+        )
+        membership.role_id = analyst_role
+        contact = Contact(tenant_id=tenant_id, display_name_encrypted="Restricted synthetic contact")
+        session.add(contact)
+        await session.commit()
+
+    with actor(world, 0):
+        parent = await task_service.create(CreateTask(title="Private parent"))
+        child = await task_service.create(
+            CreateTask(
+                title="Shared child",
+                parent_id=parent.id,
+                contact_id=contact.id,
+                visibility="shared",
+                assignee_id=assignee_id,
+                due_date=date(2099, 11, 21),
+                recurrence="FREQ=DAILY",
+            )
+        )
+
+    with actor(world, 1, role="analyst"):
+        restricted = await task_service.get(child.id)
+        assert restricted.parent_id is None and restricted.contact_id is None
+        assert (await task_service.list(view="team"))["items"] == [restricted]
+        with pytest.raises(PermissionError, match="planner_contact_denied"):
+            await task_service.update(
+                child.id, UpdateTask(expected_version=child.version, scope="series", contact_id=contact.id)
+            )
+        changed = await task_service.update(
+            child.id, UpdateTask(expected_version=child.version, scope="series", title="Edited shared child")
+        )
+        assert changed.parent_id is None and changed.contact_id is None
+        completed = await task_service.complete(child.id, changed.version)
+        assert completed.task.status == "done"
+        assert completed.next_task.title == "Edited shared child"
+        assert completed.next_task.parent_id is None and completed.next_task.contact_id is None
+
+    with actor(world, 0):
+        following = await task_service.get(completed.next_task.id)
+        assert following.parent_id == parent.id and following.contact_id == contact.id

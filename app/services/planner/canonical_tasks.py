@@ -5,7 +5,9 @@ from typing import Literal
 from pydantic import Field, StrictInt
 from sqlalchemy import and_, delete, or_, select
 
+from app.core.access_catalog import workspace_grants
 from app.core.database import with_db_session
+from app.core.permissions import get_current_user, has_permission
 from app.models import TenantUser, User
 from app.models.planner import Task, TaskParticipant
 from app.schemas.business import BusinessSchema
@@ -86,9 +88,34 @@ class CanonicalTaskService(PlannerService):
             raise ValueError("invalid_task_view")
         return query
 
-    async def authoritative(self, row, session, identity):
-        # External calendar rows are keyed to the legacy planner namespace.
-        return self.project(row)
+    async def project_for_actor(self, rows, session, identity, *, authoritative=False):
+        tenant_id, actor_id, role = identity
+        parent_ids = {row.parent_id for row in rows if row.parent_id is not None}
+        visible_parents = set()
+        if parent_ids:
+            visible_parents = set(
+                await session.scalars(
+                    select(Task.id).where(
+                        Task.tenant_id == tenant_id, Task.id.in_(parent_ids), self.visibility(actor_id, role)
+                    )
+                )
+            )
+        can_view_contacts = ("contact", ActionType.VIEW) in workspace_grants(role) and has_permission(
+            get_current_user(), "contact", ActionType.VIEW
+        )
+        return [
+            self.project(row).model_copy(
+                update={
+                    "parent_id": row.parent_id if row.parent_id in visible_parents else None,
+                    "contact_id": row.contact_id if can_view_contacts else None,
+                }
+            )
+            for row in rows
+        ]
+
+    async def check_changed_references(self, session, request, identity, row, changes):
+        new_links = {field: None for field in ("assignee_id", "contact_id", "parent_id") if field not in changes}
+        await self._references(session, request.model_copy(update=new_links), identity, own_id=row.id)
 
     async def _task(self, session, task_id, identity, *, lock=False):
         row = await super()._task(session, task_id, identity, lock=lock)
@@ -154,7 +181,8 @@ class CanonicalTaskService(PlannerService):
             await session.delete(existing)
             row.version += 1
         await session.flush()
-        return self.project(row)
+        (result,) = await self.project_for_actor([row], session, identity)
+        return result
 
     async def successor_template(self, session, template, identity):
         tenant_id = identity[0]
@@ -165,9 +193,17 @@ class CanonicalTaskService(PlannerService):
         if template.contact_id is not None:
             if await self._active_contact(session, tenant_id, template.contact_id) is None:
                 changes["contact_id"] = None
-        if changes:
-            template = template.model_copy(update=changes)
-        return await super().successor_template(session, template, identity)
+        if template.parent_id is not None:
+            parent = await session.scalar(
+                select(Task.id)
+                .where(Task.tenant_id == tenant_id, Task.id == template.parent_id)
+                .with_for_update(read=True)
+            )
+            if parent is None:
+                changes["parent_id"] = None
+        # The series already admitted these links. The completer does not
+        # gain the authority to set new ones or to view their targets.
+        return template.model_copy(update=changes) if changes else template
 
     async def copy_occurrence_participants(self, session, row, successor):
         if successor.visibility == "private":

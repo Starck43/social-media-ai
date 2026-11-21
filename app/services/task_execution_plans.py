@@ -20,7 +20,7 @@ from app.integrations.task_resources import (
     TelegramGrantPin,
     resolve_task_resource,
 )
-from app.models import AgentScenario, Platform, Source, TenantUser, User, WorkspaceRole
+from app.models import AgentScenario, Platform, Source, User
 from app.models.planner.execution_plan import TaskPlanBinding, TaskPlanRevision
 from app.services.ai.scenario_schema import compile_scenario_output
 from app.services.execution_plan_contracts import (
@@ -315,7 +315,8 @@ class ExecutionPlanService:
     @with_db_session
     async def load_for_admission(self, task_id: int, expected_revision: int, session=None) -> AdmissionPlan:
         """Use the authenticated actor within T04's authorized admission transaction."""
-        return await self._load_admission(session, task_id, expected_revision, scheduled=False)
+        identity = await task_service._actor(session, ActionType.VIEW)
+        return await self._load_admission(session, identity, task_id, expected_revision, scheduled=False)
 
     async def load_for_scheduled_admission(
         self, task_id: int, expected_revision: int, *, principal_id: int, session
@@ -335,28 +336,22 @@ class ExecutionPlanService:
             or principal_id <= 0
         ):
             raise PermissionError("scheduled_principal_unavailable")
-        result = await session.execute(
-            select(User, WorkspaceRole.codename)
-            .join(TenantUser, TenantUser.user_id == User.id)
-            .join(WorkspaceRole, WorkspaceRole.id == TenantUser.role_id)
-            .where(
-                User.id == principal_id,
-                User.is_active.is_(True),
-                TenantUser.tenant_id == tenant_id,
-                TenantUser.is_active.is_(True),
-                TenantUser.channel == "web",
-            )
+        user = await session.scalar(
+            select(User)
+            .where(User.id == principal_id, User.is_active.is_(True))
             .execution_options(populate_existing=True)
         )
-        principal = result.one_or_none()
-        if principal is None:
+        if user is None:
             raise PermissionError("scheduled_principal_unavailable")
-        user, role = principal
-        with permission_scope(user, member_grants=workspace_grants(role)):
-            return await self._load_admission(session, task_id, expected_revision, scheduled=True)
+        try:
+            with permission_scope(user):
+                identity = await task_service._actor(session, ActionType.VIEW, member_channel="web")
+        except PermissionError:
+            raise PermissionError("scheduled_principal_unavailable") from None
+        with permission_scope(user, member_grants=workspace_grants(identity[2])):
+            return await self._load_admission(session, identity, task_id, expected_revision, scheduled=True)
 
-    async def _load_admission(self, session, task_id, expected_revision, *, scheduled):
-        identity = await task_service._actor(session, ActionType.VIEW)
+    async def _load_admission(self, session, identity, task_id, expected_revision, *, scheduled):
         if not _permits(identity, "plannertask", ActionType.VIEW):
             raise PermissionError("task_view_denied")
         task = await task_service._task(session, task_id, identity)

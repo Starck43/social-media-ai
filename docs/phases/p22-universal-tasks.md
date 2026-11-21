@@ -12,7 +12,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 2. [P22-T02 — Connector capabilities, installations and account grants](../audit/p22/p22-t02.md). DONE 2026-11-21 at `f85ee56e`. Scoped resolver and explicit account bindings.
 3. [P22-T03 — Task execution profiles, steps and resource bindings](../audit/p22/p22-t03.md). DONE 2026-11-21 at `95271ec1`. Versioned plans, scoped bindings and pinned methodology.
 4. [P22-T04 — Run admission, scheduler and worker integration](../audit/p22/p22-t04.md). DONE 2026-11-21 at `a6c6e542`. Durable admission, scheduled occurrences and fenced read-only execution.
-5. [P22-T05 — Task actions, decisions and confirmed deletion](../tasks/p22-t05.md). Depends on P22-T01, P22-T04.
+5. [P22-T05 — Task actions, decisions and confirmed deletion](../audit/p22/p22-t05.md). DONE 2026-11-21 at `41160197`. Actor-scoped decisions, confirmed deletion and retained run receipts.
 6. [P22-T06 — Legacy ID mapping, compatibility writers and backfill](../tasks/p22-t06.md). Depends on P22-T01, P22-T03, P22-T04, P22-T05.
 7. [P22-T07 — Unified API, CLI and AI toolset](../tasks/p22-t07.md). Depends on P22-T03, P22-T04, P22-T05, P22-T06.
 8. [P22-T08 — Unify task navigation, labels, creation and detail views](../tasks/p22-t08.md). Depends on P22-T07, P22-T14.

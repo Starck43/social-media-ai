@@ -101,13 +101,6 @@ async def _authorize(session, tenant_id, actor_id, *, write=False, require_sourc
 
 def _projection(row):
     # Explicit allowlist: never project arbitrary config, metadata or ciphertext.
-    safe_config = {}
-    if row.provider_id == "custom_mail":
-        safe_config = {
-            key: row.config.get(key, "")
-            for key in ("imap_host", "smtp_host")
-            if row.config.get(key)
-        }
     return {
         "id": row.id,
         "label": row.label,
@@ -115,7 +108,6 @@ def _projection(row):
         "provider_label": PROVIDERS[row.provider_id].label if row.provider_id in PROVIDERS else "Неизвестный сервис",
         "auth_method": row.auth_method,
         "account_login": row.config.get("account_login", ""),
-        "config": safe_config,
         "state": row.state,
         "state_label": STATE_LABELS.get(row.state, STATE_LABELS["error"]),
         "check_detail": CHECK_LABELS.get(row.check_code, ""),
@@ -263,11 +255,8 @@ class WorkspaceConnectionManager:
                 else:
                     # Fixed providers use catalog endpoints; custom mail stores only
                     # validated hostnames and still passes through outbound policy.
-                    check_args = (row.provider_id, row.config["account_login"], password)
-                    if row.provider_id == "custom_mail":
-                        check_args += (row.config,)
                     worker = asyncio.create_task(
-                        asyncio.to_thread(check_mail, *check_args)
+                        asyncio.to_thread(check_mail, row.provider_id, row.config["account_login"], password)
                     )
                     try:
                         result = await asyncio.shield(worker)

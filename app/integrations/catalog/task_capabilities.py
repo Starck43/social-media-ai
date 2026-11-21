@@ -32,6 +32,8 @@ CAPABILITIES = MappingProxyType(
     {
         "mailru_mail.headers.read": Capability("mailru_mail", ResourceKind.MAIL_FOLDER, "imap_sync", "app_password"),
         "yandex_mail.headers.read": Capability("yandex_mail", ResourceKind.MAIL_FOLDER, "imap_sync", "app_password"),
+        "gmail.headers.read": Capability("gmail", ResourceKind.MAIL_FOLDER, "imap_sync", "app_password"),
+        "custom_mail.headers.read": Capability("custom_mail", ResourceKind.MAIL_FOLDER, "imap_sync", "app_password"),
         "yandex_disk.folders.list": Capability(
             "yandex_disk", ResourceKind.DISK_FOLDER, "list_owned_folder", "oauth_token"
         ),

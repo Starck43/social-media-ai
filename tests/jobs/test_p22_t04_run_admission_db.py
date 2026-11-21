@@ -462,3 +462,56 @@ async def test_receipt_and_idempotency_survive_actual_job_history_pruning(worksp
     assert visible.status == "done" and visible.result["coverage"] == "complete"
     assert replay.replayed and replay.run_id == receipt.run_id and replay.job_id == receipt.job_id
     provider.assert_called_once()
+
+
+async def test_scheduler_manual_race_keeps_one_active_job_when_scheduler_wins(workspace, monkeypatch):
+    from app.models.scheduling.job import Job
+    from app.services import task_run_admission
+
+    require_isolated_schema()
+    task, reference, _ = await _publish(workspace, scheduled=True)
+    with workspace.scope():
+        trigger = await task_trigger_service.configure(
+            task.id, revision=reference.revision, expected_version=reference.task_version, enabled=True
+        )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    original_insert = task_run_admission._insert_run
+
+    async def gated_insert(session, **kwargs):
+        if kwargs.get("trigger_id"):
+            entered.set()
+            await asyncio.wait_for(release.wait(), 5)
+        return await original_insert(session, **kwargs)
+
+    monkeypatch.setattr(task_run_admission, "_insert_run", gated_insert)
+
+    async def schedule_tick():
+        with tenant_scope(workspace.tenants[0].id):
+            return await task_trigger_service.tick(workspace.tenants[0].id, trigger.next_due_at)
+
+    async def manual_admission():
+        with workspace.scope():
+            return await task_run_service.admit_manual(
+                task.id, expected_revision=reference.revision, request_key="race-scheduler"
+            )
+
+    scheduler = asyncio.create_task(schedule_tick())
+    manual = None
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        manual = asyncio.create_task(manual_admission())
+        await asyncio.sleep(0.2)
+        assert not manual.done(), "manual admission should wait for the scheduler's workspace locks"
+    finally:
+        release.set()
+        stats = await asyncio.wait_for(scheduler, 5)
+    receipt = await asyncio.wait_for(manual, 5)
+    assert stats == {"due": 1, "enqueued": 1, "failed": 0}
+    assert receipt.status == "skipped" and receipt.job_id is None and receipt.result == {"reason": "active_run"}
+    async with async_session_maker() as session:
+        runs = (await session.scalars(select(TaskRun).where(TaskRun.task_id == task.id))).all()
+        jobs = (await session.scalars(select(Job).where(Job.task_run_id.in_([run.id for run in runs])))).all()
+        assert len(runs) == 2 and len(jobs) == 1
+        assert {run.status for run in runs} == {"pending", "skipped"}
+        assert next(run for run in runs if run.job_id).trigger_id == trigger.trigger_id

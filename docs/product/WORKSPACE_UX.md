@@ -35,7 +35,7 @@ where owner decisions are recorded below.
 | Group | Item | Owner / current route | Notes |
 | --- | --- | --- | --- |
 | Работа | Сегодня | Current dashboard `/app/`, [P20-T07](../audit/p20/p20-t07.md) | Default landing; user can choose another in settings |
-| Работа | Чат с агентом | `/app/chat`, [P20-T08](../audit/p20/p20-t08.md) | Same conversation as the Telegram/MAX bot |
+| Работа | Чат с агентом | `/app/chat`, [P20-T08](../audit/p20/p20-t08.md) | P22 global entry: `/chat` |
 | Работа | Входящие | `/app/communications` inbox, P15-T04, triage [P20-T09 accepted](../audit/p20/p20-t09.md) | Inbound and outbound in one thread |
 | Работа | Задачи | hub over `/app/planner` (P16-T01) and `/app/tasks`, [P20-T10 accepted](../audit/p20/p20-t10.md) | P22 target: one list and one create/edit flow |
 | Клиенты | Контакты, Договорённости, Предложения | `/app/contacts`, `/app/followups`, `/app/cases` | CRM/1C data appears inside these as context |
@@ -84,10 +84,7 @@ editor), brief (attention items).
    and cancel ([../audit/p20-t04.md](../audit/p20/p20-t04.md)).
 4. «Материалы» — citations/evidence of the last answer and attachments.
 
-**Chat dock.** Every object page offers «Спросить агента», which opens the same
-conversation as a slide-over with the object as a context chip. One conversation
-per user and workspace stays the model; topic threads are a later, measured
-decision.
+**Chat dock.** «Спросить агента» uses the global conversation with an object context chip. On task cards, the separate «Поручить агенту» link opens a right-hand drawer for that specific task when its scenario is configured. Both surfaces render messages and the composer through the same chat component. [P22 conversation contract](UNIVERSAL_TASKS.md#task-conversations)
 
 ## Today page
 

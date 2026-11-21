@@ -15,12 +15,13 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 5. [P22-T05 — Task actions, decisions and confirmed deletion](../tasks/p22-t05.md). Depends on P22-T01, P22-T04.
 6. [P22-T06 — Legacy ID mapping, compatibility writers and backfill](../tasks/p22-t06.md). Depends on P22-T01, P22-T03, P22-T04, P22-T05.
 7. [P22-T07 — Unified API, CLI and AI toolset](../tasks/p22-t07.md). Depends on P22-T03, P22-T04, P22-T05, P22-T06.
-8. [P22-T08 — Unify task navigation, labels, creation and detail views](../tasks/p22-t08.md). Depends on P22-T07.
+8. [P22-T08 — Unify task navigation, labels, creation and detail views](../tasks/p22-t08.md). Depends on P22-T07, P22-T14.
 9. [P22-T09 — Admin connector setup and task operations](../tasks/p22-t09.md). Depends on P22-T02, P22-T05, P22-T07.
 10. [P22-T10 — Correspondence task and sender-grouped Messages](../tasks/p22-t10.md). Depends on P22-T02, P22-T03, P22-T04, P22-T07.
 11. [P22-T11 — External tasks and team tracker commands](../tasks/p22-t11.md). Depends on P22-T02, P22-T05, P22-T07.
 12. [P22-T12 — Workspace cutover, reconciliation and legacy retirement](../tasks/p22-t12.md). Depends on P22-T06, P22-T07, P22-T08, P22-T09, P22-T10, P22-T11.
 13. [P22-T13 — Jira issue adapter and Slack task context](../tasks/p22-t13.md). Depends on P22-T11.
+14. [P22-T14 — Task-scoped agent chat and shared transcript UI](../tasks/p22-t14.md). Depends on P22-T03 and P22-T07. Supplies the drawer to P22-T08.
 
 T01 and T02 can start together. T06 owns legacy writes and migration. T07 owns the new interface namespace and command adapters. Coordinate the legacy regression fixtures at their boundary. T08, T09, T10 and T11 can implement independent surfaces after their prerequisites. T08 uses capability fixtures until the pilots land. T12 integrates the verticals. T13 extends the provider set independently.
 

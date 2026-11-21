@@ -26,6 +26,7 @@ BUSINESS_TAGS = {
     "files": "Files",
     "documents": "Documents",
     "commands": "Commands",
+    "tasks": "Work tasks",
 }
 ERRORS = {
     400: ("invalid_request", "Invalid request"),

@@ -277,6 +277,35 @@ class TaskRunService:
         )
 
     @with_db_session
+    async def list_receipts(self, task_id: int, *, limit: int = 50, before_id: int | None = None, session=None):
+        """Newest-first receipts for one visible task; same projection as a single read."""
+        if (
+            type(limit) is not int
+            or not 1 <= limit <= 100
+            or (before_id is not None and (type(before_id) is not int or before_id <= 0))
+        ):
+            raise TaskRunAdmissionError("invalid_page")
+        identity = await task_service._actor(session, ActionType.VIEW)
+        if not has_permission(get_current_user(), "plannertask", ActionType.VIEW):
+            raise PermissionError("task_view_denied")
+        task = await task_service._task(session, task_id, identity)
+        query = select(TaskRun).where(TaskRun.tenant_id == task.tenant_id, TaskRun.task_id == task.id)
+        if before_id is not None:
+            query = query.where(TaskRun.id < before_id)
+        rows = list(
+            (
+                await session.scalars(
+                    query.order_by(TaskRun.id.desc()).limit(limit + 1).execution_options(populate_existing=True)
+                )
+            ).all()
+        )
+        return {
+            "items": [_receipt(row) for row in rows[:limit]],
+            "limit": limit,
+            "next_before_id": rows[limit - 1].id if len(rows) > limit else None,
+        }
+
+    @with_db_session
     async def get_receipt(self, run_id: int, *, session=None) -> TaskRunReceipt:
         if type(run_id) is not int or run_id <= 0:
             raise TaskRunAdmissionError("run_unavailable")

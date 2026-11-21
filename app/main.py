@@ -24,6 +24,7 @@ from starlette.websockets import WebSocket
 from app.admin.csrf import AdminCSRFMiddleware, CSRFTokenManager
 from app.admin.scope import AdminScopeMiddleware
 from app.api.v1 import entry
+from app.api.v2 import tasks as work_tasks
 from app.api.v1.conventions import BUSINESS_TAGS, openapi_options
 from app.core.api_scope import ApiScopeMiddleware
 from app.core.config import settings
@@ -121,6 +122,8 @@ def create_application() -> FastAPI:
 
     # Include API routes with rate limiting
     application.include_router(entry.router, prefix="/api/v1")
+    # Canonical local tasks (P22-T07). v1 `/tasks` stays the social-monitoring surface.
+    application.include_router(work_tasks.router, prefix="/api/v2")
     application.include_router(health_router)
 
     # Client-facing UI (docs/platform/API.md): pages under /app, tenant-scoped.

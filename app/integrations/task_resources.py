@@ -1,5 +1,7 @@
 """Resolve a selection under current membership and provider policy without external I/O."""
 
+import hmac
+import json
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -34,12 +36,27 @@ class TelegramGrantPin:
 
 
 @dataclass(frozen=True)
+class WorkspaceAccountPin:
+    """Opaque identity derived only from an already authorized connection."""
+
+    digest: str
+
+    @classmethod
+    def from_connection(cls, row):
+        values = (row.tenant_id, row.id, row.owner_user_id, row.provider_id, row.auth_method, row.account_key)
+        payload = json.dumps(values, ensure_ascii=True, separators=(",", ":")).encode()
+        digest = hmac.digest(settings.SECRET_KEY.encode(), b"task-account-v1\0" + payload, "sha256")
+        return cls(digest.hex())
+
+
+@dataclass(frozen=True)
 class ResourceSelection:
     kind: ResourceKind
     resource_id: int
     path: str | None = None
     vk_access: VKSelection | None = None
     telegram_grant: TelegramGrantPin | None = None
+    workspace_account: WorkspaceAccountPin | None = None
 
 
 @dataclass(frozen=True)
@@ -140,6 +157,13 @@ async def resolve_task_resource(
                 selection.telegram_grant is not None
                 and (capability.provider != "telegram" or not isinstance(selection.telegram_grant, TelegramGrantPin))
             )
+            or (
+                selection.workspace_account is not None
+                and (
+                    capability.kind in (ResourceKind.SOCIAL_SOURCE, ResourceKind.PAIRED_ROOT)
+                    or not isinstance(selection.workspace_account, WorkspaceAccountPin)
+                )
+            )
             or (selection.path is not None and not isinstance(selection.path, str))
             or selection.kind != capability.kind
             or type(selection.resource_id) is not int
@@ -159,6 +183,8 @@ async def resolve_task_resource(
                 owner_id=actor_id, device_id=selection.resource_id, roots=(selection.path,)
             )
         else:
+            if selection.workspace_account is None:
+                return ResolutionIssue.SELECT_RESOURCE
             if capability.kind == ResourceKind.PORTAL:
                 await planner_service._actor(session, ActionType.VIEW)
             row = await _connection(session, tenant_id, actor_id, selection.resource_id)
@@ -169,6 +195,8 @@ async def resolve_task_resource(
                 or not row.is_active
             ):
                 return ResolutionIssue.UNAVAILABLE
+            if selection.workspace_account != WorkspaceAccountPin.from_connection(row):
+                return ResolutionIssue.REAUTH
             if row.state == "reauth":
                 return ResolutionIssue.REAUTH
             if row.state != "verified":
@@ -187,6 +215,8 @@ async def resolve_task_resource(
                 if selection.path not in get_imap_folders(row):
                     return ResolutionIssue.SELECT_RESOURCE
             elif capability.kind == ResourceKind.DISK_FOLDER:
+                if row.platform != capability.provider:
+                    return ResolutionIssue.UNAVAILABLE
                 policy = _stored_policy(row.config)
                 if selection.path is None:
                     return ResolutionIssue.SELECT_RESOURCE

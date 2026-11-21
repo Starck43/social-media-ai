@@ -15,6 +15,9 @@ async def test_resolution_requires_explicit_account_and_rechecks_revocation(monk
     monkeypatch.setattr(resources, "_authorize", AsyncMock())
     connection = SimpleNamespace(
         id=7,
+        tenant_id=1,
+        owner_user_id=2,
+        account_key="account-a",
         provider_id="mailru_mail",
         schema_version=resources.CATALOG_VERSION,
         auth_method="app_password",
@@ -24,6 +27,7 @@ async def test_resolution_requires_explicit_account_and_rechecks_revocation(monk
     )
     second_connection = copy(connection)
     second_connection.id = 8
+    second_connection.account_key = "account-b"
     accounts = {7: connection, 8: second_connection}
 
     async def lookup(_session, tenant_id, actor_id, connection_id):
@@ -34,7 +38,12 @@ async def test_resolution_requires_explicit_account_and_rechecks_revocation(monk
     monkeypatch.setattr(resources, "_connection", fetch)
     session = SimpleNamespace(scalar=AsyncMock(return_value=7))
     request = dict(tenant_id=1, actor_id=2, capability_id="mailru_mail.headers.read", direction=Direction.READ)
-    selection = resources.ResourceSelection(ResourceKind.MAIL_FOLDER, 7, "INBOX")
+    selection = resources.ResourceSelection(
+        ResourceKind.MAIL_FOLDER,
+        7,
+        "INBOX",
+        workspace_account=resources.WorkspaceAccountPin.from_connection(connection),
+    )
     assert (
         await resources.resolve_task_resource(session, **request, selection=None)
         == resources.ResolutionIssue.SELECT_RESOURCE
@@ -49,10 +58,23 @@ async def test_resolution_requires_explicit_account_and_rechecks_revocation(monk
         == resources.ResolutionIssue.UNAVAILABLE
     )
 
-    second_selection = resources.ResourceSelection(ResourceKind.MAIL_FOLDER, 8, "INBOX")
+    second_selection = resources.ResourceSelection(
+        ResourceKind.MAIL_FOLDER,
+        8,
+        "INBOX",
+        workspace_account=resources.WorkspaceAccountPin.from_connection(second_connection),
+    )
     assert await resources.resolve_task_resource(
         session, **request, selection=second_selection
     ) == resources.ScopedResource(1, 2, "mailru_mail.headers.read", second_selection)
+
+    second_connection.account_key = "replaced-mailbox"
+    session.scalar.reset_mock()
+    assert (
+        await resources.resolve_task_resource(session, **request, selection=second_selection)
+        == resources.ResolutionIssue.REAUTH
+    )
+    session.scalar.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -248,3 +270,38 @@ async def test_telegram_source_rebinding_cannot_redirect_a_previously_pinned_sel
         await resources.resolve_task_resource(session, **request, selection=pinned) == resources.ResolutionIssue.REAUTH
     )
     inspect_grant.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cloud_folder_with_mismatched_stored_platform_is_rejected(monkeypatch):
+    monkeypatch.setattr(resources, "_authorize", AsyncMock())
+    row = SimpleNamespace(
+        tenant_id=1,
+        id=7,
+        owner_user_id=2,
+        provider_id="yandex_disk",
+        platform="email",
+        auth_method="oauth_token",
+        account_key="account-a",
+        schema_version=resources.CATALOG_VERSION,
+        is_active=True,
+        state="verified",
+    )
+    monkeypatch.setattr(resources, "_connection", AsyncMock(return_value=row))
+    selection = resources.ResourceSelection(
+        ResourceKind.DISK_FOLDER,
+        7,
+        "/files",
+        workspace_account=resources.WorkspaceAccountPin.from_connection(row),
+    )
+    assert (
+        await resources.resolve_task_resource(
+            None,
+            tenant_id=1,
+            actor_id=2,
+            capability_id="yandex_disk.folders.list",
+            direction=Direction.READ,
+            selection=selection,
+        )
+        == resources.ResolutionIssue.UNAVAILABLE
+    )

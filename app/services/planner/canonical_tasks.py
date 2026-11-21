@@ -77,7 +77,7 @@ class CanonicalTaskService(PlannerService):
         team = [Task.visibility == "workspace"]
         if role in MANAGERS:
             team.append(Task.visibility == "shared")
-        return or_(_mine(actor_id), *team)
+        return and_(Task.deleted_at.is_(None), or_(_mine(actor_id), *team))
 
     def filter_list(self, query, identity, view):
         if view == "mine":
@@ -198,7 +198,7 @@ class CanonicalTaskService(PlannerService):
         if template.parent_id is not None:
             parent = await session.scalar(
                 select(Task.id)
-                .where(Task.tenant_id == tenant_id, Task.id == template.parent_id)
+                .where(Task.tenant_id == tenant_id, Task.id == template.parent_id, Task.deleted_at.is_(None))
                 .with_for_update(read=True)
             )
             if parent is None:

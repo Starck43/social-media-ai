@@ -219,7 +219,8 @@ class TaskTriggerService:
 
         stored = await execution_plan_service._revision(session, task)
         if (
-            task.status in {"done", "cancelled"}
+            task.deleted_at is not None
+            or task.status in {"done", "cancelled"}
             or stored is None
             or stored.revision != trigger.revision
             or not principal_authorized

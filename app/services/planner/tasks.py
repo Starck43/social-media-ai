@@ -359,6 +359,59 @@ class PlannerService:
         results = await self.project_for_actor(rows, session, identity)
         return self.complete_schema(task=results[0], next_task=results[1] if following is not None else None)
 
+    def following_occurrence(self, row, now):
+        template = self.create_schema.model_validate_json(row.series_template_encrypted)
+        if template.recurrence is None:
+            return template, None
+        anchor = template.due_at or template.due_date
+        threshold = (
+            max(row.due_at, now)
+            if template.due_at is not None
+            else max(row.due_date, now.astimezone(ZoneInfo(template.timezone)).date())
+        )
+        return template, next_occurrence(anchor, template.recurrence, after=threshold, tz=template.timezone)
+
+    async def advance_occurrence(self, session, row, identity, now):
+        template, following = self.following_occurrence(row, now)
+        if following is None:
+            return None
+        due, index = following
+        key = occurrence_key(template.recurrence, template.due_at or template.due_date, due)
+        existing = await session.scalar(
+            select(self.model.id).where(
+                self.model.tenant_id == identity[0],
+                self.model.series_id == row.series_id,
+                self.model.occurrence_key == key,
+            )
+        )
+        if existing is not None:
+            raise PlannerConflict("planner_occurrence_already_exists")
+        successor_template = await self.successor_template(session, template, identity)
+        values = self.creation_fields(successor_template)
+        values["due_at" if template.due_at is not None else "due_date"] = due
+        successor = self.model(
+            tenant_id=identity[0],
+            owner_user_id=row.owner_user_id,
+            **values,
+            status="todo",
+            version=1,
+            recurrence_source="planner",
+            series_id=row.series_id,
+            previous_occurrence_id=row.id,
+            occurrence_index=index,
+            occurrence_key=key,
+            series_template_encrypted=(
+                row.series_template_encrypted
+                if successor_template is template
+                else successor_template.model_dump_json()
+            ),
+        )
+        session.add(successor)
+        await session.flush()
+        await self.copy_occurrence_participants(session, row, successor)
+        await session.flush()
+        return successor
+
     @with_db_session
     async def complete(self, task_id, expected_version, session):
         identity = await self._actor(session, ActionType.UPDATE)
@@ -377,54 +430,10 @@ class PlannerService:
             return await self.completion_response(session, identity, row, following)
         self._editable(row, expected_version)
         now = datetime.now(timezone.utc)
-        template = self.create_schema.model_validate_json(row.series_template_encrypted)
-        next_row = None
-        if template.recurrence is not None:
-            anchor = template.due_at or template.due_date
-            threshold = (
-                max(row.due_at, now)
-                if template.due_at is not None
-                else max(row.due_date, now.astimezone(ZoneInfo(template.timezone)).date())
-            )
-            next_date = next_occurrence(anchor, template.recurrence, after=threshold, tz=template.timezone)
-            if next_date is not None:
-                due, index = next_date
-                successor_template = await self.successor_template(session, template, identity)
-                values = self.creation_fields(successor_template)
-                values["due_at" if template.due_at is not None else "due_date"] = due
-                key = occurrence_key(template.recurrence, anchor, due)
-                existing = await session.scalar(
-                    select(self.model.id).where(
-                        self.model.tenant_id == identity[0],
-                        self.model.series_id == row.series_id,
-                        self.model.occurrence_key == key,
-                    )
-                )
-                if existing is not None:
-                    raise PlannerConflict("planner_occurrence_already_exists")
-                next_row = self.model(
-                    tenant_id=identity[0],
-                    owner_user_id=row.owner_user_id,
-                    **values,
-                    status="todo",
-                    version=1,
-                    recurrence_source="planner",
-                    series_id=row.series_id,
-                    previous_occurrence_id=row.id,
-                    occurrence_index=index,
-                    occurrence_key=key,
-                    series_template_encrypted=(
-                        row.series_template_encrypted
-                        if successor_template is template
-                        else successor_template.model_dump_json()
-                    ),
-                )
-                session.add(next_row)
+        next_row = await self.advance_occurrence(session, row, identity, now)
         row.status, row.completed_at, row.version = "done", now, row.version + 1
         await session.flush()
         if next_row is not None:
-            await self.copy_occurrence_participants(session, row, next_row)
-            await session.flush()
             next_row = await self.visible_successor(session, identity, next_row)
         return await self.completion_response(session, identity, row, next_row)
 

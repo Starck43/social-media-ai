@@ -121,7 +121,7 @@ approval; notifying a workspace user never uses the outbox (D19).
 
 ## Tasks as the universal tool
 
-One surface, two kinds kept separate in storage ([R-03](BUSINESS_MODULES.md#review-findings-corrections-to-the-tz)):
+The [P22 target](UNIVERSAL_TASKS.md) gives personal, team and automated work one Task identity with optional execution, progressive editing and explicit decisions. The following describes the delivered P20 baseline during migration ([R-03](BUSINESS_MODULES.md#review-findings-corrections-to-the-tz)).
 
 - **Planner task** — a human to-do with due date, priority, reminders,
   recurrence and links to a contact, thread or document; its source may be

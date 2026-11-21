@@ -10,6 +10,7 @@ for the operation, not all parents/related/history links.
 | Product directions / phase plans | [PRODUCT_PLAN](product/PRODUCT_PLAN.md) → [phases](phases/README.md) |
 | Business modules P13–P19 (owner TZ, review, decisions) | [BUSINESS_MODULES](product/BUSINESS_MODULES.md) |
 | Workspace entry points, navigation, chat layout, surface parity | [WORKSPACE_UX](product/WORKSPACE_UX.md) |
+| Universal tasks, connector ownership, decisions and migration | [UNIVERSAL_TASKS](product/UNIVERSAL_TASKS.md) → [P22 cards](phases/p22-universal-tasks.md) |
 | Future deployment modes, model routing, access clients | [PLATFORM_TOPOLOGY](product/PLATFORM_TOPOLOGY.md) |
 | Role / short task prompts | [PROMPT_EXAMPLES](process/PROMPT_EXAMPLES.md) → selected shared skill |
 | Claim, READY, audit, synchronization, cleanup | [COLLABORATION](process/COLLABORATION.md), selected section |

@@ -9,6 +9,8 @@ propose → approve when required → deliver/execute → follow up.
 
 ## Universal social tasks
 
+The next cross-domain direction is [Universal tasks](#universal-tasks).
+
 The owner-approved first vertical and cross-surface contract are in
 [universal tasks](../agent/AGENT_TASKS_PLAN.md#explicit-task-plans). The AI chat is the primary
 workspace for the full task lifecycle: request, clarification, preview,
@@ -30,6 +32,10 @@ foundation (YooKassa provider selection and env field contract) was accepted
 closed with that decision and is not tracked as an open task. Existing personal
 LLM payer consent, balances and spend caps do not constitute self-service
 subscription purchase or connector entitlements.
+
+## Universal tasks
+
+[P22](../phases/p22-universal-tasks.md) introduces one user-facing task identity for personal and team work, optional deterministic or agent execution, and source-backed actions across the web app, API, CLI, agent tools and admin. The [target data model and rollout contract](UNIVERSAL_TASKS.md) describe the transition from the P20 task hub.
 
 ## Foundation directions
 

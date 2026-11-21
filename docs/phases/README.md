@@ -24,6 +24,7 @@
 | P18 | [Local file connector](p18-local-file-connector.md) |
 | P19 | [Document management](p19-document-management.md) |
 | P21 | [AI model operations and dispatch safety](p21-ai-operations.md) |
+| P22 | [Universal tasks](p22-universal-tasks.md) |
 
 P13–P19 implement the owner's business-module TZ; the adapted specification,
 review findings and owner decisions are in [BUSINESS_MODULES](../product/BUSINESS_MODULES.md).

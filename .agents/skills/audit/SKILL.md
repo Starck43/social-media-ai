@@ -13,11 +13,42 @@ finds corrections, decide whether focused checks are needed; do not run tests
 solely as routine audit. Full suites require owner request. Do not take feature
 implementation beyond authorized corrections/refactoring/docs.
 
-When a bounded review unit is delegated to a subagent, use the order defined by
-[task](../task/SKILL.md#delegation-order): Perch, then `hy4`
-(`cent.ai/hy4-flash:free`), then `free-pi`
-(`free-pi/deepseek-v4.1-flash#medium`). Fall to the next route only when the
-previous one is unavailable or fails, and report which route ran.
+## Independent reviewer contract
+
+The audit must be performed by a model different from the task executor. Use
+the strict route **Perch → free-pi → `auditor`**: Perch via
+[perch-task](../perch-task/SKILL.md), then
+`free-pi/deepseek-v4.1-flash#medium`, then the configured native auditor
+`cent.ai/gpt-6-luna#high`. The model ID is `cent.ai/...`; an
+`opencode/cent.ai/...` prefix is not a registered model ID. `hy4` is reserved
+for test execution and is not an audit fallback. Fall through only when the
+previous route is unavailable or fails, and record the route/model that
+actually ran. There is no route after `auditor`; report `BLOCKED` if the final
+reviewer is unavailable.
+
+The executor must send this compact handoff, without asking the reviewer to
+implement the task:
+
+```text
+AUDIT HANDOFF
+Task: <ID>
+Candidate revision: <SHA>
+Scope: <one sentence>
+Changed paths: <paths>
+Required checks: <commands and results>
+Task-card/contract links: <links>
+Question: accept this revision or return concrete corrections?
+```
+
+The reviewer is read-only for source code and returns exactly one headline:
+`ACCEPTED`, `CHANGES_REQUIRED`, or `BLOCKED`, followed by only the evidence,
+required corrections/checks and next action. It must independently inspect the
+logic, exact diff and test evidence; green tests alone are not acceptance.
+`ACCEPTED` authorizes the documented verified-integration closeout. On
+`CHANGES_REQUIRED`, leave the task `IN_PROGRESS` and return the concrete fixes
+to the executor for a new revision and repeat the test/audit cycle. The
+executor's user-facing handoff is one concise line with the verdict and next
+action; do not forward the reviewer's internal reasoning or unrelated output.
 
 Before acceptance closeout, follow [verified integration](../../../docs/process/COLLABORATION.md#acceptance):
 require PR `mergedAt`/merge commit, fetch origin, prove ancestry and inspect

@@ -23,26 +23,35 @@ choice. Report merge / continue / defer options with the exact resume branch/PR;
 keep the work intact while awaiting a decision. Store handoff in the card/PR,
 not `/tmp` or ignored `.agents/tmp`. Follow [COLLABORATION](../../../docs/process/COLLABORATION.md) only as needed.
 
-## Delegation order
+## Delegation roles and order
 
-Delegate one bounded, self-contained unit of work down this order and stop at the
-first route that is available:
+The task executor remains responsible for the implementation, task registry and
+final handoff. Subagents have separate roles and must not be treated as the
+same model:
 
-1. **Perch** — external CLI, headless and review-gated
-   (`perch run "<task>" --json --cwd <dir> --permission auto_review`). Any caller
-   may use it; the route is gated by the runtime approval on the process it
-   starts, not by which agent invoked it. Route details:
-   [perch-task](../perch-task/SKILL.md).
-2. **hy4** — native subagent on `cent.ai/hy4-flash:free` (Hy4 flash Free),
-   the first fallback for audit and test-runner runs when Perch is unavailable
-   or fails. No provider token or CLI shim is involved: it is a configured
-   OpenCode subagent.
-3. **free-pi** — native subagent on the free-pi daily free allowance: model
-   `free-pi/deepseek-v4.1-flash#medium` (DeepSeek 4.1 Flash, thinking medium).
-   The provider and its token file live in the global OpenCode config. The
-   `free-pi-cli` itself is a TUI-only agent with no `-p/--model/--thinking`, so
-   address free-pi through the provider, never as that CLI process.
+When the request says “solve `<ID>` with an auditor”, run this lifecycle: claim
+the task and implement it; delegate the focused required test run to `tester`;
+prepare the [audit handoff](../audit/SKILL.md#independent-reviewer-contract);
+delegate the completed candidate to `auditor`; then either apply returned
+corrections and repeat the test/audit cycle, or perform the documented
+acceptance closeout. Do not report success before the audit verdict.
 
-Fall to the next route only when the previous one is unavailable or fails, and
-report which route actually ran. Parent keeps judgment, acceptance and the
-registry; a delegated route returns only its verdict and evidence.
+- **Implementation helpers**: use only configured general/explore subagents for
+  bounded research or implementation work. They do not accept the task and do
+  not audit it.
+- **Tests**: delegate the exact test command to `tester`, pinned to
+  `cent.ai/hy4-flash:free`. If `tester` is unavailable, the executor runs the
+  command directly; do not silently substitute the auditor model. The tester is
+  run-only and must return PASS/FAIL evidence for the exact revision.
+- **Audit**: after implementation and required tests, send the concise handoff
+  defined in [audit](../audit/SKILL.md) through this strict independent route:
+  **Perch → free-pi → auditor**. Perch is the external review route; free-pi is
+  `free-pi/deepseek-v4.1-flash#medium`; the final native reviewer is
+  `cent.ai/gpt-6-luna#high`. `hy4` is not an audit fallback.
+
+Fall through only when the previous audit route is unavailable or fails, and
+record the route and model that actually ran. The auditor returns only
+`ACCEPTED`, `CHANGES_REQUIRED`, or `BLOCKED` with concise evidence. The parent
+keeps ownership and does not claim acceptance without the auditor's verdict;
+the auditor performs the documented acceptance closeout only after verified
+integration.

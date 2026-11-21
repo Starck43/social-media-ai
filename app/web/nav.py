@@ -33,18 +33,19 @@ class NavItem(NamedTuple):
 # person opens first (home, chat, contacts). Empty label means "no heading".
 NAV_GROUP_LABELS: dict[str, str] = {
     "pinned": "",
+    "agent": "Агент",
     "messages": "Общение",
     "docs": "Документация",
-    "analytics": "Отчёты",
-    "assistant": "Ассистент",
 }
 
 
-# Proposal v8: home, chat and tasks are pinned above the groups as everyday
-# entries. Communication holds the correspondence registry and the contact cards
-# it comes from; approvals are decisions on work, so they surface on the task card
-# (P22-T08 «Ждут моего решения») and through the header «На согласовании» chip,
-# not as a section of their own. The rest is grouped by the work it belongs to --
+# Proposal v9: home and tasks are pinned above the groups as the two everyday
+# entries. One «Агент» group holds the whole agent story in reading order -- the
+# conversation, its results (analysis and delivered digests) and its inputs
+# (sources, scenarios). Communication holds the correspondence registry and the
+# contact cards it comes from; approvals are decisions on work, so they surface on
+# the task card (P22-T08 «Ждут моего решения») and through the header «На
+# согласовании» chip, not as a section of their own. The rest is grouped by the work it belongs to --
 # documentation (with the document-backed supplier comparison), reports and the
 # assistant's inputs/scenarios. Commitments are not a section: P22-T15 turns them
 # into dated tasks, so the legacy catalogue keeps its URL without a menu slot. Connection setup (1C) and the job queue stay
@@ -52,7 +53,6 @@ NAV_GROUP_LABELS: dict[str, str] = {
 NAV_ITEMS: tuple[NavItem, ...] = (
     # Pinned: the entries opened every day, above the first group heading.
     NavItem("dashboard", "/app/", "Сегодня", icon="home", group="pinned", group_label=""),
-    NavItem("chat", "/app/chat", "Чат с агентом", icon="chat", group="pinned", group_label=""),
     NavItem(
         "tasks",
         "/app/task-hub",
@@ -61,6 +61,44 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         icon="calendar",
         group="pinned",
         group_label="",
+    ),
+    # Агент: the conversation, what it produced and what it reads from.
+    NavItem("chat", "/app/chat", "Чат с агентом", icon="chat", group="agent", group_label="Агент"),
+    NavItem(
+        "analytics",
+        "/app/analytics",
+        "Аналитика",
+        required_permission="analysis.result.view",
+        icon="chart",
+        group="agent",
+        group_label="Агент",
+    ),
+    NavItem(
+        "digests",
+        "/app/digests",
+        "Рассылки",
+        required_permission="notifications.digest_run.view",
+        icon="document",
+        group="agent",
+        group_label="Агент",
+    ),
+    NavItem(
+        "sources",
+        "/app/sources",
+        "Источники",
+        required_permission="collection.source.view",
+        icon="database",
+        group="agent",
+        group_label="Агент",
+    ),
+    NavItem(
+        "scenarios",
+        "/app/scenarios",
+        "Сценарии",
+        required_permission="analysis.scenario.view",
+        icon="layers",
+        group="agent",
+        group_label="Агент",
     ),
     # Общение
     NavItem(
@@ -117,44 +155,6 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         icon="briefcase",
         group="docs",
         group_label="Документация",
-    ),
-    # Отчёты: the results workspace and the delivered digests.
-    NavItem(
-        "analytics",
-        "/app/analytics",
-        "Аналитика",
-        required_permission="analysis.result.view",
-        icon="chart",
-        group="analytics",
-        group_label="Отчёты",
-    ),
-    NavItem(
-        "digests",
-        "/app/digests",
-        "Дайджесты",
-        required_permission="notifications.digest_run.view",
-        icon="document",
-        group="analytics",
-        group_label="Отчёты",
-    ),
-    # Ассистент
-    NavItem(
-        "sources",
-        "/app/sources",
-        "Источники",
-        required_permission="collection.source.view",
-        icon="database",
-        group="assistant",
-        group_label="Ассистент",
-    ),
-    NavItem(
-        "scenarios",
-        "/app/scenarios",
-        "Сценарии",
-        required_permission="analysis.scenario.view",
-        icon="layers",
-        group="assistant",
-        group_label="Ассистент",
     ),
 )
 

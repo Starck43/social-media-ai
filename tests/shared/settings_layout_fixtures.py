@@ -108,7 +108,7 @@ def context(mode):
                 ("sources", "/app/sources", "Источники", "sources"),
                 ("tasks", "/app/tasks", "Задачи", "tasks"),
                 ("analytics", "/app/analytics", "Аналитика", "analytics"),
-                ("digests", "/app/digests", "Дайджесты", "document"),
+                ("digests", "/app/digests", "Рассылки", "document"),
                 ("chat", "/app/chat", "Чат с агентом", "chat"),
             ]
         ],

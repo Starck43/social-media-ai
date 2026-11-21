@@ -66,10 +66,9 @@ def test_all_routes_are_unique_ready_and_keep_permissions():
 def test_group_order_and_mobile_order_are_stable():
     assert list(dict.fromkeys(item.group for item in nav.NAV_ITEMS)) == [
         "pinned",
+        "agent",
         "messages",
         "docs",
-        "analytics",
-        "assistant",
     ]
     assert [item.key for item in nav.MOBILE_NAV_ITEMS] == ["dashboard", "chat", "communications", "tasks"]
     assert all(item.ready for item in nav.MOBILE_NAV_ITEMS)

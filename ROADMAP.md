@@ -52,7 +52,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P22-T05](docs/tasks/p22-t05.md) Task actions, decisions and confirmed deletion — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
 - [P22-T06](docs/tasks/p22-t06.md) Legacy ID mapping, compatibility writers and backfill — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C5`
 - [P22-T07](docs/tasks/p22-t07.md) Unified API, CLI and AI toolset — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
-- [P22-T08](docs/tasks/p22-t08.md) Web Tasks, progressive editor and workspace views — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
+- [P22-T08](docs/tasks/p22-t08.md) Unify task navigation, labels, creation and detail views — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
 - [P22-T10](docs/tasks/p22-t10.md) Correspondence task and sender-grouped Messages — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
 
 ### Priority P2

@@ -74,7 +74,7 @@ The web app has one Tasks list, one detail route and one Create/Edit entry. Star
 
 ### Task conversations
 
-`/chat` opens the user's global workspace conversation. Every task card shows the link «Поручить агенту» when a usable agent scenario has been explicitly configured for that task and the viewer can use it. The link opens a right-hand chat drawer on the task's topic. Reopening it resumes that user's conversation for the same task. The global page and task drawer share the transcript renderer, composer and agent runtime. [Implementation](../tasks/p22-t14.md)
+`/chat` opens the user's global workspace conversation. Every task card shows the link «Поручить агенту» when a usable agent scenario has been explicitly configured for that task and the viewer can use it. The link opens a right-hand chat drawer on the task's topic. Reopening it resumes that user's conversation for the same task. Selecting a task in the right sidebar of `/chat` immediately opens that same task session in the center. «Основной чат» restores the main session. Both are personal to the user within the active workspace and use the same renderer, composer and runtime. Invited members enter through [workspace AI access](../platform/TENANCY.md#web-ownerguest-context-and-membership-disable); their role and task access bound the available actions. [Implementation](../tasks/p22-t14.md)
 
 ## Transition and reversibility
 

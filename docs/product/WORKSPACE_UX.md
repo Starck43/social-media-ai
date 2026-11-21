@@ -66,6 +66,8 @@ Rules:
 | Composer | Removable context chips (task, thread, contact, document, case), attachments, quick actions («Подготовить задачу», «Разобрать результат», «Что дальше?») | Hidden context the user cannot see |
 | Right panel | Tabbed «Рабочий контекст», collapsible; a drawer below `lg` | Admin tables, global inbox |
 
+**Conversation selection (P22).** Entering `/chat` shows «Основной чат» for the signed-in user in the active workspace. Choosing a scenario-backed task in the right sidebar swaps the central transcript and composer to that task’s private session in place. Selecting «Основной чат» restores the original history. The task card drawer opens the same task session.
+
 **Inline cards** are rendered from owning services and refresh from them; each
 links to its authoritative record: plan preview (run/edit), decision (exact
 payload, expiry, approve/reject), progress (phase, cancel), result (summary,

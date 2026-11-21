@@ -77,6 +77,9 @@ class PlannerService:
     async def check_edit_fields(self, session, row, identity, changes):
         """Apply additional aggregate-specific authorization."""
 
+    async def apply_edit(self, session, row, changes):
+        """Apply aggregate-specific side effects after validating the edit."""
+
     async def visible_successor(self, session, identity, successor):
         return (
             successor
@@ -327,6 +330,8 @@ class PlannerService:
             defaults = template.model_dump()
             defaults.update(changes)
             template = self.create_schema.model_validate(defaults)
+        await self.apply_edit(session, row, changes)
+        if request.scope == "series":
             row.series_template_encrypted = template.model_dump_json()
         for name, value in self.creation_fields(updated).items():
             setattr(row, name, value)

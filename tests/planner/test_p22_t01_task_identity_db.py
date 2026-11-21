@@ -116,6 +116,18 @@ async def test_private_shared_task_and_recurring_completion(task_world, monkeypa
             await task_service.update(
                 recurring.id, UpdateTask(expected_version=recurring.version, scope="occurrence", title="stale")
             )
+        async with async_session_maker() as session, session.begin():
+            with pytest.raises(PlannerConflict, match="planner_parent_cycle"):
+                await task_service.update(
+                    recurring.id,
+                    UpdateTask(
+                        expected_version=changed.version,
+                        scope="occurrence",
+                        visibility="private",
+                        parent_id=recurring.id,
+                    ),
+                    session=session,
+                )
     with actor(world, 1):
         assert (await task_service.list(view="mine"))["items"] == [changed]
         first = await task_service.complete(recurring.id, changed.version)

@@ -141,6 +141,8 @@ class CanonicalTaskService(PlannerService):
     async def check_edit_fields(self, session, row, identity, changes):
         if {"visibility", "assignee_id"} & changes.keys() and not self._can_share(row, identity):
             raise PermissionError("task_share_denied")
+
+    async def apply_edit(self, session, row, changes):
         if changes.get("visibility") == "private":
             await session.execute(
                 delete(TaskParticipant).where(

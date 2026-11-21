@@ -10,7 +10,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 
 1. [P22-T01 — Task identity, ownership and human work](../audit/p22/p22-t01.md). DONE 2026-11-21 at `9d9ec4f3`. Canonical local tasks, participants and recurrence.
 2. [P22-T02 — Connector capabilities, installations and account grants](../audit/p22/p22-t02.md). DONE 2026-11-21 at `f85ee56e`. Scoped resolver and explicit account bindings.
-3. [P22-T03 — Task execution profiles, steps and resource bindings](../tasks/p22-t03.md). Depends on P22-T01, P22-T02.
+3. [P22-T03 — Task execution profiles, steps and resource bindings](../audit/p22/p22-t03.md). DONE 2026-11-21 at `95271ec1`. Versioned plans, scoped bindings and pinned methodology.
 4. [P22-T04 — Run admission, scheduler and worker integration](../tasks/p22-t04.md). Depends on P22-T03.
 5. [P22-T05 — Task actions, decisions and confirmed deletion](../tasks/p22-t05.md). Depends on P22-T01, P22-T04.
 6. [P22-T06 — Legacy ID mapping, compatibility writers and backfill](../tasks/p22-t06.md). Depends on P22-T01, P22-T03, P22-T04, P22-T05.

@@ -45,7 +45,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
 
-- [P22-T01](docs/tasks/p22-t01.md) Task identity, ownership and human work — **READY** · Codex · `codex resume 01a1fba4-e103-78a1-a598-15d3768c458f` · `P1` · `C4`
 - [P22-T03](docs/tasks/p22-t03.md) Task execution profiles, steps and resource bindings — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
 - [P22-T04](docs/tasks/p22-t04.md) Run admission, scheduler and worker integration — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C5`
 - [P22-T05](docs/tasks/p22-t05.md) Task actions, decisions and confirmed deletion — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`

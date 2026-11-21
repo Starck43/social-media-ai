@@ -8,7 +8,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 
 ## Implementation order
 
-1. [P22-T01 — Task identity, ownership and human work](../tasks/p22-t01.md). Independent foundation.
+1. [P22-T01 — Task identity, ownership and human work](../audit/p22/p22-t01.md). DONE 2026-11-21 at `9d9ec4f3`. Canonical local tasks, participants and recurrence.
 2. [P22-T02 — Connector capabilities, installations and account grants](../audit/p22/p22-t02.md). DONE 2026-11-21 at `f85ee56e`. Scoped resolver and explicit account bindings.
 3. [P22-T03 — Task execution profiles, steps and resource bindings](../tasks/p22-t03.md). Depends on P22-T01, P22-T02.
 4. [P22-T04 — Run admission, scheduler and worker integration](../tasks/p22-t04.md). Depends on P22-T03.
@@ -23,7 +23,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 13. [P22-T13 — Jira issue adapter and Slack task context](../tasks/p22-t13.md). Depends on P22-T11.
 14. [P22-T14 — Task-scoped agent chat and shared transcript UI](../tasks/p22-t14.md). Depends on P22-T03 and P22-T07. Supplies the drawer to P22-T08.
 
-T01 and T02 can start together. T06 owns legacy writes and migration. T07 owns the new interface namespace and command adapters. Coordinate the legacy regression fixtures at their boundary. T08, T09, T10 and T11 can implement independent surfaces after their prerequisites. T08 uses capability fixtures until the pilots land. T12 integrates the verticals. T13 extends the provider set independently.
+T01 and T02 supply the foundations for T03. T06 owns legacy writes and migration. T07 owns the new interface namespace and command adapters. Coordinate the legacy regression fixtures at their boundary. T08, T09, T10 and T11 can implement independent surfaces after their prerequisites. T08 uses capability fixtures until the pilots land. T12 integrates the verticals. T13 extends the provider set independently.
 
 ## Baseline examined for planning
 
@@ -31,4 +31,4 @@ T01 and T02 can start together. T06 owns legacy writes and migration. T07 owns t
 - [Connection storage](../connectors/CONNECTOR_CONFIGURATION.md), [source authority](../audit/q/q-21-source-authority.md), [product structure](../product/DESIGN.md), [documentation router](../DOCS_INDEX.md), [README](../../README.md), [business-module contracts](../product/BUSINESS_MODULES.md), [shared rules](../../AGENTS.md) and [collaboration](../process/COLLABORATION.md#tasks).
 - PlannerTask, AgentTask, Job, AgentScenario, Platform, WorkspaceConnection, SourceObject, UnifiedMessage, MessageThread and BusinessCommand model definitions. Planner visibility and completion, linked assignments, social credentials and provider task projections informed the design.
 
-This phase registers work for implementers. No implementation, migration, live call or test run is part of its registration. Verification sections on the cards describe future acceptance evidence.
+Open cards describe the remaining implementation and checks. Accepted entries link to their review and verification evidence.

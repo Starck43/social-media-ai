@@ -184,3 +184,76 @@ async def test_migration_refuses_populated_downgrade(workspace):
             command.downgrade(config, "0159")
     async with async_session_maker() as session:
         assert await session.scalar(select(TaskTrigger.id).where(TaskTrigger.task_id == task.id)) is not None
+
+
+async def test_receipt_projection_requires_visibility_and_excludes_raw_results(workspace):
+    from app.services.planner.tasks import PlannerUnavailable
+
+    require_isolated_schema()
+    task, reference, _ = await _publish(workspace)
+    with workspace.scope():
+        receipt = await task_run_service.admit_manual(task.id, expected_revision=reference.revision, request_key="view")
+    async with async_session_maker() as session, session.begin():
+        run = await session.get(TaskRun, receipt.run_id)
+        run.result = {"steps": {"read": {"status": "done", "count": 4, "headers": "secret"}}, "body": "private"}
+    with workspace.scope():
+        result = await task_run_service.get_receipt(receipt.run_id)
+        assert result.result == {"steps": {"read": {"status": "done", "count": 4}}}
+    with workspace.scope(1), pytest.raises(TaskRunAdmissionError, match="run_unavailable"):
+        await task_run_service.get_receipt(receipt.run_id)
+    with tenant_scope(workspace.tenants[0].id):
+        from app.core.access_catalog import workspace_grants
+        from app.core.permissions import permission_scope
+
+        with permission_scope(workspace.other_user, member_grants=workspace_grants("viewer")):
+            with pytest.raises(PlannerUnavailable):
+                await task_run_service.get_receipt(receipt.run_id)
+
+
+async def test_concurrent_scheduler_ticks_consume_occurrence_once(workspace):
+    require_isolated_schema()
+    task, reference, _ = await _publish(workspace, scheduled=True)
+    with workspace.scope():
+        trigger = await task_trigger_service.configure(
+            task.id, revision=reference.revision, expected_version=reference.task_version, enabled=True
+        )
+    with tenant_scope(workspace.tenants[0].id):
+        stats = await asyncio.gather(
+            *(task_trigger_service.tick(workspace.tenants[0].id, trigger.next_due_at) for _ in range(2))
+        )
+    assert sum(item["enqueued"] for item in stats) == 1
+    assert sum(item["failed"] for item in stats) == 0
+    async with async_session_maker() as session:
+        runs = (await session.scalars(select(TaskRun).where(TaskRun.task_id == task.id))).all()
+        assert len(runs) == 1 and runs[0].job_id is not None
+
+
+async def test_supported_worker_completes_with_mocked_mail(workspace, monkeypatch):
+    from unittest.mock import MagicMock
+
+    from app.jobs.dispatcher import _execute_claimed
+    from app.models.managers.job_manager import JobManager
+    from app.services import task_run_operations
+
+    require_isolated_schema()
+    task, reference, _ = await _publish(workspace)
+    with workspace.scope():
+        receipt = await task_run_service.admit_manual(
+            task.id, expected_revision=reference.revision, request_key="mock-mail"
+        )
+    provider = MagicMock(return_value=[(42, 1, "a@example.invalid"), (42, 2, "a@example.invalid")])
+    monkeypatch.setattr(task_run_operations, "_read_folder", provider)
+    monkeypatch.setattr(task_run_operations, "decrypt_secret", lambda _: "synthetic-password")
+    job = await JobManager.claim_job(receipt.job_id)
+    assert job is not None
+    outcome = await _execute_claimed(job)
+    provider.assert_called_once()
+    assert outcome["status"] == "done"
+    async with async_session_maker() as session:
+        run = await session.get(TaskRun, receipt.run_id)
+        assert run.status == "done"
+        assert run.checkpoint_encrypted is None
+        assert run.result["steps"] == {"read": {"status": "done", "count": 2}, "group": {"status": "done", "count": 1}}
+    with workspace.scope():
+        visible = await task_run_service.get_receipt(receipt.run_id)
+        assert visible.result["coverage"] == "complete"

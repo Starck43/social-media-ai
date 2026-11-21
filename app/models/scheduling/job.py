@@ -2,7 +2,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from sqlalchemy import JSON, Column, DateTime, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped
 
 from ...core.config import settings
@@ -19,6 +31,13 @@ class Job(Base, TenantScopedMixin, TimestampMixin):
 
     __tablename__ = "jobs"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["tenant_id", "task_run_id"],
+            [f"{settings.DB_SCHEMA}.task_runs.tenant_id", f"{settings.DB_SCHEMA}.task_runs.id"],
+            name="fk_job_task_run_scope",
+            ondelete="CASCADE",
+        ),
+        Index("ix_jobs_task_run_id", "task_run_id"),
         Index("ix_jobs_tenant_id", "tenant_id"),
         Index("idx_jobs_status_run_at", "status", "run_at"),
         Index("idx_jobs_agent_task_id", "agent_task_id"),
@@ -31,6 +50,7 @@ class Job(Base, TenantScopedMixin, TimestampMixin):
         ForeignKey(f"{settings.DB_SCHEMA}.agent_tasks.id", ondelete="SET NULL"),
         nullable=True,
     )
+    task_run_id: Mapped[int | None] = Column(Integer, nullable=True)
     # Trusted actor captured by the authenticated manual enqueue boundary.
     # Scheduled jobs intentionally keep NULL; never read an actor ID from payload.
     initiated_by_user_id: Mapped[int | None] = Column(

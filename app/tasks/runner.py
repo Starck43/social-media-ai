@@ -1,10 +1,4 @@
-"""Task runner: poll agent tasks, enqueue due jobs, advance next_run_at.
-
-Tenancy: `agent_tasks`/`jobs` rows are tenant-owned, so the tick is run once per
-active workspace inside its tenant scope. The queryset guard in `BaseManager`
-then makes each pass see exactly one workspace's tasks — there is no
-"filter by tenant_id" to forget here.
-"""
+"""Poll canonical triggers and legacy schedules in the existing runtime loop."""
 
 import asyncio
 import logging
@@ -64,20 +58,29 @@ async def tick() -> dict:
     stop the others' digests.
     """
     from app.models import Tenant
+    from app.services.task_run_triggers import task_trigger_service
 
     # Tenant rows are global (not tenant-scoped), so this read needs no context.
     tenants = await Tenant.objects.filter(is_active=True)
     totals = {"tenants": len(tenants), "due": 0, "enqueued": 0, "failed": 0}
 
     for tenant in tenants:
-        try:
-            with tenant_scope(tenant.id):
-                stats = await tick_tenant(tenant.id, tz=resolve_tz(tenant))
-        except Exception:  # noqa: BLE001
-            logger.exception(f"Task tick failed for tenant {tenant.slug} (id={tenant.id})")
-            continue
-        for key in ("due", "enqueued", "failed"):
-            totals[key] += stats[key]
+        now = datetime.now(timezone.utc)
+        with tenant_scope(tenant.id):
+            # Each namespace has one cursor owner. Existing AgentTask schedules,
+            # including system maintenance, remain on their original lane
+            # until migration explicitly transfers ownership.
+            for run_pass in (
+                task_trigger_service.tick(tenant.id, now),
+                tick_tenant(tenant.id, now=now, tz=resolve_tz(tenant)),
+            ):
+                try:
+                    stats = await run_pass
+                except Exception:  # noqa: BLE001
+                    logger.exception("Task tick failed for tenant id=%s", tenant.id)
+                    continue
+                for key in ("due", "enqueued", "failed"):
+                    totals[key] += stats[key]
 
     return totals
 

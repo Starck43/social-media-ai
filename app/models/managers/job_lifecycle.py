@@ -13,6 +13,13 @@ if TYPE_CHECKING:
     from ..scheduling.job import Job
 
 
+async def _project_run(session, tenant_id, run_id, job_id, status, *, code=None):
+    if run_id is not None:
+        from app.services.task_run_worker import project_job_status
+
+        await project_job_status(session, tenant_id, run_id, job_id, status, code=code)
+
+
 class JobLifecycleMixin:
     """Lifecycle behavior for JobManager; caller/owned sessions remain explicit."""
 
@@ -53,6 +60,7 @@ class JobLifecycleMixin:
                 job.locked_at = now
                 job.started_at = now
                 job.attempts = (job.attempts or 0) + 1
+                await _project_run(session, job.tenant_id, job.task_run_id, job.id, "running")
                 await session.flush()
                 # Detach-safe: return after commit, expire_on_commit handles state
                 return job
@@ -291,9 +299,10 @@ class JobLifecycleMixin:
         """Cancel a queued row that no worker has claimed yet (it never ran).
 
         Conditional on `pending` with zero attempts, so a concurrent claim wins
-        and this returns False. Retry-scheduled rows are not touched here.
+        and this returns False. Canonical retries can also be cancelled because
+        their checkpoint tracks the effects committed by earlier attempts.
         """
-        from sqlalchemy import update
+        from sqlalchemy import or_, update
 
         from app.core.database import async_session_maker
         from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR
@@ -307,13 +316,20 @@ class JobLifecycleMixin:
                 changed = (
                     await session.execute(
                         update(JobModel)
-                        .where(JobModel.id == job_id, JobModel.status == "pending", JobModel.attempts == 0, *scope)
+                        .where(
+                            JobModel.id == job_id,
+                            JobModel.status == "pending",
+                            or_(JobModel.attempts == 0, JobModel.task_run_id.is_not(None)),
+                            *scope,
+                        )
                         .values(status="failed", error=CANCELLED_BEFORE_START_ERROR, finished_at=now)
-                        .returning(JobModel.id)
+                        .returning(JobModel.tenant_id, JobModel.task_run_id, JobModel.id)
                         .execution_options(synchronize_session=False)
                     )
-                ).scalar_one_or_none()
-        return changed == job_id
+                ).one_or_none()
+                if changed is not None:
+                    await _project_run(session, *changed, "cancelled", code="task_cancelled")
+        return changed is not None
 
     async def settle_cancelled_discard(self, claim: "JobClaim") -> Optional[int]:
         """After a cancelled collect drained: remove rows it staged after the cancel.
@@ -420,6 +436,7 @@ class JobLifecycleMixin:
                         cancellation["settled"] = False
                     previous = row.result if isinstance(row.result, dict) else {}
                     row.result = {**previous, "cancellation": cancellation}
+                await _project_run(session, row.tenant_id, row.task_run_id, row.id, "cancelled", code="task_cancelled")
             # Return success only after the cancellation commit is acknowledged.
         return True
 
@@ -592,6 +609,12 @@ class JobLifecycleMixin:
                         error=row.error,
                         completed_at=now,
                     )
+                if row.task_run_id is not None:
+                    from app.jobs.recovery_policy import outcome_unconfirmed
+
+                    run_status = "unknown" if outcome_unconfirmed(row.error) else row.status
+                    run_code = {"failed": "task_execution_failed", "unknown": "task_outcome_unknown"}.get(run_status)
+                    await _project_run(session, row.tenant_id, row.task_run_id, row.id, run_status, code=run_code)
                 receipt = JobOutcomeReceipt(claim, ack, result=deepcopy(row.result), error=row.error)
             # A receipt is returned only after BOTH rows' commit is acknowledged.
         return receipt
@@ -610,6 +633,8 @@ class JobLifecycleMixin:
                 raise ValueError("Job ID does not match the acquired claim")
             return await self._finalize_claim(claim, result=result, llm_cost=llm_cost)
         job = await self.get(id=job_id)
+        if job is not None and job.task_run_id is not None:
+            raise ValueError("Canonical job outcomes require an acquired claim")
         now = datetime.now(timezone.utc)
         updates: dict = {
             "status": "done",
@@ -661,6 +686,8 @@ class JobLifecycleMixin:
         job = await self.get(id=job_id)
         if not job:
             return False
+        if job.task_run_id is not None:
+            raise ValueError("Canonical job outcomes require an acquired claim")
         metadata: dict = {}
         if result is not None:
             metadata["result"] = result
@@ -737,6 +764,8 @@ class JobLifecycleMixin:
             JobModel.agent_task_id,
             func.coalesce(JobModel.started_at, JobModel.created_at),
             JobModel.error,
+            JobModel.task_run_id,
+            JobModel.id,
         )
         async with async_session_maker() as session:
             async with session.begin():
@@ -771,7 +800,8 @@ class JobLifecycleMixin:
                         .execution_options(synchronize_session=False)
                     )
                 ).all()
-                for tenant_id, task_id, attempt_started_at, error in (*budget_stopped, *quarantined):
+                for tenant_id, task_id, attempt_started_at, error, run_id, job_id in (*budget_stopped, *quarantined):
+                    await _project_run(session, tenant_id, run_id, job_id, "unknown", code="task_outcome_unknown")
                     await self._write_stopped_task_outcome(
                         session, tenant_id, task_id, attempt_started_at=attempt_started_at, error=error, now=now
                     )

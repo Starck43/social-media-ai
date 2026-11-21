@@ -32,7 +32,17 @@ jobs = JobManager()
 
 _FAILURE_MESSAGE = "Не удалось завершить обработку. Подробности сохранены в задаче."
 _LOG_JOB_TYPES = frozenset(
-    {"collect", "digest", "prune", "analyze", "learn", "reflect", "comms.email.sync", "file_workspace.action"}
+    {
+        "collect",
+        "digest",
+        "prune",
+        "analyze",
+        "learn",
+        "reflect",
+        "comms.email.sync",
+        "file_workspace.action",
+        "task.execute",
+    }
 )
 
 
@@ -109,6 +119,7 @@ def _job_label(job_type: str) -> str:
         "reflect": "Рефлексия",
         "comms.email.sync": "Синхронизация почты",
         "file_workspace.action": "Операция с файлами",
+        "task.execute": "Запуск задачи",
     }
     return labels.get(job_type, job_type)
 
@@ -297,6 +308,9 @@ async def _post_ordinary_outcome(receipt: JobOutcomeReceipt) -> JobOutcomeReceip
         return receipt
     success = receipt.acknowledgement == OutcomeAck.DONE
     _log_job(logging.INFO if success else logging.ERROR, "job_done" if success else "job_failed_terminal", claim)
+    # Canonical runs have their own permission-filtered result surface.
+    if claim.job_type == "task.execute":
+        return receipt
     if success and isinstance(receipt.result, dict) and receipt.result.get("status") == "skipped":
         return receipt
     try:
@@ -442,11 +456,18 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
     except _OrdinaryHeartbeatStopped as stopped:
         # Never turn lease uncertainty into handler failure or automatic replay.
         raise stopped.error from None
+    except JobClaimLostError:
+        raise
     except Exception as error:
         from app.services.digest.delivery_outcomes import DeliveryFailure
 
+        retryable_task_step = False
+        if claim.job_type == "task.execute":
+            from app.services.task_run_worker import TaskStepRetry
+
+            retryable_task_step = isinstance(error, TaskStepRetry)
         known_delivery_failure = isinstance(error, DeliveryFailure)
-        retry = allow_retry and known_delivery_failure and error.retryable is True
+        retry = allow_retry and (retryable_task_step or (known_delivery_failure and error.retryable is True))
         from app.services.tenancy.entitlements import EntitlementDenied
 
         # A policy refusal is confirmed and terminal, not uncertain provider work.
@@ -456,6 +477,8 @@ async def _execute_ordinary(job: Any, handler: Callable, payload: dict, *, allow
             if known_delivery_failure or entitlement_denied
             else f"{OUTCOME_UNCONFIRMED_PREFIX}{_error_kind(error)}"
         )
+        if retryable_task_step:
+            stored_error = "task_step_transaction_rolled_back"
         try:
             receipt = await jobs.mark_failed(claim.job_id, error=stored_error, allow_retry=retry, claim=claim)
             receipt = _require_outcome_receipt(receipt, claim)
@@ -572,6 +595,10 @@ async def _execute_claimed(job: Any, *, allow_retry: bool = True) -> dict[str, A
         from app.jobs.job_handlers.file_workspace import handle_file_workspace_action
 
         handler = handle_file_workspace_action
+    if handler is None and job.job_type == "task.execute":
+        from app.services.task_run_worker import handle_task_run
+
+        handler = handle_task_run
     if not handler:
         # A missing handler is not a transient execution failure. Stop this row
         # for operator inspection instead of spending its remaining attempts.

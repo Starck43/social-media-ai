@@ -83,8 +83,6 @@ _MAIL_FIELDS = (
 )
 _CUSTOM_MAIL_FIELDS = (
     Field("account_login", "Адрес электронной почты", kind="email", example="name@example.com"),
-    Field("imap_host", "Сервер IMAP", kind="hostname", example="imap.example.com"),
-    Field("smtp_host", "Сервер SMTP", kind="hostname", example="smtp.example.com"),
     Field(
         "app_password",
         "Пароль приложения",
@@ -320,12 +318,12 @@ GMAIL = replace(
 )
 CUSTOM_MAIL = replace(
     CUSTOM_MAIL,
-    description="Подключение любого почтового сервиса с IMAP через TLS.",
+    description="Подключение почтового сервиса по IMAP через TLS; адрес сервера определяется по домену ящика.",
     category="Почтовый коннектор",
     icon_asset="icons/providers/custom-mail.svg",
     availability="mail_check",
     capabilities=("save_configuration", "imap_login_check"),
-    setup_hint="Уточните IMAP/SMTP-сервер у своего почтового провайдера.",
+    setup_hint="Для нестандартного сервера используйте домен, для которого доступен адрес imap.<домен>.",
     auth_protocol="IMAP TLS",
 )
 YANDEX_DISK = replace(
@@ -463,13 +461,6 @@ def validate_input(provider_id: str, method_id: str, values: Mapping[str, object
                 or not re.fullmatch(
                     r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+", domain
                 )
-            ):
-                raise InvalidConnectorInput(f"invalid_{field.name}")
-        if field.kind == "hostname":
-            if (
-                len(value) > 253
-                or value.endswith(".")
-                or not re.fullmatch(r"(?=.{1,253}\Z)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}", value)
             ):
                 raise InvalidConnectorInput(f"invalid_{field.name}")
         if field.kind == "secret":

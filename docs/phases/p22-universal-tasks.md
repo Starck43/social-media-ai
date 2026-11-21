@@ -22,6 +22,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 12. [P22-T12 — Workspace cutover, reconciliation and legacy retirement](../tasks/p22-t12.md). Depends on P22-T06, P22-T07, P22-T08, P22-T09, P22-T10, P22-T11.
 13. [P22-T13 — Jira issue adapter and Slack task context](../tasks/p22-t13.md). Depends on P22-T11.
 14. [P22-T14 — Task-scoped agent chat and shared transcript UI](../tasks/p22-t14.md). Depends on P22-T03 and P22-T07. Supplies the drawer to P22-T08.
+15. [P22-T15 — Commitments: from correspondence to a dated task with a reminder](../tasks/p22-t15.md). Depends on P22-T08 and P22-T10; soft on P22-T07 and P15-T04.
 
 T01 and T02 supply the foundations for T03. T06 owns legacy writes and migration. T07 owns the new interface namespace and command adapters. Coordinate the legacy regression fixtures at their boundary. T08, T09, T10 and T11 can implement independent surfaces after their prerequisites. T08 uses capability fixtures until the pilots land. T12 integrates the verticals. T13 extends the provider set independently.
 

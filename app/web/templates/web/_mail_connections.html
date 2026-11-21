@@ -35,7 +35,7 @@
             <label class="block text-sm" for="mail-edit-label-{{ row.id }}">Название подключения</label>
             <input class="ui-control w-full" id="mail-edit-label-{{ row.id }}" name="label" maxlength="100" value="{{ row.label }}">
             {% for provider in workspace_providers|default([]) if provider.id == row.provider_id %}
-            {{ provider_fields(provider.methods[0], 'mail-edit-' ~ row.id, row.account_login, row.config|default(none)) }}
+            {{ provider_fields(provider.methods[0], 'mail-edit-' ~ row.id, row.account_login) }}
             {% endfor %}
             <p class="text-xs ui-muted">Введите новый пароль приложения. Сохранение сбрасывает результат проверки. Смену сервиса оформляйте новым подключением.</p>
             <button class="ui-control">Сохранить изменения</button>

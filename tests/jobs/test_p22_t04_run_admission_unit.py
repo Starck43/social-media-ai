@@ -127,3 +127,25 @@ async def test_stale_worker_claim_does_not_lock_or_modify_run(monkeypatch):
     with pytest.raises(JobClaimLostError):
         await task_run_worker._locked_run(session, claim)
     lock_run.assert_not_awaited()
+
+
+def test_result_projection_excludes_provider_bodies_and_unbounded_fields():
+    raw = {
+        "coverage": "partial",
+        "code": "provider secret",
+        "provider_body": "private message",
+        "steps": {
+            "read": {"status": "done", "count": 7, "headers": "private"},
+            "group": {"status": "unavailable", "count": -1},
+            "invalid name": {"status": "done", "count": 1},
+        },
+    }
+    assert task_run_admission._permitted_result(raw) == {
+        "coverage": "partial",
+        "code": "task_execution_refused",
+        "steps": {"read": {"status": "done", "count": 7}, "group": {"status": "unavailable"}},
+    }
+
+
+def test_result_projection_rejects_malformed_fields():
+    assert task_run_admission._permitted_result({"coverage": [], "steps": {"read": {"status": {}}}}) is None

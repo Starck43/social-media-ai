@@ -1,9 +1,11 @@
 """Transactional admission for a published canonical Task revision."""
 
 import json
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
+from itertools import islice
 
 from sqlalchemy import select
 
@@ -41,8 +43,65 @@ class TaskRunReceipt:
     replayed: bool
 
 
+_STEP_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_RESULT_CODES = frozenset(
+    {
+        "task_authorization_lost",
+        "task_cancelled",
+        "task_checkpoint_limit",
+        "task_execution_failed",
+        "task_execution_refused",
+        "task_outcome_unknown",
+        "task_step_unavailable",
+        "unsupported_execution_operation",
+        "unsupported_execution_effects",
+        "invalid_execution_plan",
+        "unsupported_capability",
+        "read_only",
+        "select_resource",
+        "resource_unavailable",
+        "reauth_required",
+        "installation_required",
+    }
+)
+
+
+def _permitted_result(value):
+    """Expose bounded progress only, never provider data or checkpoint contents."""
+    if not isinstance(value, dict):
+        return None
+    result = {}
+    if value.get("reason") == "active_run":
+        result["reason"] = "active_run"
+    coverage = value.get("coverage")
+    if isinstance(coverage, str) and coverage in {"complete", "partial"}:
+        result["coverage"] = coverage
+    code = value.get("code")
+    if isinstance(code, str):
+        result["code"] = code if code in _RESULT_CODES else "task_execution_refused"
+    raw_steps = value.get("steps")
+    if isinstance(raw_steps, dict):
+        steps = {}
+        for name, item in islice(raw_steps.items(), 12):
+            if not isinstance(name, str) or not _STEP_NAME.fullmatch(name) or not isinstance(item, dict):
+                continue
+            status = item.get("status")
+            if not isinstance(status, str) or status not in {"done", "unavailable", "previewed"}:
+                continue
+            step = {"status": status}
+            count = item.get("count")
+            if type(count) is int and 0 <= count <= 1_000_000_000:
+                step["count"] = count
+            steps[name] = step
+        if steps:
+            result["steps"] = steps
+    return result or None
+
+
 def _receipt(run: TaskRun, *, replayed: bool = False) -> TaskRunReceipt:
-    return TaskRunReceipt(run.id, run.task_id, run.revision, run.job_id, run.status, run.result, replayed)
+    return TaskRunReceipt(
+        run.id, run.task_id, run.revision, run.job_id, run.status, _permitted_result(run.result), replayed
+    )
 
 
 def _digest(*values) -> str:

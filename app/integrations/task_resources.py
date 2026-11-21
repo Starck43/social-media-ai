@@ -69,6 +69,8 @@ async def _social_issue(session, tenant_id, actor_id, capability, selection):
     if platform_type is PlatformType.VK:
         if selection.vk_access is None:
             return ResolutionIssue.SELECT_RESOURCE
+        if source.params is not None and not isinstance(source.params, dict):
+            return ResolutionIssue.UNAVAILABLE
         if source.owner_user_id not in (None, actor_id) or (source.params or {}).get("token_owner") not in (
             None,
             actor_id,
@@ -150,7 +152,7 @@ async def resolve_task_resource(
             if row.state != "verified":
                 return ResolutionIssue.UNAVAILABLE
             if capability.kind == ResourceKind.PORTAL:
-                consent = (row.config or {}).get("task_source", {})
+                consent = row.config.get("task_source") if isinstance(row.config, dict) else None
                 if (
                     selection.path is not None
                     or not isinstance(consent, dict)
@@ -168,7 +170,10 @@ async def resolve_task_resource(
                 if not policy.permits(selection.path, FileOperation.LIST):
                     return ResolutionIssue.UNAVAILABLE
             exists = await session.scalar(
-                select(WorkspaceConnectionSecret.connection_id).where(WorkspaceConnectionSecret.connection_id == row.id)
+                select(WorkspaceConnectionSecret.connection_id).where(
+                    WorkspaceConnectionSecret.connection_id == row.id,
+                    WorkspaceConnectionSecret.secret_encrypted != "",
+                )
             )
             if exists is None:
                 return ResolutionIssue.REAUTH

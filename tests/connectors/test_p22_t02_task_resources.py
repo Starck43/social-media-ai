@@ -77,3 +77,20 @@ async def test_vk_resolution_keeps_the_exact_selected_identity(monkeypatch):
         await resources.resolve_task_resource(session, **request, selection=selected)
         == resources.ResolutionIssue.REAUTH
     )
+
+
+@pytest.mark.asyncio
+async def test_paired_root_reauthorizes_and_does_not_substitute_another_root(monkeypatch):
+    monkeypatch.setattr(resources, "_authorize", AsyncMock())
+    check = AsyncMock()
+    monkeypatch.setattr(resources, "get_gateway", lambda: SimpleNamespace(store=SimpleNamespace(authorize=check)))
+    choice = resources.ResourceSelection(ResourceKind.PAIRED_ROOT, 7, "root-1")
+    request = dict(tenant_id=1, actor_id=2, capability_id="local_gateway.search", direction=Direction.READ)
+    resolved = await resources.resolve_task_resource(None, **request, selection=choice)
+    assert resolved.selection == choice
+    check.assert_awaited_once_with(owner_id=2, device_id=7, roots=("root-1",))
+    check.side_effect = resources.ConnectorUnavailable
+    assert (
+        await resources.resolve_task_resource(None, **request, selection=choice)
+        == resources.ResolutionIssue.UNAVAILABLE
+    )

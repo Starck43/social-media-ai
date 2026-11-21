@@ -149,3 +149,22 @@ def test_result_projection_excludes_provider_bodies_and_unbounded_fields():
 
 def test_result_projection_rejects_malformed_fields():
     assert task_run_admission._permitted_result({"coverage": [], "steps": {"read": {"status": {}}}}) is None
+
+
+@pytest.mark.asyncio
+async def test_paid_operation_is_rejected_before_run_or_job_creation():
+    from unittest.mock import MagicMock
+
+    session = SimpleNamespace(add=MagicMock(), flush=AsyncMock())
+    admitted = SimpleNamespace(plan=SimpleNamespace(steps=[SimpleNamespace(operation="social.analyze")]))
+    with pytest.raises(task_run_admission.TaskRunAdmissionError, match="payer_unavailable"):
+        await task_run_admission._insert_run(
+            session,
+            task=SimpleNamespace(id=1, tenant_id=1),
+            admitted=admitted,
+            principal_id=1,
+            effective_at=datetime.now(timezone.utc),
+            fingerprint="0" * 64,
+        )
+    session.add.assert_not_called()
+    session.flush.assert_not_awaited()

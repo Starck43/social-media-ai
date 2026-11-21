@@ -356,3 +356,62 @@ async def test_mid_run_membership_revocation_stops_the_next_step(workspace, monk
         assert run.status == "failed"
         assert run.result == {"steps": {"read": {"status": "done", "count": 1}}, "code": "task_authorization_lost"}
         assert run.checkpoint_encrypted is None
+
+
+async def test_real_serialization_rollback_retries_without_replaying_committed_read(workspace, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import MagicMock
+
+    from sqlalchemy import text
+
+    from app.jobs.dispatcher import _execute_claimed
+    from app.models.managers.job_manager import JobManager
+    from app.models.scheduling.job import Job
+    from app.services import task_run_operations
+
+    require_isolated_schema()
+    task, reference, _ = await _publish(workspace)
+    with workspace.scope():
+        receipt = await task_run_service.admit_manual(
+            task.id, expected_revision=reference.revision, request_key="rollback"
+        )
+    provider = MagicMock(return_value=[(42, 1, "a@example.invalid")])
+    monkeypatch.setattr(task_run_operations, "_read_folder", provider)
+    monkeypatch.setattr(task_run_operations, "decrypt_secret", lambda _: "synthetic-password")
+    group = task_run_operations.group_by_sender
+    calls = 0
+
+    async def rollback_once(session, context, step, inputs, resources):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            run = await session.get(TaskRun, context.run_id)
+            run.result = {"rollback_sentinel": "must not commit"}
+            await session.flush()
+            await session.execute(text("DO $$ BEGIN RAISE EXCEPTION 'synthetic retry' USING ERRCODE = '40001'; END $$"))
+        return await group(session, context, step, inputs, resources)
+
+    monkeypatch.setattr(
+        task_run_operations, "OPERATIONS", {**task_run_operations.OPERATIONS, "mail.group_by_sender": rollback_once}
+    )
+    manager = JobManager()
+    job = await manager.claim_job(receipt.job_id)
+    first = await _execute_claimed(job)
+    assert first["status"] == "pending"
+    async with async_session_maker() as session, session.begin():
+        run = await session.get(TaskRun, receipt.run_id)
+        row = await session.get(Job, receipt.job_id)
+        assert run.status == "pending" and row.attempts == 1
+        assert run.result == {"steps": {"read": {"status": "done", "count": 1}}}
+        assert run.checkpoint_encrypted is not None
+        row.run_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    retry = await manager.claim_job(receipt.job_id)
+    assert retry is not None and retry.attempts == 2
+    second = await _execute_claimed(retry)
+    assert second["status"] == "done"
+    provider.assert_called_once()
+    assert calls == 2
+    async with async_session_maker() as session:
+        run = await session.get(TaskRun, receipt.run_id)
+        assert run.status == "done" and run.checkpoint_encrypted is None
+        assert run.result["steps"] == {"read": {"status": "done", "count": 1}, "group": {"status": "done", "count": 1}}

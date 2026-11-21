@@ -11,7 +11,6 @@ from app.models.planner import PlannerTask, Task, TaskParticipant
 from app.services.planner.canonical_tasks import CreateTask, UpdateParticipation, task_service
 from app.services.planner.tasks import planner_service
 
-
 __source_only__ = True
 
 

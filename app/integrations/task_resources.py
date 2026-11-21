@@ -11,13 +11,16 @@ from app.integrations.catalog.task_capabilities import CAPABILITIES, Direction, 
 from app.integrations.email.imap_sync import get_imap_folders
 from app.integrations.file_workspace.policy import FileOperation
 from app.models import Platform, Source, WorkspaceConnectionSecret
-from app.models.managers.workspace_connection_manager import ConnectionDenied, _authorize, _connection
+from app.models.managers.workspace_connection_manager import _authorize, _connection
 from app.services.file_workspace.yandex_reader import _stored_policy
 from app.services.local_connector.runtime import get_gateway
 from app.services.local_connector.wire import ConnectorUnavailable
+from app.services.planner.tasks import planner_service
 from app.services.social.connector_authorizations import AuthorizationUnavailable
 from app.services.social.telegram_grant_access import _inspect_source_grant, source_grant_selection
-from app.types import PlatformType
+from app.services.social.vk_access import VKSelection
+from app.services.social.vk_connections import VKConnectionDenied, check_selected_access
+from app.types import ActionType, PlatformType
 
 
 @dataclass(frozen=True)
@@ -25,6 +28,7 @@ class ResourceSelection:
     kind: ResourceKind
     resource_id: int
     path: str | None = None
+    vk_access: VKSelection | None = None
 
 
 @dataclass(frozen=True)
@@ -63,11 +67,25 @@ async def _social_issue(session, tenant_id, actor_id, capability, selection):
     if source is None:
         return ResolutionIssue.UNAVAILABLE
     if platform_type is PlatformType.VK:
-        # This capability only admits existing deployment-credential lanes.
-        if source.owner_user_id is not None or (source.params or {}).get("token_owner") is not None:
-            return ResolutionIssue.UNSUPPORTED
-        if any(not getattr(settings, key, None) for key in capability.installation_keys):
+        if selection.vk_access is None:
+            return ResolutionIssue.SELECT_RESOURCE
+        if source.owner_user_id not in (None, actor_id) or (source.params or {}).get("token_owner") not in (
+            None,
+            actor_id,
+        ):
+            return ResolutionIssue.UNAVAILABLE
+        if selection.vk_access.mode == "api" and any(
+            not getattr(settings, key, None) for key in capability.installation_keys
+        ):
             return ResolutionIssue.INSTALLATION
+        decision = await check_selected_access(
+            selection.vk_access,
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            required_methods=frozenset({"wall.get"}),
+        )
+        if not decision.allowed:
+            return ResolutionIssue.REAUTH if selection.vk_access.mode == "user" else ResolutionIssue.UNAVAILABLE
     else:
         if not settings.TELEGRAM_ACCOUNT_RUNTIME_ENABLED:
             return ResolutionIssue.UNAVAILABLE
@@ -97,6 +115,10 @@ async def resolve_task_resource(
             return ResolutionIssue.READ_ONLY
         if (
             selection is None
+            or (
+                selection.vk_access is not None
+                and (capability.provider != "vk" or not isinstance(selection.vk_access, VKSelection))
+            )
             or selection.kind != capability.kind
             or type(selection.resource_id) is not int
             or selection.resource_id <= 0
@@ -113,6 +135,8 @@ async def resolve_task_resource(
                 owner_id=actor_id, device_id=selection.resource_id, roots=(selection.path,)
             )
         else:
+            if capability.kind == ResourceKind.PORTAL:
+                await planner_service._actor(session, ActionType.VIEW)
             row = await _connection(session, tenant_id, actor_id, selection.resource_id)
             if (
                 row.provider_id != capability.provider
@@ -149,7 +173,7 @@ async def resolve_task_resource(
             if exists is None:
                 return ResolutionIssue.REAUTH
         return ScopedResource(tenant_id, actor_id, capability_id, selection)
-    except AuthorizationUnavailable:
+    except (AuthorizationUnavailable, VKConnectionDenied):
         return ResolutionIssue.REAUTH
-    except (ConnectionDenied, ConnectorUnavailable, ValueError):
+    except (PermissionError, ConnectorUnavailable, ValueError):
         return ResolutionIssue.UNAVAILABLE

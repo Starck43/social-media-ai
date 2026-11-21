@@ -58,3 +58,22 @@ async def test_read_only_and_reserved_operations_never_read_connection(monkeypat
         == resources.ResolutionIssue.UNSUPPORTED
     )
     connection.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_vk_resolution_keeps_the_exact_selected_identity(monkeypatch):
+    monkeypatch.setattr(resources, "_authorize", AsyncMock())
+    authorize_vk = AsyncMock(return_value=SimpleNamespace(allowed=True))
+    monkeypatch.setattr(resources, "check_selected_access", authorize_vk)
+    session = SimpleNamespace(scalar=AsyncMock(return_value=SimpleNamespace(owner_user_id=2, params={})))
+    request = dict(tenant_id=1, actor_id=2, capability_id="vk.posts.read", direction=Direction.READ)
+    choice = resources.VKSelection("user", credential_id=17)
+    selected = resources.ResourceSelection(ResourceKind.SOCIAL_SOURCE, 7, vk_access=choice)
+    result = await resources.resolve_task_resource(session, **request, selection=selected)
+    assert result.selection.vk_access == choice
+    authorize_vk.assert_awaited_once_with(choice, tenant_id=1, actor_id=2, required_methods=frozenset({"wall.get"}))
+    authorize_vk.return_value = SimpleNamespace(allowed=False)
+    assert (
+        await resources.resolve_task_resource(session, **request, selection=selected)
+        == resources.ResolutionIssue.REAUTH
+    )

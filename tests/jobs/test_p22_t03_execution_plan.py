@@ -63,7 +63,9 @@ def test_legacy_empty_does_not_become_explicit_empty_or_unbounded():
     assert not plan.bindings and plan.social_plan["source_scope"] == "all"
 
 
-@pytest.mark.parametrize("invalid", ["version", "unknown_port", "forward_link", "read_as_write", "scenario", "policy"])
+@pytest.mark.parametrize(
+    "invalid", ["version", "unknown_port", "forward_link", "read_as_write", "scenario", "policy", "window"]
+)
 def test_invalid_execution_shape_rejected(invalid):
     plan = mail_plan(1, "a" * 64)
     parse_execution_plan(json.dumps(plan))
@@ -77,6 +79,8 @@ def test_invalid_execution_shape_rejected(invalid):
         plan["steps"][2]["bindings"] = ["inbox"]
     elif invalid == "scenario":
         plan["steps"][1]["scenario_id"] = 1
+    elif invalid == "window":
+        plan["steps"][0]["window"] = {"type": "fixed", "start": "2026-01-02", "end": "2026-01-01"}
     else:
         plan["steps"][2]["on_failure"] = "continue_partial"
     with pytest.raises(ExecutionPlanError, match="invalid_execution_plan"):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from types import MappingProxyType
 from typing import Annotated, Literal
 
@@ -102,6 +103,27 @@ OPERATIONS = MappingProxyType(
 )
 
 
+class ReadWindow(Contract):
+    type: Literal["fixed", "rolling"]
+    start: date | None = None
+    end: date | None = None
+    days: int | None = Field(default=None, gt=0, le=365)
+
+    @model_validator(mode="after")
+    def check_window(self):
+        if self.type == "rolling":
+            if self.days is None or self.start is not None or self.end is not None:
+                raise ValueError("invalid_read_window")
+        elif (
+            self.days is not None
+            or self.start is None
+            or self.end is None
+            or not 0 <= (self.end - self.start).days < 365
+        ):
+            raise ValueError("invalid_read_window")
+        return self
+
+
 class Step(Contract):
     name: Name
     operation: str = Field(max_length=64)
@@ -110,6 +132,7 @@ class Step(Contract):
     scenario_id: PositiveID | None = None
     on_failure: Literal["stop", "continue_partial"] = "stop"
     max_items: int | None = Field(default=None, gt=0, le=1000)
+    window: ReadWindow | None = None
 
 
 class ExecutionPlan(Contract):
@@ -187,7 +210,7 @@ class ExecutionPlan(Contract):
             if step.operation == "mail.read_headers":
                 if step.max_items is None or len(step.bindings) != 1:
                     raise ExecutionPlanError("invalid_mail_read")
-            elif step.max_items is not None:
+            elif step.max_items is not None or step.window is not None:
                 raise ExecutionPlanError("invalid_step_parameters")
             allows_dynamic = (
                 operation.resource_kind == ResourceKind.SOCIAL_SOURCE

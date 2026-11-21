@@ -110,7 +110,7 @@ def _pin_methodology(rows):
     for scenario in rows:
         snapshot = {name: getattr(scenario, name) for name in SCENARIO_FIELDS}
         strategy = scenario.llm_strategy
-        snapshot["llm_strategy"] = strategy.value if strategy is not None else None
+        snapshot["llm_strategy"] = getattr(strategy, "value", strategy)
         try:
             snapshot["output_schema"] = compile_scenario_output(scenario).schema
         except ValueError:

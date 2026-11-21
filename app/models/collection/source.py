@@ -30,6 +30,7 @@ class Source(Base, TenantScopedMixin, TimestampMixin):
     __tablename__ = "sources"
 
     __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_source_tenant_id"),
         UniqueConstraint(
             "tenant_id",
             "platform_id",

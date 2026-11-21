@@ -21,7 +21,7 @@ from app.services.planner.tasks import planner_service
 from app.services.social.connector_authorizations import AuthorizationUnavailable
 from app.services.social.telegram_grant_access import _inspect_source_grant, source_grant_selection
 from app.services.social.vk_access import VKSelection
-from app.services.social.vk_connections import VKConnectionDenied, check_selected_access
+from app.services.social.vk_connections import VKConnectionDenied, check_canonical_read_access, check_selected_access
 from app.types import ActionType, PlatformType
 
 
@@ -76,7 +76,7 @@ class ResolutionIssue(StrEnum):
     INSTALLATION = "installation_required"
 
 
-async def _social_issue(session, tenant_id, actor_id, capability, selection):
+async def _social_issue(session, tenant_id, actor_id, capability, selection, *, canonical_vk):
     if selection.path is not None:
         return ResolutionIssue.SELECT_RESOURCE
     platform_type = PlatformType.VK if capability.provider == "vk" else PlatformType.TELEGRAM
@@ -109,7 +109,8 @@ async def _social_issue(session, tenant_id, actor_id, capability, selection):
             not getattr(settings, key, None) for key in capability.installation_keys
         ):
             return ResolutionIssue.INSTALLATION
-        decision = await check_selected_access(
+        check_access = check_canonical_read_access if canonical_vk else check_selected_access
+        decision = await check_access(
             selection.vk_access,
             tenant_id=tenant_id,
             actor_id=actor_id,
@@ -139,6 +140,7 @@ async def resolve_task_resource(
     capability_id: str,
     direction: Direction,
     selection: ResourceSelection | None,
+    canonical_vk: bool = False,
 ) -> ScopedResource | ResolutionIssue:
     """Re-run at execution; owning handlers retain their checks and secret access."""
     try:
@@ -172,7 +174,7 @@ async def resolve_task_resource(
         ):
             return ResolutionIssue.SELECT_RESOURCE
         if capability.kind == ResourceKind.SOCIAL_SOURCE:
-            issue = await _social_issue(session, tenant_id, actor_id, capability, selection)
+            issue = await _social_issue(session, tenant_id, actor_id, capability, selection, canonical_vk=canonical_vk)
             if issue is not None:
                 return issue
         elif capability.kind == ResourceKind.PAIRED_ROOT:

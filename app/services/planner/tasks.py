@@ -90,7 +90,7 @@ class PlannerService:
     async def copy_occurrence_participants(self, session, row, successor):
         """Legacy planner occurrences have no participant rows."""
 
-    async def _actor(self, session, action):
+    async def _actor(self, session, action, *, member_channel=None):
         tenant, actor = current_tenant_id(), get_current_user()
         if is_bypass() or type(tenant) is not int or tenant <= 0 or actor is None or not actor.is_active:
             raise PermissionError("planner_denied")
@@ -104,12 +104,12 @@ class PlannerService:
             .where(Tenant.id == tenant, Tenant.is_active.is_(True))
             .with_for_update(read=action == ActionType.VIEW)
         )
-        member = await session.scalar(
-            select(TenantUser)
-            .where(TenantUser.tenant_id == tenant, TenantUser.user_id == actor.id, TenantUser.is_active.is_(True))
-            .with_for_update(read=True)
-            .execution_options(populate_existing=True)
+        member_query = select(TenantUser).where(
+            TenantUser.tenant_id == tenant, TenantUser.user_id == actor.id, TenantUser.is_active.is_(True)
         )
+        if member_channel is not None:
+            member_query = member_query.where(TenantUser.channel == member_channel)
+        member = await session.scalar(member_query.with_for_update(read=True).execution_options(populate_existing=True))
         role = (
             None
             if member is None

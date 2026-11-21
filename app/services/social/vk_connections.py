@@ -43,7 +43,7 @@ def _deny(code: str) -> VKConnectionDenied:
     return VKConnectionDenied(code)
 
 
-async def _fresh_context(*, tenant_id: int, actor_id: int) -> tuple[Any, Any, Any]:
+async def _fresh_context(*, tenant_id: int, actor_id: int, canonical_read: bool = False) -> tuple[Any, Any, Any]:
     """Require the current interactive identity and reload active rights."""
     from app.core.permissions import get_current_user
     from app.core.tenant_context import current_tenant_id, is_bypass
@@ -73,6 +73,10 @@ async def _fresh_context(*, tenant_id: int, actor_id: int) -> tuple[Any, Any, An
     if membership is None:
         raise _deny("vk_access_membership_required")
     grants = await tenant_users.member_grants(membership)
+    if canonical_read:
+        if ("source", ActionType.VIEW) not in grants:
+            raise _deny("vk_access_source_view_required")
+        return user, tenant, membership
     if ("source", ActionType.ANALYZE) not in grants:
         raise _deny("vk_access_analysis_permission_required")
     if ("agenttask", ActionType.UPDATE) not in grants:
@@ -184,9 +188,10 @@ async def _authorized_snapshot(
     tenant_id: int,
     actor_id: int,
     include_credential: bool = False,
+    canonical_read: bool = False,
 ) -> tuple[VKAccessSnapshot | None, Any | None, frozenset[int]]:
     try:
-        await _fresh_context(tenant_id=tenant_id, actor_id=actor_id)
+        await _fresh_context(tenant_id=tenant_id, actor_id=actor_id, canonical_read=canonical_read)
     except VKConnectionDenied:
         raise
     except Exception:
@@ -225,6 +230,29 @@ async def check_selected_access(
         active_member_ids=members,
         required_methods=required_methods,
         required_scopes=required_scopes,
+    )
+
+
+async def check_canonical_read_access(
+    selection: VKSelection,
+    *,
+    tenant_id: int,
+    actor_id: int,
+    required_methods: frozenset[str],
+) -> VKAccessDecision:
+    """Check pinned read metadata for canonical plans without legacy task-write grants."""
+    snapshot, _, members = await _authorized_snapshot(
+        selection,
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        canonical_read=True,
+    )
+    return decide_vk_access(
+        selection,
+        snapshot,
+        tenant_id=tenant_id,
+        active_member_ids=members,
+        required_methods=required_methods,
     )
 
 

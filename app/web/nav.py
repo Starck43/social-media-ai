@@ -29,94 +29,67 @@ class NavItem(NamedTuple):
     group_label: str = ""
 
 
+# `pinned` items sit above the first heading without one: the daily entries a
+# person opens first (home, chat, contacts). Empty label means "no heading".
 NAV_GROUP_LABELS: dict[str, str] = {
-    "work": "Работа",
-    "clients": "Клиенты",
-    "knowledge": "Знания",
-    "monitoring": "Мониторинг",
-    "system": "Система",
+    "pinned": "",
+    "agent": "Агент",
+    "messages": "Общение",
+    "docs": "Документация",
 }
 
 
-# Existing routes and permissions remain unchanged; group order is reading order.
+# Proposal v9: home and tasks are pinned above the groups as the two everyday
+# entries. One «Агент» group holds the whole agent story in reading order -- the
+# conversation, its results (analysis and delivered digests) and its inputs
+# (sources, scenarios). Communication holds the correspondence registry and the
+# contact cards it comes from; approvals are decisions on work, so they surface on
+# the task card (P22-T08 «Ждут моего решения») and through the header «На
+# согласовании» chip, not as a section of their own. The rest is grouped by the work it belongs to --
+# documentation (with the document-backed supplier comparison), reports and the
+# assistant's inputs/scenarios. Commitments are not a section: P22-T15 turns them
+# into dated tasks, so the legacy catalogue keeps its URL without a menu slot. Connection setup (1C) and the job queue stay
+# out of the sidebar: they are operator settings reached from the account menu.
 NAV_ITEMS: tuple[NavItem, ...] = (
-    # Работа
-    NavItem("dashboard", "/app/", "Сегодня", icon="home", group="work", group_label="Работа"),
-    NavItem("chat", "/app/chat", "Чат с агентом", icon="chat", group="work", group_label="Работа"),
-    NavItem(
-        "communications",
-        "/app/communications",
-        "Входящие",
-        required_permission="scheduling.action.view",
-        icon="inbox",
-        group="work",
-        group_label="Работа",
-    ),
+    # Pinned: the entries opened every day, above the first group heading.
+    NavItem("dashboard", "/app/", "Сегодня", icon="home", group="pinned", group_label=""),
     NavItem(
         "tasks",
         "/app/task-hub",
         "Задачи",
         required_permission="scheduling.task.view",
         icon="calendar",
-        group="work",
-        group_label="Работа",
+        group="pinned",
+        group_label="",
     ),
-    # Клиенты
+    # Агент: the conversation, what it produced and what it reads from.
+    NavItem("chat", "/app/chat", "Чат с агентом", icon="chat", group="agent", group_label="Агент"),
     NavItem(
-        "contacts",
-        "/app/contacts",
-        "Контакты",
-        required_permission="contacts.contact.view",
-        icon="users",
-        group="clients",
-        group_label="Клиенты",
-    ),
-    NavItem(
-        "followups",
-        "/app/followups",
-        "Договорённости",
-        required_permission="scheduling.task.view",
-        icon="clock",
-        group="clients",
-        group_label="Клиенты",
-    ),
-    NavItem(
-        "cases",
-        "/app/cases",
-        "Предложения",
-        required_permission="scheduling.action.view",
-        icon="briefcase",
-        group="clients",
-        group_label="Клиенты",
-    ),
-    # Знания
-    NavItem(
-        "knowledge",
-        "/app/knowledge",
-        "База знаний",
+        "analytics",
+        "/app/analytics",
+        "Аналитика",
         required_permission="analysis.result.view",
-        icon="database",
-        group="knowledge",
-        group_label="Знания",
+        icon="chart",
+        group="agent",
+        group_label="Агент",
     ),
     NavItem(
-        "documents",
-        "/app/documents",
-        "Документы и версии",
-        required_permission="analysis.result.view",
+        "digests",
+        "/app/digests",
+        "Рассылки",
+        required_permission="notifications.digest_run.view",
         icon="document",
-        group="knowledge",
-        group_label="Знания",
+        group="agent",
+        group_label="Агент",
     ),
-    # Мониторинг
     NavItem(
         "sources",
         "/app/sources",
         "Источники",
         required_permission="collection.source.view",
         icon="database",
-        group="monitoring",
-        group_label="Мониторинг",
+        group="agent",
+        group_label="Агент",
     ),
     NavItem(
         "scenarios",
@@ -124,60 +97,75 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         "Сценарии",
         required_permission="analysis.scenario.view",
         icon="layers",
-        group="monitoring",
-        group_label="Мониторинг",
+        group="agent",
+        group_label="Агент",
     ),
+    # Общение
     NavItem(
-        "analytics",
-        "/app/analytics",
-        "Аналитика",
-        required_permission="analysis.result.view",
-        icon="chart",
-        group="monitoring",
-        group_label="Мониторинг",
-    ),
-    NavItem(
-        "digests",
-        "/app/digests",
-        "Дайджесты",
-        required_permission="notifications.digest_run.view",
-        icon="document",
-        group="monitoring",
-        group_label="Мониторинг",
-    ),
-    # Система
-    NavItem(
-        "actions",
-        "/app/actions",
-        "Действия",
+        "communications",
+        "/app/communications",
+        "Переписка",
         required_permission="scheduling.action.view",
-        icon="check",
-        group="system",
-        group_label="Система",
+        icon="inbox",
+        group="messages",
+        group_label="Общение",
     ),
     NavItem(
-        "jobs",
-        "/app/jobs",
-        "Очередь задач",
-        required_permission="scheduling.job.view",
-        icon="list",
-        group="system",
-        group_label="Система",
+        "contacts",
+        "/app/contacts",
+        "Контакты",
+        required_permission="contacts.contact.view",
+        icon="users",
+        group="messages",
+        group_label="Общение",
+    ),
+    # Документация
+    NavItem(
+        "documents",
+        "/app/documents",
+        "Документы и версии",
+        required_permission="analysis.result.view",
+        icon="document",
+        group="docs",
+        group_label="Документация",
     ),
     NavItem(
-        "settings",
-        "/app/settings",
-        "Настройки",
-        icon="settings",
-        group="system",
-        group_label="Система",
+        "knowledge",
+        "/app/knowledge",
+        "База знаний",
+        required_permission="analysis.result.view",
+        icon="database",
+        group="docs",
+        group_label="Документация",
+    ),
+    NavItem(
+        "files",
+        "/app/knowledge/files",
+        "Файлы",
+        required_permission="analysis.result.view",
+        icon="clip",
+        group="docs",
+        group_label="Документация",
+    ),
+    NavItem(
+        "cases",
+        "/app/cases",
+        "Закупки",
+        required_permission="scheduling.action.view",
+        icon="briefcase",
+        group="docs",
+        group_label="Документация",
     ),
 )
+
+# Setup surfaces stay reachable without sitting in the daily sidebar: connections
+# (1C), the job queue and settings live behind the account menu and deep links.
+SETTINGS_SECTION = NavItem("settings", "/app/settings", "Настройки", icon="settings")
 
 # A direct planner start-page preference remains valid after consolidating the
 # sidebar. Start-page choices and navigation entries have different purposes.
 PLANNER_SECTION = NavItem("planner", "/app/planner", "Мои дела", required_permission="planner.task.view")
-START_PAGE_ITEMS = (*NAV_ITEMS, PLANNER_SECTION)
+START_PAGE_ITEMS = (*NAV_ITEMS, PLANNER_SECTION, SETTINGS_SECTION)
 
 # Proposed O-3 composition; More is a drawer button in the template.
 MOBILE_NAV_KEYS: tuple[str, ...] = ("dashboard", "chat", "communications", "tasks")
@@ -222,11 +210,15 @@ def section_of(path: str) -> NavItem | None:
         return PLANNER_SECTION
     if path == "/app/tasks" or path.startswith("/app/tasks/"):
         return NavItem("agent_tasks", "/app/tasks", "Поручения агенту", required_permission="scheduling.task.view")
-    for item in NAV_ITEMS:
-        if (
-            item.ready
-            and (item.required_permission is not None or item.key == "chat")
-            and (path == item.href or path.startswith(item.href + "/"))
-        ):
-            return item
-    return None
+    # `/app/knowledge/files` nests under `/app/knowledge`, so the deepest match
+    # owns the section; a shorter prefix never shadows a nested page.
+    matches = [
+        item
+        for item in NAV_ITEMS
+        if item.ready
+        and (item.required_permission is not None or item.key == "chat")
+        and (path == item.href or path.startswith(item.href + "/"))
+    ]
+    if not matches:
+        return None
+    return max(matches, key=lambda item: len(item.href))

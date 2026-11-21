@@ -217,7 +217,7 @@ async def test_digest_history_shows_runs_and_cost_for_the_workspace() -> None:
 
             page = await client.get("/app/digests")
             assert page.status_code == 200
-            assert "Дайджесты" in page.text
+            assert "Рассылки" in page.text
             # The run's LLM cost is summed for the header — the page reports spend.
             assert "0.02" in page.text
             assert "Дайджестов ещё не было" not in page.text

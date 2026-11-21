@@ -37,7 +37,7 @@ nav_data = [
     ("sources", "/app/sources", "Источники"),
     ("tasks", "/app/tasks", "Задачи"),
     ("analytics", "/app/analytics", "Аналитика"),
-    ("digests", "/app/digests", "Дайджесты"),
+    ("digests", "/app/digests", "Рассылки"),
     ("chat", "/app/chat", "Чат с агентом"),
     ("settings", "/app/settings", "Настройки"),
 ]

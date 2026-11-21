@@ -662,6 +662,12 @@ body[data-shell-section="chat"] .chat-window {
 .shell-select-chevron { display: block; width: 7px; height: 7px; margin: 0 4px 3px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); flex-shrink: 0; }
 [data-popover-trigger][aria-expanded="true"] .shell-select-chevron { transform: rotate(225deg); margin-bottom: -3px; }
 
+/* Pinned entries (home, chat, contacts) sit above the first heading. */
+.shell-daily-nav .shell-nav-group:first-of-type {
+	margin-top: 8px;
+	border-top: 1px solid var(--color-border);
+}
+
 .shell-nav-group {
 	font-size: .7rem;
 	font-weight: 600;

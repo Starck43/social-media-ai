@@ -65,11 +65,10 @@ class _StubPerms:
 
 def test_every_nav_item_belongs_to_a_declared_domain_group() -> None:
     assert set(NAV_GROUP_LABELS) == {
-        "work",
-        "clients",
-        "knowledge",
-        "monitoring",
-        "system",
+        "pinned",
+        "agent",
+        "messages",
+        "docs",
     }
     for item in NAV_ITEMS:
         assert item.group in NAV_GROUP_LABELS, f"{item.key} has unknown group {item.group!r}"
@@ -87,7 +86,6 @@ def test_p12_sections_are_live_and_gated() -> None:
         "knowledge": "/app/knowledge",
         "documents": "/app/documents",
         "communications": "/app/communications",
-        "followups": "/app/followups",
         "cases": "/app/cases",
     }
     for key, href in p12.items():
@@ -108,15 +106,12 @@ def test_ready_routes_remain_and_mobile_bar_is_daily_loop() -> None:
         "tasks": "/app/task-hub",
         "analytics": "/app/analytics",
         "digests": "/app/digests",
-        "actions": "/app/actions",
-        "jobs": "/app/jobs",
-        "settings": "/app/settings",
         "knowledge": "/app/knowledge",
         "documents": "/app/documents",
         "communications": "/app/communications",
-        "followups": "/app/followups",
         "cases": "/app/cases",
         "contacts": "/app/contacts",
+        "files": "/app/knowledge/files",
     }
     assert [item.key for item in MOBILE_NAV_ITEMS] == ["dashboard", "chat", "communications", "tasks"]
     tasks = next(item for item in NAV_ITEMS if item.key == "tasks")

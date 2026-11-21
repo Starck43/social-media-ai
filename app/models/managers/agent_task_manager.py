@@ -491,6 +491,9 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
                         .values([{"agent_task_id": task_id, "source_id": source_id} for source_id in sorted(added)])
                         .on_conflict_do_nothing()
                     )
+                from app.services.planner.legacy_migration import compatibility_writer
+
+                await compatibility_writer.refresh_agent(db, task)
             return len(values)
 
     async def get_active(self) -> list["AgentTask"]:
@@ -1448,10 +1451,21 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
                 row.last_run_at = now
                 row.next_run_at = next_fire
                 await session.flush()
+                from app.services.planner.legacy_migration import compatibility_writer
+
+                await compatibility_writer.refresh_agent(session, row)
             if retry_transaction.busy_job is not None:
                 return _busy_admission_receipt(task_id, retry_transaction.busy_job)
             # Return only after the owning transaction's commit acknowledgement.
         return receipt
+
+    @with_db_session
+    async def _update_run_receipt(self, task_id: int, session: "AsyncSession", **values) -> None:
+        from app.services.planner.legacy_migration import compatibility_writer
+
+        row = await BaseManager.update_by_id(self, task_id, session=session, **values)
+        if row is not None:
+            await compatibility_writer.refresh_agent(session, row)
 
     async def mark_triggered(
         self,
@@ -1467,10 +1481,7 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         `record_result` when the worker finishes, so `last_status` here is a
         provisional value and may be overwritten.
         """
-        from .base_manager import BaseManager
-
-        await BaseManager.update_by_id(
-            self,
+        await self._update_run_receipt(
             task_id,
             last_run_at=datetime.now(timezone.utc),
             last_status=status,
@@ -1485,10 +1496,7 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         `last_error` / `last_run_at` reflect what actually happened, not just
         that the job was enqueued. Must run inside the task's tenant scope.
         """
-        from .base_manager import BaseManager
-
-        await BaseManager.update_by_id(
-            self,
+        await self._update_run_receipt(
             task_id,
             last_run_at=datetime.now(timezone.utc),
             last_status=status,

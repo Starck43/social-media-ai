@@ -14,7 +14,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 4. [P22-T04 — Run admission, scheduler and worker integration](../audit/p22/p22-t04.md). DONE 2026-11-21 at `a6c6e542`. Durable admission, scheduled occurrences and fenced read-only execution.
 5. [P22-T05 — Task actions, decisions and confirmed deletion](../audit/p22/p22-t05.md). DONE 2026-11-21 at `41160197`. Actor-scoped decisions, confirmed deletion and retained run receipts.
 6. [P22-T06 — Legacy ID mapping, compatibility writers and backfill](../tasks/p22-t06.md). Depends on P22-T01, P22-T03, P22-T04, P22-T05.
-7. [P22-T07 — Unified API, CLI and AI toolset](../tasks/p22-t07.md). Depends on P22-T03, P22-T04, P22-T05, P22-T06.
+7. **P22-T07 — Unified API, CLI and AI toolset** — **DONE 2026-11-22** (`2945d17b`). Depended on P22-T03, P22-T04, P22-T05, P22-T06. [Accepted](../audit/p22/p22-t07.md).
 8. [P22-T08 — Unify task navigation, labels, creation and detail views](../tasks/p22-t08.md). Depends on P22-T07, P22-T14.
 9. [P22-T09 — Admin connector setup and task operations](../tasks/p22-t09.md). Depends on P22-T02, P22-T05, P22-T07.
 10. [P22-T10 — Correspondence task and sender-grouped Messages](../tasks/p22-t10.md). Depends on P22-T02, P22-T03, P22-T04, P22-T07.

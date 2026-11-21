@@ -35,8 +35,8 @@ NAV_GROUP_LABELS: dict[str, str] = {
     "tasks": "Задачи",
     "messages": "Сообщения",
     "docs": "Документация",
-    "crm": "CRM",
-    "erp": "ERP",
+    "crm": "Клиенты",
+    "erp": "Учёт",
     "data": "Данные",
     "system": "Система",
 }
@@ -134,7 +134,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="contacts.contact.view",
         icon="users",
         group="crm",
-        group_label="CRM",
+        group_label="Клиенты",
     ),
     NavItem(
         "cases",
@@ -143,7 +143,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="scheduling.action.view",
         icon="briefcase",
         group="crm",
-        group_label="CRM",
+        group_label="Клиенты",
     ),
     # ERP
     NavItem(
@@ -153,7 +153,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="onec.data.view",
         icon="chain",
         group="erp",
-        group_label="ERP",
+        group_label="Учёт",
     ),
     NavItem(
         "onec_audit",
@@ -162,7 +162,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         required_permission="onec.data.view",
         icon="check",
         group="erp",
-        group_label="ERP",
+        group_label="Учёт",
     ),
     # Данные
     NavItem(

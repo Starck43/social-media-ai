@@ -7,6 +7,7 @@ from hashlib import sha256
 
 from sqlalchemy import select
 
+from app.core.access_catalog import workspace_grants
 from app.core.database import with_db_session
 from app.core.permissions import get_current_user, has_permission, permission_scope
 from app.core.pii import encrypt_pii
@@ -168,6 +169,8 @@ class TaskRunService:
         if principal is None:
             raise PermissionError("scheduled_principal_unavailable")
         with permission_scope(principal):
+            identity = await task_service._actor(session, ActionType.UPDATE, member_channel="web")
+        with permission_scope(principal, member_grants=workspace_grants(identity[2])):
             task = await authorize_task_run(session, trigger.task_id, lock=True, member_channel="web")
         stored = await session.scalar(
             select(TaskTrigger)

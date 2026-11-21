@@ -13,6 +13,7 @@ depends_on = None
 
 def upgrade() -> None:
     s = settings.DB_SCHEMA
+    op.create_unique_constraint("uq_source_tenant_id", "sources", ["tenant_id", "id"], schema=s)
     op.create_table(
         "task_plan_revisions",
         sa.Column("tenant_id", sa.Integer(), primary_key=True),
@@ -45,6 +46,13 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            [f"{s}.sources.tenant_id", f"{s}.sources.id"],
+            name="fk_task_binding_source_scope",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        sa.ForeignKeyConstraint(
             ["tenant_id", "connection_id"],
             [f"{s}.workspace_connections.tenant_id", f"{s}.workspace_connections.id"],
             deferrable=True,
@@ -70,3 +78,4 @@ def downgrade() -> None:
             END $$"""))
     op.drop_table("task_bindings", schema=s)
     op.drop_table("task_plan_revisions", schema=s)
+    op.drop_constraint("uq_source_tenant_id", "sources", schema=s, type_="unique")

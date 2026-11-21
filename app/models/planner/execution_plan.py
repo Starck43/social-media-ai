@@ -44,6 +44,13 @@ class TaskPlanBinding(Base, TenantScopedMixin):
             ondelete="CASCADE",
         ),
         ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            [f"{S}.sources.tenant_id", f"{S}.sources.id"],
+            name="fk_task_binding_source_scope",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        ForeignKeyConstraint(
             ["tenant_id", "connection_id"],
             [f"{S}.workspace_connections.tenant_id", f"{S}.workspace_connections.id"],
             deferrable=True,

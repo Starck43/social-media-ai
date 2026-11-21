@@ -7,7 +7,8 @@ from uuid import uuid4
 
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
+from sqlalchemy.exc import IntegrityError
 
 from app.core.access_catalog import workspace_grants
 from app.core.config import settings
@@ -16,13 +17,15 @@ from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
 from app.integrations.catalog import CATALOG_VERSION
 from app.integrations.task_resources import WorkspaceAccountPin
-from app.models import AgentScenario, PlatformRole, Tenant, TenantUser, User, WorkspaceRole
+from app.models import AgentScenario, Platform, PlatformRole, Source, Tenant, TenantUser, User, WorkspaceRole
 from app.models.integrations.connection import WorkspaceConnection, WorkspaceConnectionSecret
+from app.models.planner.execution_plan import TaskPlanBinding
 from app.services import task_execution_plans
-from app.services.execution_plan_contracts import ExecutionPlanError, map_social_plan
+from app.services.execution_plan_contracts import Binding, ExecutionPlanError, map_social_plan
 from app.services.planner.canonical_tasks import CreateTask, task_service
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable
 from app.services.task_execution_plans import execution_plan_service
+from app.types import PlatformType, SourceType
 from tests.shared.execution_plan_payloads import mail_plan
 from tests.support.schema_guard import require_isolated_schema
 
@@ -197,3 +200,63 @@ async def test_shared_scenario_pins_methodology_until_republish_and_blocks_revoc
         await session.delete(await session.get(AgentScenario, scenario_id))
     with workspace.scope(), pytest.raises(ExecutionPlanError, match="scenario_unavailable"):
         await execution_plan_service.load_for_admission(b.id, other.revision)
+
+
+async def test_social_source_binding_enforces_tenant_at_service_and_database(workspace, monkeypatch):
+    # Configure synthetic, local VK capability evidence. No requests reach VK.
+    monkeypatch.setattr(settings, "VK_SERVICE_KEY", "synthetic-service-key")
+    monkeypatch.setattr(settings, "VK_SERVICE_METHOD_GRANTS", ["wall.get", "groups.getById", "users.get"])
+    monkeypatch.setattr(settings, "VK_SERVICE_METHOD_SCOPES", {})
+    async with async_session_maker() as session, session.begin():
+        platform = await session.scalar(select(Platform.id).where(Platform.platform_type == PlatformType.VK))
+        sources = [
+            Source(
+                tenant_id=tenant.id,
+                platform_id=platform,
+                name="Synthetic VK source",
+                external_id="101",
+                source_type=SourceType.GROUP,
+                params={},
+                is_active=True,
+            )
+            for tenant in workspace.tenants
+        ]
+        session.add_all(sources)
+        await session.flush()
+        own, foreign = (source.id for source in sources)
+
+    def draft(source_id):
+        vk = {"mode": "api"}
+        return map_social_plan(
+            {"task_plan": {"source_scope": "selected", "source_ids": [source_id], "vk_access": vk}},
+            job_type="collect",
+            bindings=(Binding(name="vk", capability="vk.posts.read", resource_id=source_id, vk_access=vk),),
+        ).model_dump_json()
+
+    with workspace.scope():
+        note = await task_service.create(CreateTask(title="Synthetic VK collection"))
+        with pytest.raises(ExecutionPlanError, match="resource_unavailable"):
+            await execution_plan_service.preview(note.id, draft(foreign))
+        saved = await execution_plan_service.publish(note.id, note.version, draft(own))
+        admitted = await execution_plan_service.load_for_admission(note.id, saved.revision)
+        assert admitted.resources[0].selection.resource_id == own
+
+        async with async_session_maker() as session, session.begin():
+            # Exercise the DB constraint directly, bypassing service authorization.
+            with pytest.raises(IntegrityError, match="fk_task_binding_source_scope"):
+                async with session.begin_nested():
+                    await session.execute(
+                        update(TaskPlanBinding)
+                        .where(TaskPlanBinding.tenant_id == workspace.tenants[0].id, TaskPlanBinding.task_id == note.id)
+                        .values(source_id=foreign)
+                    )
+                    await session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
+            assert await session.scalar(select(TaskPlanBinding.source_id)) == own
+            await session.delete(await session.get(Source, own))
+
+        assert await execution_plan_service.get_reference(note.id) == saved
+        async with async_session_maker() as session:
+            binding = await session.scalar(select(TaskPlanBinding))
+            assert binding.source_id is None
+        with pytest.raises(ExecutionPlanError, match="resource_unavailable"):
+            await execution_plan_service.load_for_admission(note.id, saved.revision)

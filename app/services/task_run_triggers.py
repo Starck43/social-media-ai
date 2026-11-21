@@ -16,7 +16,7 @@ from app.services.execution_plan_contracts import ExecutionPlanError
 from app.services.planner.canonical_tasks import task_service
 from app.services.planner.tasks import PlannerUnavailable
 from app.services.task_execution_plans import _permits, execution_plan_service
-from app.services.task_run_admission import TaskRunAdmissionError, task_run_admission_service
+from app.services.task_run_admission import TaskRunAdmissionError, task_run_service
 from app.tasks.cron import next_run_at
 from app.types import ActionType
 
@@ -237,7 +237,7 @@ class TaskTriggerService:
 
         try:
             async with session.begin_nested():
-                receipt = await task_run_admission_service.admit_scheduled(
+                receipt = await task_run_service.admit_scheduled(
                     trigger, occurrence_at=observed.occurrence_at, now=now, session=session
                 )
         except (TaskRunAdmissionError, ExecutionPlanError, PermissionError, PlannerUnavailable):

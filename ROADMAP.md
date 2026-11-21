@@ -45,7 +45,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
 
-- [P22-T04](docs/tasks/p22-t04.md) Run admission, scheduler and worker integration — **IN_PROGRESS** · Codex · `codex resume 01a1fdbb-2b67-75d1-8ce4-f5e9aacdb9b6` · `P1` · `C5` · [PR #519](https://github.com/Starck43/social-media-ai/pull/519)
+- [P22-T04](docs/tasks/p22-t04.md) Run admission, scheduler and worker integration — **IN_PROGRESS** · Notion AI · [handover](https://github.com/Starck43/social-media-ai/pull/519#issuecomment-7063317315) · `P1` · `C5`
 - [P22-T05](docs/tasks/p22-t05.md) Task actions, decisions and confirmed deletion — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
 - [P22-T06](docs/tasks/p22-t06.md) Legacy ID mapping, compatibility writers and backfill — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C5`
 - [P22-T07](docs/tasks/p22-t07.md) Unified API, CLI and AI toolset — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`

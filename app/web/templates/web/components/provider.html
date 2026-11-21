@@ -1,9 +1,9 @@
 {# Icons are local, reviewed assets; never inline provider supplied SVG. #}
 {% macro provider_icon(provider) -%}
-{% if provider and provider.icon_asset %}<img src="{{ static_v(provider.icon_asset) }}" width="32" height="32" alt="" aria-hidden="true" class="inline-block align-middle shrink-0">{% endif %}
+{% if provider and provider.icon_asset %}<span class="settings-provider-icon" aria-hidden="true"><img src="{{ static_v(provider.icon_asset) }}" width="32" height="32" alt="" loading="lazy"></span>{% endif %}
 {%- endmacro %}
 {% macro provider_header(provider, title, description, heading_id) -%}
-<div class="flex min-w-0 items-start gap-3">
+<div class="settings-provider-header flex min-w-0 items-start gap-3">
     {{ provider_icon(provider) }}
     <div class="min-w-0">
         <h2 id="{{ heading_id }}" class="text-sm font-semibold text-slate-900 dark:text-slate-100">{{ title }}</h2>

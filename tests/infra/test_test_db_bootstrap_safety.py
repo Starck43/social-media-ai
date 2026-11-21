@@ -40,11 +40,15 @@ def metadata(*, unique=True):
 class Catalog:
     """Return scoped catalog rows; reject any attempted DDL/DML."""
 
-    def __init__(self, *, tables=None, columns=None, uniques=None, events=None):
+    def __init__(self, *, tables=None, columns=None, uniques=None, events=None, nullability=None):
         self.tables = {"items"} if tables is None else set(tables)
         self.columns = (
             [("items", "id"), ("items", "tenant_id"), ("items", "name")] if columns is None else list(columns)
         )
+        # A primary key is NOT NULL in Postgres; other columns are nullable
+        # unless a case says otherwise.
+        self.nullability = {("items", "id"): "NO"}
+        self.nullability.update(nullability or {})
         self.uniques = [("items", "uq_items", "name,tenant_id")] if uniques is None else list(uniques)
         self.events = [] if events is None else events
         self.calls = []
@@ -62,6 +66,8 @@ class Catalog:
         if "information_schema.tables" in sql:
             return [(name,) for name in sorted(self.tables)]
         if "information_schema.columns" in sql:
+            if "is_nullable" in sql:
+                return [(table, column, self.nullability.get((table, column), "YES")) for table, column in self.columns]
             return self.columns
         if "information_schema.table_constraints" in sql:
             if "kcu.table_name = tc.table_name" not in sql:
@@ -74,7 +80,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
     async def test_matching_existing_catalog_is_read_only(self):
         conn = Catalog()
         await bootstrap.check_existing_schema(conn, metadata(), SCHEMA)
-        self.assertEqual(len(conn.calls), 3)
+        self.assertEqual(len(conn.calls), 4)
         self.assertTrue(all(sql.startswith("select ") for sql, _ in conn.calls))
 
     async def test_outcome_table_missing_from_branch_stops_before_other_reads(self):
@@ -107,7 +113,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         conn = Catalog(uniques=[("items", "uq_items", "name,tenant_id"), ("items", "old_key", "name")])
         with self.assertRaisesRegex(RuntimeError, "unexpected items.old_key"):
             await bootstrap.check_existing_schema(conn, metadata(), SCHEMA)
-        self.assertEqual(len(conn.calls), 3)
+        self.assertEqual(len(conn.calls), 4)
 
     async def test_missing_unique_is_reported_never_added(self):
         with self.assertRaisesRegex(RuntimeError, "missing items.uq_items"):
@@ -176,7 +182,7 @@ def module(name, **attributes):
 
 
 class BootstrapOrderTests(unittest.IsolatedAsyncioTestCase):
-    async def invoke(self, conn, *, reset=False, state="exists", shares=True, create_side_effect=None):
+    async def invoke(self, conn, *, reset=False, state="exists", shares=True, create_side_effect=None, metadata_=None):
         engine = Engine(conn)
         mocks = {
             "_create_database_if_missing": AsyncMock(return_value=state),
@@ -194,7 +200,7 @@ class BootstrapOrderTests(unittest.IsolatedAsyncioTestCase):
             "app.core": module("app.core", __path__=[]),
             "app.core.database": module("app.core.database", async_engine=engine),
             "app.core.config": module("app.core.config", settings=SimpleNamespace(DB_SCHEMA=SCHEMA)),
-            "app.models": module("app.models", Base=SimpleNamespace(metadata=metadata())),
+            "app.models": module("app.models", Base=SimpleNamespace(metadata=metadata_ or metadata())),
         }
         with patch.dict(sys.modules, modules), patch.multiple(bootstrap, **mocks):
             try:
@@ -231,6 +237,61 @@ class BootstrapOrderTests(unittest.IsolatedAsyncioTestCase):
         mocks, engine, error = await self.invoke(Catalog(columns=[("items", "id")]), reset=True)
         self.assertIsInstance(error, RuntimeError)
         self.assert_no_target_writes(mocks, engine)
+
+    async def test_live_nullable_where_model_requires_stops_before_seed(self):
+        value = MetaData()
+        Table(
+            "items",
+            value,
+            Column("id", Integer, primary_key=True),
+            Column("tenant_id", Integer),
+            Column("name", Integer, nullable=False),
+            UniqueConstraint("tenant_id", "name", name="uq_items"),
+            schema=SCHEMA,
+        )
+        mocks, engine, error = await self.invoke(Catalog(), metadata_=value)
+        self.assertIsInstance(error, RuntimeError)
+        self.assertIn("accepts NULL in model-required columns: items.name", str(error))
+        self.assert_no_target_writes(mocks, engine)
+
+    async def test_unrecorded_strict_column_stops_before_seed(self):
+        mocks, engine, error = await self.invoke(Catalog(nullability={("items", "name"): "NO"}))
+        self.assertIsInstance(error, RuntimeError)
+        self.assertIn("requires columns the model leaves nullable: items.name", str(error))
+        self.assertIn("KNOWN_STRICT_COLUMNS", str(error))
+        self.assert_no_target_writes(mocks, engine)
+
+    async def test_recorded_strict_column_is_accepted_for_the_known_contract(self):
+        value = MetaData()
+        Table(
+            "items",
+            value,
+            Column("id", Integer, primary_key=True),
+            Column("tenant_id", Integer),
+            Column("name", Integer),
+            UniqueConstraint("tenant_id", "name", name="uq_items"),
+            schema=SCHEMA,
+        )
+        Table(
+            "tenants",
+            value,
+            Column("id", Integer, primary_key=True),
+            Column("plan_holder_user_id", Integer, nullable=True),
+            schema=SCHEMA,
+        )
+        catalog = Catalog(
+            tables={"items", "tenants"},
+            columns=[
+                ("items", "id"),
+                ("items", "tenant_id"),
+                ("items", "name"),
+                ("tenants", "id"),
+                ("tenants", "plan_holder_user_id"),
+            ],
+            nullability={("tenants", "id"): "NO", ("tenants", "plan_holder_user_id"): "NO"},
+        )
+        await bootstrap.check_existing_schema(catalog, value, SCHEMA)
+        self.assertTrue(all(sql.startswith("select ") for sql, _ in catalog.calls))
 
     async def test_existing_compatible_schema_keeps_seed_path_after_both_checks(self):
         mocks, engine, error = await self.invoke(Catalog())
@@ -293,3 +354,25 @@ class BootstrapOrderTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BootstrapSeedTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bootstrap_tenant_is_seeded_with_its_plan_holder(self):
+        """0155 requires a payer, so the seed must never create a holder-less workspace."""
+        recorded = {}
+
+        async def get_or_create_owner(slug, **kwargs):
+            recorded.update({"slug": slug, **kwargs})
+
+        tenants = SimpleNamespace(get_or_create_owner=get_or_create_owner)
+        modules = {
+            "app": module("app", __path__=[]),
+            "app.core": module("app.core", __path__=[]),
+            "app.core.config": module("app.core.config", settings=SimpleNamespace(DEFAULT_TENANT_SLUG="owner")),
+            "app.models": module("app.models", __path__=[]),
+            "app.models.managers": module("app.models.managers", __path__=[]),
+            "app.models.managers.tenant_manager": module("app.models.managers.tenant_manager", tenants=tenants),
+        }
+        with patch.dict(sys.modules, modules), patch.object(bootstrap, "_seed_plan_holder", AsyncMock(return_value=7)):
+            await bootstrap._seed_bootstrap_tenant()
+        self.assertEqual(recorded, {"slug": "owner", "plan_holder_user_id": 7})

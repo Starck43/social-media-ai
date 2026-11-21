@@ -194,8 +194,13 @@ class TenantManager(BaseManager["Tenant"]):
             kwargs["session"] = session
         return await super().update_by_id(instance_id, **kwargs)
 
-    async def get_or_create_owner(self, slug: str = "owner") -> "Tenant":
-        """Bootstrap workspace: the tenant that owns pre-existing (legacy) rows."""
+    async def get_or_create_owner(self, slug: str = "owner", *, plan_holder_user_id: int | None = None) -> "Tenant":
+        """Bootstrap workspace: the tenant that owns pre-existing (legacy) rows.
+
+        ``plan_holder_user_id`` is required by schemas that enforce the 0155
+        contract; callers without a payer (fixtures, early installs) may leave it
+        out only where the live column is nullable.
+        """
         existing = await self.get_by_slug(slug)
         if existing is not None:
             return existing
@@ -212,6 +217,7 @@ class TenantManager(BaseManager["Tenant"]):
             name="Owner workspace",
             slug=slug.strip().lower(),
             plan="business",
+            plan_holder_user_id=plan_holder_user_id,
             daily_cost_limit=5.0,
             max_sources=100,
         )

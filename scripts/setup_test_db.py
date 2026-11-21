@@ -58,6 +58,15 @@ _PLATFORM_SEED = (
 # change, so the documented re-seed restores the FK target.
 LEGACY_CATALOG_OWNER_ID = 2
 
+# Columns whose live contract is stricter than the model metadata. A migrated
+# schema is the authority: 0155 makes this column NOT NULL after the plan
+# backfill, while the metadata stays nullable because workspaces are also
+# created before a payer exists. Recorded here so the preflight can accept the
+# known difference and still refuse any new one. Owner: the named migration.
+KNOWN_STRICT_COLUMNS = {
+    ("tenants", "plan_holder_user_id"): "0155_p2t17_service_plan_finalize",
+}
+
 
 def database_name(url: str) -> str:
     """The database part of a postgres URL."""
@@ -212,6 +221,40 @@ async def _missing_columns(conn, metadata, schema: str, *, existing_tables: set[
     return missing
 
 
+async def _nullability_drift(conn, metadata, schema: str, *, existing_tables: set[str]) -> tuple[list, list]:
+    """Columns where the live contract disagrees with the model metadata.
+
+    Return ``(looser, unrecorded)``: ``looser`` columns accept NULL although the
+    model forbids it, ``unrecorded`` columns are NOT NULL in the live schema for
+    a reason the model does not carry and no migration records. The known
+    exceptions live in ``KNOWN_STRICT_COLUMNS``.
+    """
+    result = await conn.execute(
+        text(
+            "select table_name, column_name, is_nullable from information_schema.columns "
+            "where table_schema = :schema"
+        ),
+        {"schema": schema},
+    )
+    live = {(table_name, column_name): is_nullable == "YES" for table_name, column_name, is_nullable in result}
+
+    looser: list[str] = []
+    unrecorded: list[str] = []
+    for table in metadata.sorted_tables:
+        if table.schema not in (None, schema) or table.name not in existing_tables:
+            continue
+        for column in table.columns:
+            key = (table.name, column.name)
+            if key not in live:
+                continue
+            live_nullable = live[key]
+            if live_nullable and not column.nullable:
+                looser.append(f"{table.name}.{column.name}")
+            elif not live_nullable and column.nullable and key not in KNOWN_STRICT_COLUMNS:
+                unrecorded.append(f"{table.name}.{column.name}")
+    return looser, unrecorded
+
+
 def _model_uniques(metadata, schema: str) -> dict:
     """UNIQUE constraints the models declare, keyed by name (or columns)."""
     from sqlalchemy import UniqueConstraint
@@ -318,6 +361,22 @@ async def check_existing_schema(conn, metadata, schema: str, *, require_all_tabl
             "Test bootstrap refused: existing tables have missing model columns: "
             + ", ".join(sorted(missing_columns))
             + ". Stop and request separately approved, schema-qualified reconciliation; no automatic rebuild."
+        )
+
+    looser, unrecorded = await _nullability_drift(conn, metadata, schema, existing_tables=existing_tables)
+    if looser:
+        raise RuntimeError(
+            "Test bootstrap refused: the live schema accepts NULL in model-required columns: "
+            + ", ".join(sorted(looser))
+            + ". Rows the application forbids would be stored. No column was changed; "
+            "coordinate a separately approved, schema-qualified reconciliation."
+        )
+    if unrecorded:
+        raise RuntimeError(
+            "Test bootstrap refused: the live schema requires columns the model leaves nullable: "
+            + ", ".join(sorted(unrecorded))
+            + ". Record the owning migration in KNOWN_STRICT_COLUMNS with the reason, or reconcile "
+            "the metadata; no column was changed."
         )
 
     # Absent model tables may be created by the existing fresh-table path.
@@ -427,11 +486,45 @@ async def _seed_platforms() -> None:
 
 
 async def _seed_bootstrap_tenant() -> None:
-    """Create the workspace used by tenant-scoped legacy fixtures."""
+    """Create the workspace used by tenant-scoped legacy fixtures.
+
+    A migrated schema requires ``plan_holder_user_id`` (0155); the bootstrap
+    workspace needs a payer that exists before the first real account, so the
+    platform administrator is created here when the schema has none.
+    """
     from app.core.config import settings
     from app.models.managers.tenant_manager import tenants
 
-    await tenants.get_or_create_owner(settings.DEFAULT_TENANT_SLUG)
+    await tenants.get_or_create_owner(settings.DEFAULT_TENANT_SLUG, plan_holder_user_id=await _seed_plan_holder())
+
+
+async def _seed_plan_holder() -> int:
+    """The platform administrator that owns the bootstrap workspace tariff."""
+    from app.core.tenant_context import tenant_scope
+    from app.models import PlatformRole, Role, User
+    from app.types import PlatformRoleType
+
+    with tenant_scope(bypass=True):
+        existing = await (
+            User.objects.filter(is_active=True)
+            .join(Role, Role.id == User.role_id)
+            .filter(Role.codename == str(PlatformRoleType.ADMIN))
+            .order_by("id")
+            .first()
+        )
+        if existing is not None:
+            return existing.id
+        role = await PlatformRole.objects.get_by_codename(PlatformRoleType.ADMIN)
+        if role is None:
+            raise RuntimeError("Bootstrap plan holder seeding requires the 'admin' platform role row.")
+        holder = await User.objects.create(
+            username="bootstrap_plan_holder",
+            email="bootstrap-plan-holder@localhost.invalid",
+            hashed_password="synthetic-hash-never-a-credential",
+            role_id=role.id,
+            is_active=True,
+        )
+        return holder.id
 
 
 async def _seed_permissions() -> None:

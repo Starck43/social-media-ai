@@ -13,7 +13,7 @@ import secrets
 from sqlalchemy import Column, Integer, MetaData, Table, Text, text
 
 from app.core.database import async_engine
-from scripts.setup_test_db import _missing_columns
+from scripts.setup_test_db import _missing_columns, _nullability_drift
 
 
 def _schema_name() -> str:
@@ -37,5 +37,59 @@ async def test_missing_columns_reports_dropped_but_not_present():
             # ...and a column the model has but the schema lost is named exactly.
             await conn.execute(text(f'alter table "{schema}"."items" drop column name'))
             assert await _missing_columns(conn, metadata, schema) == ["items.name"]
+        finally:
+            await trans.rollback()
+
+
+async def test_nullability_drift_names_both_directions_and_honours_the_recorded_contract():
+    """A migrated schema is the authority; the metadata stays the model's view."""
+    schema = _schema_name()
+    metadata = MetaData()
+    Table(
+        "tenants",
+        metadata,
+        Column("id", Integer, primary_key=True),
+        Column("plan_holder_user_id", Integer, nullable=True),
+        Column("name", Text, nullable=False),
+        schema=schema,
+    )
+
+    async with async_engine.connect() as conn:
+        trans = await conn.begin()
+        try:
+            await conn.execute(text(f'create schema "{schema}"'))
+            await conn.execute(
+                text(
+                    f'create table "{schema}"."tenants" '
+                    "(id integer primary key, plan_holder_user_id integer not null, name text not null)"
+                )
+            )
+            looser, unrecorded = await _nullability_drift(conn, metadata, schema, existing_tables={"tenants"})
+            # ...the live schema requires a plan holder the model leaves optional,
+            # and 0155 owns that difference, so it is recorded rather than refused...
+            assert (looser, unrecorded) == ([], [])
+
+            # ...an unrecorded stricter column is refused by name...
+            await conn.execute(text(f'alter table "{schema}"."tenants" alter column name drop not null'))
+            await conn.execute(text(f'alter table "{schema}"."tenants" alter column plan_holder_user_id drop not null'))
+            looser, unrecorded = await _nullability_drift(conn, metadata, schema, existing_tables={"tenants"})
+            assert looser == ["tenants.name"]
+            assert unrecorded == []
+
+            # ...and a stricter column nobody recorded is named, not silently accepted...
+            await conn.execute(text(f'alter table "{schema}"."tenants" add column extra integer not null default 0'))
+            extra_metadata = MetaData()
+            Table(
+                "tenants",
+                extra_metadata,
+                Column("id", Integer, primary_key=True),
+                Column("plan_holder_user_id", Integer, nullable=True),
+                Column("name", Text, nullable=True),
+                Column("extra", Integer, nullable=True),
+                schema=schema,
+            )
+            looser, unrecorded = await _nullability_drift(conn, extra_metadata, schema, existing_tables={"tenants"})
+            assert looser == []
+            assert unrecorded == ["tenants.extra"]
         finally:
             await trans.rollback()

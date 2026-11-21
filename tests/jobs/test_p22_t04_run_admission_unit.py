@@ -98,11 +98,11 @@ async def test_revoked_binding_stops_before_step_execution(monkeypatch):
     resolver = AsyncMock(return_value=ResolutionIssue.REAUTH)
     monkeypatch.setattr(task_run_worker, "resolve_task_resource", resolver)
     binding = SimpleNamespace(name="inbox", capability="mailru_mail.headers.read", selection=lambda: object())
-    plan = SimpleNamespace(bindings=[binding])
+    step = SimpleNamespace(name="read", bindings=["inbox"], inputs={})
+    plan = SimpleNamespace(bindings=[binding], steps=[step])
     run = SimpleNamespace(tenant_id=7, principal_id=19)
-    step = SimpleNamespace(bindings=["inbox"])
     with pytest.raises(task_run_worker.TaskRunStopped, match="reauth_required"):
-        await task_run_worker._resolve_bindings(object(), run, plan, step)
+        await task_run_worker._resolve_bindings(object(), run, plan, step, {})
     resolver.assert_awaited_once()
 
 

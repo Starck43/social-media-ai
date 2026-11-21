@@ -252,6 +252,7 @@ async def test_supported_worker_completes_with_mocked_mail(workspace, monkeypatc
     provider = MagicMock(return_value=[(42, 1, "a@example.invalid"), (42, 2, "a@example.invalid")])
     monkeypatch.setattr(task_run_operations, "_read_folder", provider)
     monkeypatch.setattr(task_run_operations, "decrypt_secret", lambda _: "synthetic-password")
+    assert not await JobManager.start_running(receipt.job_id)
     job = await JobManager.claim_job(receipt.job_id)
     assert job is not None
     outcome = await _execute_claimed(job)

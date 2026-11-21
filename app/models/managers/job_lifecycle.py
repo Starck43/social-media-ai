@@ -479,6 +479,7 @@ class JobLifecycleMixin:
                     .where(
                         JobModel.id == job_id,
                         JobModel.status == "pending",
+                        JobModel.task_run_id.is_(None),
                         available_attempt_budget(JobModel),
                     )
                     .values(

@@ -26,6 +26,7 @@ def row(**changes):
         tenant_id=31,
         job_type="learn",
         agent_task_id=9,
+        task_run_id=None,
         status="running",
         attempts=2,
         started_at=NOW,

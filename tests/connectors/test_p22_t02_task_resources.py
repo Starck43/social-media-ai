@@ -305,3 +305,19 @@ async def test_cloud_folder_with_mismatched_stored_platform_is_rejected(monkeypa
         )
         == resources.ResolutionIssue.UNAVAILABLE
     )
+
+
+@pytest.mark.asyncio
+async def test_shared_workspace_lookups_refresh_identity_mapped_rows(monkeypatch):
+    from app.models.managers import workspace_connection_manager as workspace
+
+    monkeypatch.setattr(workspace, "get_current_user", lambda: SimpleNamespace(id=2, is_active=True))
+    monkeypatch.setattr(workspace, "current_tenant_id", lambda: 1)
+    result = lambda value: SimpleNamespace(scalar_one_or_none=lambda: value)
+    execute = AsyncMock(side_effect=[result(value) for value in (2, 1, SimpleNamespace(role_id=4), "owner", 7)])
+    session = SimpleNamespace(execute=execute)
+    await workspace._authorize(session, 1, 2, require_source_view=True)
+    await workspace._connection(session, 1, 2, 7)
+    statements = [args.args[0] for args in execute.await_args_list]
+    assert statements[2].get_execution_options()["populate_existing"] is True
+    assert statements[4].get_execution_options()["populate_existing"] is True

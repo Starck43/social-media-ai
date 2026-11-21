@@ -91,6 +91,7 @@ async def _social_issue(session, tenant_id, actor_id, capability, selection):
             Platform.platform_type == platform_type,
             Platform.is_active.is_(True),
         )
+        .execution_options(populate_existing=True)
     )
     if source is None:
         return ResolutionIssue.UNAVAILABLE

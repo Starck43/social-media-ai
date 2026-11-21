@@ -257,3 +257,102 @@ async def test_supported_worker_completes_with_mocked_mail(workspace, monkeypatc
     with workspace.scope():
         visible = await task_run_service.get_receipt(receipt.run_id)
         assert visible.result["coverage"] == "complete"
+
+
+async def test_manual_scheduler_race_keeps_one_active_job_and_advances_cursor(workspace, monkeypatch):
+    from app.models.scheduling.job import Job
+    from app.services import task_run_admission
+
+    require_isolated_schema()
+    task, reference, _ = await _publish(workspace, scheduled=True)
+    with workspace.scope():
+        trigger = await task_trigger_service.configure(
+            task.id, revision=reference.revision, expected_version=reference.task_version, enabled=True
+        )
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    original_insert = task_run_admission._insert_run
+
+    async def gated_insert(session, **kwargs):
+        if kwargs.get("manual_actor_id"):
+            entered.set()
+            await asyncio.wait_for(release.wait(), 5)
+        return await original_insert(session, **kwargs)
+
+    monkeypatch.setattr(task_run_admission, "_insert_run", gated_insert)
+
+    async def manual_admission():
+        with workspace.scope():
+            return await task_run_service.admit_manual(
+                task.id, expected_revision=reference.revision, request_key="race-manual"
+            )
+
+    async def schedule_tick():
+        with tenant_scope(workspace.tenants[0].id):
+            return await task_trigger_service.tick(workspace.tenants[0].id, trigger.next_due_at)
+
+    manual = asyncio.create_task(manual_admission())
+    scheduler = None
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        scheduler = asyncio.create_task(schedule_tick())
+        await asyncio.sleep(0.2)
+        assert not scheduler.done(), "scheduler should wait while admission holds workspace locks"
+    finally:
+        release.set()
+        receipt = await asyncio.wait_for(manual, 5)
+    assert await asyncio.wait_for(scheduler, 5) == {"due": 1, "enqueued": 0, "failed": 0}
+    async with async_session_maker() as session:
+        runs = (await session.scalars(select(TaskRun).where(TaskRun.task_id == task.id))).all()
+        jobs = (await session.scalars(select(Job).where(Job.task_run_id.in_([run.id for run in runs])))).all()
+        current = await session.get(TaskTrigger, trigger.trigger_id)
+        assert len(runs) == 2 and len(jobs) == 1
+        assert {run.status for run in runs} == {"pending", "skipped"}
+        assert jobs[0].id == receipt.job_id
+        assert current.next_due_at > trigger.next_due_at
+
+
+async def test_mid_run_membership_revocation_stops_the_next_step(workspace, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from app.jobs.dispatcher import _execute_claimed
+    from app.models import TenantUser
+    from app.models.managers.job_manager import JobManager
+    from app.services import task_run_operations, task_run_worker
+
+    require_isolated_schema()
+    task, reference, _ = await _publish(workspace)
+    with workspace.scope():
+        receipt = await task_run_service.admit_manual(task.id, expected_revision=reference.revision, request_key="loss")
+    provider = MagicMock(return_value=[(42, 1, "a@example.invalid")])
+    group = AsyncMock(side_effect=AssertionError("revoked actor must not execute the next step"))
+    monkeypatch.setattr(task_run_operations, "_read_folder", provider)
+    monkeypatch.setattr(task_run_operations, "decrypt_secret", lambda _: "synthetic-password")
+    monkeypatch.setattr(
+        task_run_operations, "OPERATIONS", {**task_run_operations.OPERATIONS, "mail.group_by_sender": group}
+    )
+    original_execute = task_run_worker._execute_step
+
+    async def revoke_after_first_step(claim, plan, methodology, step):
+        await original_execute(claim, plan, methodology, step)
+        if step.name == "read":
+            async with async_session_maker() as session, session.begin():
+                membership = await session.scalar(
+                    select(TenantUser).where(
+                        TenantUser.tenant_id == workspace.tenants[0].id, TenantUser.user_id == workspace.user.id
+                    )
+                )
+                membership.is_active = False
+
+    monkeypatch.setattr(task_run_worker, "_execute_step", revoke_after_first_step)
+    job = await JobManager.claim_job(receipt.job_id)
+    assert job is not None
+    outcome = await _execute_claimed(job)
+    provider.assert_called_once()
+    group.assert_not_awaited()
+    assert outcome["status"] == "failed"
+    async with async_session_maker() as session:
+        run = await session.get(TaskRun, receipt.run_id)
+        assert run.status == "failed"
+        assert run.result == {"steps": {"read": {"status": "done", "count": 1}}, "code": "task_authorization_lost"}
+        assert run.checkpoint_encrypted is None

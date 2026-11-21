@@ -515,3 +515,62 @@ async def test_scheduler_manual_race_keeps_one_active_job_when_scheduler_wins(wo
         assert len(runs) == 2 and len(jobs) == 1
         assert {run.status for run in runs} == {"pending", "skipped"}
         assert next(run for run in runs if run.job_id).trigger_id == trigger.trigger_id
+
+
+async def test_effectful_plan_fails_admission_without_creating_run_or_job(workspace):
+    from app.models.scheduling.job import Job
+    from app.services.execution_plan_contracts import ExecutionPlanError
+
+    require_isolated_schema()
+    connection_id, pin = await _connection(workspace)
+    with workspace.scope():
+        task = await task_service.create(CreateTask(title="Synthetic unsupported write"))
+        reference = await execution_plan_service.publish(
+            task.id, task.version, json.dumps(mail_plan(connection_id, pin))
+        )
+        with pytest.raises(ExecutionPlanError, match="unsupported_execution_operation"):
+            await task_run_service.admit_manual(task.id, expected_revision=reference.revision, request_key="write")
+    async with async_session_maker() as session:
+        assert (await session.scalars(select(TaskRun).where(TaskRun.task_id == task.id))).all() == []
+        assert (await session.scalars(select(Job).where(Job.tenant_id == workspace.tenants[0].id))).all() == []
+
+
+async def test_paid_plan_fails_admission_without_creating_run_or_job(workspace, monkeypatch):
+    from types import SimpleNamespace
+
+    from app.models import AgentScenario
+    from app.models.scheduling.job import Job
+    from app.services import task_execution_plans
+    from app.services.execution_plan_contracts import map_social_plan
+
+    require_isolated_schema()
+
+    async def allow_synthetic_vk(*args, **kwargs):
+        return SimpleNamespace(allowed=True)
+
+    monkeypatch.setattr(task_execution_plans, "check_canonical_read_access", allow_synthetic_vk)
+    async with async_session_maker() as session, session.begin():
+        scenario = AgentScenario(tenant_id=workspace.tenants[0].id, name="Synthetic", base_prompt="Synthetic only")
+        session.add(scenario)
+        await session.flush()
+        scenario_id = scenario.id
+    plan = map_social_plan(
+        {
+            "task_plan": {
+                "source_scope": "discovery",
+                "collection": {"queries": ["synthetic"]},
+                "scenario_id": scenario_id,
+                "vk_access": {"mode": "api"},
+            },
+            "collect_before_analyze": True,
+        },
+        job_type="analyze",
+    )
+    with workspace.scope():
+        task = await task_service.create(CreateTask(title="Synthetic paid plan"))
+        reference = await execution_plan_service.publish(task.id, task.version, plan.model_dump_json())
+        with pytest.raises(TaskRunAdmissionError, match="payer_unavailable"):
+            await task_run_service.admit_manual(task.id, expected_revision=reference.revision, request_key="paid")
+    async with async_session_maker() as session:
+        assert (await session.scalars(select(TaskRun).where(TaskRun.task_id == task.id))).all() == []
+        assert (await session.scalars(select(Job).where(Job.tenant_id == workspace.tenants[0].id))).all() == []

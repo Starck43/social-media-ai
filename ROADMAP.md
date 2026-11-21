@@ -45,7 +45,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
 
-- [P22-T03](docs/tasks/p22-t03.md) Task execution profiles, steps and resource bindings — **IN_PROGRESS** · Codex · `codex resume 01a1fdbb-2b67-75d1-8ce4-f5e9aacdb9b6` · `P1` · `C4`
+- [P22-T03](docs/tasks/p22-t03.md) Task execution profiles, steps and resource bindings — **READY** · Codex · `codex resume 01a1fdbb-2b67-75d1-8ce4-f5e9aacdb9b6` · `P1` · `C4`
 - [P22-T04](docs/tasks/p22-t04.md) Run admission, scheduler and worker integration — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C5`
 - [P22-T05](docs/tasks/p22-t05.md) Task actions, decisions and confirmed deletion — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
 - [P22-T06](docs/tasks/p22-t06.md) Legacy ID mapping, compatibility writers and backfill — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C5`

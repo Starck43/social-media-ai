@@ -25,21 +25,20 @@ from app.models.types.encrypted import EncryptedText
 S = settings.DB_SCHEMA
 
 
-class PlannerTask(Base, TenantScopedMixin, TimestampMixin):
-    __tablename__ = "planner_tasks"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "id", name="uq_planner_task_tenant"),
-        UniqueConstraint("tenant_id", "series_id", "occurrence_key", name="uq_planner_occurrence"),
-        UniqueConstraint("tenant_id", "previous_occurrence_id", name="uq_planner_successor"),
+def task_constraints(table: str, prefix: str):
+    return (
+        UniqueConstraint("tenant_id", "id", name=f"uq_{prefix}_task_tenant"),
+        UniqueConstraint("tenant_id", "series_id", "occurrence_key", name=f"uq_{prefix}_occurrence"),
+        UniqueConstraint("tenant_id", "previous_occurrence_id", name=f"uq_{prefix}_successor"),
         ForeignKeyConstraint(
-            ["tenant_id", "series_id"], [f"{S}.planner_tasks.tenant_id", f"{S}.planner_tasks.id"], ondelete="CASCADE"
+            ["tenant_id", "series_id"], [f"{S}.{table}.tenant_id", f"{S}.{table}.id"], ondelete="CASCADE"
         ),
         ForeignKeyConstraint(
-            ["tenant_id", "parent_id"], [f"{S}.planner_tasks.tenant_id", f"{S}.planner_tasks.id"], ondelete="CASCADE"
+            ["tenant_id", "parent_id"], [f"{S}.{table}.tenant_id", f"{S}.{table}.id"], ondelete="CASCADE"
         ),
         ForeignKeyConstraint(
             ["tenant_id", "previous_occurrence_id"],
-            [f"{S}.planner_tasks.tenant_id", f"{S}.planner_tasks.id"],
+            [f"{S}.{table}.tenant_id", f"{S}.{table}.id"],
             ondelete="CASCADE",
             deferrable=True,
             initially="DEFERRED",
@@ -53,18 +52,20 @@ class PlannerTask(Base, TenantScopedMixin, TimestampMixin):
             deferrable=True,
             initially="DEFERRED",
         ),
-        CheckConstraint("priority IN ('low','medium','high','critical')", name="ck_planner_priority"),
-        CheckConstraint("status IN ('todo','in_progress','done','cancelled')", name="ck_planner_status"),
-        CheckConstraint("due_at IS NULL OR due_date IS NULL", name="ck_planner_deadline"),
+        CheckConstraint("priority IN ('low','medium','high','critical')", name=f"ck_{prefix}_priority"),
+        CheckConstraint("status IN ('todo','in_progress','done','cancelled')", name=f"ck_{prefix}_status"),
+        CheckConstraint("due_at IS NULL OR due_date IS NULL", name=f"ck_{prefix}_deadline"),
         CheckConstraint(
-            "recurrence IS NULL OR due_at IS NOT NULL OR due_date IS NOT NULL", name="ck_planner_recurrence_due"
+            "recurrence IS NULL OR due_at IS NOT NULL OR due_date IS NOT NULL", name=f"ck_{prefix}_recurrence_due"
         ),
-        CheckConstraint("version > 0 AND occurrence_index >= 0", name="ck_planner_versions"),
-        CheckConstraint("parent_id IS NULL OR parent_id != id", name="ck_planner_parent"),
-        CheckConstraint("(status = 'done') = (completed_at IS NOT NULL)", name="ck_planner_completion"),
-        Index("ix_planner_workspace_due", "tenant_id", "status", "due_at", "due_date"),
-        {"schema": S},
+        CheckConstraint("version > 0 AND occurrence_index >= 0", name=f"ck_{prefix}_versions"),
+        CheckConstraint("parent_id IS NULL OR parent_id != id", name=f"ck_{prefix}_parent"),
+        CheckConstraint("(status = 'done') = (completed_at IS NOT NULL)", name=f"ck_{prefix}_completion"),
+        Index(f"ix_{prefix}_workspace_due", "tenant_id", "status", "due_at", "due_date"),
     )
+
+
+class TaskColumns:
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     pii_updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1, server_default="1")
     owner_user_id: Mapped[int] = mapped_column(ForeignKey(f"{S}.users.id", ondelete="CASCADE"), nullable=False)
@@ -93,3 +94,8 @@ class PlannerTask(Base, TenantScopedMixin, TimestampMixin):
     series_template_encrypted: Mapped[str] = mapped_column(EncryptedText(), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PlannerTask(TaskColumns, Base, TenantScopedMixin, TimestampMixin):
+    __tablename__ = "planner_tasks"
+    __table_args__ = (*task_constraints(__tablename__, "planner"), {"schema": S})

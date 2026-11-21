@@ -375,8 +375,11 @@ async def check_existing_schema(conn, metadata, schema: str, *, require_all_tabl
         raise RuntimeError(
             "Test bootstrap refused: the live schema requires columns the model leaves nullable: "
             + ", ".join(sorted(unrecorded))
-            + ". Record the owning migration in KNOWN_STRICT_COLUMNS with the reason, or reconcile "
-            "the metadata; no column was changed."
+            + ". Record the owning migration in KNOWN_STRICT_COLUMNS with the reason (recorded owners: "
+            + ", ".join(
+                f"{table}.{column} -> {migration}" for (table, column), migration in KNOWN_STRICT_COLUMNS.items()
+            )
+            + "), or reconcile the metadata; no column was changed."
         )
 
     # Absent model tables may be created by the existing fresh-table path.

@@ -293,6 +293,26 @@ class BootstrapOrderTests(unittest.IsolatedAsyncioTestCase):
         await bootstrap.check_existing_schema(catalog, value, SCHEMA)
         self.assertTrue(all(sql.startswith("select ") for sql, _ in catalog.calls))
 
+        # The same catalog is refused without the recorded owner, so the test
+        # fails if the drift check disappears instead of the entry disappearing.
+        with patch.dict(bootstrap.KNOWN_STRICT_COLUMNS, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "tenants.plan_holder_user_id"):
+                await bootstrap.check_existing_schema(
+                    Catalog(
+                        tables={"items", "tenants"},
+                        columns=[
+                            ("items", "id"),
+                            ("items", "tenant_id"),
+                            ("items", "name"),
+                            ("tenants", "id"),
+                            ("tenants", "plan_holder_user_id"),
+                        ],
+                        nullability={("tenants", "id"): "NO", ("tenants", "plan_holder_user_id"): "NO"},
+                    ),
+                    value,
+                    SCHEMA,
+                )
+
     async def test_existing_compatible_schema_keeps_seed_path_after_both_checks(self):
         mocks, engine, error = await self.invoke(Catalog())
         self.assertIsNone(error)

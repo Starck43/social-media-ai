@@ -5,7 +5,7 @@ from alembic import op
 
 from app.core.config import settings
 
-revision = "p22t03_execution_plan"
+revision = "0159"
 down_revision = "0158"
 branch_labels = None
 depends_on = None

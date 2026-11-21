@@ -32,7 +32,6 @@ EXPECTED = {
     "scenarios": ("/app/scenarios", "analysis.scenario.view"),
     "analytics": ("/app/analytics", "analysis.result.view"),
     "digests": ("/app/digests", "notifications.digest_run.view"),
-    "actions": ("/app/actions", "scheduling.action.view"),
     "files": ("/app/knowledge/files", "analysis.result.view"),
 }
 

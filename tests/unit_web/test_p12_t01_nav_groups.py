@@ -107,7 +107,6 @@ def test_ready_routes_remain_and_mobile_bar_is_daily_loop() -> None:
         "tasks": "/app/task-hub",
         "analytics": "/app/analytics",
         "digests": "/app/digests",
-        "actions": "/app/actions",
         "knowledge": "/app/knowledge",
         "documents": "/app/documents",
         "communications": "/app/communications",

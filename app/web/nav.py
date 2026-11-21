@@ -40,9 +40,11 @@ NAV_GROUP_LABELS: dict[str, str] = {
 }
 
 
-# Proposal v7: home, chat and tasks are pinned above the groups as everyday
-# entries. Communication holds the correspondence registry, the approvals and the
-# contact cards they come from. The rest is grouped by the work it belongs to --
+# Proposal v8: home, chat and tasks are pinned above the groups as everyday
+# entries. Communication holds the correspondence registry and the contact cards
+# it comes from; approvals are decisions on work, so they surface on the task card
+# (P22-T08 «Ждут моего решения») and through the header «На согласовании» chip,
+# not as a section of their own. The rest is grouped by the work it belongs to --
 # documentation (with the document-backed supplier comparison), reports and the
 # assistant's inputs/scenarios. Commitments are not a section: P22-T15 turns them
 # into dated tasks, so the legacy catalogue keeps its URL without a menu slot. Connection setup (1C) and the job queue stay
@@ -67,15 +69,6 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         "Переписка",
         required_permission="scheduling.action.view",
         icon="inbox",
-        group="messages",
-        group_label="Общение",
-    ),
-    NavItem(
-        "actions",
-        "/app/actions",
-        "Одобрения",
-        required_permission="scheduling.action.view",
-        icon="check",
         group="messages",
         group_label="Общение",
     ),

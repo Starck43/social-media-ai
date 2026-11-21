@@ -1,9 +1,10 @@
 """Canonical task access and occurrence behavior on an isolated PostgreSQL schema."""
 
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from cryptography.fernet import Fernet
@@ -212,7 +213,8 @@ async def test_assignee_can_edit_and_complete_without_seeing_restricted_links(ta
                 contact_id=contact.id,
                 visibility="shared",
                 assignee_id=assignee_id,
-                due_date=date(2099, 11, 21),
+                due_at=datetime(2099, 3, 28, 9, tzinfo=ZoneInfo("Europe/Berlin")),
+                timezone="Europe/Berlin",
                 recurrence="FREQ=DAILY",
             )
         )
@@ -232,6 +234,7 @@ async def test_assignee_can_edit_and_complete_without_seeing_restricted_links(ta
         completed = await task_service.complete(child.id, changed.version)
         assert completed.task.status == "done"
         assert completed.next_task.title == "Edited shared child"
+        assert completed.next_task.due_at == datetime(2099, 3, 29, 7, tzinfo=timezone.utc)
         assert completed.next_task.parent_id is None and completed.next_task.contact_id is None
 
     with actor(world, 0):

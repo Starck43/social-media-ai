@@ -309,3 +309,45 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task update | --tenant | option | str | yes | null |
 | python -m cli.main task vk-connections | --tenant | option | str | yes | null |
 | python -m cli.main task vk-connections | --user | option | int | yes | null |
+| python -m cli.main worktasks | --tenant | option | str | yes | null |
+| python -m cli.main worktasks | --user | option | int range | yes | null |
+| python -m cli.main worktasks actions | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks complete | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks complete | --version | option | int range | yes | null |
+| python -m cli.main worktasks create | --title, -t | option | str | yes | null |
+| python -m cli.main worktasks create | --description, -d | option | str | no | "" |
+| python -m cli.main worktasks create | --visibility | option | str | no | "private" |
+| python -m cli.main worktasks create | --priority | option | str | no | "medium" |
+| python -m cli.main worktasks create | --due-date | option | str | no | null |
+| python -m cli.main worktasks create | --due-at | option | str | no | null |
+| python -m cli.main worktasks create | --timezone | option | str | no | "UTC" |
+| python -m cli.main worktasks create | --recurrence | option | str | no | null |
+| python -m cli.main worktasks decide | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks decide | --reference | option | str | yes | null |
+| python -m cli.main worktasks decide | --outcome | option | str | no | "accepted" |
+| python -m cli.main worktasks decide | --preview | option | boolean | no | false |
+| python -m cli.main worktasks decide | --confirm | option | str | no | null |
+| python -m cli.main worktasks decide | --reason | option | str | no | "" |
+| python -m cli.main worktasks delete | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks delete | --scope | option | str | no | "occurrence" |
+| python -m cli.main worktasks delete | --confirm | option | str | no | null |
+| python -m cli.main worktasks edit | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks edit | --version | option | int range | yes | null |
+| python -m cli.main worktasks edit | --scope | option | str | no | "occurrence" |
+| python -m cli.main worktasks edit | --title | option | str | no | null |
+| python -m cli.main worktasks edit | --description | option | str | no | null |
+| python -m cli.main worktasks edit | --priority | option | str | no | null |
+| python -m cli.main worktasks edit | --status | option | str | no | null |
+| python -m cli.main worktasks list | --limit | option | int range | no | 50 |
+| python -m cli.main worktasks list | --before-id | option | int range | no | null |
+| python -m cli.main worktasks list | --view | option | str | no | null |
+| python -m cli.main worktasks preview | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks preview | --plan | option | str | yes | null |
+| python -m cli.main worktasks resolve | namespace | argument | str | yes | null |
+| python -m cli.main worktasks resolve | legacy_id | argument | int range | yes | null |
+| python -m cli.main worktasks run | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks run | --request-key | option | str | no | null |
+| python -m cli.main worktasks runs | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks runs | --limit | option | int range | no | 50 |
+| python -m cli.main worktasks runs | --before-id | option | int range | no | null |
+| python -m cli.main worktasks show | task_id | argument | int range | yes | null |

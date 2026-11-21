@@ -1867,6 +1867,39 @@ No existing routes are moved or silently opted in.
 - Examples and schemas use synthetic IDs only. Never include personal data,
   paths, payloads, authorization material or credential examples.
 
+### Canonical work tasks (v2)
+
+`GET|POST /api/v2/tasks…` is the canonical local task namespace (P22-T07). It is
+deliberately separate from `GET /api/v1/tasks`, which stays the social-monitoring
+surface: the two meanings of "task" never share a route, so a wrong call fails
+closed instead of launching the wrong job. Every route uses the business envelope
+(`code`, `message`, `request_id`), sits behind `ApiScopeMiddleware` and rechecks
+`planner.task.*` at execution.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v2/tasks` | list with `limit`, `before_id`, `status`, `view=mine\|team` |
+| GET | `/api/v2/tasks/{id}` | read one task |
+| POST | `/api/v2/tasks` | create; body is the canonical create schema with `visibility` |
+| PATCH | `/api/v2/tasks/{id}` | edit with `expected_version` and `scope=occurrence\|series` |
+| POST | `/api/v2/tasks/{id}/plan/preview` | validate a plan; no publish, no run |
+| POST | `/api/v2/tasks/{id}/complete` | complete work with `expected_version`; returns the successor |
+| POST | `/api/v2/tasks/{id}/delete/preview` | deletion effects and a signed token |
+| POST | `/api/v2/tasks/{id}/delete` | confirmed deletion with that token |
+| POST | `/api/v2/tasks/{id}/runs` | run the current published revision; `Idempotency-Key` required |
+| GET | `/api/v2/tasks/{id}/runs` | run receipts, newest first |
+| GET | `/api/v2/tasks/{id}/actions` | available actions and pending decisions |
+| POST | `/api/v2/tasks/{id}/decisions/preview` | prepare a decision, returns its token |
+| POST | `/api/v2/tasks/{id}/decisions` | close it with the token |
+| GET | `/api/v2/tasks/legacy/{namespace}/{legacy_id}` | opaque legacy reference → canonical task |
+
+Run-now binds the actor, the `Idempotency-Key` and the `(task, revision)`
+fingerprint: a replay returns the first receipt with `replayed: true`, and a
+different revision under the same key is `409`. Statuses: `403` rights refusal,
+`404` absent or invisible (one answer, no existence oracle), `409` stale version
+or replay conflict, `422` rejected plan or malformed page.
+
+
 ### OpenAPI exposure
 
 `API_DOCS_ENABLED` controls `/docs`, `/redoc` and `/openapi.json` together.

@@ -17,7 +17,9 @@ from . import (  # noqa: F401
     system,
     tasks,
     web_research,
+    work_tasks,
 )
 
 planner.register_planner_tools()
+work_tasks.register_work_task_tools()
 communications.register_communications_tools()

@@ -75,3 +75,16 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main task update | Update an existing task. Only provided fields are changed. |
 | python -m cli.main task vk-connections | Read connection metadata and capabilities without resolving tokens. |
 | python -m cli.main task vk-search-categories | List declared VK search-result categories and their evidence status. |
+| python -m cli.main worktasks | Canonical work tasks: list, create, edit, plan, run, decide |
+| python -m cli.main worktasks actions | Show available actions and pending decisions. |
+| python -m cli.main worktasks complete | Complete work on a task with its expected version. |
+| python -m cli.main worktasks create | Create one canonical task. |
+| python -m cli.main worktasks decide | Preview a decision, then close it with the returned token. |
+| python -m cli.main worktasks delete | Preview a deletion, or confirm it with the token the preview returned. |
+| python -m cli.main worktasks edit | Edit a task; a stale version is refused instead of overwritten. |
+| python -m cli.main worktasks list | List canonical tasks visible to the caller. |
+| python -m cli.main worktasks preview | Validate a plan without publishing or running it. |
+| python -m cli.main worktasks resolve | Resolve an opaque legacy reference to its canonical task. |
+| python -m cli.main worktasks run | Run the current published revision manually. |
+| python -m cli.main worktasks runs | Show run receipts, newest first. |
+| python -m cli.main worktasks show | Read one task by canonical id. |

@@ -40,6 +40,26 @@ messenger message
 (импорт `toolset` срабатывает по побочному эффекту). Схемы уходят в LLM как
 OpenAI function calling.
 
+### Canonical work tasks (`work_task_*`, P22-T07)
+
+Fourteen tools mirror `/api/v2/tasks` and the `worktasks` CLI one-to-one; the
+parity test fails when a surface gains an operation the others lack. Reads:
+`work_task_list`, `work_task_get`, `work_task_runs`, `work_task_actions`,
+`work_task_delete_preview`, `work_task_preview`, `work_task_decision_preview`,
+`work_task_resolve_legacy`. Confirmed writes: `work_task_create`,
+`work_task_edit`, `work_task_complete`, `work_task_delete`, `work_task_run`,
+`work_task_decide`. Each is gated on `planner.task.view|create|update|delete` and
+passes one-use confirmation for the writes, exactly like `planner_create`.
+
+They return the service projection, not a copy: `actions` carries
+`work_status`, `latest_run`, `next_due_at`, the available action references and
+the actor-specific pending decisions. A refusal becomes
+`{"error", "code"}` (`work_task_unavailable`, `work_task_denied`,
+`work_task_stale`, `work_task_invalid_request`) instead of a raw exception.
+`work_task_run` requires `request_key`: the same key and revision replays the
+first receipt, a different revision under that key is refused.
+
+
 ### Permission gates (integrated foundation, PR #22)
 
 Runtime допускает только активного участника с привязанным активным User и

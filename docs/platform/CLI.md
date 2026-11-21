@@ -160,6 +160,33 @@ P22 task commands use the shared application service within the existing operato
 Manage the cron tasks that drive the task runner. Tasks are rows in the
 `agent_tasks` table.
 
+### Canonical work tasks (`worktasks`)
+
+`worktasks` is the operator transport for the canonical task (P22-T07). It calls
+the same agent-toolset handlers as the assistant, which call the same services as
+`/api/v2/tasks` — there is no CLI-only rule about rights, versions or admission.
+Every command needs an explicit workspace and an active member, and runs as that
+member; the CLI never acts as a bypass here.
+
+```bash
+python -m cli.main worktasks --tenant owner --user 3 list --limit 20
+python -m cli.main worktasks --tenant owner --user 3 show 42
+python -m cli.main worktasks --tenant owner --user 3 create -t "Позвонить поставщику" --visibility workspace
+python -m cli.main worktasks --tenant owner --user 3 edit 42 --version 2 --title "Позвонить в 15:00"
+python -m cli.main worktasks --tenant owner --user 3 preview 42 --plan plan.json   # no effects
+python -m cli.main worktasks --tenant owner --user 3 run 42 --request-key call-1    # repeat returns the same receipt
+python -m cli.main worktasks --tenant owner --user 3 runs 42
+python -m cli.main worktasks --tenant owner --user 3 actions 42
+python -m cli.main worktasks --tenant owner --user 3 delete 42 --scope series        # preview + token
+python -m cli.main worktasks --tenant owner --user 3 delete 42 --scope series --confirm <token>
+python -m cli.main worktasks --tenant owner --user 3 decide 42 --reference local:7 --outcome accepted --preview
+python -m cli.main worktasks --tenant owner --user 3 resolve planner 118
+```
+
+Refusals print the same bounded `{"error", "code"}` shape as the tools and exit
+non-zero, so a script can tell "denied", "stale" and "not found" apart.
+
+
 ### List Tasks
 
 ```bash

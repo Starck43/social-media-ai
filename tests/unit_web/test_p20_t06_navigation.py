@@ -36,6 +36,9 @@ EXPECTED = {
     "actions": ("/app/actions", "scheduling.action.view"),
     "jobs": ("/app/jobs", "scheduling.job.view"),
     "settings": ("/app/settings", None),
+    "files": ("/app/knowledge/files", "analysis.result.view"),
+    "onec": ("/app/settings/onec", "onec.data.view"),
+    "onec_audit": ("/app/settings/onec/audit", "onec.data.view"),
 }
 
 
@@ -68,10 +71,14 @@ def test_all_routes_are_unique_ready_and_keep_permissions():
 
 def test_group_order_and_mobile_order_are_stable():
     assert list(dict.fromkeys(item.group for item in nav.NAV_ITEMS)) == [
-        "work",
-        "clients",
-        "knowledge",
-        "monitoring",
+        "assistant",
+        "dashboard",
+        "tasks",
+        "messages",
+        "docs",
+        "crm",
+        "erp",
+        "data",
         "system",
     ]
     assert [item.key for item in nav.MOBILE_NAV_ITEMS] == ["dashboard", "chat", "communications", "tasks"]

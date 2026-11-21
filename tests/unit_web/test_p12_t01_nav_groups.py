@@ -65,10 +65,14 @@ class _StubPerms:
 
 def test_every_nav_item_belongs_to_a_declared_domain_group() -> None:
     assert set(NAV_GROUP_LABELS) == {
-        "work",
-        "clients",
-        "knowledge",
-        "monitoring",
+        "assistant",
+        "dashboard",
+        "tasks",
+        "messages",
+        "docs",
+        "crm",
+        "erp",
+        "data",
         "system",
     }
     for item in NAV_ITEMS:
@@ -117,6 +121,9 @@ def test_ready_routes_remain_and_mobile_bar_is_daily_loop() -> None:
         "followups": "/app/followups",
         "cases": "/app/cases",
         "contacts": "/app/contacts",
+        "files": "/app/knowledge/files",
+        "onec": "/app/settings/onec",
+        "onec_audit": "/app/settings/onec/audit",
     }
     assert [item.key for item in MOBILE_NAV_ITEMS] == ["dashboard", "chat", "communications", "tasks"]
     tasks = next(item for item in NAV_ITEMS if item.key == "tasks")

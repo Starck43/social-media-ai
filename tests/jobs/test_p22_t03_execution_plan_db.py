@@ -205,8 +205,9 @@ async def test_shared_scenario_pins_methodology_until_republish_and_blocks_revoc
 async def test_social_source_binding_enforces_tenant_at_service_and_database(workspace, monkeypatch):
     # Configure synthetic, local VK capability evidence. No requests reach VK.
     monkeypatch.setattr(settings, "VK_SERVICE_KEY", "synthetic-service-key")
-    monkeypatch.setattr(settings, "VK_SERVICE_METHOD_GRANTS", ["wall.get", "groups.getById", "users.get"])
-    monkeypatch.setattr(settings, "VK_SERVICE_METHOD_SCOPES", {})
+    methods = ["wall.get", "groups.getById", "users.get"]
+    monkeypatch.setattr(settings, "VK_SERVICE_METHOD_GRANTS", methods)
+    monkeypatch.setattr(settings, "VK_SERVICE_METHOD_SCOPES", {method: [] for method in methods})
     async with async_session_maker() as session, session.begin():
         platform = await session.scalar(select(Platform.id).where(Platform.platform_type == PlatformType.VK))
         sources = [

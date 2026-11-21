@@ -81,6 +81,7 @@ async def _authorize(session, tenant_id, actor_id, *, write=False, require_sourc
                 TenantUser.is_active.is_(True),
             )
             .with_for_update(read=True)
+            .execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
     if user is None or tenant is None or member is None or member.role_id is None:
@@ -100,6 +101,13 @@ async def _authorize(session, tenant_id, actor_id, *, write=False, require_sourc
 
 def _projection(row):
     # Explicit allowlist: never project arbitrary config, metadata or ciphertext.
+    safe_config = {}
+    if row.provider_id == "custom_mail":
+        safe_config = {
+            key: row.config.get(key, "")
+            for key in ("imap_host", "smtp_host")
+            if row.config.get(key)
+        }
     return {
         "id": row.id,
         "label": row.label,
@@ -107,6 +115,7 @@ def _projection(row):
         "provider_label": PROVIDERS[row.provider_id].label if row.provider_id in PROVIDERS else "Неизвестный сервис",
         "auth_method": row.auth_method,
         "account_login": row.config.get("account_login", ""),
+        "config": safe_config,
         "state": row.state,
         "state_label": STATE_LABELS.get(row.state, STATE_LABELS["error"]),
         "check_detail": CHECK_LABELS.get(row.check_code, ""),
@@ -136,6 +145,7 @@ async def _connection(session, tenant_id, actor_id, connection_id):
                 WorkspaceConnection.owner_user_id == actor_id,
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
     if row is None:
@@ -251,9 +261,13 @@ class WorkspaceConnectionManager:
                 if not password:
                     result = CheckResult("reauth", "secret_unavailable")
                 else:
-                    # Never use stored endpoints: the code-owned provider preset controls networking.
+                    # Fixed providers use catalog endpoints; custom mail stores only
+                    # validated hostnames and still passes through outbound policy.
+                    check_args = (row.provider_id, row.config["account_login"], password)
+                    if row.provider_id == "custom_mail":
+                        check_args += (row.config,)
                     worker = asyncio.create_task(
-                        asyncio.to_thread(check_mail, row.provider_id, row.config["account_login"], password)
+                        asyncio.to_thread(check_mail, *check_args)
                     )
                     try:
                         result = await asyncio.shield(worker)

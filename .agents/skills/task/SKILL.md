@@ -53,5 +53,8 @@ Fall through only when the previous audit route is unavailable or fails, and
 record the route and model that actually ran. The auditor returns only
 `ACCEPTED`, `CHANGES_REQUIRED`, or `BLOCKED` with concise evidence. The parent
 keeps ownership and does not claim acceptance without the auditor's verdict;
-the auditor performs the documented acceptance closeout only after verified
-integration.
+after `ACCEPTED`, the executor performs the documented verified-integration
+closeout and removes only its own merged task artifacts/worktree. Preserve
+dirty, active, foreign, unmerged or unclear workspaces and report anything
+retained. The auditor may update acceptance records according to the audit
+skill, but does not perform destructive cleanup on behalf of the executor.

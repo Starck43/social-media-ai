@@ -156,6 +156,19 @@ class CanonicalTaskService(PlannerService):
         await session.flush()
         return self.project(row)
 
+    async def successor_template(self, session, template, identity):
+        tenant_id = identity[0]
+        changes = {}
+        if template.assignee_id is not None:
+            if await self._active_assignee(session, tenant_id, template.assignee_id) is None:
+                changes["assignee_id"] = None
+        if template.contact_id is not None:
+            if await self._active_contact(session, tenant_id, template.contact_id) is None:
+                changes["contact_id"] = None
+        if changes:
+            template = template.model_copy(update=changes)
+        return await super().successor_template(session, template, identity)
+
     async def copy_occurrence_participants(self, session, row, successor):
         if successor.visibility == "private":
             return

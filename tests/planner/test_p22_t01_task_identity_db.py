@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.core.database import async_session_maker
 from app.core.permissions import permission_scope
 from app.core.tenant_context import tenant_scope
-from app.models import PlatformRole, Tenant, TenantUser, User, WorkspaceRole
+from app.models import Contact, PlatformRole, Tenant, TenantUser, User, WorkspaceRole
 from app.services.planner.canonical_tasks import CreateTask, UpdateParticipation, UpdateTask, task_service
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable, planner_service
 from tests.support.schema_guard import require_isolated_schema
@@ -130,3 +130,47 @@ async def test_private_shared_task_and_recurring_completion(task_world, monkeypa
     with actor(world, 1):
         with pytest.raises(PlannerUnavailable):
             await task_service.get(private.id)
+
+
+async def test_recurring_task_drops_stale_assignee_and_merged_contact(task_world, monkeypatch):
+    require_isolated_schema()
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    world = task_world
+    tenant_id = world.tenants[0].id
+    assignee_id = world.users[1].id
+    async with async_session_maker() as session:
+        source = Contact(tenant_id=tenant_id, display_name_encrypted="Synthetic contact")
+        target = Contact(tenant_id=tenant_id, display_name_encrypted="Synthetic merge target")
+        session.add_all([source, target])
+        await session.commit()
+
+    with actor(world, 0):
+        task = await task_service.create(
+            CreateTask(
+                title="Review synthetic recurring references",
+                assignee_id=assignee_id,
+                contact_id=source.id,
+                due_date=date(2099, 11, 21),
+                recurrence="FREQ=DAILY",
+            )
+        )
+
+    async with async_session_maker() as session:
+        membership = await session.scalar(
+            select(TenantUser).where(TenantUser.tenant_id == tenant_id, TenantUser.user_id == assignee_id)
+        )
+        membership.is_active = False
+        contact = await session.get(Contact, source.id)
+        contact.merged_into_id = target.id
+        await session.commit()
+
+    with actor(world, 0):
+        completion = await task_service.complete(task.id, task.version)
+        assert completion.task.status == "done"
+        assert completion.task.assignee_id == assignee_id
+        assert completion.task.contact_id == source.id
+        assert completion.next_task.assignee_id is None
+        assert completion.next_task.contact_id is None
+        following = await task_service.complete(completion.next_task.id, completion.next_task.version)
+        assert following.next_task.assignee_id is None
+        assert following.next_task.contact_id is None

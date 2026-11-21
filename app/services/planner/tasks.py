@@ -121,33 +121,39 @@ class PlannerService:
             raise PlannerUnavailable("planner_unavailable")
         return row
 
-    async def _references(self, session, request, identity, *, own_id=None):
-        tenant, _, _ = identity
-        if request.assignee_id is not None:
-            member = await session.scalar(
-                select(TenantUser.id)
-                .join(User, User.id == TenantUser.user_id)
-                .where(
-                    TenantUser.tenant_id == tenant,
-                    TenantUser.user_id == request.assignee_id,
-                    TenantUser.is_active.is_(True),
-                    User.is_active.is_(True),
-                )
-                .with_for_update(read=True)
+    async def _active_assignee(self, session, tenant_id, user_id):
+        return await session.scalar(
+            select(TenantUser.id)
+            .join(User, User.id == TenantUser.user_id)
+            .where(
+                TenantUser.tenant_id == tenant_id,
+                TenantUser.user_id == user_id,
+                TenantUser.is_active.is_(True),
+                User.is_active.is_(True),
             )
-            if member is None:
-                raise PlannerUnavailable("planner_unavailable")
+            .with_for_update(read=True)
+        )
+
+    async def _active_contact(self, session, tenant_id, contact_id):
+        return await session.scalar(
+            select(Contact.id)
+            .where(Contact.tenant_id == tenant_id, Contact.id == contact_id, Contact.merged_into_id.is_(None))
+            .with_for_update(read=True)
+        )
+
+    async def _references(self, session, request, identity, *, own_id=None):
+        tenant, _, role = identity
+        if (
+            request.assignee_id is not None
+            and await self._active_assignee(session, tenant, request.assignee_id) is None
+        ):
+            raise PlannerUnavailable("planner_unavailable")
         if request.contact_id is not None:
-            if ("contact", ActionType.VIEW) not in workspace_grants(identity[2]) or not has_permission(
+            if ("contact", ActionType.VIEW) not in workspace_grants(role) or not has_permission(
                 get_current_user(), "contact", ActionType.VIEW
             ):
                 raise PermissionError("planner_contact_denied")
-            contact = await session.scalar(
-                select(Contact.id)
-                .where(Contact.tenant_id == tenant, Contact.id == request.contact_id, Contact.merged_into_id.is_(None))
-                .with_for_update(read=True)
-            )
-            if contact is None:
+            if await self._active_contact(session, tenant, request.contact_id) is None:
                 raise PlannerUnavailable("planner_unavailable")
         ancestor, seen = request.parent_id, {own_id}
         for _ in range(100):
@@ -313,6 +319,10 @@ class PlannerService:
     async def reschedule(self, task_id, request: TaskReschedule, session):
         return await self._change(session, task_id, request, reschedule=True)
 
+    async def successor_template(self, session, template, identity):
+        await self._references(session, template, identity)
+        return template
+
     @with_db_session
     async def complete(self, task_id, expected_version, session):
         identity = await self._actor(session, ActionType.UPDATE)
@@ -343,7 +353,8 @@ class PlannerService:
             next_date = next_occurrence(anchor, template.recurrence, after=threshold, tz=template.timezone)
             if next_date is not None:
                 due, index = next_date
-                values = self.creation_fields(template)
+                successor_template = await self.successor_template(session, template, identity)
+                values = self.creation_fields(successor_template)
                 values["due_at" if template.due_at is not None else "due_date"] = due
                 key = occurrence_key(template.recurrence, anchor, due)
                 existing = await session.scalar(
@@ -366,9 +377,12 @@ class PlannerService:
                     previous_occurrence_id=row.id,
                     occurrence_index=index,
                     occurrence_key=key,
-                    series_template_encrypted=row.series_template_encrypted,
+                    series_template_encrypted=(
+                        row.series_template_encrypted
+                        if successor_template is template
+                        else successor_template.model_dump_json()
+                    ),
                 )
-                await self._references(session, template, identity)
                 session.add(next_row)
         row.status, row.completed_at, row.version = "done", now, row.version + 1
         await session.flush()

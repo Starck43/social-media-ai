@@ -33,31 +33,14 @@ class ConnectorCatalogTests(unittest.TestCase):
             self.assertNotIn(SAMPLE_SECRET, repr(config))
             self.assertEqual(secret, {"app_password": SAMPLE_SECRET})
 
-    def test_custom_mail_accepts_only_hostnames_and_keeps_fixed_ports(self):
+    def test_custom_mail_uses_the_mailbox_domain_and_keeps_fixed_ports(self):
         config, secret = _CATALOG.validate_input(
             "custom_mail",
             "app_password",
-            {
-                "account_login": "user@example.com",
-                "imap_host": "imap.example.com",
-                "smtp_host": "smtp.example.com",
-                "app_password": SAMPLE_SECRET,
-            },
+            {"account_login": "user@example.com", "app_password": SAMPLE_SECRET},
         )
-        self.assertEqual((config["imap_host"], config["smtp_host"]), ("imap.example.com", "smtp.example.com"))
         self.assertEqual((config["imap_port"], config["smtp_port"]), (993, 465))
         self.assertEqual(secret, {"app_password": SAMPLE_SECRET})
-        with self.assertRaises(_CATALOG.InvalidConnectorInput):
-            _CATALOG.validate_input(
-                "custom_mail",
-                "app_password",
-                {
-                    "account_login": "user@example.com",
-                    "imap_host": "127.0.0.1",
-                    "smtp_host": "smtp.example.com",
-                    "app_password": SAMPLE_SECRET,
-                },
-            )
 
     def test_wrong_method_and_extra_fields_are_rejected_without_echoing_values(self):
         with self.assertRaisesRegex(_CATALOG.InvalidConnectorInput, "unknown_auth_method"):

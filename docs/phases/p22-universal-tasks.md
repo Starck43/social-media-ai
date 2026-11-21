@@ -14,7 +14,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 4. [P22-T04 — Run admission, scheduler and worker integration](../tasks/p22-t04.md). Depends on P22-T03.
 5. [P22-T05 — Task actions, decisions and confirmed deletion](../tasks/p22-t05.md). Depends on P22-T01, P22-T04.
 6. [P22-T06 — Legacy ID mapping, compatibility writers and backfill](../tasks/p22-t06.md). Depends on P22-T01, P22-T03, P22-T04, P22-T05.
-7. [P22-T07 — Unified API, CLI and AI toolset](../tasks/p22-t07.md). Depends on P22-T03, P22-T04, P22-T05.
+7. [P22-T07 — Unified API, CLI and AI toolset](../tasks/p22-t07.md). Depends on P22-T03, P22-T04, P22-T05, P22-T06.
 8. [P22-T08 — Web Tasks, progressive editor and workspace views](../tasks/p22-t08.md). Depends on P22-T07.
 9. [P22-T09 — Admin connector setup and task operations](../tasks/p22-t09.md). Depends on P22-T02, P22-T05, P22-T07.
 10. [P22-T10 — Correspondence task and sender-grouped Messages](../tasks/p22-t10.md). Depends on P22-T02, P22-T03, P22-T04, P22-T07.

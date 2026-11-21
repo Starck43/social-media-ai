@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.access_catalog import workspace_grants
 from app.core.config import settings
 from app.core.database import async_session_maker
-from app.core.permissions import permission_scope
+from app.core.permissions import get_current_user, permission_scope
 from app.core.tenant_context import tenant_scope
 from app.integrations.catalog import CATALOG_VERSION
 from app.integrations.task_resources import WorkspaceAccountPin
@@ -25,7 +25,7 @@ from app.services.execution_plan_contracts import Binding, ExecutionPlanError, m
 from app.services.planner.canonical_tasks import CreateTask, task_service
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable
 from app.services.task_execution_plans import execution_plan_service
-from app.types import PlatformType, SourceType
+from app.types import ActionType, PlatformType, SourceType
 from tests.shared.execution_plan_payloads import mail_plan
 from tests.support.schema_guard import require_isolated_schema
 
@@ -62,8 +62,9 @@ async def workspace(monkeypatch):
         await session.commit()
 
     @contextmanager
-    def scope(index=0):
-        with tenant_scope(tenants[index].id), permission_scope(user, member_grants=workspace_grants("owner")):
+    def scope(index=0, *, grants=None):
+        effective = workspace_grants("owner") if grants is None else grants
+        with tenant_scope(tenants[index].id), permission_scope(user, member_grants=effective):
             yield
 
     try:
@@ -140,6 +141,12 @@ async def test_attaching_mail_keeps_identity_and_rechecks_folder_and_connection(
             await execution_plan_service.load_for_admission(note.id, first.revision)
     with workspace.scope(1), pytest.raises(PlannerUnavailable):
         await execution_plan_service.get_reference(note.id)
+    with tenant_scope(workspace.tenants[0].id):
+        async with async_session_maker() as session, session.begin():
+            with pytest.raises(ExecutionPlanError, match="schedule_unavailable"):
+                await execution_plan_service.load_for_scheduled_admission(
+                    note.id, first.revision, principal_id=workspace.user.id, session=session
+                )
 
 
 async def test_shared_scenario_pins_methodology_until_republish_and_blocks_revocation(workspace, monkeypatch):
@@ -147,7 +154,7 @@ async def test_shared_scenario_pins_methodology_until_republish_and_blocks_revoc
     async def allow_vk(*args, **kwargs):
         return SimpleNamespace(allowed=True)
 
-    monkeypatch.setattr(task_execution_plans, "check_selected_access", allow_vk)
+    monkeypatch.setattr(task_execution_plans, "check_canonical_read_access", allow_vk)
     async with async_session_maker() as session, session.begin():
         scenario = AgentScenario(tenant_id=workspace.tenants[0].id, name="Synthetic", base_prompt="Method one")
         session.add(scenario)
@@ -191,6 +198,10 @@ async def test_shared_scenario_pins_methodology_until_republish_and_blocks_revoc
         with pytest.raises(ExecutionPlanError, match="plan_revision_unavailable"):
             await execution_plan_service.load_for_admission(a.id, first.revision)
 
+    read_only = workspace_grants("owner") - {("source", ActionType.ANALYZE)}
+    with workspace.scope(grants=read_only), pytest.raises(ExecutionPlanError, match="source_analysis_denied"):
+        await execution_plan_service.load_for_admission(a.id, updated.revision)
+
     with workspace.scope(1):
         foreign = await task_service.create(CreateTask(title="Other workspace"))
         with pytest.raises(ExecutionPlanError, match="scenario_unavailable"):
@@ -229,7 +240,14 @@ async def test_social_source_binding_enforces_tenant_at_service_and_database(wor
     def draft(source_id):
         vk = {"mode": "api"}
         return map_social_plan(
-            {"task_plan": {"source_scope": "selected", "source_ids": [source_id], "vk_access": vk}},
+            {
+                "task_plan": {
+                    "source_scope": "selected",
+                    "source_ids": [source_id],
+                    "vk_access": vk,
+                    "trigger": {"type": "schedule", "cron": "0 9 * * *"},
+                }
+            },
             job_type="collect",
             bindings=(Binding(name="vk", capability="vk.posts.read", resource_id=source_id, vk_access=vk),),
         ).model_dump_json()
@@ -253,11 +271,49 @@ async def test_social_source_binding_enforces_tenant_at_service_and_database(wor
                     )
                     await session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
             assert await session.scalar(select(TaskPlanBinding.source_id)) == own
-            await session.delete(await session.get(Source, own))
 
+    tenant_id = workspace.tenants[0].id
+
+    async def scheduled_admission(index=0, principal=None):
+        with tenant_scope(workspace.tenants[index].id):
+            async with async_session_maker() as session, session.begin():
+                result = await execution_plan_service.load_for_scheduled_admission(
+                    note.id,
+                    saved.revision,
+                    principal_id=workspace.user.id if principal is None else principal,
+                    session=session,
+                )
+                assert get_current_user() is None
+                return result
+
+    async with async_session_maker() as session, session.begin():
+        viewer = await session.scalar(select(WorkspaceRole.id).where(WorkspaceRole.codename == "viewer"))
+        member = await session.scalar(select(TenantUser).where(TenantUser.tenant_id == tenant_id))
+        member.role_id = viewer
+
+    with workspace.scope(grants=workspace_grants("viewer")):
+        admitted = await execution_plan_service.load_for_admission(note.id, saved.revision)
+        assert admitted.resources[0].selection.resource_id == own
+        with pytest.raises(PermissionError, match="scheduled_principal_unavailable"):
+            await scheduled_admission()
+    admitted = await scheduled_admission()
+    assert admitted.resources[0].actor_id == workspace.user.id
+    with pytest.raises(PlannerUnavailable):
+        await scheduled_admission(index=1)
+    with pytest.raises(PermissionError, match="scheduled_principal_unavailable"):
+        await scheduled_admission(principal=workspace.user.id + 1000)
+
+    with workspace.scope(grants=workspace_grants("viewer")):
+        async with async_session_maker() as session, session.begin():
+            await session.delete(await session.get(Source, own))
         assert await execution_plan_service.get_reference(note.id) == saved
         async with async_session_maker() as session:
             binding = await session.scalar(select(TaskPlanBinding))
             assert binding.source_id is None
         with pytest.raises(ExecutionPlanError, match="resource_unavailable"):
             await execution_plan_service.load_for_admission(note.id, saved.revision)
+
+    async with async_session_maker() as session, session.begin():
+        (await session.scalar(select(TenantUser).where(TenantUser.tenant_id == tenant_id))).is_active = False
+    with pytest.raises(PermissionError, match="scheduled_principal_unavailable"):
+        await scheduled_admission()

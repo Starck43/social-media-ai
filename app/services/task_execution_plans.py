@@ -9,8 +9,9 @@ from sqlalchemy import or_, select
 
 from app.core.access_catalog import workspace_grants
 from app.core.database import with_db_session
-from app.core.permissions import get_current_user, has_permission
+from app.core.permissions import get_current_user, has_permission, permission_scope
 from app.core.pii import decrypt_pii, encrypt_pii
+from app.core.tenant_context import current_tenant_id, is_bypass
 from app.integrations.catalog.task_capabilities import CAPABILITIES, Direction, ResourceKind
 from app.integrations.task_resources import (
     ResolutionIssue,
@@ -19,11 +20,12 @@ from app.integrations.task_resources import (
     TelegramGrantPin,
     resolve_task_resource,
 )
-from app.models import AgentScenario, Platform, Source
+from app.models import AgentScenario, Platform, Source, TenantUser, User, WorkspaceRole
 from app.models.planner.execution_plan import TaskPlanBinding, TaskPlanRevision
 from app.services.ai.scenario_schema import compile_scenario_output
 from app.services.execution_plan_contracts import (
     MAX_BINDINGS,
+    OPERATIONS,
     ExecutionPlan,
     ExecutionPlanError,
     parse_execution_plan,
@@ -31,7 +33,7 @@ from app.services.execution_plan_contracts import (
 from app.services.planner.canonical_tasks import task_service
 from app.services.social.connector_authorizations import AuthorizationUnavailable
 from app.services.social.telegram_grant_access import source_grant_selection
-from app.services.social.vk_connections import VKConnectionDenied, check_selected_access
+from app.services.social.vk_connections import VKConnectionDenied, check_canonical_read_access
 from app.services.social.vk_task_access import plan_required_methods
 from app.services.task_plans import parse_task_plan
 from app.types import ActionType, PlatformType
@@ -133,6 +135,7 @@ async def _resolve(session, identity, capability, selection):
         capability_id=capability,
         direction=Direction.READ,
         selection=selection,
+        canonical_vk=True,
     )
 
 
@@ -189,8 +192,12 @@ async def _validate_resources(session, identity, plan):
         raise ExecutionPlanError("sink_unavailable")
     resolved = []
     if plan.social_plan is not None:
-        if not all(_permits(identity, "source", action) for action in (ActionType.VIEW, ActionType.ANALYZE)):
+        if not _permits(identity, "source", ActionType.VIEW):
             raise ExecutionPlanError("resource_unavailable")
+        if any(OPERATIONS[step.operation].llm for step in plan.steps) and not _permits(
+            identity, "source", ActionType.ANALYZE
+        ):
+            raise ExecutionPlanError("source_analysis_denied")
         social = parse_task_plan(plan.social_plan)
         if social.source_scope == "discovery" and social.platforms != ("vk",):
             raise ExecutionPlanError("unsupported_discovery_route")
@@ -198,7 +205,7 @@ async def _validate_resources(session, identity, plan):
             if social.vk_access is None:
                 raise ExecutionPlanError("select_resource")
             try:
-                decision = await check_selected_access(
+                decision = await check_canonical_read_access(
                     social.vk_access,
                     tenant_id=identity[0],
                     actor_id=identity[1],
@@ -307,18 +314,52 @@ class ExecutionPlanService:
 
     @with_db_session
     async def load_for_admission(self, task_id: int, expected_revision: int, session=None) -> AdmissionPlan:
-        """Load the current pinned plan in the caller's admission transaction.
+        """Use the authenticated actor within T04's authorized admission transaction."""
+        return await self._load_admission(session, task_id, expected_revision, scheduled=False)
 
-        T04 still owns run rights, trigger claims, billing and dispatch-time checks.
-        An archived revision is never used to admit new work.
+    async def load_for_scheduled_admission(
+        self, task_id: int, expected_revision: int, *, principal_id: int, session
+    ) -> AdmissionPlan:
+        """Use the principal from a locked, authorized scheduler trigger.
+
+        Only the internal scheduler calls this entry point. Its concrete tenant
+        and persisted trigger principal must come from T04, never user input.
         """
-        identity = await task_service._actor(session, ActionType.VIEW)
-        task = await task_service._task(session, task_id, identity)
-        if not (
-            _permits(identity, "plannertask", ActionType.UPDATE)
-            and await task_service._can_edit(session, task, identity)
+        tenant_id = current_tenant_id()
+        if (
+            get_current_user() is not None
+            or is_bypass()
+            or type(tenant_id) is not int
+            or tenant_id <= 0
+            or type(principal_id) is not int
+            or principal_id <= 0
         ):
-            raise PermissionError("task_update_denied")
+            raise PermissionError("scheduled_principal_unavailable")
+        result = await session.execute(
+            select(User, WorkspaceRole.codename)
+            .join(TenantUser, TenantUser.user_id == User.id)
+            .join(WorkspaceRole, WorkspaceRole.id == TenantUser.role_id)
+            .where(
+                User.id == principal_id,
+                User.is_active.is_(True),
+                TenantUser.tenant_id == tenant_id,
+                TenantUser.is_active.is_(True),
+                TenantUser.channel == "web",
+            )
+            .execution_options(populate_existing=True)
+        )
+        principal = result.one_or_none()
+        if principal is None:
+            raise PermissionError("scheduled_principal_unavailable")
+        user, role = principal
+        with permission_scope(user, member_grants=workspace_grants(role)):
+            return await self._load_admission(session, task_id, expected_revision, scheduled=True)
+
+    async def _load_admission(self, session, task_id, expected_revision, *, scheduled):
+        identity = await task_service._actor(session, ActionType.VIEW)
+        if not _permits(identity, "plannertask", ActionType.VIEW):
+            raise PermissionError("task_view_denied")
+        task = await task_service._task(session, task_id, identity)
         stored = await self._revision(session, task)
         if (
             stored is None
@@ -329,6 +370,8 @@ class ExecutionPlanService:
             raise ExecutionPlanError("plan_revision_unavailable")
         definition = json.loads(decrypt_pii(stored.definition_encrypted))
         plan = parse_execution_plan(_encode(definition["plan"]))
+        if scheduled and plan.trigger.type != "schedule":
+            raise ExecutionPlanError("schedule_unavailable")
         rows = await session.scalars(
             select(TaskPlanBinding)
             .where(

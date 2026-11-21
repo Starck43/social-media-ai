@@ -71,7 +71,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
-- [P11-T53](docs/tasks/p11-t53.md) Test-schema `--reset` loses the capability-only catalogue rows — **TODO** · unassigned · reproduced 2026-11-22 on `dev` `782b12bb`: after `--reset` on a migrated schema the re-seed reports success while the `0156` capability rows (`onec.data`, `onec.command`) stay gone, so `tests/conftest.py` refuses the schema · `P2` · `C2`
+- [P11-T53](docs/tasks/p11-t53.md) Test-schema `--reset` loses the capability-only catalogue rows — **IN_PROGRESS** · `fix/p11-t53-reset-capability-rows` (pi agent) · `pi resume 01a1fac8-4c6a-76ce-b15d-0f4e3f666a2b` · reproduced 2026-11-22 on `dev` `782b12bb`: after `--reset` on a migrated schema the re-seed reports success while the `0156` capability rows (`onec.data`, `onec.command`) stay gone, so `tests/conftest.py` refuses the schema · `P2` · `C2`
 
 
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):

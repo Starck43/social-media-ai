@@ -39,11 +39,11 @@ NAV_GROUP_LABELS: dict[str, str] = {
 }
 
 
-# Proposal v3: six sections a manager works in daily -- assistant (chat, sources,
-# scenarios), dashboard, tasks, messages (inbox and approvals), documentation,
-# clients. Connection setup (1C) and the job queue stay out of the sidebar: they
-# are operator settings reached from the account menu. Group order is reading
-# order.
+# Proposal v4: six sections a manager works in daily -- assistant (chat, sources,
+# scenarios), dashboard, tasks, messages (inbox and approvals), documentation
+# (including the supplier comparison, which is document-backed), clients.
+# Connection setup (1C) and the job queue stay out of the sidebar: they are
+# operator settings reached from the account menu.
 NAV_ITEMS: tuple[NavItem, ...] = (
     # Ассистент: where the work starts, what it reads and how it processes.
     NavItem("chat", "/app/chat", "Чат с агентом", icon="chat", group="assistant", group_label="Ассистент"),
@@ -151,6 +151,15 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         group="docs",
         group_label="Документация",
     ),
+    NavItem(
+        "cases",
+        "/app/cases",
+        "Закупки",
+        required_permission="scheduling.action.view",
+        icon="briefcase",
+        group="docs",
+        group_label="Документация",
+    ),
     # Клиенты
     NavItem(
         "contacts",
@@ -158,15 +167,6 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         "Контакты",
         required_permission="contacts.contact.view",
         icon="users",
-        group="clients",
-        group_label="Клиенты",
-    ),
-    NavItem(
-        "cases",
-        "/app/cases",
-        "Предложения",
-        required_permission="scheduling.action.view",
-        icon="briefcase",
         group="clients",
         group_label="Клиенты",
     ),

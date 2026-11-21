@@ -15,6 +15,7 @@ Key invariants:
   per D12.
 - Isolates outbound host resolution in `_resolve_imap_target` per D13 so P14-T09's
   `app.core.outbound.acquire_outbound_target` seam is wired at a single call site.
+  Fixed providers use catalog hosts; custom mail uses its validated hostname.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from sqlalchemy import select
 
@@ -56,10 +57,7 @@ _UID_RE = re.compile(rb"UID\s+(\d+)", re.IGNORECASE)
 _FLAGS_RE = re.compile(rb"FLAGS\s+\(([^)]*)\)", re.IGNORECASE)
 _UIDVALIDITY_RE = re.compile(r"UIDVALIDITY\s+(\d+)", re.IGNORECASE)
 
-FETCH_SPEC = (
-    "(UID FLAGS BODY.PEEK[HEADER.FIELDS "
-    "(FROM TO CC SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES)])"
-)
+FETCH_SPEC = "(UID FLAGS BODY.PEEK[HEADER.FIELDS " "(FROM TO CC SUBJECT DATE MESSAGE-ID IN-REPLY-TO REFERENCES)])"
 
 
 class ImapSyncError(RuntimeError):
@@ -86,7 +84,10 @@ class ImapEnvelope:
     header_hash: str
 
 
-def _resolve_imap_target(provider_id: str) -> tuple[str, str]:
+def _resolve_imap_target(
+    provider_id: str,
+    config: Mapping[str, object] | None = None,
+) -> tuple[str, str]:
     """Single isolated egress resolution seam for IMAP connections (Q-19 D13 / P14-T09).
 
     Delegates destination authorization and DNS validation to `app.core.outbound.acquire_outbound_target`
@@ -94,9 +95,20 @@ def _resolve_imap_target(provider_id: str) -> tuple[str, str]:
     """
     if provider_id not in WORKSPACE_PROVIDER_IDS:
         raise ImapSyncError("unsupported_provider")
-    host = str(dict(PROVIDERS[provider_id].defaults)["imap_host"])
+    defaults = dict(PROVIDERS[provider_id].defaults)
+    host = str(
+        ((config or {}).get("imap_host") if provider_id == "custom_mail" else None)
+        or defaults["imap_host"]
+    )
+    port = (
+        (config or {}).get("imap_port", defaults.get("imap_port", 993))
+        if provider_id == "custom_mail"
+        else defaults.get("imap_port", 993)
+    )
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ImapSyncError("invalid_configuration")
     try:
-        target = acquire_outbound_target(host, 993, policy=StaticPolicy((host,)))
+        target = acquire_outbound_target(host, port, policy=StaticPolicy((host,)))
     except OutboundRefusal as refusal:
         if isinstance(refusal.__cause__, OSError):
             raise ImapSyncError("connection_failed") from refusal
@@ -104,16 +116,25 @@ def _resolve_imap_target(provider_id: str) -> tuple[str, str]:
     return target.host, str(target.addresses[0])
 
 
-def _open_pinned_imap_client(provider_id: str, login: str, password: str) -> _PinnedIMAP:
-    """Open an authenticated, IP-pinned TLS 993 IMAP client using P12-T08 rules."""
-    host, address = _resolve_imap_target(provider_id)
+def _open_pinned_imap_client(
+    provider_id: str,
+    login: str,
+    password: str,
+    config: Mapping[str, object] | None = None,
+) -> _PinnedIMAP:
+    """Open an authenticated, IP-pinned TLS IMAP client using P12-T08 rules."""
+    host, address = _resolve_imap_target(provider_id, config)
+    defaults = dict(PROVIDERS[provider_id].defaults)
+    port = (
+        (config or {}).get("imap_port", defaults.get("imap_port", 993))
+        if provider_id == "custom_mail"
+        else defaults.get("imap_port", 993)
+    )
     client: _PinnedIMAP | None = None
     try:
-        client = _PinnedIMAP(host, address)
+        client = _PinnedIMAP(host, address) if port == 993 else _PinnedIMAP(host, address, port)
         auth_login = (
-            login.split("@", 1)[0]
-            if provider_id == "yandex_mail" and login.lower().endswith("@yandex.ru")
-            else login
+            login.split("@", 1)[0] if provider_id == "yandex_mail" and login.lower().endswith("@yandex.ru") else login
         )
         client.login(auth_login, password)
         return client
@@ -504,10 +525,13 @@ class ImapSyncService:
         selected_folders = validate_folder_list(folders) if folders is not None else get_imap_folders(conn)
         sync_state: dict[str, Any] = dict(config.get("imap_sync_state") or {})
 
-        def _poll_all_folders() -> dict[
-            str, tuple[int, bool, list[tuple[list[ImapEnvelope], int]], set[int], bool]
-        ]:
-            client = self._client_factory(conn.provider_id, account_login, password)
+        def _poll_all_folders() -> dict[str, tuple[int, bool, list[tuple[list[ImapEnvelope], int]], set[int], bool]]:
+            if getattr(self._client_factory, "__name__", "") == "_open_pinned_imap_client":
+                client = self._client_factory(conn.provider_id, account_login, password, config)
+            else:
+                # Keep the small three-argument test seam compatible with callers
+                # that provide an in-memory IMAP fake.
+                client = self._client_factory(conn.provider_id, account_login, password)
             try:
                 out: dict[str, tuple[int, bool, list[tuple[list[ImapEnvelope], int]], set[int], bool]] = {}
                 for folder in selected_folders:
@@ -594,11 +618,7 @@ class ImapSyncService:
                     "uidvalidity": current_uv,
                     "last_uid": highest_uid,
                     "last_synced_at": datetime.now(timezone.utc).isoformat(),
-                    **(
-                        {"uidvalidity_reset_pending": True}
-                        if (uv_reset and not all_batches_ok)
-                        else {}
-                    ),
+                    **({"uidvalidity_reset_pending": True} if (uv_reset and not all_batches_ok) else {}),
                 }
                 config["imap_sync_state"] = dict(sync_state)
                 conn.config = dict(config)
@@ -615,14 +635,18 @@ class ImapSyncService:
 
             # Detect messages expunged from this folder on the IMAP server (B-6)
             stored_messages = (
-                await session.execute(
-                    select(UnifiedMessage).where(
-                        UnifiedMessage.tenant_id == tenant_id,
-                        UnifiedMessage.connection_id == conn.id,
-                        UnifiedMessage.channel == "email",
+                (
+                    await session.execute(
+                        select(UnifiedMessage).where(
+                            UnifiedMessage.tenant_id == tenant_id,
+                            UnifiedMessage.connection_id == conn.id,
+                            UnifiedMessage.channel == "email",
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             folder_prefix = f"{folder}:"
             for stored_msg in stored_messages:
                 if stored_msg.unavailable_at is not None:
@@ -642,9 +666,7 @@ class ImapSyncService:
                     and msg_uid <= highest_uid
                     and msg_uid not in present_uids
                 )
-                is_missing_after_reset = (
-                    uv_reset and all_batches_ok and msg_uv_str != str(current_uv)
-                )
+                is_missing_after_reset = uv_reset and all_batches_ok and msg_uv_str != str(current_uv)
                 if is_expunged_in_current_uv or is_missing_after_reset:
                     marked = await mark_message_unavailable(
                         session,

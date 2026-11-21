@@ -58,7 +58,14 @@
 </style>
 {% endblock %}
 {% block page_heading %}Сегодня{% endblock %}
-{% block page_actions %}{% endblock %}
+{% block page_context %}
+<span class="today-status today-status-accent" data-today-online>
+    {{ icon('sparkles', 'today-status-icon') }}<span>Агент на связи</span>
+</span>
+{% endblock %}
+{% block page_actions %}
+<a href="/app/chat" class="ui-button ui-button-primary">{{ icon('chat', 'today-action-icon') }} Открыть чат с агентом</a>
+{% endblock %}
 {% block content %}
 {% macro render_home_results() %}
         <section data-home-results data-today-section="recent_results" class="ui-card min-w-0">
@@ -157,22 +164,65 @@
                 {% if today.include_dismissed %}
                 <a href="/app/?view=today&amp;scope={{ today.scope }}" data-today-toggle-dismissed class="text-cyan-700 dark:text-cyan-400 hover:underline">Скрыть отложенные</a>
                 {% else %}
-                <a href="/app/?view=today&amp;scope={{ today.scope }}&amp;show_dismissed=1" data-today-toggle-dismissed class="text-cyan-700 dark:text-cyan-400 hover:underline">Показать скрытые и отложенные</a>
+                <a href="/app/?view=today&amp;scope={{ today.scope }}&amp;show_dismissed=1" data-today-toggle-dismissed class="text-cyan-700 dark:text-cyan-400 hover:underline">Отложено</a>
                 {% endif %}
                 <a href="/app/settings?tab=account" class="text-slate-500 dark:text-slate-400 hover:underline">Стартовая страница →</a>
             </div>
         </div>
 
+        {% set brief = today.by_key.get('brief', {}).get('brief') or {} %}
+        <section data-today-section="brief" class="ui-card today-brief-card" aria-label="Сводка дня">
+            <div class="today-brief-head">
+                <span class="today-agent-avatar" aria-hidden="true">{{ icon('sparkles') }}</span>
+                <div class="min-w-0 flex-1">
+                    <p class="today-kicker">Агент на связи</p>
+                    <h2 class="today-brief-title">Сводка дня</h2>
+                    {% if brief.generated_at %}<p class="today-brief-time">Подготовлено {{ brief.generated_at|human_dt(tz=_tz) }}</p>{% endif %}
+                </div>
+                {% if can_open_chat %}
+                <a href="{{ brief.chat_url or '/app/chat' }}" class="ui-button ui-button-primary today-brief-chat">{{ icon('chat', 'today-action-icon') }}<span>Обсудить в чате</span></a>
+                {% endif %}
+            </div>
+            {% if brief.status and brief.status != 'ok' %}
+            <p role="status" class="today-brief-empty">{{ brief.reason or 'Сводка дня пока недоступна.' }}</p>
+            {% elif brief.lines %}
+            <ul class="today-brief-lines">
+                {% for line in brief.lines %}
+                <li class="today-brief-line">{{ icon(line.icon, 'today-brief-line-icon') }}<span class="today-brief-line-label">{{ line.label }}</span><span class="today-brief-line-text">{{ line.text }}</span></li>
+                {% endfor %}
+            </ul>
+            {% if brief.notices %}<p class="today-brief-note">{{ brief.notices[0] }}</p>{% endif %}
+            <p class="today-brief-note">{{ brief.coverage }} Данные и рекомендации требуют проверки.</p>
+            {% endif %}
+        </section>
+
         <div class="today-bento">
         {% for sec in today.sections %}
-        {% if sec.key != 'recent_results' %}
-        <section data-today-section="{{ sec.key }}" class="ui-card min-w-0" aria-label="{{ sec.title }}">
+        {% if sec.key not in ('brief', 'decisions', 'awaiting_reply', 'recent_results') %}
+        <section data-today-section="{{ sec.key }}" class="ui-card min-w-0 today-section today-section-{{ sec.key }}" aria-label="{{ sec.title }}">
             <div class="flex flex-wrap items-center justify-between gap-2">
-                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">{% if sec.key == 'brief' %}Сводка дня{% else %}{{ sec.title }}{% endif %}</h2>
-                {% if sec['items'] %}<span class="today-count" aria-label="Элементов: {{ sec['items']|length }}">{{ sec['items']|length }}</span>{% endif %}
-                {% if sec.hidden_count %}
-                <span class="text-xs text-slate-500 dark:text-slate-400" data-today-hidden-count="{{ sec.key }}">Скрыто: {{ sec.hidden_count }}</span>
+                <h2 class="text-sm font-medium text-slate-700 dark:text-slate-300">
+                    {% if sec.key == 'brief' %}{{ icon('sparkles', 'today-heading-icon') }}<span>Сводка дня</span>
+                    {% elif sec.key == 'today_plan' %}{{ icon('calendar-check', 'today-heading-icon') }}<span>{{ sec.title }}</span>
+                    {% elif sec.key == 'needs_action' %}{{ icon('chat-check', 'today-heading-icon') }}<span>{{ sec.title }}</span>
+                    {% elif sec.key == 'awaiting_reply' %}{{ icon('chat-check', 'today-heading-icon') }}<span>{{ sec.title }}</span>
+                    {% elif sec.key == 'decisions' %}{{ icon('check', 'today-heading-icon') }}<span>{{ sec.title }}</span>
+                    {% elif sec.key == 'attention' %}{{ icon('alert', 'today-heading-icon') }}<span>{{ sec.title }}</span>
+                    {% else %}<span>{{ sec.title }}</span>{% endif %}
+                </h2>
+                {% if sec.key == 'needs_action' and sec.meta and sec.meta.replies_status == 'unavailable' %}
+                <p data-today-partial="awaiting_reply" role="status" class="mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2 text-xs text-amber-900 dark:text-amber-200">{{ sec.meta.replies_reason }}</p>
                 {% endif %}
+                {% if sec.key == 'needs_action' and sec.meta and sec.meta.decisions_status == 'unavailable' %}
+                <p data-today-partial="decisions" role="status" class="mt-2 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-2 text-xs text-amber-900 dark:text-amber-200">{{ sec.meta.decisions_reason }}</p>
+                {% endif %}
+                <div class="flex flex-wrap items-center gap-2">
+                    {% if sec.hidden_count %}
+                    <a href="/app/?view=today&amp;scope={{ today.scope }}&amp;show_dismissed=1" data-today-hidden-count="{{ sec.key }}"
+                       class="today-hidden-link" title="Показать отложенные элементы раздела">Отложено: {{ sec.hidden_count }}</a>
+                    {% endif %}
+                    {% if sec['items'] %}<span class="today-count" aria-label="Элементов: {{ sec['items']|length }}">{{ sec['items']|length }}</span>{% endif %}
+                </div>
             </div>
             {% if sec.key == 'brief' and can_open_chat %}
             <p class="ui-muted text-sm mt-2">Сводка дня · данные и рекомендации требуют проверки.</p>
@@ -195,41 +245,56 @@
             {% endif %}
             <ul class="mt-3 divide-y divide-slate-200 dark:divide-slate-800">
                 {% for item in sec['items'] %}
-                <li data-today-item="{{ item.item_key }}" class="flex flex-wrap items-start justify-between gap-3 py-3">
-                    <div class="min-w-0 flex-1">
-                        <div class="flex flex-wrap items-center gap-2">
-                            <a href="{{ item.href }}" class="font-medium text-slate-900 dark:text-slate-100 hover:underline" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ item.title }}</a>
-                            {% if item.get('status_label') %}
-                            <span data-today-status="{{ item.get('status_tone') or 'neutral' }}" class="today-status today-status-{{ item.get('status_tone') or 'neutral' }}">{{ item.status_label }}</span>
+                <li data-today-item="{{ item.item_key }}" class="today-item-board">
+                    <div class="today-item-top">
+                        <div class="min-w-0 flex-1">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <a href="{{ item.href }}" class="font-medium text-slate-900 dark:text-slate-100 hover:underline" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ item.title }}</a>
+                                {% if item.get('status_label') %}
+                                <span data-today-status="{{ item.get('status_tone') or 'neutral' }}" class="today-status today-status-{{ item.get('status_tone') or 'neutral' }}">{{ icon('check', 'today-status-icon') }}<span>{{ item.status_label }}</span></span>
+                                {% endif %}
+                                {% if item.stale_or_unavailable and item.marker_label %}
+                                <span data-today-stale-marker class="today-inline-badge today-inline-badge-warn">{{ icon('alert', 'today-inline-badge-icon') }}<span>{{ item.marker_label }}</span></span>
+                                {% endif %}
+                                {% if item.actor_state %}
+                                <span data-today-actor-state="{{ item.actor_state }}" class="today-inline-badge">{{ icon('clock', 'today-inline-badge-icon') }}<span>{{ item.actor_state }}</span></span>
+                                {% endif %}
+                            </div>
+                            {% if item.summary %}
+                            <p class="today-item-summary">{{ item.summary }}</p>
                             {% endif %}
-                            {% if item.stale_or_unavailable and item.marker_label %}
-                            <span data-today-stale-marker class="rounded-md bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-300">{{ item.marker_label }}</span>
-                            {% endif %}
-                            {% if item.actor_state %}
-                            <span data-today-actor-state="{{ item.actor_state }}" class="rounded-md bg-slate-200 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-600 dark:text-slate-400">{{ item.actor_state }}</span>
-                            {% endif %}
+                            {% if sec.key == 'decisions' %}<a class="today-decision-open" href="{{ item.href }}">Открыть решение →</a>{% endif %}
                         </div>
-                        {% if item.summary %}
-                        <p class="mt-1 text-sm text-slate-600 dark:text-slate-400">{{ item.summary }}</p>
-                        {% endif %}
-                        {% if sec.key == 'decisions' %}<a class="today-decision-open" href="{{ item.href }}">Открыть решение →</a>{% endif %}
-                    </div>
-                    <div class="today-item-actions flex flex-wrap items-center gap-1" aria-label="Действия с элементом">
-                        <a href="{{ item.href }}" class="ui-button ui-button-icon ui-button-quiet" aria-label="Открыть: {{ item.title }}" title="Открыть" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ icon('document') }}</a>
-                        {% if can_open_chat and item.chat_url %}
-                        <a href="{{ item.chat_url }}" class="ui-button ui-button-icon ui-button-quiet" aria-label="Открыть в чате: {{ item.title }}" title="Открыть в чате">{{ icon('message') }}</a>
-                        {% endif %}
-                        <form method="post" action="/app/today/item-state" class="inline-flex flex-wrap items-center gap-1">
+                        <form method="post" action="/app/today/item-state" class="today-item-remove">
                             <input type="hidden" name="_csrf" value="{{ csrf }}">
                             <input type="hidden" name="item_key" value="{{ item.item_key }}">
                             <input type="hidden" name="scope" value="{{ today.scope }}">
                             {% if item.actor_state in ('dismissed', 'snoozed') %}
                             <button type="submit" name="operation" value="restore" class="ui-button ui-button-icon ui-button-quiet" aria-label="Вернуть: {{ item.title }}" title="Вернуть">{{ icon('arrow') }}</button>
                             {% else %}
-                            <button type="submit" name="operation" value="snooze" class="ui-button ui-button-icon ui-button-quiet" aria-label="Отложить: {{ item.title }}" title="Отложить">{{ icon('calendar') }}</button>
-                            <button type="submit" name="operation" value="dismiss" class="ui-button ui-button-icon ui-button-quiet" aria-label="Скрыть: {{ item.title }}" title="Скрыть">{{ icon('close') }}</button>
+                            <button type="submit" name="operation" value="dismiss"
+                                    class="ui-button ui-button-icon ui-button-quiet today-delete-button"
+                                    data-confirm="Удалить «{{ item.title }}» из списка «Сегодня»? Запись останется в исходном разделе."
+                                    data-confirm-title="Удалить элемент?"
+                                    data-confirm-label="Удалить"
+                                    aria-label="Удалить: {{ item.title }}" title="Удалить">{{ icon('close') }}</button>
                             {% endif %}
                         </form>
+                    </div>
+                    <div class="today-item-actions" aria-label="Действия с элементом">
+                        {% set primary_href = item.get('authoritative_url') or item.href %}
+                        <a href="{{ primary_href }}" class="ui-button ui-button-small ui-button-quiet" title="{{ item.get('action_label') or 'Открыть' }}" {% if item.kind == 'external_task' %}target="_blank" rel="noopener noreferrer"{% endif %}>{{ icon('chat' if item.get('action_kind') == 'reply' else 'check', 'today-action-icon') }}<span>{{ item.get('action_label') or 'Открыть' }}</span></a>
+                        {% if can_open_chat and item.chat_url %}
+                        <a href="{{ item.chat_url }}" class="ui-button ui-button-small ui-button-quiet" title="Открыть в чате">{{ icon('message', 'today-action-icon') }}<span>В чате</span></a>
+                        {% endif %}
+                        {% if item.actor_state not in ('dismissed', 'snoozed') %}
+                        <form method="post" action="/app/today/item-state" class="inline-flex">
+                            <input type="hidden" name="_csrf" value="{{ csrf }}">
+                            <input type="hidden" name="item_key" value="{{ item.item_key }}">
+                            <input type="hidden" name="scope" value="{{ today.scope }}">
+                            <button type="submit" name="operation" value="snooze" class="ui-button ui-button-small ui-button-quiet" title="Отложить на 4 часа">{{ icon('calendar', 'today-action-icon') }}<span>Отложить</span></button>
+                        </form>
+                        {% endif %}
                     </div>
                 </li>
                 {% endfor %}
@@ -245,7 +310,7 @@
         </div>
     </div>
     {% endif %}
-    {% if not today %}{{ render_home_results() }}{% endif %}
+    {% if not (today | default(false)) %}{{ render_home_results() }}{% endif %}
 
     {% if can_open_chat and not (home_has_content|default(false)) %}
     <section data-home-chat-primary class="mb-6 rounded-xl border border-cyan-200 dark:border-cyan-900 bg-cyan-50 dark:bg-cyan-950/30 p-5">

@@ -63,6 +63,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot and Settings OAuth — **IN_PROGRESS** · Codex · `codex resume 01a1f7d1-8006-75a3-ac37-05c3d89df357` · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`
 
 - [P20-T19](docs/tasks/p20-t19.md) Workspace prototype review and control consistency — **IN_PROGRESS** · OpenCode · `opencode --session ses_e072bb66affeMQkbNFP2YOv2Hf` · `P2` · `C5`
+- [P20-T20](docs/tasks/p20-t20.md) Unified Today actions and full-width daily brief — **IN_PROGRESS** · OpenCode · owner-directed direct `dev` · `P2` · `C3`
 
 - [P22-T09](docs/tasks/p22-t09.md) Admin connector setup and task operations — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P2` · `C3`
 - [P22-T15](docs/tasks/p22-t15.md) Commitments: from correspondence to a dated task with a reminder — **TODO** · unassigned · — · `P2` · `C4`

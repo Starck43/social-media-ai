@@ -1,7 +1,7 @@
 """Unit and template tests for P20-T07 («Сегодня»: read-time attention and decisions home).
 
 Covers all acceptance criteria in `docs/tasks/p20-t07.md` and `docs/product/WORKSPACE_UX.md#today-page`:
-- Section order (`brief`, `decisions`, `today_plan`, `awaiting_reply`, `attention`, `recent_results`)
+- Section order (`brief`, `needs_action`, `today_plan`, `attention`, `recent_results`)
 - Cross-tenant and permission filtering per provider
 - Provider failure isolation (one failing provider shows its reason, never blanks the page)
 - Stale / unavailable source markers (`D24`)
@@ -265,16 +265,9 @@ async def test_today_section_order_and_empty_workspace():
     snap = await proj.snapshot(merged_results=[])
 
     assert tuple(snap["section_order"]) == TODAY_SECTION_ORDER
-    assert [s["key"] for s in snap["sections"]] == [
-        "brief",
-        "decisions",
-        "today_plan",
-        "awaiting_reply",
-        "attention",
-        "recent_results",
-    ]
+    assert [s["key"] for s in snap["sections"]] == list(TODAY_SECTION_ORDER)
     assert snap["by_key"]["brief"]["status"] == "not_configured"
-    for key in ("decisions", "today_plan", "awaiting_reply", "attention", "recent_results"):
+    for key in ("needs_action", "today_plan", "attention", "recent_results"):
         assert snap["by_key"][key]["status"] == "ok"
         assert snap["by_key"][key]["items"] == []
 
@@ -382,7 +375,7 @@ async def test_provider_failure_isolation_never_blanks_page():
     assert "временно недоступны" in snap["by_key"]["awaiting_reply"]["reason"]
 
     html = _render_dashboard(snap)
-    assert 'data-today-section-unavailable="awaiting_reply"' in html
+    assert 'data-today-partial="awaiting_reply"' in html
     assert "Действие #5" in html
 
 

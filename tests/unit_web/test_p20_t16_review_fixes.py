@@ -66,11 +66,14 @@ def test_work_surface_controls_follow_the_compact_visual_contract():
     communications = read("app/web/templates/web/_inbox_categories.html")
     planner = read("app/web/templates/web/planner.html")
     calendar = read("app/web/templates/web/task_calendar.html")
-    assert 'class="ui-button ui-button-primary" href="/app/chat"' in dashboard
-    assert 'class="ui-button" href="/app/planner"' in dashboard
+    assert 'href="/app/chat" class="ui-button ui-button-primary"' in dashboard
+    assert 'href="/app/tasks" class="text-sm text-cyan-700' in dashboard
     assert "icon('panel-right', 'chat-panel-toggle-icon')" in chat
     assert "communications-filter-tabs" in communications
-    assert '<button type="button" class="ui-button ui-button-icon ui-button-quiet" @click="editOpen = !editOpen"' in planner
+    assert (
+        '<button type="button" class="ui-button ui-button-icon ui-button-quiet" @click="editOpen = !editOpen"'
+        in planner
+    )
     assert "planner-priority--{{ item.priority }}" in planner
     assert '<section hidden aria-hidden="true" class="task-calendar-source' in calendar
     assert "Объём выборки ограничен" not in calendar
@@ -80,7 +83,7 @@ def test_work_surface_controls_follow_the_compact_visual_contract():
 
 def test_dialog_composer_keeps_one_send_or_stop_control():
     chat = read("app/web/templates/web/chat.html")
-    row = chat.split('<div class="chat-input-row">', 1)[1].split('</div>', 1)[0]
+    row = chat.split('<div class="chat-input-row">', 1)[1].split("</div>", 1)[0]
     assert chat.count('@click="sending ? stopGeneration() : sendMessage()"') == 1
     assert row.index('@click="handleAttachClick()"') < row.index('x-ref="input"') < row.index('class="chat-send"')
     assert ':disabled="(pending && !sending) || workspaceContextBlocked() || isLocalOnlyBlocked()"' in row

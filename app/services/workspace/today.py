@@ -3,12 +3,11 @@
 Invariants (`docs/product/WORKSPACE_UX.md#today-page`, `docs/tasks/p20-t07.md`):
 - Read-time projection over owning modules: no duplicate task/action/message tables.
 - Section order is fixed:
-  1. `brief` («Утренняя сводка»)
-  2. `decisions` («Ждут решения»)
+  1. `brief` («Сводка дня», full-width deterministic brief)
+  2. `needs_action` («Требуют действий», decisions and replies in one card)
   3. `today_plan` («По плану на сегодня»)
-  4. `awaiting_reply` («Ждут ответа»)
-  5. `attention` («Требует внимания»)
-  6. `recent_results` («Последние результаты»)
+  4. `attention` («Требует внимания»)
+  5. `recent_results` («Последние результаты»)
 - Every provider is optional, tenant-isolated, permission-filtered, and bounded.
 - One failing provider reports `status="unavailable"` with a clear reason and never blanks the page.
 - «Моё / Команда» (`scope="mine" | "team"`, default `"mine"`) widens only within the caller's role and permissions.
@@ -36,14 +35,14 @@ PROVIDER_LIMIT = 5
 DECISIONS_LIMIT = 7
 TODAY_SECTION_ORDER: tuple[str, ...] = (
     "brief",
-    "decisions",
+    "needs_action",
     "today_plan",
-    "awaiting_reply",
     "attention",
     "recent_results",
 )
 TODAY_SECTION_TITLES: dict[str, str] = {
-    "brief": "Утренняя сводка",
+    "brief": "Сводка дня",
+    "needs_action": "Требуют действий",
     "decisions": "Ждут решения",
     "today_plan": "По плану на сегодня",
     "awaiting_reply": "Ждут ответа",
@@ -83,7 +82,7 @@ STATUS_TONE_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     (
         "ok",
-        ("успех", "готово", "доставлен", "выполнен", "свежесть"),
+        ("успех", "готово", "доставлен", "выполнен", "свежесть", "в работе"),
     ),
     (
         "accent",
@@ -151,6 +150,79 @@ def _iso_or_empty(value: Any) -> str:
     if isinstance(value, date):
         return value.isoformat()
     return str(value or "")
+
+
+def _today_brief_lines(brief_data: dict[str, Any], context: dict[str, Any]) -> list[dict[str, str]]:
+    """Build a deterministic, evidence-backed brief from already authorized sections."""
+    lines: list[dict[str, str]] = []
+
+    social_count = brief_data.get("social_results")
+    if not isinstance(social_count, int):
+        social_count = 0
+    window = str(brief_data.get("window") or "").strip()
+    social_text = (
+        f"Соцмониторинг за {window}: доступных результатов — {social_count}."
+        if window
+        else f"Доступных результатов соцмониторинга: {social_count}."
+    )
+    top = brief_data.get("social_top")
+    if isinstance(top, list):
+        titles = [
+            str(row.get("title") or "").strip()
+            for row in top[:2]
+            if isinstance(row, dict) and str(row.get("title") or "").strip()
+        ]
+        if titles:
+            social_text += " Ключевое: " + "; ".join(titles) + "."
+    lines.append({"icon": "chart", "label": "Соцданные", "text": social_text})
+
+    plan_items = context.get("today_plan") or []
+    action_items = context.get("needs_action") or []
+    plan_count = len(plan_items) if isinstance(plan_items, list) else 0
+    overdue = (
+        sum(
+            1
+            for item in plan_items
+            if isinstance(item, dict) and "просроч" in str(item.get("status_label") or "").casefold()
+        )
+        if isinstance(plan_items, list)
+        else 0
+    )
+    plan_text = f"В плане на сегодня: {plan_count} задач"
+    if overdue:
+        plan_text += f", из них просрочено: {overdue}"
+    plan_text += "."
+    lines.append({"icon": "calendar-check", "label": "Задачи", "text": plan_text})
+
+    decisions = (
+        sum(1 for item in action_items if isinstance(item, dict) and item.get("action_kind") == "decision")
+        if isinstance(action_items, list)
+        else 0
+    )
+    replies = (
+        sum(1 for item in action_items if isinstance(item, dict) and item.get("action_kind") == "reply")
+        if isinstance(action_items, list)
+        else 0
+    )
+    lines.append(
+        {
+            "icon": "chat-check",
+            "label": "Действия",
+            "text": f"Требуют решения: {decisions}. Требуют ответа: {replies}.",
+        }
+    )
+
+    attention_items = context.get("attention") or []
+    attention_count = len(attention_items) if isinstance(attention_items, list) else 0
+    if attention_count:
+        lines.append(
+            {
+                "icon": "alert",
+                "label": "Внимание",
+                "text": f"Элементов, требующих внимания: {attention_count}.",
+            }
+        )
+    return lines
 
 
 BITRIX_TASK_STATUS_LABELS = {
@@ -402,6 +474,8 @@ class TodaySection:
     reason: str = ""
     items: list[dict[str, Any]] = field(default_factory=list)
     hidden_count: int = 0
+    brief: dict[str, Any] | None = None
+    meta: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -412,6 +486,8 @@ class TodaySection:
             "items": list(self.items),
             "count": len(self.items),
             "hidden_count": self.hidden_count,
+            "brief": dict(self.brief) if self.brief is not None else None,
+            "meta": dict(self.meta) if self.meta is not None else None,
         }
 
 
@@ -422,11 +498,24 @@ class TodayRepository:
         from app.services.social.morning_brief import preview
 
         brief = await preview(workspace_id, user_id)
+        top = [
+            {
+                "title": item.title,
+                "category": item.category,
+                "reason": item.reason,
+                "ref": item.authoritative_ref,
+            }
+            for item in brief.top
+        ]
         return {
             "tenant_id": workspace_id,
             "id": brief.generated_at.date().isoformat(),
-            "title": "Утренняя сводка",
-            "summary": f"Социальных результатов: {len(brief.items)}. Рекомендации требуют проверки. Другие источники пока не подключены.",
+            "title": "Сводка дня",
+            "summary": f"Социальных результатов: {len(brief.items)}. Рекомендации требуют проверки.",
+            "social_results": len(brief.items),
+            "social_top": top,
+            "window": f"{brief.start.isoformat()} — {brief.end.isoformat()}",
+            "notices": list(brief.notices),
             "href": "/app/digests/morning",
             "created_at": brief.generated_at,
             "stale_or_unavailable": True,
@@ -674,36 +763,64 @@ class TodayProjection:
             visible.append(item)
         return visible[:limit], hidden_count
 
-    async def build_brief_section(self) -> TodaySection:
+    async def build_brief_section(self, context: dict[str, Any] | None = None) -> TodaySection:
         section = TodaySection(key="brief", title=TODAY_SECTION_TITLES["brief"])
+        payload: dict[str, Any] = {
+            "lines": [],
+            "notices": [],
+            "chat_url": "/app/chat",
+            "digests_url": "/app/digests/morning",
+            "generated_at": "",
+            "coverage": "Охват ограничен сохранёнными результатами.",
+        }
+
+        def finish() -> TodaySection:
+            payload["status"] = section.status
+            payload["reason"] = section.reason
+            section.brief = payload
+            return section
+
         if self.workspace_id is None or self.user_id is None:
             section.status = "not_configured"
-            section.reason = "Выберите рабочее пространство для просмотра утренней сводки."
-            return section
+            section.reason = "Выберите рабочее пространство для просмотра сводки дня."
+            return finish()
         try:
             brief_data = await self.repo.brief(self.workspace_id, self.user_id, self.scope)
         except Exception:
             logger.warning("Today brief provider failed", exc_info=True)
             section.status = "unavailable"
-            section.reason = "Утренняя сводка временно недоступна."
-            return section
+            section.reason = "Сводка дня временно недоступна."
+            return finish()
         if not brief_data or not isinstance(brief_data, dict) or brief_data.get("tenant_id") != self.workspace_id:
             section.status = "not_configured"
-            section.reason = "Утренняя сводка появится после настройки расписания брифа."
-            return section
+            section.reason = "Сводка дня появится после появления доступных данных пространства."
+            return finish()
+
+        payload["generated_at"] = _iso_or_empty(brief_data.get("created_at"))
+        payload["chat_url"] = "/app/chat?" + urlencode(
+            {"context_type": "workspace", "context_id": "today", "boundary": "workspace"}
+        )
+        payload["digests_url"] = str(brief_data.get("href") or "/app/digests/morning")
+        payload["lines"] = _today_brief_lines(brief_data, context or {})
+        notices = brief_data.get("notices")
+        payload["notices"] = (
+            [str(row) for row in notices if isinstance(row, str)][:3] if isinstance(notices, list) else []
+        )
+        payload["coverage"] = str(brief_data.get("marker_label") or "Охват ограничен сохранёнными результатами.")
+
         item = {
             "item_key": f"brief:{self.workspace_id}:{brief_data.get('id', 'today')}",
             "kind": "brief",
-            "title": str(brief_data.get("title") or "Утренняя сводка"),
+            "title": str(brief_data.get("title") or "Сводка дня"),
             "summary": str(brief_data.get("summary") or "")[:240],
-            "href": str(brief_data.get("href") or "/app/digests"),
-            "chat_url": "/app/chat",
-            "created_at": _iso_or_empty(brief_data.get("created_at")),
+            "href": payload["digests_url"],
+            "chat_url": payload["chat_url"],
+            "created_at": payload["generated_at"],
             "stale_or_unavailable": bool(brief_data.get("stale_or_unavailable", False)),
             "marker_label": str(brief_data.get("marker_label") or ""),
         }
         section.items, section.hidden_count = self._apply_actor_state([item])
-        return section
+        return finish()
 
     async def build_decisions_section(self) -> TodaySection:
         section = TodaySection(key="decisions", title=TODAY_SECTION_TITLES["decisions"])
@@ -908,12 +1025,12 @@ class TodayProjection:
                             "summary": (
                                 f"Просрочено ({due_day.isoformat()})"
                                 if is_overdue
-                                else ("Срок сегодня" if due_day == today_date else "В плане к выполнению")
+                                else ("Запланировано на сегодня" if due_day == today_date else "В плане к выполнению")
                             ),
                             "status_label": (
                                 "Источник недоступен"
                                 if source_unavail
-                                else ("Просрочено" if is_overdue else "На сегодня")
+                                else ("Просрочено" if is_overdue else "В работе")
                             ),
                             "href": f"/app/planner/{ptask.id}/edit",
                             "chat_url": "/app/chat",
@@ -991,7 +1108,7 @@ class TodayProjection:
                                 f"Просрочено ({due_day.isoformat()})"
                                 if due_day is not None and due_day < today_date
                                 else (
-                                    "Срок сегодня"
+                                    "Запланировано на сегодня"
                                     if due_day == today_date
                                     else ("Без срока" if due_at is None else "Срок указан")
                                 )
@@ -1266,6 +1383,44 @@ class TodayProjection:
         section.items, section.hidden_count = self._apply_actor_state(items)
         return section
 
+    async def build_needs_action_section(self) -> TodaySection:
+        """One card for two similar queues: approvals/decisions and incoming replies."""
+        decisions = await self.build_decisions_section()
+        replies = await self.build_awaiting_reply_section()
+        section = TodaySection(key="needs_action", title=TODAY_SECTION_TITLES["needs_action"])
+
+        items: list[dict[str, Any]] = []
+        for source, action_kind, action_label in (
+            (decisions, "decision", "Решить"),
+            (replies, "reply", "Ответить"),
+        ):
+            for raw in source.items:
+                item = dict(raw)
+                item["action_kind"] = action_kind
+                item["action_label"] = action_label
+                items.append(item)
+
+        section.items = items[: DECISIONS_LIMIT + PROVIDER_LIMIT]
+        section.hidden_count = decisions.hidden_count + replies.hidden_count
+        section.meta = {
+            "decisions_hidden_count": decisions.hidden_count,
+            "replies_hidden_count": replies.hidden_count,
+            "decisions_status": decisions.status,
+            "replies_status": replies.status,
+            "decisions_reason": decisions.reason,
+            "replies_reason": replies.reason,
+        }
+        reasons = [row.reason for row in (decisions, replies) if row.reason]
+        if decisions.status == "denied" and replies.status == "denied":
+            section.status = "denied"
+            section.reason = "Для вашей роли просмотр действий и входящих запросов не разрешён."
+        elif not section.items and decisions.status == "unavailable" and replies.status == "unavailable":
+            section.status = "unavailable"
+            section.reason = "Не удалось загрузить запросы на действия. Повторите попытку позже."
+        elif reasons:
+            section.reason = " ".join(reasons)
+        return section
+
     async def build_attention_section(self) -> TodaySection:
         section = TodaySection(key="attention", title=TODAY_SECTION_TITLES["attention"])
         if self.workspace_id is None or self.user_id is None:
@@ -1519,16 +1674,56 @@ class TodayProjection:
         return section
 
     async def snapshot(self, *, merged_results: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        """Compute all 6 Today sections in canonical order with per-provider failure isolation."""
-        brief = await self.build_brief_section()
-        decisions = await self.build_decisions_section()
+        """Compute all five Today sections in canonical order with per-provider failure isolation."""
+        needs_action = await self.build_needs_action_section()
         today_plan = await self.build_today_plan_section()
-        awaiting_reply = await self.build_awaiting_reply_section()
         attention = await self.build_attention_section()
+        brief = await self.build_brief_section(
+            context={
+                "needs_action": needs_action.items,
+                "today_plan": today_plan.items,
+                "attention": attention.items,
+            }
+        )
         recent_results = await self.build_recent_results_section(merged_results=merged_results)
 
-        ordered = [brief, decisions, today_plan, awaiting_reply, attention, recent_results]
+        ordered = [brief, needs_action, today_plan, attention, recent_results]
         sections_by_key = {sec.key: sec.to_dict() for sec in ordered}
+        # Read-only aliases keep the former decisions/replies contracts available to
+        # callers that still read by_key, while the UI serves one combined card.
+        combined = needs_action.to_dict()
+        meta = needs_action.meta or {}
+        decisions_hidden = int(meta.get("decisions_hidden_count") or 0)
+        replies_hidden = int(meta.get("replies_hidden_count") or 0)
+        for alias, kind, title, status_key, reason_key, hidden in (
+            (
+                "decisions",
+                "decision",
+                TODAY_SECTION_TITLES["decisions"],
+                "decisions_status",
+                "decisions_reason",
+                decisions_hidden,
+            ),
+            (
+                "awaiting_reply",
+                "reply",
+                TODAY_SECTION_TITLES["awaiting_reply"],
+                "replies_status",
+                "replies_reason",
+                replies_hidden,
+            ),
+        ):
+            items = [item for item in needs_action.items if item.get("action_kind") == kind]
+            sections_by_key[alias] = {
+                **combined,
+                "key": alias,
+                "title": title,
+                "items": items,
+                "count": len(items),
+                "hidden_count": hidden,
+                "status": meta.get(status_key) or combined["status"],
+                "reason": meta.get(reason_key) or combined["reason"],
+            }
         return {
             "workspace_id": self.workspace_id,
             "user_id": self.user_id,

@@ -379,9 +379,8 @@ async def canonical_task_actions(task_id, *, perms=None, boundary="cloud"):
     from app.services.task_run_admission import TaskRunAdmissionError, authorize_task_run, validate_admissible_plan
 
     async with async_session_maker() as session, session.begin():
-        identity = await task_service._actor(session, ActionType.VIEW)
+        identity = await task_service.action_actor(session, ActionType.VIEW)
         task = await task_service._task(session, task_id, identity)
-        grants = workspace_grants(identity[2])
         latest = await session.scalar(
             select(TaskRun)
             .where(TaskRun.tenant_id == task.tenant_id, TaskRun.task_id == task.id)
@@ -402,7 +401,7 @@ async def canonical_task_actions(task_id, *, perms=None, boundary="cloud"):
         )
         active_work = task.status in {"todo", "in_progress"} and task.recurrence_source == "planner"
         actions = []
-        if active_work and ("plannertask", ActionType.UPDATE) in grants and await task_service._can_edit(
+        if active_work and task_service.action_allowed(identity, ActionType.UPDATE) and await task_service._can_edit(
             session, task, identity
         ):
             actions += [
@@ -418,14 +417,12 @@ async def canonical_task_actions(task_id, *, perms=None, boundary="cloud"):
                             task.id, reference.revision, session=session
                         )
                         validate_admissible_plan(admitted.plan)
-                        actions.append(
-                            {"reference": "run", "label": "Запустить", "revision": reference.revision}
-                        )
+                        actions.append({"reference": "run", "label": "Запустить", "revision": reference.revision})
                 except (ExecutionPlanError, TaskRunAdmissionError, PermissionError):
                     pass
         if (
             task.recurrence_source == "planner"
-            and ("plannertask", ActionType.DELETE) in grants
+            and task_service.action_allowed(identity, ActionType.DELETE)
             and task_service._can_share(task, identity)
         ):
             actions.append({"reference": "delete", "label": "Удалить", "confirmation_required": True})

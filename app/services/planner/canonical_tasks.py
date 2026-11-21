@@ -117,6 +117,18 @@ class CanonicalTaskService(PlannerService):
         new_links = {field: None for field in ("assignee_id", "contact_id", "parent_id") if field not in changes}
         await self._references(session, request.model_copy(update=new_links), identity, own_id=row.id)
 
+    @staticmethod
+    def action_allowed(identity, action):
+        return ("plannertask", action) in workspace_grants(identity[2]) and has_permission(
+            get_current_user(), "plannertask", action
+        )
+
+    async def action_actor(self, session, action):
+        identity = await self._actor(session, action)
+        if not self.action_allowed(identity, action):
+            raise PermissionError("task_action_denied")
+        return identity
+
     async def _task(self, session, task_id, identity, *, lock=False):
         row = await super()._task(session, task_id, identity, lock=lock)
         if lock and not await self._can_edit(session, row, identity):

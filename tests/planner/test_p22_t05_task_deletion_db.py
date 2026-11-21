@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.database import async_session_maker
+from app.core.permissions import permission_scope
 from app.models import Job
 from app.models.managers.job_manager import JobManager
 from app.models.planner import Task, TaskPlanRevision, TaskRun, TaskTrigger
@@ -17,6 +18,7 @@ from app.services.planner.canonical_tasks import CreateTask, UpdateTask, task_se
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable
 from app.services.task_run_admission import CANONICAL_JOB_TYPE
 from app.services.workspace.task_surface import canonical_task_actions
+from app.types import ActionType
 from tests.planner.test_p22_t01_task_identity_db import actor, task_world  # noqa: F401
 from tests.support.schema_guard import require_isolated_schema
 
@@ -107,6 +109,11 @@ async def test_delete_fences_queue_and_keeps_receipts(task_world, monkeypatch, c
         async with async_session_maker() as session, session.begin():
             await session.scalar(select(Job).where(Job.id == job_id).with_for_update())
             with pytest.raises(PlannerConflict, match="worker_busy"):
+                await task_deletion_service.confirm(task.id, scope="occurrence", confirmation=preview.confirmation)
+        with permission_scope(task_world.users[0], member_grants={("plannertask", ActionType.VIEW)}):
+            restricted = await canonical_task_actions(task.id)
+            assert restricted["actions"] == []
+            with pytest.raises(PermissionError):
                 await task_deletion_service.confirm(task.id, scope="occurrence", confirmation=preview.confirmation)
         if claimed:
             assert await JobManager.claim_job(job_id) is not None

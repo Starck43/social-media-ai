@@ -5,10 +5,8 @@ from datetime import datetime, timezone
 from itsdangerous import BadData, URLSafeTimedSerializer
 from sqlalchemy import select
 
-from app.core.access_catalog import workspace_grants
 from app.core.config import settings
 from app.core.database import with_db_session
-from app.core.permissions import get_current_user, has_permission
 from app.models import BusinessCommand, DocumentApproval
 from app.models.planner import TaskDecision, TaskDecisionLink
 from app.services.commands.approval_inbox import approval_inbox
@@ -50,12 +48,6 @@ def _parse(reference):
     return source, source_id
 
 
-def _local_grant(role):
-    return ("plannertask", ActionType.UPDATE) in workspace_grants(role) and has_permission(
-        get_current_user(), "plannertask", ActionType.UPDATE
-    )
-
-
 def _open(task):
     return task.status in {"todo", "in_progress"}
 
@@ -68,11 +60,9 @@ class TaskDecisionService:
             raise ValueError("invalid_reviewer")
         if not isinstance(expires_at, datetime) or expires_at.utcoffset() is None or expires_at <= _now():
             raise ValueError("invalid_expiry")
-        identity = await task_service._actor(session, ActionType.UPDATE)
+        identity = await task_service.action_actor(session, ActionType.UPDATE)
         task = await task_service._task(session, task_id, identity, lock=True)
         task_service._editable(task, expected_version)
-        if not _local_grant(identity[2]):
-            raise PermissionError("decision_denied")
         if await task_service._active_assignee(session, task.tenant_id, reviewer_id) is None:
             raise PlannerUnavailable("reviewer_unavailable")
         row = TaskDecision(
@@ -94,11 +84,9 @@ class TaskDecisionService:
         model = LEDGERS.get(source)
         if model is None:
             raise ValueError("invalid_review_source")
-        identity = await task_service._actor(session, ActionType.UPDATE)
+        identity = await task_service.action_actor(session, ActionType.UPDATE)
         task = await task_service._task(session, task_id, identity, lock=True)
         task_service._editable(task, expected_version)
-        if not _local_grant(identity[2]):
-            raise PermissionError("decision_denied")
         linked = await session.scalar(select(model.id).where(model.tenant_id == task.tenant_id, model.id == source_id))
         if linked is None:
             raise PlannerUnavailable("decision_unavailable")
@@ -108,7 +96,7 @@ class TaskDecisionService:
             await session.flush()
 
     async def _local(self, session, task, identity, source_id=None, *, lock=False):
-        if not _local_grant(identity[2]):
+        if not task_service.action_allowed(identity, ActionType.UPDATE):
             return []
         query = select(TaskDecision).where(
             TaskDecision.tenant_id == task.tenant_id,
@@ -182,7 +170,7 @@ class TaskDecisionService:
 
     @with_db_session
     async def pending(self, task_id, *, perms=None, boundary="cloud", session=None):
-        identity = await task_service._actor(session, ActionType.VIEW)
+        identity = await task_service.action_actor(session, ActionType.VIEW)
         task = await task_service._task(session, task_id, identity)
         if not _open(task):
             return []
@@ -201,7 +189,7 @@ class TaskDecisionService:
 
     @with_db_session
     async def preview(self, task_id, reference, *, outcome, perms=None, boundary="cloud", session=None):
-        identity = await task_service._actor(session, ActionType.VIEW)
+        identity = await task_service.action_actor(session, ActionType.VIEW)
         task = await task_service._task(session, task_id, identity)
         source, source_id = _parse(reference)
         if source == "local":
@@ -231,7 +219,7 @@ class TaskDecisionService:
             )
         except (BadData, TypeError, ValueError):
             raise PlannerConflict("decision_preview_required") from None
-        identity = await task_service._actor(session, ActionType.VIEW)
+        identity = await task_service.action_actor(session, ActionType.VIEW)
         task = await task_service._task(session, task_id, identity)
         if (tenant_id, actor_id, bound_id, version, bound_boundary) != (
             *identity[:2],

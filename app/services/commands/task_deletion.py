@@ -7,7 +7,6 @@ from itsdangerous import BadData, URLSafeTimedSerializer
 from sqlalchemy import func, select
 from sqlalchemy.exc import DBAPIError
 
-from app.core.access_catalog import workspace_grants
 from app.core.config import settings
 from app.core.database import with_db_session
 from app.jobs.recovery_policy import CANCELLED_BEFORE_START_ERROR, OPERATOR_CANCELLED_ERROR
@@ -62,8 +61,8 @@ def _query(model, tenant_id, ids):
 async def _targets(session, task_id, scope, *, confirm=False):
     if scope not in {"occurrence", "series"}:
         raise ValueError("invalid_delete_scope")
-    identity = await task_service._actor(session, ActionType.DELETE if confirm else ActionType.VIEW)
-    if ("plannertask", ActionType.DELETE) not in workspace_grants(identity[2]):
+    identity = await task_service.action_actor(session, ActionType.DELETE if confirm else ActionType.VIEW)
+    if not task_service.action_allowed(identity, ActionType.DELETE):
         raise PermissionError("task_delete_denied")
     task = await task_service._task(session, task_id, identity, lock=confirm)
     rows = [task]

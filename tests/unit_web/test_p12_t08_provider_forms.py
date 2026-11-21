@@ -54,7 +54,7 @@ def test_mail_forms_are_catalog_driven_and_do_not_render_secrets():
     assert 'type="password"' in html and 'name="account_login"' in html
     assert MARKER not in html
     assert "Проверить вход по IMAP" in html and "Отправка писем выключена" in html
-    assert 'name="imap_host"' not in html and 'name="secret"' not in html
+    assert 'name="imap_host"' in html and 'name="smtp_host"' in html and 'name="secret"' not in html
     assert 'name="tenant_id"' not in html
 
 

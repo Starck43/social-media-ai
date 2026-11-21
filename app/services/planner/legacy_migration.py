@@ -439,14 +439,18 @@ class LegacyCompatibilityWriter:
         mapping = await self._mapping(session, reference)
         if mapping is None or mapping.task_id is None:
             return
-        task = await session.scalar(
-            select(Task).where(Task.tenant_id == row.tenant_id, Task.id == mapping.task_id).with_for_update()
-        )
-        if task is None:
-            raise LegacyMappingConflict("canonical_task_missing")
-        task.deleted_at = datetime.now(timezone.utc)
         details = dict(mapping.details or {})
         details["deleted"] = True
+        if details.get("attached"):
+            mapping.task_id = None
+            mapping.resolution = "unresolved"
+        else:
+            task = await session.scalar(
+                select(Task).where(Task.tenant_id == row.tenant_id, Task.id == mapping.task_id).with_for_update()
+            )
+            if task is None:
+                raise LegacyMappingConflict("canonical_task_missing")
+            task.deleted_at = datetime.now(timezone.utc)
         mapping.details = details
         mapping.resolution_reason = "legacy_deleted"
         await session.flush()

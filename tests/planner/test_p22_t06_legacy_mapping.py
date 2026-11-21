@@ -85,5 +85,30 @@ async def test_link_execution_rejects_self_reference_before_database_access():
         )
 
 
+@pytest.mark.asyncio
+async def test_delete_attached_agent_retires_only_the_agent_alias(monkeypatch):
+    mapping = SimpleNamespace(
+        task_id=91,
+        details={"attached": True},
+        resolution="mapped",
+        resolution_reason=None,
+    )
+
+    class Session:
+        async def scalar(self, *_args, **_kwargs):
+            return mapping
+
+        async def flush(self):
+            return None
+
+    monkeypatch.setattr(compatibility_writer, "_database_session", lambda _session: True)
+    await compatibility_writer.delete_agent(Session(), _agent())
+
+    assert mapping.task_id is None
+    assert mapping.resolution == "unresolved"
+    assert mapping.resolution_reason == "legacy_deleted"
+    assert mapping.details["deleted"] is True
+
+
 def test_conflict_error_is_distinct_from_invalid_reference():
     assert issubclass(LegacyMappingConflict, LegacyIdentityError)

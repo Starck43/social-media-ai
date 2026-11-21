@@ -121,6 +121,7 @@ async def resolve_task_resource(
                 selection.vk_access is not None
                 and (capability.provider != "vk" or not isinstance(selection.vk_access, VKSelection))
             )
+            or (selection.path is not None and not isinstance(selection.path, str))
             or selection.kind != capability.kind
             or type(selection.resource_id) is not int
             or selection.resource_id <= 0
@@ -155,6 +156,7 @@ async def resolve_task_resource(
                 consent = row.config.get("task_source") if isinstance(row.config, dict) else None
                 if (
                     selection.path is not None
+                    or row.auth_method not in {"oauth2", "webhook_secret"}
                     or not isinstance(consent, dict)
                     or consent.get("read_consent") is not True
                     or consent.get("read_consented_by") != actor_id

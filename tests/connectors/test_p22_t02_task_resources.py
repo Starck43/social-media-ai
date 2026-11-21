@@ -1,3 +1,4 @@
+from copy import copy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -21,7 +22,16 @@ async def test_resolution_requires_explicit_account_and_rechecks_revocation(monk
         state="verified",
         config={},
     )
-    monkeypatch.setattr(resources, "_connection", AsyncMock(return_value=connection))
+    second_connection = copy(connection)
+    second_connection.id = 8
+    accounts = {7: connection, 8: second_connection}
+
+    async def lookup(_session, tenant_id, actor_id, connection_id):
+        assert (tenant_id, actor_id) == (1, 2)
+        return accounts[connection_id]
+
+    fetch = AsyncMock(side_effect=lookup)
+    monkeypatch.setattr(resources, "_connection", fetch)
     session = SimpleNamespace(scalar=AsyncMock(return_value=7))
     request = dict(tenant_id=1, actor_id=2, capability_id="mailru_mail.headers.read", direction=Direction.READ)
     selection = resources.ResourceSelection(ResourceKind.MAIL_FOLDER, 7, "INBOX")
@@ -29,6 +39,7 @@ async def test_resolution_requires_explicit_account_and_rechecks_revocation(monk
         await resources.resolve_task_resource(session, **request, selection=None)
         == resources.ResolutionIssue.SELECT_RESOURCE
     )
+    fetch.assert_not_awaited()
     assert await resources.resolve_task_resource(session, **request, selection=selection) == resources.ScopedResource(
         1, 2, "mailru_mail.headers.read", selection
     )
@@ -37,6 +48,11 @@ async def test_resolution_requires_explicit_account_and_rechecks_revocation(monk
         await resources.resolve_task_resource(session, **request, selection=selection)
         == resources.ResolutionIssue.UNAVAILABLE
     )
+
+    second_selection = resources.ResourceSelection(ResourceKind.MAIL_FOLDER, 8, "INBOX")
+    assert await resources.resolve_task_resource(
+        session, **request, selection=second_selection
+    ) == resources.ScopedResource(1, 2, "mailru_mail.headers.read", second_selection)
 
 
 @pytest.mark.asyncio
@@ -93,4 +109,82 @@ async def test_paired_root_reauthorizes_and_does_not_substitute_another_root(mon
     assert (
         await resources.resolve_task_resource(None, **request, selection=choice)
         == resources.ResolutionIssue.UNAVAILABLE
+    )
+
+
+@pytest.mark.asyncio
+async def test_vk_installation_is_checked_again_on_each_resolution(monkeypatch):
+    monkeypatch.setattr(resources, "_authorize", AsyncMock())
+    authorize_vk = AsyncMock(return_value=SimpleNamespace(allowed=True))
+    monkeypatch.setattr(resources, "check_selected_access", authorize_vk)
+    monkeypatch.setattr(resources.settings, "VK_SERVICE_KEY", None)
+    session = SimpleNamespace(scalar=AsyncMock(return_value=SimpleNamespace(owner_user_id=None, params={})))
+    choice = resources.VKSelection("api")
+    selection = resources.ResourceSelection(ResourceKind.SOCIAL_SOURCE, 7, vk_access=choice)
+    request = dict(
+        tenant_id=1, actor_id=2, capability_id="vk.posts.read", direction=Direction.READ, selection=selection
+    )
+    assert await resources.resolve_task_resource(session, **request) == resources.ResolutionIssue.INSTALLATION
+    authorize_vk.assert_not_awaited()
+
+    monkeypatch.setattr(resources.settings, "VK_SERVICE_KEY", "fake-installation-key")
+    assert await resources.resolve_task_resource(session, **request) == resources.ScopedResource(
+        1, 2, "vk.posts.read", selection
+    )
+    authorize_vk.assert_awaited_once_with(choice, tenant_id=1, actor_id=2, required_methods=frozenset({"wall.get"}))
+
+    monkeypatch.setattr(resources.settings, "VK_SERVICE_KEY", None)
+    assert await resources.resolve_task_resource(session, **request) == resources.ResolutionIssue.INSTALLATION
+
+
+@pytest.mark.asyncio
+async def test_telegram_requires_current_runtime_and_exact_source_grant(monkeypatch):
+    monkeypatch.setattr(resources, "_authorize", AsyncMock())
+    inspect_grant = AsyncMock()
+    monkeypatch.setattr(resources, "_inspect_source_grant", inspect_grant)
+    monkeypatch.setattr(resources.settings, "TELEGRAM_ACCOUNT_RUNTIME_ENABLED", False)
+    source = SimpleNamespace(
+        id=7,
+        tenant_id=1,
+        platform_id=5,
+        external_id="test-channel",
+        owner_user_id=2,
+        params={"mode": "user", "telegram_authorization": {"grant_id": 17, "authorization_revision": 3}},
+    )
+    session = SimpleNamespace(scalar=AsyncMock(return_value=source))
+    selection = resources.ResourceSelection(ResourceKind.SOCIAL_SOURCE, 7)
+    request = dict(
+        tenant_id=1, actor_id=2, capability_id="telegram.session.read", direction=Direction.READ, selection=selection
+    )
+    assert await resources.resolve_task_resource(session, **request) == resources.ResolutionIssue.UNAVAILABLE
+    inspect_grant.assert_not_awaited()
+
+    monkeypatch.setattr(resources.settings, "TELEGRAM_ACCOUNT_RUNTIME_ENABLED", True)
+    assert await resources.resolve_task_resource(session, **request) == resources.ScopedResource(
+        1, 2, "telegram.session.read", selection
+    )
+    inspect_grant.assert_awaited_once_with(session, resources.source_grant_selection(source))
+    inspect_grant.side_effect = resources.AuthorizationUnavailable
+    assert await resources.resolve_task_resource(session, **request) == resources.ResolutionIssue.REAUTH
+
+    inspect_grant.reset_mock()
+    source.owner_user_id = 9
+    assert await resources.resolve_task_resource(session, **request) == resources.ResolutionIssue.UNAVAILABLE
+    inspect_grant.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invalid_root_value_is_rejected_before_gateway_lookup(monkeypatch):
+    monkeypatch.setattr(resources, "_authorize", AsyncMock())
+    selection = resources.ResourceSelection(ResourceKind.PAIRED_ROOT, 7, ["root-1"])
+    assert (
+        await resources.resolve_task_resource(
+            None,
+            tenant_id=1,
+            actor_id=2,
+            capability_id="local_gateway.search",
+            direction=Direction.READ,
+            selection=selection,
+        )
+        == resources.ResolutionIssue.SELECT_RESOURCE
     )

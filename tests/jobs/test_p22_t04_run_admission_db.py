@@ -134,12 +134,14 @@ async def test_retry_scheduled_run_can_be_cancelled(workspace):
         assert run.checkpoint_encrypted is None
 
 
-async def test_stale_worker_is_quarantined_without_replay(workspace):
+async def test_stale_worker_is_quarantined_without_replay(workspace, monkeypatch):
     from datetime import datetime, timedelta, timezone
+    from unittest.mock import MagicMock
 
-    from app.jobs.claim_outcomes import JobClaim, OutcomeAck
+    from app.jobs.claim_outcomes import JobClaim, JobClaimLostError, OutcomeAck
     from app.models.managers.job_manager import JobManager
     from app.models.scheduling.job import Job
+    from app.services import task_run_operations, task_run_worker
 
     require_isolated_schema()
     task, reference, _ = await _publish(workspace)
@@ -163,6 +165,12 @@ async def test_stale_worker_is_quarantined_without_replay(workspace):
         row = await session.get(Job, job.id)
         assert run.status == "unknown" and row.status == "failed"
         assert row.attempts == 1
+        plan, methodology = task_run_worker._snapshot(run)
+    provider = MagicMock(side_effect=AssertionError("stale claim must never call provider"))
+    monkeypatch.setattr(task_run_operations, "_read_folder", provider)
+    with tenant_scope(workspace.tenants[0].id), pytest.raises(JobClaimLostError):
+        await task_run_worker._execute_step(claim, plan, methodology, plan.steps[0])
+    provider.assert_not_called()
 
 
 async def test_migration_refuses_populated_downgrade(workspace):
@@ -415,3 +423,42 @@ async def test_real_serialization_rollback_retries_without_replaying_committed_r
         run = await session.get(TaskRun, receipt.run_id)
         assert run.status == "done" and run.checkpoint_encrypted is None
         assert run.result["steps"] == {"read": {"status": "done", "count": 1}, "group": {"status": "done", "count": 1}}
+
+
+async def test_receipt_and_idempotency_survive_actual_job_history_pruning(workspace, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from unittest.mock import MagicMock
+
+    from app.jobs.dispatcher import _execute_claimed
+    from app.jobs.lifecycle import cleanup_terminal_job_history
+    from app.models.managers.job_manager import JobManager
+    from app.models.scheduling.job import Job
+    from app.services import task_run_operations
+
+    require_isolated_schema()
+    task, reference, _ = await _publish(workspace)
+    with workspace.scope():
+        receipt = await task_run_service.admit_manual(
+            task.id, expected_revision=reference.revision, request_key="prune-replay"
+        )
+    provider = MagicMock(return_value=[(42, 1, "a@example.invalid")])
+    monkeypatch.setattr(task_run_operations, "_read_folder", provider)
+    monkeypatch.setattr(task_run_operations, "decrypt_secret", lambda _: "synthetic-password")
+    job = await JobManager.claim_job(receipt.job_id)
+    assert (await _execute_claimed(job))["status"] == "done"
+    with tenant_scope(workspace.tenants[0].id):
+        deleted = await cleanup_terminal_job_history(
+            tenant_id=workspace.tenants[0].id, now=datetime.now(timezone.utc) + timedelta(days=2)
+        )
+    assert deleted == 1
+    async with async_session_maker() as session:
+        assert await session.get(Job, receipt.job_id) is None
+        assert await session.get(TaskRun, receipt.run_id) is not None
+    with workspace.scope():
+        visible = await task_run_service.get_receipt(receipt.run_id)
+        replay = await task_run_service.admit_manual(
+            task.id, expected_revision=reference.revision, request_key="prune-replay"
+        )
+    assert visible.status == "done" and visible.result["coverage"] == "complete"
+    assert replay.replayed and replay.run_id == receipt.run_id and replay.job_id == receipt.job_id
+    provider.assert_called_once()

@@ -168,3 +168,13 @@ async def test_paid_operation_is_rejected_before_run_or_job_creation():
         )
     session.add.assert_not_called()
     session.flush.assert_not_awaited()
+
+
+@pytest.mark.parametrize("operation", ["messages.store_groups", "social.collect", "social.cached"])
+def test_unsupported_provider_effects_fail_closed(operation):
+    from app.services.execution_plan_contracts import ExecutionPlanError
+    from app.services.task_run_worker import validate_runtime_plan
+
+    plan = SimpleNamespace(steps=[SimpleNamespace(operation=operation)], legacy_effects=None)
+    with pytest.raises(ExecutionPlanError, match="unsupported_execution_operation"):
+        validate_runtime_plan(plan)

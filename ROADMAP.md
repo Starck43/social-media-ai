@@ -67,6 +67,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P20-T19](docs/tasks/p20-t19.md) Workspace prototype review and control consistency — **IN_PROGRESS** · OpenCode · `opencode --session ses_e072bb66affeMQkbNFP2YOv2Hf` · `P2` · `C5`
 
 - [P22-T09](docs/tasks/p22-t09.md) Admin connector setup and task operations — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P2` · `C3`
+- [P22-T16](docs/tasks/p22-t16.md) Sidebar sections for daily work — **READY** · `proposal/nav-sections` · — · `P2` · `C2`
 - [P22-T15](docs/tasks/p22-t15.md) Commitments: from correspondence to a dated task with a reminder — **TODO** · unassigned · — · `P2` · `C4`
 - [P22-T11](docs/tasks/p22-t11.md) External tasks and team tracker commands — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P2` · `C4`
 - [P22-T12](docs/tasks/p22-t12.md) Workspace cutover, reconciliation and legacy retirement — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P2` · `C5`

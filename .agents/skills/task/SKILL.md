@@ -33,7 +33,7 @@ first route that is available:
    may use it; the route is gated by the runtime approval on the process it
    starts, not by which agent invoked it. Route details:
    [perch-task](../perch-task/SKILL.md).
-2. **hy4** — native subagent on `opencode/hy4-flash-free` (Hy4 flash Free),
+2. **hy4** — native subagent on `cent.ai/hy4-flash:free` (Hy4 flash Free),
    the first fallback for audit and test-runner runs when Perch is unavailable
    or fails. No provider token or CLI shim is involved: it is a configured
    OpenCode subagent.

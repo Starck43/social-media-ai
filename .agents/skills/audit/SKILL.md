@@ -15,7 +15,7 @@ implementation beyond authorized corrections/refactoring/docs.
 
 When a bounded review unit is delegated to a subagent, use the order defined by
 [task](../task/SKILL.md#delegation-order): Perch, then `hy4`
-(`opencode/hy4-flash-free`), then `free-pi`
+(`cent.ai/hy4-flash:free`), then `free-pi`
 (`free-pi/deepseek-v4.1-flash#medium`). Fall to the next route only when the
 previous one is unavailable or fails, and report which route ran.
 

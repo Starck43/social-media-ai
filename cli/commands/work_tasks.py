@@ -38,8 +38,12 @@ def _worktasks_scope(
 
 def _run(body):
     """One CLI body as the declared actor inside the declared workspace."""
+    from sqlalchemy import select
+
+    from app.core.access_catalog import workspace_grants
+    from app.core.database import async_session_maker
     from app.core.permissions import permission_scope
-    from app.models import User
+    from app.models import TenantUser, User, WorkspaceRole
     from cli._tenant import resolve_tenant_id
 
     async def _main():
@@ -49,7 +53,21 @@ def _run(body):
         actor = await User.objects.get(id=int(_SCOPE["user"]), is_active=True)
         if actor is None:
             raise PermissionError("work_task_actor_required")
-        with tenant_scope(tenant_id), permission_scope(actor):
+        # Rights come from this member's own role, never from the CLI's operator
+        # grant: the command must behave exactly like that member's session.
+        async with async_session_maker() as session:
+            role = await session.scalar(
+                select(WorkspaceRole.codename)
+                .join(TenantUser, TenantUser.role_id == WorkspaceRole.id)
+                .where(
+                    TenantUser.tenant_id == tenant_id,
+                    TenantUser.user_id == actor.id,
+                    TenantUser.is_active.is_(True),
+                )
+            )
+        if role is None:
+            raise PermissionError("work_task_actor_required")
+        with tenant_scope(tenant_id), permission_scope(actor, member_grants=workspace_grants(role)):
             return await body()
 
     try:

@@ -75,3 +75,19 @@ async def test_cli_command_runs_as_the_declared_member(workspace, monkeypatch, c
         raise AssertionError(f"CLI refused a permitted read: {exit_code.exit_code}") from None
     printed = json.loads(capsys.readouterr().out)
     assert printed["id"] == created["id"] and printed["title"] == "Synthetic CLI task"
+
+
+async def test_cli_refuses_a_member_without_task_rights(workspace, monkeypatch, capsys):
+    """The CLI must not lean on the operator grant: a viewer is refused."""
+    require_isolated_schema()
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    from cli.commands import work_tasks as cli
+
+    with workspace.scope():
+        created = await tool.work_task_create({"title": "Synthetic guarded task"})
+    cli._SCOPE.update({"tenant": str(workspace.tenants[0].id), "user": str(workspace.other_user.id)})
+    with pytest.raises((typer.Exit, PermissionError)):
+        await __import__("asyncio").to_thread(
+            cli.edit_cmd, created["id"], created["version"], "occurrence", "Renamed", None, None, None
+        )
+    capsys.readouterr()

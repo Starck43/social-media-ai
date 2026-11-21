@@ -35,20 +35,36 @@ NAV_GROUP_LABELS: dict[str, str] = {
     "tasks": "Задачи",
     "messages": "Сообщения",
     "docs": "Документация",
-    "crm": "Клиенты",
-    "erp": "Учёт",
-    "data": "Данные",
-    "system": "Система",
+    "clients": "Клиенты",
 }
 
 
-# Proposal v1: six business sections own the sidebar (dashboard, tasks, messages,
-# documentation, CRM, ERP); the assistant sits above them, the collection and
-# queue machinery below. Existing routes and permissions are unchanged; group
-# order is reading order.
+# Proposal v3: six sections a manager works in daily -- assistant (chat, sources,
+# scenarios), dashboard, tasks, messages (inbox and approvals), documentation,
+# clients. Connection setup (1C) and the job queue stay out of the sidebar: they
+# are operator settings reached from the account menu. Group order is reading
+# order.
 NAV_ITEMS: tuple[NavItem, ...] = (
-    # Ассистент
+    # Ассистент: where the work starts, what it reads and how it processes.
     NavItem("chat", "/app/chat", "Чат с агентом", icon="chat", group="assistant", group_label="Ассистент"),
+    NavItem(
+        "sources",
+        "/app/sources",
+        "Источники",
+        required_permission="collection.source.view",
+        icon="database",
+        group="assistant",
+        group_label="Ассистент",
+    ),
+    NavItem(
+        "scenarios",
+        "/app/scenarios",
+        "Сценарии",
+        required_permission="analysis.scenario.view",
+        icon="layers",
+        group="assistant",
+        group_label="Ассистент",
+    ),
     # Дашборд
     NavItem("dashboard", "/app/", "Сегодня", icon="home", group="dashboard", group_label="Дашборд"),
     NavItem(
@@ -98,6 +114,15 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         group="messages",
         group_label="Сообщения",
     ),
+    NavItem(
+        "actions",
+        "/app/actions",
+        "Одобрения",
+        required_permission="scheduling.action.view",
+        icon="check",
+        group="messages",
+        group_label="Сообщения",
+    ),
     # Документация
     NavItem(
         "documents",
@@ -126,14 +151,14 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         group="docs",
         group_label="Документация",
     ),
-    # CRM
+    # Клиенты
     NavItem(
         "contacts",
         "/app/contacts",
         "Контакты",
         required_permission="contacts.contact.view",
         icon="users",
-        group="crm",
+        group="clients",
         group_label="Клиенты",
     ),
     NavItem(
@@ -142,80 +167,19 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         "Предложения",
         required_permission="scheduling.action.view",
         icon="briefcase",
-        group="crm",
+        group="clients",
         group_label="Клиенты",
     ),
-    # ERP
-    NavItem(
-        "onec",
-        "/app/settings/onec",
-        "1С: обмен данными",
-        required_permission="onec.data.view",
-        icon="chain",
-        group="erp",
-        group_label="Учёт",
-    ),
-    NavItem(
-        "onec_audit",
-        "/app/settings/onec/audit",
-        "Аудит 1С",
-        required_permission="onec.data.view",
-        icon="check",
-        group="erp",
-        group_label="Учёт",
-    ),
-    # Данные
-    NavItem(
-        "sources",
-        "/app/sources",
-        "Источники",
-        required_permission="collection.source.view",
-        icon="database",
-        group="data",
-        group_label="Данные",
-    ),
-    NavItem(
-        "scenarios",
-        "/app/scenarios",
-        "Сценарии",
-        required_permission="analysis.scenario.view",
-        icon="layers",
-        group="data",
-        group_label="Данные",
-    ),
-    # Система
-    NavItem(
-        "actions",
-        "/app/actions",
-        "Действия",
-        required_permission="scheduling.action.view",
-        icon="check",
-        group="system",
-        group_label="Система",
-    ),
-    NavItem(
-        "jobs",
-        "/app/jobs",
-        "Очередь задач",
-        required_permission="scheduling.job.view",
-        icon="list",
-        group="system",
-        group_label="Система",
-    ),
-    NavItem(
-        "settings",
-        "/app/settings",
-        "Настройки",
-        icon="settings",
-        group="system",
-        group_label="Система",
-    ),
 )
+
+# Setup surfaces stay reachable without sitting in the daily sidebar: connections
+# (1C), the job queue and settings live behind the account menu and deep links.
+SETTINGS_SECTION = NavItem("settings", "/app/settings", "Настройки", icon="settings")
 
 # A direct planner start-page preference remains valid after consolidating the
 # sidebar. Start-page choices and navigation entries have different purposes.
 PLANNER_SECTION = NavItem("planner", "/app/planner", "Мои дела", required_permission="planner.task.view")
-START_PAGE_ITEMS = (*NAV_ITEMS, PLANNER_SECTION)
+START_PAGE_ITEMS = (*NAV_ITEMS, PLANNER_SECTION, SETTINGS_SECTION)
 
 # Proposed O-3 composition; More is a drawer button in the template.
 MOBILE_NAV_KEYS: tuple[str, ...] = ("dashboard", "chat", "communications", "tasks")

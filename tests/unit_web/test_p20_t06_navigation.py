@@ -34,11 +34,7 @@ EXPECTED = {
     "analytics": ("/app/analytics", "analysis.result.view"),
     "digests": ("/app/digests", "notifications.digest_run.view"),
     "actions": ("/app/actions", "scheduling.action.view"),
-    "jobs": ("/app/jobs", "scheduling.job.view"),
-    "settings": ("/app/settings", None),
     "files": ("/app/knowledge/files", "analysis.result.view"),
-    "onec": ("/app/settings/onec", "onec.data.view"),
-    "onec_audit": ("/app/settings/onec/audit", "onec.data.view"),
 }
 
 
@@ -76,10 +72,7 @@ def test_group_order_and_mobile_order_are_stable():
         "tasks",
         "messages",
         "docs",
-        "crm",
-        "erp",
-        "data",
-        "system",
+        "clients",
     ]
     assert [item.key for item in nav.MOBILE_NAV_ITEMS] == ["dashboard", "chat", "communications", "tasks"]
     assert all(item.ready for item in nav.MOBILE_NAV_ITEMS)

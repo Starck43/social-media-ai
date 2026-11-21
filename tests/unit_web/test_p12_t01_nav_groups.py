@@ -70,10 +70,7 @@ def test_every_nav_item_belongs_to_a_declared_domain_group() -> None:
         "tasks",
         "messages",
         "docs",
-        "crm",
-        "erp",
-        "data",
-        "system",
+        "clients",
     }
     for item in NAV_ITEMS:
         assert item.group in NAV_GROUP_LABELS, f"{item.key} has unknown group {item.group!r}"
@@ -113,8 +110,6 @@ def test_ready_routes_remain_and_mobile_bar_is_daily_loop() -> None:
         "analytics": "/app/analytics",
         "digests": "/app/digests",
         "actions": "/app/actions",
-        "jobs": "/app/jobs",
-        "settings": "/app/settings",
         "knowledge": "/app/knowledge",
         "documents": "/app/documents",
         "communications": "/app/communications",
@@ -122,8 +117,6 @@ def test_ready_routes_remain_and_mobile_bar_is_daily_loop() -> None:
         "cases": "/app/cases",
         "contacts": "/app/contacts",
         "files": "/app/knowledge/files",
-        "onec": "/app/settings/onec",
-        "onec_audit": "/app/settings/onec/audit",
     }
     assert [item.key for item in MOBILE_NAV_ITEMS] == ["dashboard", "chat", "communications", "tasks"]
     tasks = next(item for item in NAV_ITEMS if item.key == "tasks")

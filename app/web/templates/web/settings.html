@@ -135,6 +135,16 @@
         {# Only a platform superuser may move a workspace between tiers: it is a
                    billing act, not a workspace preference. Everyone else sees the
                    comparison read-only and asks the operator. #}
+                {% if tenant and perms.can('job', 'view') %}
+                <section class="mt-6 ui-card" aria-labelledby="settings-diagnostics">
+                    <h3 id="settings-diagnostics" class="text-base font-semibold">Диагностика</h3>
+                    <p class="mt-1 text-xs text-slate-600 dark:text-slate-400">
+                        Техническая очередь: сбор, анализ и запуски задач. Обычной работе с задачами не нужна.
+                    </p>
+                    <a class="ui-control mt-3 inline-block" href="/app/jobs">Очередь задач</a>
+                </section>
+                {% endif %}
+
                 {% if is_superuser and tenant %}
                     <form method="post" action="/app/settings/plan" class="mt-6 ui-card settings-form">
                         <input type="hidden" name="_csrf" value="{{ csrf }}">

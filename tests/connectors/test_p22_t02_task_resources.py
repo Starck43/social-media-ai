@@ -6,6 +6,8 @@ import pytest
 from app.integrations import task_resources as resources
 from app.integrations.catalog.task_capabilities import Direction, ResourceKind
 
+__source_only__ = True
+
 
 @pytest.mark.asyncio
 async def test_resolution_requires_explicit_account_and_rechecks_revocation(monkeypatch):

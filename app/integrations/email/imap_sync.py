@@ -96,10 +96,9 @@ def _resolve_imap_target(
     if provider_id not in WORKSPACE_PROVIDER_IDS:
         raise ImapSyncError("unsupported_provider")
     defaults = dict(PROVIDERS[provider_id].defaults)
-    host = str(
-        ((config or {}).get("imap_host") if provider_id == "custom_mail" else None)
-        or defaults["imap_host"]
-    )
+    login = str((config or {}).get("account_login") or "")
+    domain = login.rsplit("@", 1)[-1].lower()
+    host = f"imap.{domain}" if provider_id == "custom_mail" and domain else str(defaults["imap_host"])
     port = (
         (config or {}).get("imap_port", defaults.get("imap_port", 993))
         if provider_id == "custom_mail"

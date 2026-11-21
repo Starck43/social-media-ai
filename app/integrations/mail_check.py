@@ -57,11 +57,8 @@ def check_mail(
     if provider_id not in WORKSPACE_PROVIDER_IDS:
         return CheckResult("error", "unsupported_provider")
     defaults = dict(PROVIDERS[provider_id].defaults)
-    host = str(
-        ((config or {}).get("imap_host") if provider_id == "custom_mail" else None)
-        or defaults.get("imap_host")
-        or ""
-    )
+    domain = login.rsplit("@", 1)[-1].lower() if isinstance(login, str) else ""
+    host = f"imap.{domain}" if provider_id == "custom_mail" and domain else str(defaults.get("imap_host") or "")
     port = (
         (config or {}).get("imap_port", defaults.get("imap_port", 993))
         if provider_id == "custom_mail"

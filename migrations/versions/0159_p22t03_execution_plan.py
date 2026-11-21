@@ -19,6 +19,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.Integer(), primary_key=True),
         sa.Column("task_id", sa.Integer(), primary_key=True),
         sa.Column("revision", sa.Integer(), primary_key=True),
+        sa.Column("scheduled_principal_id", sa.Integer(), sa.ForeignKey(f"{s}.users.id", ondelete="SET NULL")),
         sa.Column("definition_encrypted", sa.String(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.ForeignKeyConstraint(

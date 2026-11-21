@@ -284,7 +284,11 @@ class ExecutionPlanService:
         async with session.begin_nested():
             session.add(
                 TaskPlanRevision(
-                    tenant_id=task.tenant_id, task_id=task.id, revision=revision, definition_encrypted=encrypted
+                    tenant_id=task.tenant_id,
+                    task_id=task.id,
+                    revision=revision,
+                    scheduled_principal_id=identity[1] if plan.trigger.type == "schedule" else None,
+                    definition_encrypted=encrypted,
                 )
             )
             await session.flush()
@@ -324,7 +328,8 @@ class ExecutionPlanService:
         """Use the principal from a locked, authorized scheduler trigger.
 
         Only the internal scheduler calls this entry point. Its concrete tenant
-        and persisted trigger principal must come from T04, never user input.
+        and persisted trigger principal come from T04. The current revision
+        must have been validated and published under that same principal.
         """
         tenant_id = current_tenant_id()
         if (
@@ -363,6 +368,11 @@ class ExecutionPlanService:
             or task.status in {"done", "cancelled"}
         ):
             raise ExecutionPlanError("plan_revision_unavailable")
+        if scheduled:
+            if stored.scheduled_principal_id is None:
+                raise ExecutionPlanError("schedule_unavailable")
+            if stored.scheduled_principal_id != identity[1]:
+                raise PermissionError("scheduled_principal_unavailable")
         definition = json.loads(decrypt_pii(stored.definition_encrypted))
         plan = parse_execution_plan(_encode(definition["plan"]))
         if scheduled and plan.trigger.type != "schedule":

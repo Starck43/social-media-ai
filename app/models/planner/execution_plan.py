@@ -20,6 +20,7 @@ class TaskPlanRevision(Base, TenantScopedMixin):
     tenant_id: Mapped[int] = mapped_column(primary_key=True)
     task_id: Mapped[int] = mapped_column(primary_key=True)
     revision: Mapped[int] = mapped_column(primary_key=True)
+    scheduled_principal_id: Mapped[int | None] = mapped_column(ForeignKey(f"{S}.users.id", ondelete="SET NULL"))
     definition_encrypted: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

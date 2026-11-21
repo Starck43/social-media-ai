@@ -40,10 +40,18 @@ async def workspace(monkeypatch):
     async with async_session_maker() as session:
         role = await session.scalar(select(PlatformRole.id).where(PlatformRole.codename == "user"))
         owner_role = await session.scalar(select(WorkspaceRole.id).where(WorkspaceRole.codename == "owner"))
+        viewer_role = await session.scalar(select(WorkspaceRole.id).where(WorkspaceRole.codename == "viewer"))
         user = User(
             username=tag, email=f"{tag}@example.invalid", hashed_password="synthetic", role_id=role, is_active=True
         )
-        session.add(user)
+        other_user = User(
+            username=f"{tag}-other",
+            email=f"{tag}-other@example.invalid",
+            hashed_password="synthetic",
+            role_id=role,
+            is_active=True,
+        )
+        session.add_all([user, other_user])
         await session.flush()
         tenants = [Tenant(name=f"{tag}-{i}", slug=f"{tag}-{i}", plan_holder_user_id=user.id) for i in range(2)]
         session.add_all(tenants)
@@ -59,6 +67,16 @@ async def workspace(monkeypatch):
             )
             for tenant in tenants
         )
+        session.add(
+            TenantUser(
+                tenant_id=tenants[0].id,
+                user_id=other_user.id,
+                channel="web",
+                external_user_id=str(other_user.id),
+                role_id=viewer_role,
+                is_active=True,
+            )
+        )
         await session.commit()
 
     @contextmanager
@@ -68,13 +86,14 @@ async def workspace(monkeypatch):
             yield
 
     try:
-        yield SimpleNamespace(tenants=tenants, user=user, scope=scope)
+        yield SimpleNamespace(tenants=tenants, user=user, other_user=other_user, viewer_role=viewer_role, scope=scope)
     finally:
         async with async_session_maker() as session, session.begin():
             for tenant in tenants:
                 await session.delete(tenant)
             await session.flush()
             await session.delete(user)
+            await session.delete(other_user)
 
 
 async def _connection(workspace):
@@ -213,7 +232,8 @@ async def test_shared_scenario_pins_methodology_until_republish_and_blocks_revoc
         await execution_plan_service.load_for_admission(b.id, other.revision)
 
 
-async def test_social_source_binding_enforces_tenant_at_service_and_database(workspace, monkeypatch):
+@pytest.fixture
+async def vk_sources(workspace, monkeypatch):
     # Configure synthetic, local VK capability evidence. No requests reach VK.
     monkeypatch.setattr(settings, "VK_SERVICE_KEY", "synthetic-service-key")
     methods = ["wall.get", "groups.getById", "users.get"]
@@ -235,28 +255,32 @@ async def test_social_source_binding_enforces_tenant_at_service_and_database(wor
         ]
         session.add_all(sources)
         await session.flush()
-        own, foreign = (source.id for source in sources)
+        return tuple(source.id for source in sources)
 
-    def draft(source_id):
-        vk = {"mode": "api"}
-        return map_social_plan(
-            {
-                "task_plan": {
-                    "source_scope": "selected",
-                    "source_ids": [source_id],
-                    "vk_access": vk,
-                    "trigger": {"type": "schedule", "cron": "0 9 * * *"},
-                }
-            },
-            job_type="collect",
-            bindings=(Binding(name="vk", capability="vk.posts.read", resource_id=source_id, vk_access=vk),),
-        ).model_dump_json()
 
+def _vk_collect(source_id):
+    vk = {"mode": "api"}
+    return map_social_plan(
+        {
+            "task_plan": {
+                "source_scope": "selected",
+                "source_ids": [source_id],
+                "vk_access": vk,
+                "trigger": {"type": "schedule", "cron": "0 9 * * *"},
+            }
+        },
+        job_type="collect",
+        bindings=(Binding(name="vk", capability="vk.posts.read", resource_id=source_id, vk_access=vk),),
+    ).model_dump_json()
+
+
+async def test_social_source_binding_enforces_tenant_at_service_and_database(workspace, vk_sources):
+    own, foreign = vk_sources
     with workspace.scope():
         note = await task_service.create(CreateTask(title="Synthetic VK collection"))
         with pytest.raises(ExecutionPlanError, match="resource_unavailable"):
-            await execution_plan_service.preview(note.id, draft(foreign))
-        saved = await execution_plan_service.publish(note.id, note.version, draft(own))
+            await execution_plan_service.preview(note.id, _vk_collect(foreign))
+        saved = await execution_plan_service.publish(note.id, note.version, _vk_collect(own))
         admitted = await execution_plan_service.load_for_admission(note.id, saved.revision)
         assert admitted.resources[0].selection.resource_id == own
 
@@ -272,7 +296,22 @@ async def test_social_source_binding_enforces_tenant_at_service_and_database(wor
                     await session.execute(text("SET CONSTRAINTS ALL IMMEDIATE"))
             assert await session.scalar(select(TaskPlanBinding.source_id)) == own
 
+        async with async_session_maker() as session, session.begin():
+            await session.delete(await session.get(Source, own))
+        assert await execution_plan_service.get_reference(note.id) == saved
+        async with async_session_maker() as session:
+            binding = await session.scalar(select(TaskPlanBinding))
+            assert binding.source_id is None
+        with pytest.raises(ExecutionPlanError, match="resource_unavailable"):
+            await execution_plan_service.load_for_admission(note.id, saved.revision)
+
+
+async def test_view_only_scheduled_vk_read_is_pinned_to_verified_principal(workspace, vk_sources, monkeypatch):
+    own, _ = vk_sources
     tenant_id = workspace.tenants[0].id
+    with workspace.scope():
+        note = await task_service.create(CreateTask(title="Scheduled collection", visibility="workspace"))
+        saved = await execution_plan_service.publish(note.id, note.version, _vk_collect(own))
 
     async def scheduled_admission(index=0, principal=None):
         with tenant_scope(workspace.tenants[index].id):
@@ -287,33 +326,41 @@ async def test_social_source_binding_enforces_tenant_at_service_and_database(wor
                 return result
 
     async with async_session_maker() as session, session.begin():
-        viewer = await session.scalar(select(WorkspaceRole.id).where(WorkspaceRole.codename == "viewer"))
-        member = await session.scalar(select(TenantUser).where(TenantUser.tenant_id == tenant_id))
-        member.role_id = viewer
+        member = await session.scalar(
+            select(TenantUser).where(TenantUser.tenant_id == tenant_id, TenantUser.user_id == workspace.user.id)
+        )
+        member.role_id = workspace.viewer_role
 
-    with workspace.scope(grants=workspace_grants("viewer")):
-        admitted = await execution_plan_service.load_for_admission(note.id, saved.revision)
-        assert admitted.resources[0].selection.resource_id == own
+    view_grants = workspace_grants("viewer")
+    assert ("source", ActionType.ANALYZE) not in view_grants
+    with workspace.scope(grants=view_grants):
+        manual = await execution_plan_service.load_for_admission(note.id, saved.revision)
+        assert manual.resources[0].selection.resource_id == own
         with pytest.raises(PermissionError, match="scheduled_principal_unavailable"):
             await scheduled_admission()
+
     admitted = await scheduled_admission()
     assert admitted.resources[0].actor_id == workspace.user.id
+    assert admitted.resources[0].selection.resource_id == own
+
+    # Another active viewer of this same shared task can load it manually.
+    # It cannot substitute for the principal pinned to the automated revision.
+    with tenant_scope(tenant_id), permission_scope(workspace.other_user, member_grants=view_grants):
+        assert (await execution_plan_service.load_for_admission(note.id, saved.revision)).resources
+    with pytest.raises(PermissionError, match="scheduled_principal_unavailable"):
+        await scheduled_admission(principal=workspace.other_user.id)
     with pytest.raises(PlannerUnavailable):
         await scheduled_admission(index=1)
-    with pytest.raises(PermissionError, match="scheduled_principal_unavailable"):
-        await scheduled_admission(principal=workspace.user.id + 1000)
 
-    with workspace.scope(grants=workspace_grants("viewer")):
-        async with async_session_maker() as session, session.begin():
-            await session.delete(await session.get(Source, own))
-        assert await execution_plan_service.get_reference(note.id) == saved
-        async with async_session_maker() as session:
-            binding = await session.scalar(select(TaskPlanBinding))
-            assert binding.source_id is None
+    with monkeypatch.context() as limited:
+        limited.setattr(settings, "VK_SERVICE_METHOD_GRANTS", ["wall.get", "users.get"])
         with pytest.raises(ExecutionPlanError, match="resource_unavailable"):
-            await execution_plan_service.load_for_admission(note.id, saved.revision)
+            await scheduled_admission()
 
     async with async_session_maker() as session, session.begin():
-        (await session.scalar(select(TenantUser).where(TenantUser.tenant_id == tenant_id))).is_active = False
+        member = await session.scalar(
+            select(TenantUser).where(TenantUser.tenant_id == tenant_id, TenantUser.user_id == workspace.user.id)
+        )
+        member.is_active = False
     with pytest.raises(PermissionError, match="scheduled_principal_unavailable"):
         await scheduled_admission()

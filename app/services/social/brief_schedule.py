@@ -319,6 +319,9 @@ async def configure_schedule(
                     task.is_active = True
                     task.next_run_at = next_at
             await session.flush()
+            from app.services.planner.legacy_migration import compatibility_writer
+
+            await compatibility_writer.agent(session, task, owner_user_id=user_id)
             await session.commit()
             return task
         except IntegrityError:

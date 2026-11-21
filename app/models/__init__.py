@@ -88,7 +88,17 @@ from .llm import (
 )
 from .notifications import DigestRun, Notification, NotificationDelivery, NotificationPreference, NotificationReceipt
 from .onec import OneCQueryHistory
-from .planner import PlannerEventRun, PlannerEventSettings, PlannerReminder, PlannerTask
+from .planner import (
+    LegacyTaskId,
+    PlannerEventRun,
+    PlannerEventSettings,
+    PlannerReminder,
+    PlannerTask,
+    TaskBackfillRecord,
+    TaskBackfillRun,
+    TaskLink,
+    TaskSourceLink,
+)
 from .scheduling import AgentTask, Job
 from .tenancy import (
     EntitlementUsage,
@@ -115,6 +125,11 @@ __all__ = [
     "UnifiedMessage",
     "ContactChannelStat",
     "PlannerTask",
+    "LegacyTaskId",
+    "TaskLink",
+    "TaskBackfillRun",
+    "TaskBackfillRecord",
+    "TaskSourceLink",
     "CalendarChoice",
     "CalendarEvent",
     "SourceObject",

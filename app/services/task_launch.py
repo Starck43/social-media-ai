@@ -208,6 +208,9 @@ async def execute_task_launch(command: TaskLaunchCommand) -> TaskLaunchResult:
                     task.launch_fingerprint = fingerprint
                     await AgentTask.objects.set_sources(task.id, list(plan.source_ids), session=session)
                     await session.flush()
+                    from app.services.planner.legacy_migration import compatibility_writer
+
+                    await compatibility_writer.agent(session, task, owner_user_id=actor.id)
                     task_id = task.id
                     already_launched = False
 

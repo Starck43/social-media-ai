@@ -27,6 +27,8 @@ async def persist_task_create(
     task_values: Mapping[str, Any],
     source_ids: Sequence[int] | None = None,
     tenant_id: int | None = None,
+    canonical_owner_id: int | None = None,
+    attach_to_task_id: int | None = None,
 ) -> "AgentTask":
     """Persist one task and its optional source links in the caller's UoW.
 
@@ -56,6 +58,15 @@ async def persist_task_create(
     task = await AgentTask.objects.create(session=session, **stamped)
     if source_ids is not None:
         await AgentTaskManager().set_sources(task.id, list(source_ids), session=session)
+    if canonical_owner_id is not None:
+        from app.services.planner.legacy_migration import compatibility_writer
+
+        await compatibility_writer.agent(
+            session,
+            task,
+            owner_user_id=canonical_owner_id,
+            attach_to_task_id=attach_to_task_id,
+        )
     return task
 
 

@@ -214,6 +214,10 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
             from .job_manager import JobManager
 
             await JobManager().delete_pending_for_task(session, tenant_id=updated.tenant_id, task_id=updated.id)
+        if updated is not None:
+            from app.services.planner.legacy_migration import compatibility_writer
+
+            await compatibility_writer.refresh_agent(session, updated)
         return updated
 
     @require_permission("agenttask", ActionType.UPDATE)
@@ -296,6 +300,10 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
                         if hasattr(task, key) and not key.startswith("_"):
                             setattr(task, key, value)
                 await session.flush()
+                from app.services.planner.legacy_migration import compatibility_writer
+
+                for task in rows:
+                    await compatibility_writer.refresh_agent(session, task)
                 await session.commit()
                 return len(rows)
             except Exception:
@@ -565,12 +573,7 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
 
         if not isinstance(start, datetime) or not isinstance(end, datetime):
             raise ValueError("start and end must be datetime values")
-        if (
-            start.tzinfo is None
-            or start.utcoffset() is None
-            or end.tzinfo is None
-            or end.utcoffset() is None
-        ):
+        if start.tzinfo is None or start.utcoffset() is None or end.tzinfo is None or end.utcoffset() is None:
             raise ValueError("start and end must be timezone-aware")
         if type(limit) is not int or not 1 <= limit <= 100:
             raise ValueError("limit must be between 1 and 100")
@@ -581,9 +584,15 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
             raise ValueError("end must be after start")
 
         if after is not None:
-            if (not isinstance(after, tuple) or len(after) != 2
-                    or not isinstance(after[0], datetime) or after[0].tzinfo is None
-                    or after[0].utcoffset() is None or type(after[1]) is not int or after[1] <= 0):
+            if (
+                not isinstance(after, tuple)
+                or len(after) != 2
+                or not isinstance(after[0], datetime)
+                or after[0].tzinfo is None
+                or after[0].utcoffset() is None
+                or type(after[1]) is not int
+                or after[1] <= 0
+            ):
                 raise ValueError("invalid range cursor")
             after = (after[0].astimezone(timezone.utc), after[1])
             if not start_utc <= after[0] < end_utc:
@@ -605,8 +614,9 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
         ]
 
         if after is not None:
-            eligibility.append(or_(AgentTask.next_run_at > after[0],
-                                   and_(AgentTask.next_run_at == after[0], AgentTask.id > after[1])))
+            eligibility.append(
+                or_(AgentTask.next_run_at > after[0], and_(AgentTask.next_run_at == after[0], AgentTask.id > after[1]))
+            )
         if not include_prune:
             eligibility.append(AgentTask.job_type != "prune")
 
@@ -634,9 +644,7 @@ class AgentTaskManager(TaskInputsMixin, BaseManager):
             eligibility.append(AgentTask.job_type.not_in(source_types))
 
         rows = await (
-            self.filter(*eligibility)
-            .order_by(AgentTask.next_run_at.asc(), AgentTask.id.asc())
-            .limit(limit + 1)
+            self.filter(*eligibility).order_by(AgentTask.next_run_at.asc(), AgentTask.id.asc()).limit(limit + 1)
         )
         complete = len(rows) <= limit
         return {"items": rows[:limit], "complete": complete}

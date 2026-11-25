@@ -14,6 +14,7 @@ from sqlalchemy import select
 from app.core.database import async_session_maker
 from app.core.tenant_context import tenant_scope
 from app.models.planner import Task, TaskRun, TaskTrigger
+from app.schemas.work_tasks import ReopenConfirmation
 from app.services.commands.task_closure import task_closure_service
 from app.services.planner.canonical_tasks import CreateTask, task_service
 from app.services.planner.tasks import PlannerConflict
@@ -178,8 +179,14 @@ async def test_reopen_asks_before_reactivating_a_paused_schedule(workspace):
         # no paused schedule exists.
         choice = await task_closure_service.preview(task.id, operation="reopen", reactivate_schedule=True)
         assert choice.effects.reactivates_schedule is True and choice.effects.enabled_schedules == 0
+        # Confirm with the API reopening payload, not a hand-built keyword call, so
+        # the wire shape that was previewed is the shape that is accepted.
+        request = ReopenConfirmation(confirmation=choice.confirmation, reactivate_schedule=True)
         await task_closure_service.confirm(
-            task.id, operation="reopen", reactivate_schedule=True, confirmation=choice.confirmation
+            task.id,
+            operation="reopen",
+            reactivate_schedule=request.reactivate_schedule,
+            confirmation=request.confirmation,
         )
         opened = await task_service.get(task.id)
         assert opened.status == "todo"
@@ -199,6 +206,18 @@ async def test_reopen_asks_before_reactivating_a_paused_schedule(workspace):
         assert (await _row(TaskTrigger, trigger.trigger_id)).enabled is False
         with pytest.raises(PlannerConflict, match="task_already_open"):
             await task_closure_service.preview(task.id, operation="reopen")
+
+        # A choice that differs from the preview is refused instead of silently
+        # reopening without the schedule the actor asked for.
+        close = await task_closure_service.preview(task.id, operation="close")
+        await task_closure_service.confirm(task.id, operation="close", confirmation=close.confirmation)
+        choice = await task_closure_service.preview(task.id, operation="reopen", reactivate_schedule=True)
+        with pytest.raises(PlannerConflict, match="task_closure_preview_changed"):
+            await task_closure_service.confirm(task.id, operation="reopen", confirmation=choice.confirmation)
+        await task_closure_service.confirm(
+            task.id, operation="reopen", reactivate_schedule=True, confirmation=choice.confirmation
+        )
+        assert (await _row(TaskTrigger, trigger.trigger_id)).enabled is True
 
         note = await task_service.create(CreateTask(title="Note without schedule"))
         note_close = await task_closure_service.preview(note.id, operation="close")

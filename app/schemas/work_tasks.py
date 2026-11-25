@@ -130,6 +130,12 @@ class ClosureConfirmation(BusinessSchema):
     confirmation: str = Field(min_length=16, max_length=4096)
 
 
+class ReopenConfirmation(ClosureConfirmation):
+    """The reopening token plus the schedule choice it was issued for."""
+
+    reactivate_schedule: bool = False
+
+
 class ClosureEffects(BusinessSchema):
     operation: ClosureOperation
     scope: Literal["occurrence"]

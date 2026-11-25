@@ -31,6 +31,7 @@ from app.schemas.work_tasks import (
     PlanDraft,
     PlanPreview,
     ReopenChoice,
+    ReopenConfirmation,
     RunReceipt,
     RunReceiptPage,
     ScheduleOutcome,
@@ -244,8 +245,15 @@ async def preview_reopen(request: ReopenChoice, task_id: int = Path(gt=0)):
     response_model=ClosureOutcome,
     dependencies=[Depends(require_model_perm("plannertask", ActionType.UPDATE))],
 )
-async def reopen_task(request: ClosureConfirmation, task_id: int = Path(gt=0)):
-    return await invoke(task_closure_service.confirm(task_id, operation="reopen", confirmation=request.confirmation))
+async def reopen_task(request: ReopenConfirmation, task_id: int = Path(gt=0)):
+    return await invoke(
+        task_closure_service.confirm(
+            task_id,
+            operation="reopen",
+            reactivate_schedule=request.reactivate_schedule,
+            confirmation=request.confirmation,
+        )
+    )
 
 
 @router.post(

@@ -119,3 +119,23 @@ def test_every_tool_carries_the_same_canonical_permission():
             "planner.task.update",
             "planner.task.delete",
         }, (name, permission)
+
+
+def _request_model(path):
+    route = next(route for route in api.router.routes if route.path == path and "POST" in route.methods)
+    return next(
+        parameter.field_info.annotation
+        for parameter in route.dependant.body_params
+        if getattr(parameter.field_info, "annotation", None) is not None
+    )
+
+
+def test_closure_confirmation_routes_carry_the_documented_payload():
+    """A confirmation route must accept everything its preview can ask for."""
+    close = _request_model("/tasks/{task_id}/close")
+    reopen = _request_model("/tasks/{task_id}/reopen")
+    assert "confirmation" in close.model_fields
+    # Reopening is the one confirmed command with an extra explicit choice; the
+    # request model has to carry it or a reactivation preview is unconfirmable.
+    assert {"confirmation", "reactivate_schedule"} <= set(reopen.model_fields)
+    assert reopen.model_fields["reactivate_schedule"].default is False

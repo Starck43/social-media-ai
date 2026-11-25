@@ -27,7 +27,7 @@
 17. [P20-T18](../audit/p20/p20-t18.md) — **DONE 2026-11-20**, responsive scenario cards, filtered links to related tasks, and source coverage in task run details. Accepted `233d9f98291342b787f3c101ff814de13f0829cf`.
 
 18. [P20-T19](../tasks/p20-t19.md) — review the workspace prototype and align controls across Today, Chat, Inbox and Tasks.
-19. [P20-T20](../tasks/p20-t20.md) — combine Today reply/decision queues and render a full-width deterministic daily brief.
+19. [P20-T20](../tasks/p20-t20.md) — deliver the prototype layout with a full-width brief, result-linked decisions and a separate quick reply list.
 
 ## Waves
 

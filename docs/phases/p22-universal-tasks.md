@@ -13,20 +13,23 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 3. [P22-T03 — Task execution profiles, steps and resource bindings](../audit/p22/p22-t03.md). DONE 2026-11-21 at `95271ec1`. Versioned plans, scoped bindings and pinned methodology.
 4. [P22-T04 — Run admission, scheduler and worker integration](../audit/p22/p22-t04.md). DONE 2026-11-21 at `a6c6e542`. Durable admission, scheduled occurrences and fenced read-only execution.
 5. [P22-T05 — Task actions, decisions and confirmed deletion](../audit/p22/p22-t05.md). DONE 2026-11-21 at `41160197`. Actor-scoped decisions, confirmed deletion and retained run receipts.
-6. [P22-T06 — Legacy ID mapping, compatibility writers and backfill](../tasks/p22-t06.md). Depends on P22-T01, P22-T03, P22-T04, P22-T05.
+6. [P22-T06 — Legacy ID mapping, compatibility writers and backfill](../audit/p22/p22-t06.md). Accepted at merge `3679a550`. Preserves typed legacy IDs and reconciliation evidence.
 7. **P22-T07 — Unified API, CLI and AI toolset** — **DONE 2026-11-22** (`2945d17b`). Depended on P22-T03, P22-T04, P22-T05, P22-T06. [Accepted](../audit/p22/p22-t07.md).
 8. [P22-T08 — Unify task navigation, labels, creation and detail views](../tasks/p22-t08.md). Depends on P22-T07, P22-T14.
 9. [P22-T09 — Admin connector setup and task operations](../tasks/p22-t09.md). Depends on P22-T02, P22-T05, P22-T07.
 10. [P22-T10 — Correspondence task and sender-grouped Messages](../tasks/p22-t10.md). Depends on P22-T02, P22-T03, P22-T04, P22-T07.
 11. [P22-T11 — External tasks and team tracker commands](../tasks/p22-t11.md). Depends on P22-T02, P22-T05, P22-T07.
-12. [P22-T12 — Workspace cutover, reconciliation and legacy retirement](../tasks/p22-t12.md). Depends on P22-T06, P22-T07, P22-T08, P22-T09, P22-T10, P22-T11.
+12. [P22-T12 — Workspace cutover, reconciliation and legacy retirement](../tasks/p22-t12.md). Depends on P22-T06, P22-T07, P22-T08, P22-T09, P22-T10, P22-T11. The follow-up redirect also depends on P22-T15.
 13. [P22-T13 — Jira issue adapter and Slack task context](../tasks/p22-t13.md). Depends on P22-T11.
 14. [P22-T14 — Task-scoped agent chat and shared transcript UI](../tasks/p22-t14.md). Depends on P22-T03 and P22-T07. Supplies the drawer to P22-T08.
-15. [P22-T15 — Commitments: from correspondence to a dated task with a reminder](../tasks/p22-t15.md). Depends on P22-T08 and P22-T10; soft on P22-T07 and P15-T04.
+15. [P22-T15 — Turn commitments into dated tasks with reminders](../tasks/p22-t15.md). Depends on P22-T08 and P22-T10, uses the accepted P22-T07 interface and has a soft dependency on P15-T04.
 16. [P22-T16 — Sidebar sections for daily work](../audit/p22/p22-t16.md) — **DONE 2026-11-30** (`b6b6ca71`, merged
     `c18fc98e`). No hard prerequisite; supplies the structure P22-T08 and P22-T15 land in.
+17. [P22-T17 — Confirmed task closure, reopening and schedule lifecycle](../tasks/p22-t17.md). Supplies P22-T08.
+18. [P22-T18 — Task filters, calendar and rolling run results](../tasks/p22-t18.md). Supplies P22-T08.
+19. [P22-T19 — Bound work task run and legacy resolution refusals](../audit/p22/p22-t19.md). DONE 2026-11-25 at `d8f397e6`. Bounded launch and legacy-reference refusals.
 
-T01 and T02 supply the foundations for T03. T06 owns legacy writes and migration. T07 owns the new interface namespace and command adapters. Coordinate the legacy regression fixtures at their boundary. T08, T09, T10 and T11 can implement independent surfaces after their prerequisites. T08 uses capability fixtures until the pilots land. T12 integrates the verticals. T13 extends the provider set independently.
+T01 and T02 supply the foundations for T03. T06 owns legacy writes and migration. T07 owns the new interface namespace and command adapters. Coordinate the legacy regression fixtures at their boundary. T08, T09, T10 and T11 can implement independent surfaces after their prerequisites. T08 uses capability fixtures until the pilots land. T12 integrates the verticals. T17 and T18 extend the accepted task contracts for the desktop prototype. P20-T20 owns the Today dashboard and consumes the T18 projections. T13 extends the provider set independently.
 
 ## Baseline examined for planning
 

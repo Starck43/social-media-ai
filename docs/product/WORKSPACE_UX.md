@@ -9,7 +9,7 @@ where owner decisions are recorded below.
 ## Principles
 
 1. **Four daily entry points.** «Сегодня» answers *what needs me now*; «Чат с
-   агентом» lets a user ask, delegate and decide in words; «Входящие» and «Задачи»
+   агентом» lets a user ask, delegate and decide in words; «Переписка» and «Задачи»
    are where correspondence and work items are handled. Monitoring, knowledge,
    CRM/1C and settings are specialist or setup areas reached from these or from
    the sidebar.
@@ -30,18 +30,16 @@ where owner decisions are recorded below.
 7. **Progressive disclosure.** Queue, action log, audit, models and operator
    tools sit under «Система» for roles that have them; daily users do not need them.
 
-## Target navigation
+## App navigation
 
-| Group | Item | Owner / current route | Notes |
-| --- | --- | --- | --- |
-| Работа | Сегодня | Current dashboard `/app/`, [P20-T07](../audit/p20/p20-t07.md) | Default landing; user can choose another in settings |
-| Работа | Чат с агентом | `/app/chat`, [P20-T08](../audit/p20/p20-t08.md) | P22 global entry: `/chat` |
-| Работа | Входящие | `/app/communications` inbox, P15-T04, triage [P20-T09 accepted](../audit/p20/p20-t09.md) | Inbound and outbound in one thread |
-| Работа | Задачи | hub over `/app/planner` (P16-T01) and `/app/tasks`, [P20-T10 accepted](../audit/p20/p20-t10.md) | P22 target: one list and one create/edit flow |
-| Клиенты | Контакты, Договорённости, Предложения | `/app/contacts`, `/app/followups`, `/app/cases` | CRM/1C data appears inside these as context |
-| Знания | База знаний, Документы, Файлы | `/app/knowledge`, `/app/documents`, file workspace | |
-| Мониторинг | Источники, Сценарии, Аналитика, Дайджесты | existing routes | Specialist area of the first vertical |
-| Система | Действия, Очередь, Настройки | existing routes | Role-gated; Settings holds connections, team, notifications, models, billing |
+The sidebar follows the accepted [P22-T16 layout](../audit/p22/p22-t16.md).
+
+| Group | Items |
+| --- | --- |
+| Pinned | Сегодня, Задачи |
+| Агент | Чат с агентом, Аналитика, Рассылки, Источники, Сценарии |
+| Общение | Переписка, Контакты |
+| Документация | Документы и версии, База знаний, Файлы, Закупки |
 
 Rules:
 
@@ -52,9 +50,9 @@ Rules:
 - Pending decisions appear in «Сегодня», as a header badge and in chat; a
   a separate «На согласовании» page handles volume ([P20-T03 acceptance](../audit/p20/p20-t03.md)),
   not as another daily entry point.
-- Mobile bar: «Сегодня», «Чат», «Входящие», «Задачи», «Ещё» (drawer). Chat is
+- Mobile bar: «Сегодня», «Чат», «Переписка», «Задачи», «Ещё» (drawer). Chat is
   included because it is the primary workspace; decided by the owner on
-  2026-11-07 (O-3, see below).
+  2026-11-07 (O-3, see below). P22-T16 updated the correspondence label.
 
 ## Chat page
 
@@ -66,7 +64,7 @@ Rules:
 | Composer | Removable context chips (task, thread, contact, document, case), attachments, quick actions («Подготовить задачу», «Разобрать результат», «Что дальше?») | Hidden context the user cannot see |
 | Right panel | Tabbed «Рабочий контекст», collapsible; a drawer below `lg` | Admin tables, global inbox |
 
-**Conversation selection (P22).** Entering `/chat` shows «Основной чат» for the signed-in user in the active workspace. Choosing a scenario-backed task in the right sidebar swaps the central transcript and composer to that task’s private session in place. Selecting «Основной чат» restores the original history. The task card drawer opens the same task session.
+**Conversation selection (P22).** Entering `/chat` shows «Основной чат» for the signed-in user in the active workspace. Choosing an authorized task session in the right sidebar swaps the central transcript and composer to that task’s private session in place. Selecting «Основной чат» restores the original history. The task card drawer opens the same task session.
 
 **Inline cards** are rendered from owning services and refresh from them; each
 links to its authoritative record: plan preview (run/edit), decision (exact
@@ -86,16 +84,11 @@ editor), brief (attention items).
    and cancel ([../audit/p20-t04.md](../audit/p20/p20-t04.md)).
 4. «Материалы» — citations/evidence of the last answer and attachments.
 
-**Chat dock.** «Спросить агента» uses the global conversation with an object context chip. On task cards, the separate «Поручить агенту» link opens a right-hand drawer for that specific task when its scenario is configured. Both surfaces render messages and the composer through the same chat component. [P22 conversation contract](UNIVERSAL_TASKS.md#task-conversations)
+**Chat dock.** «Спросить агента» uses the global conversation with an object context chip. On task cards, the separate «Поручить агенту» link opens a right-hand drawer for that specific task for open work without an attached scenario, subject to workspace AI and task access. Both surfaces render messages and the composer through the same chat component. [P22 conversation contract](UNIVERSAL_TASKS.md#task-conversations)
 
 ## Today page
 
-Section order: brief → «Ждут решения» → «По плану на сегодня» (planner due and
-overdue, calendar events, scheduled agent runs) → «Ждут ответа» (inbox triage) →
-«Требует внимания» (reconnect, failed or unknown delivery, budget limits) →
-«Последние результаты». Empty or unavailable providers collapse with their reason.
-Existing dashboard sections remain accessible. The user can select a start page
-in settings; «Сегодня» is the default (O-2).
+The [desktop prototype](prototypes/workspace.html) defines the P22 layout. The brief links connection warnings to the recovery controls below. «Собрано за последние 24 часа» shows observed run outcomes in a rolling window. The daily plan links deadlines and external calendar events with «Открыть →». Personal tasks completed today stay visible with muted, struck-through titles. «Ждут ответа» opens a reply drawer. A pending agent action shows its result and «Согласовать» opens the exact recipient and payload before confirmation. Settings and reauthorization links follow the viewer’s grants.
 
 **Attention item projection** (read-time, no copy): provider and kind,
 authoritative reference and route, redacted title, reason, recommended priority
@@ -123,6 +116,10 @@ In [P22](UNIVERSAL_TASKS.md), a title is enough to save a task. The same card ca
 people, a deadline or automated steps later. The editor asks only for fields relevant
 to earlier choices and supports Back. Detail shows Run now for runnable tasks,
 Accept/Reject for eligible reviewers, and a confirmation before deletion.
+
+A commitment from correspondence or a document becomes a task with a deadline, source
+citation and reminder after approval. It appears in «Задачи» and the task calendar.
+`/app/followups` stays available as a legacy link during rollout. [P22-T15](../tasks/p22-t15.md) · [P22-T12](../tasks/p22-t12.md)
 
 The [P20 hub](../audit/p20/p20-t10.md) remains the compatibility baseline for planner
 and agent links, calendar views and confirmed application of run results.

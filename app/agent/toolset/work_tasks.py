@@ -117,13 +117,15 @@ async def work_task_run(task_id: int, request_key: str) -> dict:
     from app.services.task_execution_plans import execution_plan_service
     from app.services.task_run_admission import task_run_service
 
-    reference = await execution_plan_service.get_reference(task_id)
-    if reference is None:
-        return _failure("stale")
-    result = await _call(
-        task_run_service.admit_manual(task_id, expected_revision=reference.revision, request_key=request_key),
-        conflict="stale",
-    )
+    async def admit():
+        reference = await execution_plan_service.get_reference(task_id)
+        if reference is None:
+            raise PlannerConflict("stale_version")
+        return await task_run_service.admit_manual(
+            task_id, expected_revision=reference.revision, request_key=request_key
+        )
+
+    result = await _call(admit())
     if _failed(result):
         return result
     return {
@@ -165,17 +167,12 @@ async def work_task_decide(task_id: int, confirmation: str, reason: str = "") ->
 
 
 async def work_task_resolve_legacy(namespace: str, legacy_id: int) -> dict:
-    from app.core.database import async_session_maker
     from app.core.tenant_context import current_tenant_id
-    from app.services.planner.legacy_migration import resolve_legacy_task
+    from app.services.planner.legacy_migration import project_legacy_task
 
-    async with async_session_maker() as session:
-        task = await resolve_legacy_task(
-            session, tenant_id=current_tenant_id(), namespace=namespace, legacy_id=legacy_id
-        )
-        if task is None:
-            return _failure("not_found")
-        projected = await task_service.get(task.id, session=session)
+    projected = await _call(project_legacy_task(current_tenant_id(), namespace, legacy_id))
+    if _failed(projected):
+        return projected
     return {"namespace": namespace, "legacy_id": legacy_id, "task": projected.model_dump(mode="json")}
 
 

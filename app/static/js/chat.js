@@ -32,6 +32,7 @@ function chatApp() {
             conversationTabs: window.__chatConversationTabs || [],
             conversationRequest: 0,
             conversationLoading: false,
+            sendToken: 0,
             awaitingConfirmation: Boolean(window.__chatAwaitingConfirmation),
             attachmentPolicy: window.__chatAttachmentPolicy || null,
             attachments: [],
@@ -864,13 +865,14 @@ function chatApp() {
             async selectConversation(value) {
                 const next = value || 'main';
                 if (next === this.conversationParam()) return;
+                // A turn or a pending confirmation belongs to its own session.
+                // Switching detaches from the turn: its late answer is dropped
+                // below, and the confirmation is still there on the way back.
                 if (this.pending) {
-                    this.notice = 'Дождитесь ответа агента, чтобы сменить разговор.';
-                    return;
-                }
-                if (this.awaitingConfirmation) {
-                    this.notice = 'Помощник ждёт подтверждения в текущем разговоре. Ответьте на его вопрос перед сменой.';
-                    return;
+                    this.sendToken += 1;
+                    this.pending = false;
+                    this.sending = false;
+                    this.stopThinking();
                 }
                 const token = ++this.conversationRequest;
                 // The old transcript must leave the view at once: showing it under
@@ -982,6 +984,8 @@ function chatApp() {
                 this.draftNotice = '';
                 const selectedId = this.workspaceTaskId;
                 const activeContext = this.evidenceContext;
+                const sendToken = ++this.sendToken;
+                const stillCurrent = () => sendToken === this.sendToken;
 
                 this.pending = true
                 this.sending = true
@@ -1033,6 +1037,9 @@ ${text}`
                         // status code, not "the server said nothing".
                         if (response.ok) throw parseError
                     }
+                    // The reader moved to another conversation: this turn's
+                    // transcript and notices belong to the old one.
+                    if (!stillCurrent()) return
 
                     if (!response.ok || data.error) {
                         const error = new Error(data.error || `Ошибка отправки (${response.status})`)
@@ -1060,6 +1067,7 @@ ${text}`
                     else if (this.messages.at(-1)?.role !== 'assistant') this.notice = 'Ответ без текста. Проверьте результат действия или уточните запрос.'
                     this.$nextTick(() => this.scrollToBottom())
                 } catch (err) {
+                    if (!stillCurrent()) return
                     if (err.name === 'AbortError') {
                         this.notice = 'Генерация остановлена.'
                         this.loadTranscript().catch(() => { })
@@ -1076,10 +1084,12 @@ ${text}`
                         (err.message || 'Не удалось отправить сообщение.')
                     this.$nextTick(() => this.scrollToBottom())
                 } finally {
-                    this.pending = false
-                    this.sending = false
-                    this.abortController = null
-                    this.stopThinking()
+                    if (stillCurrent()) {
+                        this.pending = false
+                        this.sending = false
+                        this.abortController = null
+                        this.stopThinking()
+                    }
                     if (this.workspaceTaskId) this.refreshWorkspaceTask();
                 }
             },

@@ -308,6 +308,9 @@ def test_conversation_selector_and_in_place_switch_are_wired():
     script = Path("app/static/js/chat.js").read_text()
     assert "conversationRequest" in script, "late answers need a request token"
     assert "token !== this.conversationRequest" in script
+    assert "stillCurrent()" in script, "a turn from another conversation cannot write here"
+    assert "this.sendToken += 1" in script, "a switch detaches from a running turn"
+    assert "Дождитесь ответа агента, чтобы сменить разговор" not in script, "a switch is never refused"
     assert "'conversation': this.conversationParam()" in script
     assert "sessionStorage.setItem(this.draftKey()" in script, "drafts are per conversation"
     assert "this.messages = [];" in script, "the old transcript leaves the view while switching"

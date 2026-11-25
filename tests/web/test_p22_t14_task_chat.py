@@ -358,23 +358,52 @@ async def test_scenario_labels_need_scenario_rights_but_history_does_not(task_wo
         assert action.step
 
 
-async def test_conversation_picker_reads_a_bounded_newest_first_window(task_world, monkeypatch):  # noqa: F811
+async def test_conversation_picker_prefers_existing_history_over_new_tasks(task_world, monkeypatch):  # noqa: F811
     require_isolated_schema()
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
     world = task_world
     with actor(world, 0):
-        ids = []
-        for index in range(5):
-            task = await task_service.create(CreateTask(title=f"Window task {index}", visibility="workspace"))
-            ids.append(task.id)
-        for task_id in ids[:4]:
-            await task_chat_service.ensure_task_conversation(task_id)
+        old = await task_service.create(CreateTask(title="Existing history", visibility="workspace"))
+        existing = await task_chat_service.ensure_task_conversation(old.id)
+        await task_service.complete(old.id, old.version)
+        candidates = [
+            await task_service.create(CreateTask(title=f"New task {index}", visibility="workspace"))
+            for index in range(5)
+        ]
 
         tabs = await task_chat_service.list_task_conversations(limit=3)
-        picked = [item["task_id"] for item in tabs]
-        assert len(picked) == 3, "the list never exceeds the requested window"
-        assert picked == sorted(picked, reverse=True), "newest first"
-        assert picked == [ids[4], ids[3], ids[2]], "both groups share one bounded window"
+        assert [item["task_id"] for item in tabs] == [old.id, candidates[-1].id, candidates[-2].id]
+        assert tabs[0]["delegation"] is False
+        assert (await task_chat_service.conversation(old.id)).session_id == existing.session_id
+
+
+async def test_conversation_picker_caps_eligibility_checks_even_when_rows_are_skipped(
+    task_world, monkeypatch
+):  # noqa: F811
+    from app.services import task_chat
+
+    require_isolated_schema()
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    checked = []
+
+    async def unavailable(_session, task_id):
+        checked.append(task_id)
+        return task_chat.TaskChatAction(False, task_id, reason="task_unavailable")
+
+    world = task_world
+    with actor(world, 0):
+        bound = [
+            await task_service.create(CreateTask(title=f"Conversation {index}", visibility="workspace"))
+            for index in range(3)
+        ]
+        for task in bound:
+            await task_chat_service.ensure_task_conversation(task.id)
+        for index in range(3):
+            await task_service.create(CreateTask(title=f"Candidate {index}", visibility="workspace"))
+
+        monkeypatch.setattr(task_chat, "_open_task_chat", unavailable)
+        assert await task_chat_service.list_task_conversations(limit=3) == []
+        assert checked == [task.id for task in reversed(bound)]
 
 
 async def test_task_surface_offers_delegation_for_an_open_task_without_scenario(task_world, monkeypatch):  # noqa: F811

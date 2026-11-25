@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.access_catalog import workspace_grants
@@ -282,67 +282,44 @@ class TaskChatService:
 
     @with_db_session
     async def list_task_conversations(self, *, limit: int = 20, session: AsyncSession | None = None) -> list[dict]:
-        """Conversations the picker may show, using the same rules as the send path.
-
-        Two groups, deduplicated: tasks this actor already talked to (readable
-        even when closed or scenario-attached) and the newest open tasks without
-        an attached scenario (delegation candidates). Bounded on purpose.
-        """
+        """Prefer existing conversations and authorize at most one bounded window."""
         from app.models import TaskChatBinding
 
         identity = await task_service._actor(session, ActionType.VIEW)
-        items: list[dict] = []
-        seen: set[int] = set()
-
-        def add(action: TaskChatAction) -> None:
-            if action.task_id in seen:
-                return
-            seen.add(action.task_id)
-            items.append(
-                {
-                    "task_id": action.task_id,
-                    "title": action.title,
-                    "scenario_name": action.scenario_name,
-                    "step": action.step,
-                    "delegation": action.delegation,
-                    "reason": action.reason,
-                }
+        has_history = TaskChatBinding.task_id.is_not(None)
+        rows = await session.execute(
+            select(Task.id, has_history)
+            .outerjoin(
+                TaskChatBinding,
+                and_(
+                    TaskChatBinding.tenant_id == Task.tenant_id,
+                    TaskChatBinding.task_id == Task.id,
+                    TaskChatBinding.user_id == identity[1],
+                ),
             )
-
-        # Bound history and delegation candidates are each read through a
-        # bounded, newest-first window; the result never exceeds `limit`.
-        bound_ids = list(
-            await session.scalars(
-                select(TaskChatBinding.task_id)
-                .where(TaskChatBinding.tenant_id == identity[0], TaskChatBinding.user_id == identity[1])
-                .order_by(TaskChatBinding.task_id.desc())
-                .limit(limit)
+            .where(
+                Task.tenant_id == identity[0],
+                Task.deleted_at.is_(None),
+                task_service.visibility(identity[1], identity[2]),
+                or_(has_history, Task.status.in_(OPEN_STATUSES)),
             )
+            .order_by(has_history.desc(), Task.id.desc())
+            .limit(limit)
         )
-        candidate_ids = list(
-            await session.scalars(
-                select(Task.id)
-                .where(
-                    Task.tenant_id == identity[0],
-                    Task.deleted_at.is_(None),
-                    task_service.visibility(identity[1], identity[2]),
-                )
-                .order_by(Task.id.desc())
-                .limit(limit)
-            )
-        )
-        bound_set = {int(task_id) for task_id in bound_ids}
-        candidate_set = {int(task_id) for task_id in candidate_ids}
-        # One newest-first order for both groups, so the window and the result
-        # are stable regardless of how many rows each query returned.
-        for task_id in sorted(bound_set | candidate_set, reverse=True):
-            if len(items) >= limit:
-                break
+        items = []
+        for task_id, bound in rows:
             action = await _open_task_chat(session, task_id)
-            if not action.available:
-                continue
-            if action.delegation or task_id in bound_set:
-                add(action)
+            if action.available and (bound or action.delegation):
+                items.append(
+                    {
+                        "task_id": action.task_id,
+                        "title": action.title,
+                        "scenario_name": action.scenario_name,
+                        "step": action.step,
+                        "delegation": action.delegation,
+                        "reason": action.reason,
+                    }
+                )
         return items
 
     @with_db_session

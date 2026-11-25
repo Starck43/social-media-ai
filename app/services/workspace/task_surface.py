@@ -446,17 +446,25 @@ async def canonical_task_actions(task_id, *, perms=None, boundary="cloud"):
                 TaskTrigger.tenant_id == task.tenant_id, TaskTrigger.task_id == task.id, TaskTrigger.enabled
             )
         )
-        active_work = task.status in {"todo", "in_progress"} and task.recurrence_source == "planner"
-        actions = []
-        if (
-            active_work
+        trigger = await session.scalar(
+            select(TaskTrigger)
+            .where(TaskTrigger.tenant_id == task.tenant_id, TaskTrigger.task_id == task.id)
+            .execution_options(populate_existing=True)
+        )
+        closed = task.status in {"done", "cancelled"}
+        editable = (
+            task.recurrence_source == "planner"
             and task_service.action_allowed(identity, ActionType.UPDATE)
             and await task_service._can_edit(session, task, identity)
-        ):
-            actions += [
-                {"reference": "edit", "label": "Редактировать"},
-                {"reference": "complete", "label": "Завершить"},
-            ]
+        )
+        actions = []
+        if not closed and editable:
+            actions.append({"reference": "edit", "label": "Редактировать"})
+            if trigger is None:
+                # A scheduled task is closed explicitly; a human occurrence keeps
+                # its accepted one-click completion with the usual successor.
+                actions.append({"reference": "complete", "label": "Завершить"})
+            actions.append({"reference": "close", "label": "Закрыть", "confirmation_required": True})
             if active_run is None:
                 try:
                     await authorize_task_run(session, task.id)
@@ -469,6 +477,17 @@ async def canonical_task_actions(task_id, *, perms=None, boundary="cloud"):
                         actions.append({"reference": "run", "label": "Запустить", "revision": reference.revision})
                 except (ExecutionPlanError, TaskRunAdmissionError, PermissionError):
                     pass
+            if trigger is not None and (trigger.principal_id == identity[1] or not trigger.enabled):
+                actions.append(
+                    {
+                        "reference": "schedule",
+                        "label": "Расписание",
+                        "revision": trigger.revision,
+                        "enabled": bool(trigger.enabled),
+                    }
+                )
+        if closed and editable:
+            actions.append({"reference": "reopen", "label": "Открыть заново", "confirmation_required": True})
         if (
             task.recurrence_source == "planner"
             and task_service.action_allowed(identity, ActionType.DELETE)

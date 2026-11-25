@@ -22,7 +22,8 @@ WorkTaskVersion = TaskVersion
 WorkTaskDeleted = DeletedOut
 
 DecisionSource = Literal["local", "command", "document"]
-ActionReference = Literal["edit", "complete", "run", "delete"]
+ActionReference = Literal["edit", "complete", "run", "delete", "close", "reopen", "schedule"]
+ClosureOperation = Literal["close", "reopen"]
 
 
 class WorkTaskAction(BusinessSchema):
@@ -30,6 +31,7 @@ class WorkTaskAction(BusinessSchema):
     label: str = Field(min_length=1, max_length=80)
     revision: StrictInt | None = Field(default=None, gt=0)
     confirmation_required: bool | None = None
+    enabled: bool | None = None
 
 
 class LatestRun(BusinessSchema):
@@ -116,6 +118,64 @@ class DeletePreview(BusinessSchema):
 class DeleteOutcome(BusinessSchema):
     effects: DeleteEffects
     in_flight_uncertain: StrictInt = Field(ge=0)
+
+
+class ReopenChoice(BusinessSchema):
+    """The explicit schedule choice; closing never re-arms anything."""
+
+    reactivate_schedule: bool = False
+
+
+class ClosureConfirmation(BusinessSchema):
+    confirmation: str = Field(min_length=16, max_length=4096)
+
+
+class ClosureEffects(BusinessSchema):
+    operation: ClosureOperation
+    scope: Literal["occurrence"]
+    task_id: StrictInt = Field(gt=0)
+    version: StrictInt = Field(gt=0)
+    status: str = Field(min_length=1, max_length=32)
+    target_status: str = Field(min_length=1, max_length=32)
+    series_id: StrictInt = Field(gt=0)
+    creates_occurrence: bool
+    successor_task_id: StrictInt | None = Field(default=None, gt=0)
+    successor_due: str | None = None
+    schedules: StrictInt = Field(ge=0)
+    enabled_schedules: StrictInt = Field(ge=0)
+    reactivates_schedule: bool
+    admitted_run_id: StrictInt | None = Field(default=None, gt=0)
+    admitted_run_status: str | None = Field(default=None, max_length=32)
+    retained_run_receipts: StrictInt = Field(ge=0)
+    next_due_at: datetime | None = None
+
+
+class ClosurePreview(BusinessSchema):
+    effects: ClosureEffects
+    confirmation: str = Field(min_length=16, max_length=4096)
+    expires_in: StrictInt = Field(gt=0)
+
+
+class ClosureOutcome(BusinessSchema):
+    effects: ClosureEffects
+    replayed: bool
+
+
+class ScheduleRequest(BusinessSchema):
+    enabled: bool
+    revision: StrictInt = Field(gt=0)
+    expected_version: StrictInt = Field(gt=0)
+
+
+class ScheduleOutcome(BusinessSchema):
+    task_id: StrictInt = Field(gt=0)
+    revision: StrictInt = Field(gt=0)
+    task_version: StrictInt = Field(gt=0)
+    trigger_id: StrictInt | None = Field(default=None, gt=0)
+    enabled: bool
+    cron_expression: str | None = Field(default=None, max_length=100)
+    timezone_name: str | None = Field(default=None, max_length=100)
+    next_due_at: datetime | None = None
 
 
 class DecisionRequest(BusinessSchema):

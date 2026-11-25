@@ -56,6 +56,10 @@ def _dump(model) -> dict[str, Any]:
     return model
 
 
+def _outcome(result) -> dict[str, Any]:
+    return result if _failed(result) else _dump(result)
+
+
 async def work_task_list(limit: int = 50, before_id: int | None = None, view: str | None = None) -> dict:
     result = await _call(task_service.list(limit=limit, before_id=before_id, view=view))
     if _failed(result):
@@ -97,6 +101,51 @@ async def work_task_complete(task_id: int, expected_version: int) -> dict:
     if _failed(result):
         return result
     return result.model_dump(mode="json")
+
+
+async def work_task_close_preview(task_id: int) -> dict:
+    from app.services.commands.task_closure import task_closure_service
+
+    return _outcome(await _call(task_closure_service.preview(task_id, operation="close")))
+
+
+async def work_task_close(task_id: int, confirmation: str) -> dict:
+    from app.services.commands.task_closure import task_closure_service
+
+    return _outcome(await _call(task_closure_service.confirm(task_id, operation="close", confirmation=confirmation)))
+
+
+async def work_task_reopen_preview(task_id: int, reactivate_schedule: bool = False) -> dict:
+    from app.services.commands.task_closure import task_closure_service
+
+    return _outcome(
+        await _call(task_closure_service.preview(task_id, operation="reopen", reactivate_schedule=reactivate_schedule))
+    )
+
+
+async def work_task_reopen(task_id: int, confirmation: str, reactivate_schedule: bool = False) -> dict:
+    from app.services.commands.task_closure import task_closure_service
+
+    return _outcome(
+        await _call(
+            task_closure_service.confirm(
+                task_id, operation="reopen", reactivate_schedule=reactivate_schedule, confirmation=confirmation
+            )
+        )
+    )
+
+
+async def work_task_schedule(task_id: int, enabled: bool, revision: int, expected_version: int) -> dict:
+    """Pause or arm the published schedule independently of any manual run."""
+    from app.services.task_run_triggers import task_trigger_service
+
+    return _outcome(
+        await _call(
+            task_trigger_service.configure(
+                task_id, revision=revision, expected_version=expected_version, enabled=enabled
+            )
+        )
+    )
 
 
 async def work_task_delete_preview(task_id: int, scope: str) -> dict:
@@ -281,6 +330,60 @@ def register_work_task_tools() -> None:
             True,
             {"task_id": integer, "expected_version": {"type": "integer", "minimum": 1}},
             ["task_id", "expected_version"],
+        ),
+        (
+            "work_task_close_preview",
+            work_task_close_preview,
+            "Показать, что закроет подтверждение: преемника, расписания и уже принятый прогон.",
+            WRITE,
+            False,
+            {"task_id": integer},
+            ["task_id"],
+        ),
+        (
+            "work_task_close",
+            work_task_close,
+            "Закрыть задачу по подписанному токену предпросмотра; расписания выключаются, чеки сохраняются.",
+            WRITE,
+            True,
+            {"task_id": integer, "confirmation": string},
+            ["task_id", "confirmation"],
+        ),
+        (
+            "work_task_reopen_preview",
+            work_task_reopen_preview,
+            "Показать, что вернёт открытие; отдельный выбор — включить ли приостановленное расписание.",
+            WRITE,
+            False,
+            {"task_id": integer, "reactivate_schedule": {"type": "boolean"}},
+            ["task_id"],
+        ),
+        (
+            "work_task_reopen",
+            work_task_reopen,
+            "Открыть закрытую задачу по подписанному токену; повтор не создаёт новых эффектов.",
+            WRITE,
+            True,
+            {
+                "task_id": integer,
+                "confirmation": string,
+                "reactivate_schedule": {"type": "boolean"},
+            },
+            ["task_id", "confirmation"],
+        ),
+        (
+            "work_task_schedule",
+            work_task_schedule,
+            "Приостановить или включить расписание опубликованной ревизии; ручной запуск остаётся отдельно.",
+            WRITE,
+            True,
+            {
+                "task_id": integer,
+                "enabled": {"type": "boolean"},
+                "revision": {"type": "integer", "minimum": 1},
+                "expected_version": {"type": "integer", "minimum": 1},
+            },
+            ["task_id", "enabled", "revision", "expected_version"],
         ),
         (
             "work_task_delete_preview",

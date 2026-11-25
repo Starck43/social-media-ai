@@ -16,7 +16,10 @@ from rich.console import Console
 
 from app.core.tenant_context import tenant_scope
 
-app = typer.Typer(name="worktasks", help="Canonical work tasks: list, create, edit, plan, run, decide")
+app = typer.Typer(
+    name="worktasks",
+    help="Canonical work tasks: list, create, edit, plan, run, close, reopen, schedule, decide",
+)
 console = Console()
 
 EXIT_OK = 0
@@ -185,6 +188,50 @@ def complete_cmd(
     from app.agent.toolset import work_tasks as tool
 
     _run(lambda: tool.work_task_complete(task_id, expected_version))
+
+
+@app.command("close")
+def close_cmd(
+    task_id: int = typer.Argument(..., min=1),
+    confirm: str | None = typer.Option(None, "--confirm", help="Token from the preview"),
+):
+    """Preview the effects of closing the task version, or confirm with its token."""
+    from app.agent.toolset import work_tasks as tool
+
+    if confirm is None:
+        _run(lambda: tool.work_task_close_preview(task_id))
+        return
+    _run(lambda: tool.work_task_close(task_id, confirm))
+
+
+@app.command("reopen")
+def reopen_cmd(
+    task_id: int = typer.Argument(..., min=1),
+    reactivate_schedule: bool = typer.Option(
+        False, "--reactivate-schedule", help="Re-arm a paused schedule as part of the reopening"
+    ),
+    confirm: str | None = typer.Option(None, "--confirm", help="Token from the preview"),
+):
+    """Preview reopening this closed task, or confirm with its token."""
+    from app.agent.toolset import work_tasks as tool
+
+    if confirm is None:
+        _run(lambda: tool.work_task_reopen_preview(task_id, reactivate_schedule))
+        return
+    _run(lambda: tool.work_task_reopen(task_id, confirm, reactivate_schedule))
+
+
+@app.command("schedule")
+def schedule_cmd(
+    task_id: int = typer.Argument(..., min=1),
+    revision: int = typer.Option(..., "--revision", min=1, help="Published plan revision"),
+    enabled: bool = typer.Option(..., "--on/--off", help="Arm or pause the schedule"),
+    expected_version: int = typer.Option(..., "--version", min=1),
+):
+    """Pause or arm the published schedule; a manual run stays a separate command."""
+    from app.agent.toolset import work_tasks as tool
+
+    _run(lambda: tool.work_task_schedule(task_id, enabled, revision, expected_version))
 
 
 @app.command("delete")

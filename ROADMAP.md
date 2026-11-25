@@ -66,7 +66,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P20-T20](docs/tasks/p20-t20.md) Unified Today actions and full-width daily brief — **IN_PROGRESS** · OpenCode · owner-directed direct `dev` · `P2` · `C3`
 
 - [P22-T09](docs/tasks/p22-t09.md) Admin connector setup and task operations — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P2` · `C3`
-- [P22-T15](docs/tasks/p22-t15.md) Commitments: from correspondence to a dated task with a reminder — **TODO** · unassigned · — · `P2` · `C4`
+- [P22-T15](docs/tasks/p22-t15.md) Turn commitments into dated tasks with reminders — **TODO** · unassigned · — · `P2` · `C4`
 - [P22-T11](docs/tasks/p22-t11.md) External tasks and team tracker commands — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P2` · `C4`
 - [P22-T12](docs/tasks/p22-t12.md) Workspace cutover, reconciliation and legacy retirement — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P2` · `C5`
 

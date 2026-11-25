@@ -27,6 +27,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
     `c18fc98e`). No hard prerequisite; supplies the structure P22-T08 and P22-T15 land in.
 17. [P22-T17 — Confirmed task closure, reopening and schedule lifecycle](../tasks/p22-t17.md). Supplies P22-T08.
 18. [P22-T18 — Task filters, calendar and rolling run results](../tasks/p22-t18.md). Supplies P22-T08.
+19. [P22-T19 — Bound work task run and legacy resolution refusals](../tasks/p22-t19.md). Corrects the refusal paths found in the T07 re-audit.
 
 T01 and T02 supply the foundations for T03. T06 owns legacy writes and migration. T07 owns the new interface namespace and command adapters. Coordinate the legacy regression fixtures at their boundary. T08, T09, T10 and T11 can implement independent surfaces after their prerequisites. T08 uses capability fixtures until the pilots land. T12 integrates the verticals. T17 and T18 extend the accepted task contracts for the desktop prototype. P20-T20 owns the Today dashboard and consumes the T18 projections. T13 extends the provider set independently.
 

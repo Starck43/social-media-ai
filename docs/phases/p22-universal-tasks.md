@@ -28,6 +28,8 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 17. [P22-T17 — Confirmed task closure, reopening and schedule lifecycle](../tasks/p22-t17.md). Supplies P22-T08.
 18. [P22-T18 — Task filters, calendar and rolling run results](../tasks/p22-t18.md). Supplies P22-T08.
 19. [P22-T19 — Bound work task run and legacy resolution refusals](../audit/p22/p22-t19.md). DONE 2026-11-25 at `d8f397e6`. Bounded launch and legacy-reference refusals.
+20. [P22-T20 — Page older chat messages and saved task conversations](../tasks/p22-t20.md). Follows the T14 conversation contract.
+21. [P22-T21 — Budget and compact agent conversation context](../tasks/p22-t21.md). Follows the T14 conversation contract.
 
 T01 and T02 supply the foundations for T03. T06 owns legacy writes and migration. T07 owns the new interface namespace and command adapters. Coordinate the legacy regression fixtures at their boundary. T08, T09, T10 and T11 can implement independent surfaces after their prerequisites. T08 uses capability fixtures until the pilots land. T12 integrates the verticals. T17 and T18 extend the accepted task contracts for the desktop prototype. P20-T20 owns the Today dashboard and consumes the T18 projections. T13 extends the provider set independently.
 

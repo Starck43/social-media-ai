@@ -63,7 +63,7 @@ NAV_ITEMS: tuple[NavItem, ...] = (
         group_label="",
     ),
     # Агент: the conversation, what it produced and what it reads from.
-    NavItem("chat", "/app/chat", "Чат с агентом", icon="chat", group="agent", group_label="Агент"),
+    NavItem("chat", "/chat", "Чат с агентом", icon="chat", group="agent", group_label="Агент"),
     NavItem(
         "analytics",
         "/app/analytics",

@@ -33,7 +33,7 @@ from app.core.health import router as health_router
 from app.core.request_context import RequestContextMiddleware
 from app.core.tenant_context import PlatformScopeMiddleware, tenant_scope
 from app.version import __version__
-from app.web import web_router
+from app.web import chat_root_router, web_router
 from app.web.middleware import TenantUIMiddleware
 
 # Configure logging
@@ -129,6 +129,7 @@ def create_application() -> FastAPI:
     # Client-facing UI (docs/platform/API.md): pages under /app, tenant-scoped.
     # Kept out of OpenAPI docs — it is HTML, not a machine API.
     application.include_router(web_router, include_in_schema=False)
+    application.include_router(chat_root_router, include_in_schema=False)
 
     # CSRF token issuer shared by the web UI and sqladmin forms.
     application.state.csrf_manager = CSRFTokenManager(secret_key=settings.SECRET_KEY)

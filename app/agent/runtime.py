@@ -29,7 +29,8 @@ from app.agent.identity import (
     memory_actor_scope,
     refresh_runtime_identity,
     resolve_runtime_identity,
-    session_matches_identity,
+    session_matches_conversation,
+    task_conversation_owner,
 )
 from app.agent.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
@@ -487,6 +488,7 @@ async def handle_web_message(
     role_codename: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
     confirm_large_attachments: bool = False,
+    conversation_chat_id: str | None = None,
 ) -> Optional[str]:
     """Run one agent turn for a browser message in the given workspace.
 
@@ -519,6 +521,11 @@ async def handle_web_message(
     if injection_error:
         return injection_error
 
+    # A task conversation is a selector for the transcript, never the actor:
+    # it must belong to this signed-in user and the turn still runs as them.
+    if conversation_chat_id is not None and task_conversation_owner(conversation_chat_id) != str(user_id):
+        raise PermissionError("Conversation does not belong to this user")
+
     resolution = Resolution(
         tenant_id=tenant_id,
         channel=WEB_CHANNEL,
@@ -534,10 +541,16 @@ async def handle_web_message(
         text=text,
         attachments=attachment_list,
         confirm_large_attachments=bool(confirm_large_attachments),
+        conversation_chat_id=conversation_chat_id,
     )
 
     with tenant_scope(tenant_id):
         return await _handle_in_tenant(inbound, resolution)
+
+
+def _conversation_chat_id(inbound: Inbound) -> str:
+    """The authorized conversation to render; the actor may stay in its own chat."""
+    return getattr(inbound, "conversation_chat_id", None) or str(inbound.chat_id)
 
 
 async def web_session_id(user_id: int) -> Optional[int]:
@@ -592,11 +605,11 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
 
         session = await agent_sessions.get_or_create(
             channel=inbound.channel,
-            chat_id=str(inbound.chat_id),
+            chat_id=_conversation_chat_id(inbound),
             kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
             is_owner=identity.is_owner,
         )
-        if session_matches_identity(session, identity):
+        if session_matches_conversation(session, identity):
             await session.append("user", text)
             await session.append("assistant", injection_error)
             await session.touch()
@@ -628,16 +641,16 @@ async def _handle_authorized_turn(inbound: Any, resolution: Any, identity: Runti
 
     session = await agent_sessions.get_or_create(
         channel=inbound.channel,
-        chat_id=str(inbound.chat_id),
+        chat_id=_conversation_chat_id(inbound),
         kind="channel" if getattr(inbound, "is_channel_post", False) else "private",
         is_owner=identity.is_owner,
     )
-    if not session_matches_identity(session, identity):
+    if not session_matches_conversation(session, identity):
         logger.error(f"Failed to create agent session for {inbound.channel}:{inbound.chat_id}")
         return "Не удалось открыть сессию агента."
 
     fresh = await refresh_runtime_identity(identity)
-    if fresh is None or not fresh.ai_chat_enabled or not session_matches_identity(session, fresh):
+    if fresh is None or not fresh.ai_chat_enabled or not session_matches_conversation(session, fresh):
         return "Доступ к рабочему пространству изменился. Запрос остановлен."
     identity = fresh
 
@@ -982,7 +995,7 @@ async def _dispatch_or_stage(
     if not isinstance(args, dict) or any(not isinstance(key, str) for key in args):
         return "Некорректные аргументы инструмента.", False
     fresh = await refresh_runtime_identity(identity)
-    if fresh is None or not fresh.ai_chat_enabled or not session_matches_identity(session, fresh):
+    if fresh is None or not fresh.ai_chat_enabled or not session_matches_conversation(session, fresh):
         return "Доступ изменился. Инструмент не выполнен.", True
     with permission_scope(fresh.user, is_owner=fresh.is_owner, member_grants=fresh.member_grants):
         if spec.required_permission is not None:
@@ -1040,7 +1053,7 @@ async def _run_tool_loop(
     reply: Optional[str] = seed_reply
     for _iteration in range(max(1, settings.AGENT_MAX_ITERATIONS)):
         fresh = await refresh_runtime_identity(identity)
-        if fresh is None or not fresh.ai_chat_enabled or not session_matches_identity(session, fresh):
+        if fresh is None or not fresh.ai_chat_enabled or not session_matches_conversation(session, fresh):
             denied = "Доступ к рабочему пространству изменился. Запрос остановлен."
             await session.append("assistant", denied)
             return _join_replies(reply, denied)

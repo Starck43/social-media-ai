@@ -21,6 +21,9 @@ class Inbound:
     raw: dict[str, Any] = field(default_factory=dict)
     attachments: list[dict[str, Any]] = field(default_factory=list)
     confirm_large_attachments: bool = False
+    # Web only: the authorized conversation the turn renders. The authenticated
+    # actor (`chat_id`/`user_id`) stays independent of this selector.
+    conversation_chat_id: str | None = None
 
 
 class Channel(Protocol):

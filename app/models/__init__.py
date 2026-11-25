@@ -7,7 +7,7 @@ from .base import Base, TenantScopedMixin, TimestampMixin
 
 # isort: split
 from .actions import AgentAction, BotAction, BusinessCommand, BusinessCommandTarget
-from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession
+from .agent import AgentFeedback, AgentMemory, AgentMessage, AgentSession, TaskChatBinding
 from .analysis.agent_scenario import AgentScenario
 from .analysis.ai_analytics import AIAnalytics
 from .analysis.analyzed_content_receipt import AnalyzedContentReceipt
@@ -94,9 +94,11 @@ from .planner import (
     PlannerEventSettings,
     PlannerReminder,
     PlannerTask,
+    Task,
     TaskBackfillRecord,
     TaskBackfillRun,
     TaskLink,
+    TaskPlanRevision,
     TaskSourceLink,
 )
 from .scheduling import AgentTask, Job
@@ -231,6 +233,9 @@ __all__ = [
     "DigestRun",
     # Agent runtime
     "AgentSession",
+    "Task",
+    "TaskChatBinding",
+    "TaskPlanRevision",
     "AgentMessage",
     "AgentMemory",
     "AgentFeedback",

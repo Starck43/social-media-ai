@@ -22,6 +22,12 @@ from dateutil import parser as dateutil_parser
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from app.services.task_chat import (
+    ChatScope,
+    TaskChatDenied,
+    task_chat_actor_id,
+    task_chat_service,
+)
 from app.web.chat_workspace import router as workspace_router
 from app.web.chat_workspace import selected_task, workspace_denied
 from app.web.deps import add_flash, ensure_csrf, render, render_section_denied
@@ -35,6 +41,115 @@ router.include_router(workspace_router)
 # context.
 TRANSCRIPT_LIMIT = 40
 MAX_CONNECTOR_SEARCH_FORM_BYTES = 65_536
+# P22-T14: the global conversation lives at `/chat`, and `/app/chat` stays a
+# compatible entry to the same page and endpoints. The selector is server-side.
+CHAT_ENTRY_PATHS = ("/chat", "/app/chat")
+
+
+def _chat_path(request: Request) -> str:
+    """The entry the caller actually used, so redirects stay on it."""
+    path = getattr(getattr(request, "url", None), "path", "") or ""
+    return "/chat" if path == "/chat" or path.startswith("/chat/") else "/app/chat"
+
+
+def _conversation_task_id(value: str | None) -> int | None:
+    """Parse the `task:<id>` conversation selector. Anything else is the main chat."""
+    if not isinstance(value, str):
+        return None
+    prefix, _, rest = value.strip().partition(":")
+    if prefix != "task" or not rest.isdigit():
+        return None
+    task_id = int(rest)
+    return task_id if task_id > 0 else None
+
+
+def _conversation_value(scope: ChatScope | None) -> str:
+    return f"task:{scope.task_id}" if scope is not None and scope.is_task else "main"
+
+
+def _scope_public(scope: ChatScope | None) -> dict:
+    """Template-facing description of the conversation, never a client selector."""
+    if scope is None:
+        return {
+            "kind": "main",
+            "title": "Основной чат",
+            "task_id": None,
+            "scenario": "",
+            "step": "",
+            "available": True,
+            "reason": "",
+        }
+    return {
+        "kind": scope.kind,
+        "title": scope.title,
+        "task_id": scope.task_id,
+        "scenario": scope.scenario_name,
+        "step": scope.step,
+        "available": True,
+        "reason": "",
+    }
+
+
+async def _scope_for(value: str | None, *, allocate: bool) -> ChatScope:
+    """Resolve the selected conversation on the server; the client only names it.
+
+    `allocate=True` is the send path: the first message of a task conversation
+    creates its binding once. Reads never allocate.
+    """
+    task_id = _conversation_task_id(value)
+    if task_id is None:
+        return await task_chat_service.conversation(None)
+    if allocate:
+        return await task_chat_service.ensure_task_conversation(task_id)
+    return await task_chat_service.conversation(task_id)
+
+
+def _scope_error_page(request: Request, reason: str, is_ajax: bool):
+    """An unavailable selection is explicit, and it has no composer target."""
+    scope = _scope_public(None)
+    scope.update({"available": False, "title": "Разговор недоступен", "reason": reason})
+    if is_ajax:
+        return JSONResponse(
+            {"error": "Разговор с задачей недоступен", "code": reason, "conversation": scope},
+            status_code=403,
+        )
+    return render(
+        request,
+        "web/chat.html",
+        section="chat",
+        messages=[],
+        is_owner=_is_owner(request),
+        awaiting_confirmation=False,
+        attachment_policy={},
+        scoped_context=None,
+        active_boundary="cloud",
+        connector_search={"enabled": False, "devices": []},
+        chat_model={"label": "", "is_auto": True},
+        conversation=scope,
+        conversation_value="main",
+        conversation_tabs=[],
+    )
+
+
+async def _conversation_tabs(user_id: int) -> list[dict]:
+    """Conversation entries for the right sidebar.
+
+    Only canonical tasks with a usable scenario binding are offered, and only
+    when this actor may read the task; the main chat is always first.
+    """
+    try:
+        tasks = await task_chat_service.list_task_conversations()
+    except PermissionError:
+        return []
+    return [
+        {
+            "value": f"task:{item['task_id']}",
+            "title": item["title"],
+            "scenario": item["scenario_name"],
+            "task_id": item["task_id"],
+        }
+        for item in tasks
+    ]
 
 
 def _format_message_time(dt_val) -> str:
@@ -126,11 +241,8 @@ def _enrich_message(msg) -> dict:
     }
 
 
-async def _confirmation_pending(user_id: int) -> bool:
-    """Whether this user's chat is waiting for a yes/no on a staged action or large attachment."""
-    from app.agent.runtime import web_session_id
-
-    session_id = await web_session_id(user_id)
+async def _confirmation_pending(session_id: int | None) -> bool:
+    """Whether this conversation waits for a yes/no on a staged action or attachment."""
     if session_id is None:
         return False
     from app.models import AgentSession
@@ -212,6 +324,7 @@ async def chat_page(
     boundary: str | None = None,
     context_title: str | None = None,
     context_ref: str | None = None,
+    conversation: str | None = None,
 ):
     """Render the transcript; opens no session and spends nothing.
 
@@ -243,8 +356,6 @@ async def chat_page(
     elif not is_ajax:
         request.session.pop("evidence_context", None)
 
-    from app.agent.runtime import web_session_id
-
     active_boundary = (scoped_context or {}).get("boundary") or "cloud"
     user = getattr(request.state, "web_user", None)
     tenant_id = getattr(request.state, "tenant_id", None)
@@ -270,16 +381,20 @@ async def chat_page(
             active_boundary=active_boundary,
             connector_search=connector_search,
             chat_model={"label": "", "is_auto": True},
+            conversation=_scope_public(None),
+            conversation_value="main",
+            conversation_tabs=[],
         )
 
     connector_search = await _company_connector_search_options(user.id)
 
-    messages = []
-    session_id = await web_session_id(user.id)
-    if session_id is not None:
-        from app.models.managers.agent_message_manager import agent_messages
-
-        messages = await agent_messages.recent(session_id, limit=TRANSCRIPT_LIMIT)
+    # P22-T14: the selector names a conversation; the server decides whether it
+    # exists, whether it is readable, and what its transcript is.
+    try:
+        scope = await task_chat_service.conversation(_conversation_task_id(conversation))
+    except TaskChatDenied as exc:
+        return _scope_error_page(request, exc.reason, is_ajax)
+    messages = await _transcript(scope.session_id)
 
     # Enrich messages with formatted fields
     enriched = _display_transcript(messages)
@@ -296,12 +411,14 @@ async def chat_page(
         return JSONResponse(
             {
                 "messages": enriched,
-                "awaiting_confirmation": await _confirmation_pending(user.id),
+                "awaiting_confirmation": await _confirmation_pending(scope.session_id),
                 "is_owner": _is_owner(request),
                 "attachment_policy": policy_dict,
                 "scoped_context": scoped_context,
                 "active_boundary": active_boundary,
                 "connector_search": connector_search,
+                "conversation": _scope_public(scope),
+                "conversation_value": _conversation_value(scope),
             }
         )
 
@@ -311,12 +428,15 @@ async def chat_page(
         section="chat",
         messages=enriched,
         is_owner=_is_owner(request),
-        awaiting_confirmation=await _confirmation_pending(user.id),
+        awaiting_confirmation=await _confirmation_pending(scope.session_id),
         attachment_policy=policy_dict,
         scoped_context=scoped_context,
         active_boundary=active_boundary,
         connector_search=connector_search,
         chat_model=_chat_model_context(request, policy_dict),
+        conversation=_scope_public(scope),
+        conversation_value=_conversation_value(scope),
+        conversation_tabs=await _conversation_tabs(user.id),
     )
 
 
@@ -454,6 +574,7 @@ async def chat_send(
     context_type: str | None = Form(None),
     context_id: str | None = Form(None),
     boundary: str | None = Form(None),
+    conversation: str = Form(""),
 ):
     """Run one agent turn and show the answer on the same page.
 
@@ -523,10 +644,30 @@ async def chat_send(
             return JSONResponse({"error": "Пустое сообщение"}, status_code=400)
         return RedirectResponse("/app/chat", status_code=302)
 
+    # P22-T14: resolve the selected conversation before any model spend. The
+    # selector only names it; rights, binding and scenario are rechecked here.
+    try:
+        scope = await _scope_for(conversation, allocate=True)
+    except TaskChatDenied as exc:
+        if is_ajax:
+            return JSONResponse({"error": "Разговор с задачей недоступен", "code": exc.reason}, status_code=403)
+        add_flash(request, "error", "Разговор с задачей недоступен")
+        return RedirectResponse(_chat_path(request), status_code=303)
+
     resolved_task_id = task_id if type(task_id) is int else None
+    # A task conversation carries its own server-resolved topic: the submitted
+    # task id cannot establish or replace it.
+    if scope.is_task:
+        resolved_task_id = None
+        text = (
+            f"[Разговор по задаче: {scope.title}"
+            + (f" | сценарий: {scope.scenario_name}" if scope.scenario_name else "")
+            + (f" | шаг: {scope.step}" if scope.step else "")
+            + f"]\n{text}"
+        )
     # An explicit selection is context, never authority. Validate it again at
     # send time; keep confirmation replies unchanged for the shared runtime gate.
-    if resolved_task_id is not None and not await _confirmation_pending(user.id):
+    if resolved_task_id is not None and not await _confirmation_pending(scope.session_id):
         denied = workspace_denied(request)
         if denied is not None:
             return denied
@@ -583,6 +724,10 @@ async def chat_send(
     # The runtime reloads the owner membership before it admits a paid turn.
     try:
         extra_kwargs: dict = {}
+        # Only a task turn names a conversation, so the main-chat call keeps its
+        # historical signature for the shared runtime and its doubles.
+        if scope.is_task:
+            extra_kwargs["conversation_chat_id"] = task_chat_actor_id(user.id, scope.task_id)
         if turn_attachments:
             extra_kwargs["attachments"] = turn_attachments
             if confirm_large_flag:
@@ -611,7 +756,7 @@ async def chat_send(
                 return JSONResponse({"error": "Агент не ответил — попробуйте ещё раз"}, status_code=500)
             add_flash(request, "error", "Агент не ответил — попробуйте ещё раз")
 
-        raw_messages = await _transcript(user.id)
+        raw_messages = await _transcript(scope.session_id)
         enriched = _display_transcript(raw_messages)
 
         if limit_reached:
@@ -620,11 +765,13 @@ async def chat_send(
 
         # "A waiting confirmation" is a question the owner must answer, not a
         # missing answer: the client must not add the "no text" notice on top.
-        awaiting = await _confirmation_pending(user.id)
+        awaiting = await _confirmation_pending(scope.session_id)
         if is_ajax:
             return JSONResponse(
                 {
                     "messages": enriched,
+                    "conversation": _scope_public(scope),
+                    "conversation_value": _conversation_value(scope),
                     "warning": (
                         "Агент завершил обработку без текстового ответа. "
                         "Проверьте результат действия или уточните запрос."
@@ -643,6 +790,14 @@ async def chat_send(
             messages=enriched,
             is_owner=_is_owner(request),
             awaiting_confirmation=awaiting,
+            attachment_policy=policy_dict if parsed_att_ids else {},
+            scoped_context=selected_context or scoped_context,
+            active_boundary=(selected_context or scoped_context or {}).get("boundary") or "cloud",
+            connector_search=await _company_connector_search_options(user.id),
+            chat_model={"label": "", "is_auto": True},
+            conversation=_scope_public(scope),
+            conversation_value=_conversation_value(scope),
+            conversation_tabs=await _conversation_tabs(user.id),
         )
     except PermissionError:
         if is_ajax:
@@ -659,11 +814,8 @@ async def chat_send(
         return RedirectResponse("/app/chat", status_code=302)
 
 
-async def _transcript(user_id: int) -> list:
-    """The transcript after a turn, without a redirect round-trip."""
-    from app.agent.runtime import web_session_id
-
-    session_id = await web_session_id(user_id)
+async def _transcript(session_id: int | None) -> list:
+    """The transcript of one authorized conversation, without a redirect."""
     if session_id is None:
         return []
     from app.models.managers.agent_message_manager import agent_messages
@@ -676,6 +828,7 @@ async def chat_message_delete(
     request: Request,
     message_id: int,
     token: str = Form("", alias="_csrf"),
+    conversation: str = Form(""),
 ):
     """Delete a single message from the transcript."""
     is_ajax = request.headers.get("x-requested-with") == "XMLHttpRequest" or "application/json" in (
@@ -702,6 +855,16 @@ async def chat_message_delete(
     from app.agent.runtime import web_session_id
     from app.models.agent.agent_message import AgentMessage
 
+    # The message must belong to the conversation the caller is looking at; a
+    # stale selector cannot delete another conversation's message.
+    try:
+        scope = await _scope_for(conversation, allocate=False)
+    except TaskChatDenied:
+        if is_ajax:
+            return JSONResponse({"error": "Разговор недоступен"}, status_code=403)
+        return RedirectResponse(_chat_path(request), status_code=302)
+    allowed_sessions = {value for value in (scope.session_id, await web_session_id(user.id)) if value is not None}
+
     msg = await AgentMessage.objects.filter(
         id=message_id,
         tenant_id=tenant_id,
@@ -714,7 +877,7 @@ async def chat_message_delete(
         return RedirectResponse("/app/chat", status_code=302)
 
     # A transcript and all its messages belong to one member's private chat.
-    if msg.session_id != await web_session_id(user.id):
+    if msg.session_id not in allowed_sessions:
         if is_ajax:
             return JSONResponse({"error": "Можно удалять только свои сообщения"}, status_code=403)
         add_flash(request, "error", "Можно удалять только свои сообщения")

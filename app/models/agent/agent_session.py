@@ -32,6 +32,9 @@ class AgentSession(Base, TenantScopedMixin, TimestampMixin):
         # agent in several workspaces, and each conversation stays private to
         # the workspace that owns it (see `uq_agent_memory_tenant_scope_key`).
         UniqueConstraint("tenant_id", "channel", "chat_id", name="uq_agent_session_tenant_channel_chat"),
+        # Tenant-checked target for dependants that must not cross workspaces
+        # (the task conversation binding). Trivially unique; an index only.
+        UniqueConstraint("tenant_id", "id", name="uq_agent_session_tenant_id"),
         Index("ix_agent_sessions_tenant_id", "tenant_id"),
         {"schema": settings.DB_SCHEMA},
     )

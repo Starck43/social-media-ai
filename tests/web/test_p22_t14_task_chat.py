@@ -230,12 +230,12 @@ async def test_binding_is_allocated_once_on_first_send_and_read_creates_no_rows(
         assert (await task_chat_service.conversation()).session_id != first.session_id
 
 
-async def _demote_to_member(tenant_id: int, user_id: int, *, ai_chat: bool) -> None:
+async def _demote_to_member(tenant_id: int, user_id: int, *, ai_chat: bool, role: str = "analyst") -> None:
     """Give a fixture membership a non-owner workspace role (fixtures seed 'owner')."""
     from app.models import WorkspaceRole
 
     async with async_session_maker() as session, session.begin():
-        role_id = await session.scalar(select(WorkspaceRole.id).where(WorkspaceRole.codename == "analyst"))
+        role_id = await session.scalar(select(WorkspaceRole.id).where(WorkspaceRole.codename == role))
         membership = await session.scalar(
             select(TenantUser).where(TenantUser.tenant_id == tenant_id, TenantUser.user_id == user_id)
         )
@@ -309,6 +309,72 @@ async def test_member_without_ai_chat_is_denied_even_with_task_access(task_world
         private = await task_service.create(CreateTask(title="Owner only", visibility="private"))
     with actor(world, 1):
         assert (await task_chat_service.open_task_chat(private.id)).available is False
+
+
+async def test_scenario_labels_need_scenario_rights_but_history_does_not(task_world, monkeypatch):  # noqa: F811
+    """Analyst and Viewer may read their conversation, not the scenario labels."""
+    require_isolated_schema()
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    world = task_world
+    tenant_id = world.tenants[0].id
+    async with async_session_maker() as session, session.begin():
+        membership = await session.scalar(
+            select(TenantUser).where(TenantUser.tenant_id == tenant_id, TenantUser.user_id == world.users[1].id)
+        )
+        membership.ai_chat_enabled = True
+
+    with actor(world, 0):
+        task = await task_service.create(CreateTask(title="Dialog before the plan", visibility="workspace"))
+        scenario = await _scenario(tenant_id, "Секретный сценарий")
+
+    # The member talks first, while the task has no attached scenario.
+    await _demote_to_member(tenant_id, world.users[1].id, ai_chat=True, role="analyst")
+    with actor(world, 1):
+        member_session = await task_chat_service.ensure_task_conversation(task.id)
+        assert member_session.session_id is not None
+
+    with actor(world, 0):
+        await task_execution_plans.execution_plan_service.publish(task.id, task.version, _social_plan(scenario.id))
+
+    for role in ("analyst", "viewer"):
+        await _demote_to_member(tenant_id, world.users[1].id, ai_chat=True, role=role)
+        with actor(world, 1):
+            action = await task_chat_service.open_task_chat(task.id)
+            assert action.available is True, f"{role} keeps an authorized history"
+            assert action.delegation is False, f"{role} cannot delegate past the attachment"
+            assert action.reason == "scenario_attached"
+            assert (action.scenario_id, action.scenario_name, action.step) == (None, "", "")
+            scope = await task_chat_service.conversation(task.id)
+            assert scope.session_id == member_session.session_id
+            assert scope.scenario_name == "" and scope.step == ""
+            tabs = await task_chat_service.list_task_conversations()
+            entry = next(item for item in tabs if item["task_id"] == task.id)
+            assert entry["scenario_name"] == "" and entry["step"] == ""
+
+    # A workspace owner has AgentScenario:VIEW and still sees the labels.
+    with actor(world, 0):
+        action = await task_chat_service.open_task_chat(task.id)
+        assert action.scenario_name == "Секретный сценарий"
+        assert action.step
+
+
+async def test_conversation_picker_reads_a_bounded_newest_first_window(task_world, monkeypatch):  # noqa: F811
+    require_isolated_schema()
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    world = task_world
+    with actor(world, 0):
+        ids = []
+        for index in range(5):
+            task = await task_service.create(CreateTask(title=f"Window task {index}", visibility="workspace"))
+            ids.append(task.id)
+        for task_id in ids[:4]:
+            await task_chat_service.ensure_task_conversation(task_id)
+
+        tabs = await task_chat_service.list_task_conversations(limit=3)
+        picked = [item["task_id"] for item in tabs]
+        assert len(picked) == 3, "the list never exceeds the requested window"
+        assert picked == sorted(picked, reverse=True), "newest first"
+        assert picked == [ids[4], ids[3], ids[2]], "both groups share one bounded window"
 
 
 async def test_task_surface_offers_delegation_for_an_open_task_without_scenario(task_world, monkeypatch):  # noqa: F811

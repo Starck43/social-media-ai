@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.access_catalog import workspace_grants
 from app.core.database import with_db_session
 from app.core.permissions import get_current_user
 from app.core.pii import PIIError, decrypt_pii
@@ -110,6 +111,11 @@ def task_chat_actor_id(user_id: int, task_id: int) -> str:
     return f"{TASK_CHAT_PREFIX}{task_id}:{user_id}"
 
 
+def _may_view_scenario(role: str | None) -> bool:
+    """Scenario name and step are metadata behind agentscenario:VIEW."""
+    return ("agentscenario", ActionType.VIEW) in workspace_grants(role)
+
+
 def _latest_definition(stored: TaskPlanRevision):
     """Decode one immutable revision; a broken snapshot is not usable."""
     definition = json.loads(decrypt_pii(stored.definition_encrypted))
@@ -191,8 +197,13 @@ async def _open_task_chat(session: AsyncSession, task_id: int) -> TaskChatAction
             return TaskChatAction(False, task_id, reason="task_unavailable")
         title = str(task.title_encrypted or "")
         scenario_id, scenario_name, step = await _attached_scenario(session, identity, task.id)
+        attached = scenario_id is not None
+        if attached and not _may_view_scenario(identity[2]):
+            # The attachment still blocks delegation and keeps the history
+            # readable; its labels and id are not this actor's to see.
+            scenario_id, scenario_name, step = None, "", ""
         open_work = task.status in OPEN_STATUSES
-        delegation = open_work and scenario_id is None
+        delegation = open_work and not attached
         reason = "" if delegation else ("task_closed" if not open_work else "scenario_attached")
         return TaskChatAction(
             True,
@@ -298,30 +309,39 @@ class TaskChatService:
                 }
             )
 
-        bound_ids = await session.scalars(
-            select(TaskChatBinding.task_id).where(
-                TaskChatBinding.tenant_id == identity[0], TaskChatBinding.user_id == identity[1]
+        # Bound history and delegation candidates are each read through a
+        # bounded, newest-first window; the result never exceeds `limit`.
+        bound_ids = list(
+            await session.scalars(
+                select(TaskChatBinding.task_id)
+                .where(TaskChatBinding.tenant_id == identity[0], TaskChatBinding.user_id == identity[1])
+                .order_by(TaskChatBinding.task_id.desc())
+                .limit(limit)
             )
         )
-        for task_id in list(bound_ids):
-            action = await _open_task_chat(session, int(task_id))
-            if action.available:
-                add(action)
-        rows = await session.scalars(
-            select(Task.id)
-            .where(
-                Task.tenant_id == identity[0],
-                Task.deleted_at.is_(None),
-                task_service.visibility(identity[1], identity[2]),
+        candidate_ids = list(
+            await session.scalars(
+                select(Task.id)
+                .where(
+                    Task.tenant_id == identity[0],
+                    Task.deleted_at.is_(None),
+                    task_service.visibility(identity[1], identity[2]),
+                )
+                .order_by(Task.id.desc())
+                .limit(limit)
             )
-            .order_by(Task.id.desc())
-            .limit(limit)
         )
-        for task_id in list(rows):
-            if int(task_id) in seen:
+        bound_set = {int(task_id) for task_id in bound_ids}
+        candidate_set = {int(task_id) for task_id in candidate_ids}
+        # One newest-first order for both groups, so the window and the result
+        # are stable regardless of how many rows each query returned.
+        for task_id in sorted(bound_set | candidate_set, reverse=True):
+            if len(items) >= limit:
+                break
+            action = await _open_task_chat(session, task_id)
+            if not action.available:
                 continue
-            action = await _open_task_chat(session, int(task_id))
-            if action.available and action.delegation:
+            if action.delegation or task_id in bound_set:
                 add(action)
         return items
 

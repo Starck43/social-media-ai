@@ -172,3 +172,68 @@ def test_delete_preview_effects_are_non_negative_counts():
     assert DeletePreview(effects=effects, confirmation="c" * 20, expires_in=600).effects.occurrences == 1
     with pytest.raises(ValidationError):
         DeletePreview(effects={**effects, "running_jobs": -1}, confirmation="c" * 20, expires_in=600)
+
+
+@pytest.mark.parametrize(
+    "failure, status, tool_code",
+    [
+        (PlannerUnavailable("gone"), 404, "work_task_unavailable"),
+        (PermissionError("denied"), 403, "work_task_denied"),
+        (None, 409, "work_task_stale"),
+    ],
+)
+def test_run_translates_plan_lookup_refusals(monkeypatch, failure, status, tool_code):
+    from app.agent.toolset import work_tasks as tool
+
+    async def lookup(_task_id):
+        if failure is not None:
+            raise failure
+        return None
+
+    monkeypatch.setattr(api.execution_plan_service, "get_reference", lookup)
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(api.run_task(1, "key"))
+    assert caught.value.status_code == status
+    assert asyncio.run(tool.work_task_run(1, "key"))["code"] == tool_code
+
+
+@pytest.mark.parametrize(
+    "case, status, tool_code",
+    [
+        ("invalid", 404, "work_task_unavailable"),
+        ("missing", 404, "work_task_unavailable"),
+        ("invisible", 404, "work_task_unavailable"),
+        ("denied", 403, "work_task_denied"),
+    ],
+)
+def test_legacy_resolution_translates_map_and_projection_refusals(monkeypatch, case, status, tool_code):
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+
+    from app.agent.toolset import work_tasks as tool
+    from app.core import database
+    from app.core.tenant_context import tenant_scope
+    from app.services.planner import legacy_migration
+
+    @asynccontextmanager
+    async def session_factory():
+        yield object()
+
+    async def lookup(*_args, **_kwargs):
+        if case == "invalid":
+            raise legacy_migration.LegacyIdentityError("invalid_legacy_namespace")
+        return None if case == "missing" else SimpleNamespace(id=2)
+
+    async def project(*_args, **_kwargs):
+        if case == "denied":
+            raise PermissionError("denied")
+        raise PlannerUnavailable("gone")
+
+    monkeypatch.setattr(database, "async_session_maker", session_factory)
+    monkeypatch.setattr(legacy_migration, "resolve_legacy_task", lookup)
+    monkeypatch.setattr(api.task_service, "get", project)
+    with tenant_scope(1):
+        with pytest.raises(HTTPException) as caught:
+            asyncio.run(api.resolve_legacy("planner", 1))
+        assert caught.value.status_code == status
+        assert asyncio.run(tool.work_task_resolve_legacy("planner", 1))["code"] == tool_code

@@ -39,7 +39,7 @@ from app.services.commands.task_decisions import task_decision_service
 from app.services.commands.task_deletion import task_deletion_service
 from app.services.execution_plan_contracts import ExecutionPlanError
 from app.services.planner.canonical_tasks import CanonicalTaskOut, task_service
-from app.services.planner.legacy_migration import resolve_legacy_task
+from app.services.planner.legacy_migration import project_legacy_task
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable
 from app.services.task_execution_plans import execution_plan_service
 from app.services.task_run_admission import TaskRunAdmissionError, task_run_service
@@ -170,13 +170,14 @@ async def run_task(
     task_id: int = Path(gt=0),
     idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
 ):
-    return await _admission(
-        task_run_service.admit_manual(
+    async def admit():
+        return await task_run_service.admit_manual(
             task_id,
             expected_revision=await _current_revision(task_id),
             request_key=idempotency_key,
         )
-    )
+
+    return await _admission(admit())
 
 
 async def _current_revision(task_id: int) -> int:
@@ -222,14 +223,7 @@ async def decide(request: DecisionConfirmation, task_id: int = Path(gt=0)):
 @router.get("/legacy/{namespace}/{legacy_id}", response_model=LegacyTarget)
 async def resolve_legacy(namespace: str = Path(min_length=1, max_length=64), legacy_id: int = Path(gt=0)):
     """Opaque legacy URL → canonical task; unresolvable or invisible is one 404."""
-    from app.core.database import async_session_maker
-
-    tenant_id = current_tenant_id()
-    async with async_session_maker() as session:
-        task = await resolve_legacy_task(session, tenant_id=tenant_id, namespace=namespace, legacy_id=legacy_id)
-        if task is None:
-            raise HTTPException(404)
-        projected = await task_service.get(task.id, session=session)
+    projected = await invoke(project_legacy_task(current_tenant_id(), namespace, legacy_id))
     return {"namespace": namespace, "legacy_id": legacy_id, "task": projected}
 
 

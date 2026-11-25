@@ -240,6 +240,22 @@ async def resolve_legacy_task(
     )
 
 
+async def project_legacy_task(tenant_id: int, namespace: str, legacy_id: int):
+    """Resolve a legacy reference and apply canonical task visibility."""
+    from app.core.database import async_session_maker
+    from app.services.planner.canonical_tasks import task_service
+    from app.services.planner.tasks import PlannerUnavailable
+
+    async with async_session_maker() as session:
+        try:
+            task = await resolve_legacy_task(session, tenant_id=tenant_id, namespace=namespace, legacy_id=legacy_id)
+        except LegacyIdentityError:
+            raise PlannerUnavailable("planner_unavailable") from None
+        if task is None:
+            raise PlannerUnavailable("planner_unavailable")
+        return await task_service.get(task.id, session=session)
+
+
 class LegacyCompatibilityWriter:
     """Write one canonical mirror and its legacy alias in the caller's transaction."""
 

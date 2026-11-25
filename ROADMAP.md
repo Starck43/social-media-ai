@@ -64,7 +64,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P12-T12](docs/tasks/p12-t12.md) File workspace: residual slices S1 (lifecycle), S2 (typed actions), and S4 (measurement harness) delivered; remaining scope stays gated (S3 version freshness, P8-T34 byte authority, local-only execution with P18, activation, D21 mutations) — **TODO** (gate: owner activation / P8-T34 resume / consumer contract request; not claimable before it; S1/S2 delivered 2026-11-19, S4 delivered 2026-11-21, increment accepted 2026-11-03 `6433ae6a`/`48caea61`) · unassigned · — · [residual slices](docs/tasks/p12-t12.md#residual-slices-unblock-or-owner-prioritize-first) · [increment audit](docs/audit/p12/p12-t12-increment.md) · `P2` · `C5`
 - [P8-T34](docs/tasks/p8-t34.md) Yandex Disk read-only file pilot and Settings OAuth — **IN_PROGRESS** · Codex · `codex resume 01a1f7d1-8006-75a3-ac37-05c3d89df357` · [audit](docs/audit/p8/p8-t34.md) · `P2` · `C4`
 
-- [P20-T19](docs/tasks/p20-t19.md) Workspace prototype review and control consistency — **IN_PROGRESS** · OpenCode · `opencode --session ses_e072bb66affeMQkbNFP2YOv2Hf` · `P2` · `C5`
+- [P20-T19](docs/tasks/p20-t19.md) Workspace prototype review and control consistency — **IN_PROGRESS** · OpenCode · `opencode --session ses_debebc801ffe763bmMf7W9xKfz` · `P2` · `C5`
 - [P20-T20](docs/tasks/p20-t20.md) Today dashboard, decision previews and quick replies — **IN_PROGRESS** · OpenCode · owner-directed direct `dev` · `P2` · `C3`
 
 - [P22-T09](docs/tasks/p22-t09.md) Admin connector setup and task operations — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P2` · `C3`

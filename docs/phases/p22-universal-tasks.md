@@ -25,7 +25,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 15. [P22-T15 — Turn commitments into dated tasks with reminders](../tasks/p22-t15.md). Depends on P22-T08 and P22-T10, uses the accepted P22-T07 interface and has a soft dependency on P15-T04.
 16. [P22-T16 — Sidebar sections for daily work](../audit/p22/p22-t16.md) — **DONE 2026-11-30** (`b6b6ca71`, merged
     `c18fc98e`). No hard prerequisite; supplies the structure P22-T08 and P22-T15 land in.
-17. [P22-T17 — Confirmed task closure, reopening and schedule lifecycle](../tasks/p22-t17.md). Supplies P22-T08.
+17. [P22-T17 — Confirmed task closure, reopening and schedule lifecycle](../audit/p22/p22-t17.md) — **DONE 2026-11-25** (`de882eed`, merged `c70cfe6c`). Confirmed close/reopen with trigger hold, schedule choice and retained receipts.
 18. [P22-T18 — Task filters, calendar and rolling run results](../tasks/p22-t18.md). Supplies P22-T08.
 19. [P22-T19 — Bound work task run and legacy resolution refusals](../audit/p22/p22-t19.md). DONE 2026-11-25 at `d8f397e6`. Bounded launch and legacy-reference refusals.
 20. [P22-T20 — Page older chat messages and saved task conversations](../tasks/p22-t20.md). Follows the T14 conversation contract.

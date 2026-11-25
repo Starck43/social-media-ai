@@ -11,11 +11,14 @@ from pydantic import ValidationError
 from app.api.v1.conventions import BusinessRoute
 from app.api.v2 import tasks as api
 from app.schemas.work_tasks import (
+    ClosureConfirmation,
+    ClosureOutcome,
     DecisionConfirmation,
     DecisionPreview,
     DeleteConfirmation,
     DeletePreview,
     PlanDraft,
+    ReopenConfirmation,
     RunReceipt,
     RunReceiptPage,
     WorkTaskActions,
@@ -31,6 +34,11 @@ EXPECTED = {
     ("PATCH", "/tasks/{task_id}"),
     ("POST", "/tasks/{task_id}/plan/preview"),
     ("POST", "/tasks/{task_id}/complete"),
+    ("POST", "/tasks/{task_id}/close/preview"),
+    ("POST", "/tasks/{task_id}/close"),
+    ("POST", "/tasks/{task_id}/reopen/preview"),
+    ("POST", "/tasks/{task_id}/reopen"),
+    ("POST", "/tasks/{task_id}/schedule"),
     ("POST", "/tasks/{task_id}/delete/preview"),
     ("POST", "/tasks/{task_id}/delete"),
     ("POST", "/tasks/{task_id}/runs"),
@@ -132,6 +140,43 @@ def test_run_receipt_and_page_bound_the_payload():
     assert page.items[0].job_id is None
     with pytest.raises(ValidationError):
         RunReceipt(run_id=1, task_id=2, revision=1, job_id=0, status="pending")
+
+
+@pytest.mark.parametrize("operation", ["close", "reopen"])
+def test_closure_routes_forward_the_request_fields(monkeypatch, operation):
+    seen = {}
+
+    async def confirm(task_id, **kwargs):
+        seen.update(task_id=task_id, **kwargs)
+        return ClosureOutcome(
+            effects={
+                "operation": operation,
+                "scope": "occurrence",
+                "task_id": task_id,
+                "version": 2,
+                "status": "done" if operation == "close" else "todo",
+                "target_status": "done" if operation == "close" else "todo",
+                "series_id": 1,
+                "creates_occurrence": False,
+                "schedules": 0,
+                "enabled_schedules": 0,
+                "reactivates_schedule": operation == "reopen",
+                "retained_run_receipts": 0,
+            },
+            replayed=False,
+        )
+
+    monkeypatch.setattr(api.task_closure_service, "confirm", confirm)
+    if operation == "close":
+        asyncio.run(api.close_task(ClosureConfirmation(confirmation="t" * 24), 5))
+        assert seen == {"task_id": 5, "operation": "close", "confirmation": "t" * 24}
+    else:
+        # The API reopening request must carry the schedule choice it was previewed
+        # with, otherwise a reactivation preview could never be confirmed.
+        request = ReopenConfirmation(confirmation="t" * 24, reactivate_schedule=True)
+        asyncio.run(api.reopen_task(request, 5))
+        assert seen == {"task_id": 5, "operation": "reopen", "reactivate_schedule": True, "confirmation": "t" * 24}
+        assert ReopenConfirmation(confirmation="t" * 24).reactivate_schedule is False
 
 
 def test_confirmations_carry_a_signed_token():

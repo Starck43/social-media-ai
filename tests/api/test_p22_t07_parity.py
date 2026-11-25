@@ -14,6 +14,11 @@ API_ROUTES = {
     "edit": ("PATCH", "/tasks/{task_id}"),
     "preview": ("POST", "/tasks/{task_id}/plan/preview"),
     "complete": ("POST", "/tasks/{task_id}/complete"),
+    "close_preview": ("POST", "/tasks/{task_id}/close/preview"),
+    "close": ("POST", "/tasks/{task_id}/close"),
+    "reopen_preview": ("POST", "/tasks/{task_id}/reopen/preview"),
+    "reopen": ("POST", "/tasks/{task_id}/reopen"),
+    "schedule": ("POST", "/tasks/{task_id}/schedule"),
     "delete_preview": ("POST", "/tasks/{task_id}/delete/preview"),
     "delete": ("POST", "/tasks/{task_id}/delete"),
     "run": ("POST", "/tasks/{task_id}/runs"),
@@ -31,6 +36,11 @@ CLI_COMMANDS = {
     "edit": "edit",
     "preview": "preview",
     "complete": "complete",
+    "close_preview": "close",
+    "close": "close",
+    "reopen_preview": "reopen",
+    "reopen": "reopen",
+    "schedule": "schedule",
     "delete_preview": "delete",
     "delete": "delete",
     "run": "run",
@@ -48,6 +58,11 @@ TOOLS = {
     "edit": "work_task_edit",
     "preview": "work_task_preview",
     "complete": "work_task_complete",
+    "close_preview": "work_task_close_preview",
+    "close": "work_task_close",
+    "reopen_preview": "work_task_reopen_preview",
+    "reopen": "work_task_reopen",
+    "schedule": "work_task_schedule",
     "delete_preview": "work_task_delete_preview",
     "delete": "work_task_delete",
     "run": "work_task_run",
@@ -80,8 +95,17 @@ def test_no_surface_invents_an_extra_operation():
 
 
 def test_write_tools_ask_for_confirmation_and_reads_do_not():
-    writes = {"work_task_create", "work_task_edit", "work_task_complete", "work_task_delete", "work_task_run",
-              "work_task_decide"}
+    writes = {
+        "work_task_create",
+        "work_task_edit",
+        "work_task_complete",
+        "work_task_delete",
+        "work_task_run",
+        "work_task_decide",
+        "work_task_close",
+        "work_task_reopen",
+        "work_task_schedule",
+    }
     for name in TOOLS.values():
         assert TOOL_REGISTRY[name].requires_confirmation is (name in writes), name
 
@@ -95,3 +119,23 @@ def test_every_tool_carries_the_same_canonical_permission():
             "planner.task.update",
             "planner.task.delete",
         }, (name, permission)
+
+
+def _request_model(path):
+    route = next(route for route in api.router.routes if route.path == path and "POST" in route.methods)
+    return next(
+        parameter.field_info.annotation
+        for parameter in route.dependant.body_params
+        if getattr(parameter.field_info, "annotation", None) is not None
+    )
+
+
+def test_closure_confirmation_routes_carry_the_documented_payload():
+    """A confirmation route must accept everything its preview can ask for."""
+    close = _request_model("/tasks/{task_id}/close")
+    reopen = _request_model("/tasks/{task_id}/reopen")
+    assert "confirmation" in close.model_fields
+    # Reopening is the one confirmed command with an extra explicit choice; the
+    # request model has to carry it or a reactivation preview is unconfirmable.
+    assert {"confirmation", "reactivate_schedule"} <= set(reopen.model_fields)
+    assert reopen.model_fields["reactivate_schedule"].default is False

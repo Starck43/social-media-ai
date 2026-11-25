@@ -130,6 +130,10 @@ def validate_admissible_plan(plan):
 
 
 async def _insert_run(session, *, task, admitted, principal_id, effective_at, fingerprint, **origin):
+    if task.status in {"done", "cancelled"}:
+        # Closure is the only way to end scheduled work; a closed task must not
+        # admit another run, whether the request is manual or due.
+        raise TaskRunAdmissionError("task_closed")
     plan = admitted.plan
     validate_admissible_plan(plan)
     snapshot = {
@@ -192,6 +196,8 @@ class TaskRunService:
             raise TaskRunAdmissionError("invalid_revision")
 
         task = await authorize_task_run(session, task_id, lock=True)
+        if task.status in {"done", "cancelled"}:
+            raise TaskRunAdmissionError("task_closed")
         actor_id = get_current_user().id
         # The planner UPDATE identity check locks this workspace before locking
         # the task. This also serializes manual keys across different tasks.

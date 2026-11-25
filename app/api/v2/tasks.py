@@ -16,6 +16,9 @@ from app.api.v1.conventions import business_router, validate_business_routes
 from app.core.tenant_context import current_tenant_id
 from app.schemas.business import BusinessPage
 from app.schemas.work_tasks import (
+    ClosureConfirmation,
+    ClosureOutcome,
+    ClosurePreview,
     DecisionConfirmation,
     DecisionOutcome,
     DecisionPreview,
@@ -27,14 +30,19 @@ from app.schemas.work_tasks import (
     LegacyTarget,
     PlanDraft,
     PlanPreview,
+    ReopenChoice,
+    ReopenConfirmation,
     RunReceipt,
     RunReceiptPage,
+    ScheduleOutcome,
+    ScheduleRequest,
     WorkTaskActions,
     WorkTaskCompletion,
     WorkTaskCreate,
     WorkTaskUpdate,
     WorkTaskVersion,
 )
+from app.services.commands.task_closure import task_closure_service
 from app.services.commands.task_decisions import task_decision_service
 from app.services.commands.task_deletion import task_deletion_service
 from app.services.execution_plan_contracts import ExecutionPlanError
@@ -43,13 +51,14 @@ from app.services.planner.legacy_migration import project_legacy_task
 from app.services.planner.tasks import PlannerConflict, PlannerUnavailable
 from app.services.task_execution_plans import execution_plan_service
 from app.services.task_run_admission import TaskRunAdmissionError, task_run_service
+from app.services.task_run_triggers import task_trigger_service
 from app.services.workspace.task_surface import canonical_task_actions
 from app.types import ActionType
 
 router = business_router("tasks", permission=require_model_perm("plannertask", ActionType.VIEW))
 
 # Admission codes that are a state conflict rather than a malformed request.
-CONFLICT_CODES = frozenset({"request_key_conflict", "occurrence_conflict", "active_run", "busy_run"})
+CONFLICT_CODES = frozenset({"request_key_conflict", "occurrence_conflict", "active_run", "busy_run", "task_closed"})
 
 
 async def invoke(operation):
@@ -200,6 +209,67 @@ async def list_runs(
 @router.get("/{task_id}/actions", response_model=WorkTaskActions)
 async def task_actions(task_id: int = Path(gt=0)):
     return await invoke(canonical_task_actions(task_id))
+
+
+@router.post(
+    "/{task_id}/close/preview",
+    response_model=ClosurePreview,
+    dependencies=[Depends(require_model_perm("plannertask", ActionType.UPDATE))],
+)
+async def preview_close(task_id: int = Path(gt=0)):
+    return await invoke(task_closure_service.preview(task_id, operation="close"))
+
+
+@router.post(
+    "/{task_id}/close",
+    response_model=ClosureOutcome,
+    dependencies=[Depends(require_model_perm("plannertask", ActionType.UPDATE))],
+)
+async def close_task(request: ClosureConfirmation, task_id: int = Path(gt=0)):
+    return await invoke(task_closure_service.confirm(task_id, operation="close", confirmation=request.confirmation))
+
+
+@router.post(
+    "/{task_id}/reopen/preview",
+    response_model=ClosurePreview,
+    dependencies=[Depends(require_model_perm("plannertask", ActionType.UPDATE))],
+)
+async def preview_reopen(request: ReopenChoice, task_id: int = Path(gt=0)):
+    return await invoke(
+        task_closure_service.preview(task_id, operation="reopen", reactivate_schedule=request.reactivate_schedule)
+    )
+
+
+@router.post(
+    "/{task_id}/reopen",
+    response_model=ClosureOutcome,
+    dependencies=[Depends(require_model_perm("plannertask", ActionType.UPDATE))],
+)
+async def reopen_task(request: ReopenConfirmation, task_id: int = Path(gt=0)):
+    return await invoke(
+        task_closure_service.confirm(
+            task_id,
+            operation="reopen",
+            reactivate_schedule=request.reactivate_schedule,
+            confirmation=request.confirmation,
+        )
+    )
+
+
+@router.post(
+    "/{task_id}/schedule",
+    response_model=ScheduleOutcome,
+    dependencies=[Depends(require_model_perm("plannertask", ActionType.UPDATE))],
+)
+async def set_schedule(request: ScheduleRequest, task_id: int = Path(gt=0)):
+    return await invoke(
+        task_trigger_service.configure(
+            task_id,
+            revision=request.revision,
+            expected_version=request.expected_version,
+            enabled=request.enabled,
+        )
+    )
 
 
 @router.post(

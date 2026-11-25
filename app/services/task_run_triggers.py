@@ -59,6 +59,34 @@ def _deactivate(trigger: TaskTrigger) -> None:
 
 
 class TaskTriggerService:
+    async def _arm_schedule(self, session, identity, task, stored) -> tuple[str, str]:
+        """The validated schedule of the published revision, under launch rules."""
+        if stored.scheduled_principal_id != identity[1]:
+            raise PermissionError("scheduled_principal_unavailable")
+        plan = (await execution_plan_service.load_for_admission(task.id, stored.revision, session=session)).plan
+        validate_admissible_plan(plan)
+        schedule = plan.trigger
+        if schedule.type != "schedule" or not schedule.cron or not schedule.timezone:
+            raise ExecutionPlanError("schedule_unavailable")
+        return schedule.cron, schedule.timezone
+
+    async def _arm(self, session, identity, task, trigger, stored, now) -> TaskTrigger:
+        """Arm one trigger for the published revision; the caller owns the locks."""
+        cron, zone = await self._arm_schedule(session, identity, task, stored)
+        if trigger is None or not trigger.enabled or trigger.revision != stored.revision:
+            due = _next_occurrence(cron, zone, now)
+            if trigger is None:
+                trigger = TaskTrigger(tenant_id=task.tenant_id, task_id=task.id)
+                session.add(trigger)
+            trigger.revision = stored.revision
+            trigger.principal_id = identity[1]
+            trigger.cron_expression = cron
+            trigger.timezone_name = zone
+            trigger.enabled = True
+            trigger.next_due_at = due
+            task.version += 1
+        return trigger
+
     @with_db_session
     async def configure(
         self,
@@ -88,26 +116,7 @@ class TaskTriggerService:
             .execution_options(populate_existing=True)
         )
         if enabled:
-            if stored.scheduled_principal_id != identity[1]:
-                raise PermissionError("scheduled_principal_unavailable")
-            plan = (await execution_plan_service.load_for_admission(task.id, revision, session=session)).plan
-            validate_admissible_plan(plan)
-            schedule = plan.trigger
-            if schedule.type != "schedule" or not schedule.cron or not schedule.timezone:
-                raise ExecutionPlanError("schedule_unavailable")
-
-            if trigger is None or not trigger.enabled or trigger.revision != revision:
-                due = _next_occurrence(schedule.cron, schedule.timezone, datetime.now(timezone.utc))
-                if trigger is None:
-                    trigger = TaskTrigger(tenant_id=task.tenant_id, task_id=task.id)
-                    session.add(trigger)
-                trigger.revision = revision
-                trigger.principal_id = identity[1]
-                trigger.cron_expression = schedule.cron
-                trigger.timezone_name = schedule.timezone
-                trigger.enabled = True
-                trigger.next_due_at = due
-                task.version += 1
+            trigger = await self._arm(session, identity, task, trigger, stored, datetime.now(timezone.utc))
         elif trigger is not None and trigger.enabled:
             _deactivate(trigger)
             task.version += 1

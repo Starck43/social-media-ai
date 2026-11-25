@@ -312,6 +312,8 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main worktasks | --tenant | option | str | yes | null |
 | python -m cli.main worktasks | --user | option | int range | yes | null |
 | python -m cli.main worktasks actions | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks close | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks close | --confirm | option | str | no | null |
 | python -m cli.main worktasks complete | task_id | argument | int range | yes | null |
 | python -m cli.main worktasks complete | --version | option | int range | yes | null |
 | python -m cli.main worktasks create | --title, -t | option | str | yes | null |
@@ -343,6 +345,9 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main worktasks list | --view | option | str | no | null |
 | python -m cli.main worktasks preview | task_id | argument | int range | yes | null |
 | python -m cli.main worktasks preview | --plan | option | str | yes | null |
+| python -m cli.main worktasks reopen | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks reopen | --reactivate-schedule | option | boolean | no | false |
+| python -m cli.main worktasks reopen | --confirm | option | str | no | null |
 | python -m cli.main worktasks resolve | namespace | argument | str | yes | null |
 | python -m cli.main worktasks resolve | legacy_id | argument | int range | yes | null |
 | python -m cli.main worktasks run | task_id | argument | int range | yes | null |
@@ -350,4 +355,8 @@ and execution permissions remain in the handwritten references and code.
 | python -m cli.main worktasks runs | task_id | argument | int range | yes | null |
 | python -m cli.main worktasks runs | --limit | option | int range | no | 50 |
 | python -m cli.main worktasks runs | --before-id | option | int range | no | null |
+| python -m cli.main worktasks schedule | task_id | argument | int range | yes | null |
+| python -m cli.main worktasks schedule | --revision | option | int range | yes | null |
+| python -m cli.main worktasks schedule | --on, --off | option | boolean | yes | null |
+| python -m cli.main worktasks schedule | --version | option | int range | yes | null |
 | python -m cli.main worktasks show | task_id | argument | int range | yes | null |

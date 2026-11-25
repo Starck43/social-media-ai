@@ -238,7 +238,7 @@ run). Автоматическая эволюция промптов **не пр
 
 ### Web chat
 
-P22 adds a global entry at `/chat` and persistent task conversations for scenario-backed tasks. The right sidebar selects the session rendered on the main page. Reuse `agent_sessions` and `agent_messages.session_id`; resolve the authorized user/workspace/session before loading history, pending confirmation or model context. [Task chat contract](../product/UNIVERSAL_TASKS.md#task-conversations)
+P22 adds a global entry at `/chat` and private task conversations for user delegation on open tasks without an attached scenario. The right sidebar selects the session rendered on the main page. Reuse `agent_sessions` and `agent_messages.session_id`; resolve the authorized user/workspace/session before loading history, pending confirmation or model context. [Task chat contract](../product/UNIVERSAL_TASKS.md#task-conversations)
 
 `/app/chat` использует тот же runtime (`handle_web_message`), что и Telegram/MAX.
 Workspace разрешается `TenantUIMiddleware` из `tenant_users` web membership.

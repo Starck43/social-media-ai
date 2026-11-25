@@ -25,6 +25,8 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 15. [P22-T15 — Turn commitments into dated tasks with reminders](../tasks/p22-t15.md). Depends on P22-T08 and P22-T10, uses the accepted P22-T07 interface and has a soft dependency on P15-T04.
 16. [P22-T16 — Sidebar sections for daily work](../audit/p22/p22-t16.md) — **DONE 2026-11-30** (`b6b6ca71`, merged
     `c18fc98e`). No hard prerequisite; supplies the structure P22-T08 and P22-T15 land in.
+17. [P22-T17 — Confirmed task closure, reopening and schedule lifecycle](../tasks/p22-t17.md). Supplies P22-T08.
+18. [P22-T18 — Task filters, calendar and rolling run results](../tasks/p22-t18.md). Supplies P22-T08.
 
 T01 and T02 supply the foundations for T03. T06 owns legacy writes and migration. T07 owns the new interface namespace and command adapters. Coordinate the legacy regression fixtures at their boundary. T08, T09, T10 and T11 can implement independent surfaces after their prerequisites. T08 uses capability fixtures until the pilots land. T12 integrates the verticals. T13 extends the provider set independently.
 

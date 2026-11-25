@@ -64,7 +64,7 @@ Rules:
 | Composer | Removable context chips (task, thread, contact, document, case), attachments, quick actions («Подготовить задачу», «Разобрать результат», «Что дальше?») | Hidden context the user cannot see |
 | Right panel | Tabbed «Рабочий контекст», collapsible; a drawer below `lg` | Admin tables, global inbox |
 
-**Conversation selection (P22).** Entering `/chat` shows «Основной чат» for the signed-in user in the active workspace. Choosing a scenario-backed task in the right sidebar swaps the central transcript and composer to that task’s private session in place. Selecting «Основной чат» restores the original history. The task card drawer opens the same task session.
+**Conversation selection (P22).** Entering `/chat` shows «Основной чат» for the signed-in user in the active workspace. Choosing an authorized task session in the right sidebar swaps the central transcript and composer to that task’s private session in place. Selecting «Основной чат» restores the original history. The task card drawer opens the same task session.
 
 **Inline cards** are rendered from owning services and refresh from them; each
 links to its authoritative record: plan preview (run/edit), decision (exact
@@ -84,16 +84,11 @@ editor), brief (attention items).
    and cancel ([../audit/p20-t04.md](../audit/p20/p20-t04.md)).
 4. «Материалы» — citations/evidence of the last answer and attachments.
 
-**Chat dock.** «Спросить агента» uses the global conversation with an object context chip. On task cards, the separate «Поручить агенту» link opens a right-hand drawer for that specific task when its scenario is configured. Both surfaces render messages and the composer through the same chat component. [P22 conversation contract](UNIVERSAL_TASKS.md#task-conversations)
+**Chat dock.** «Спросить агента» uses the global conversation with an object context chip. On task cards, the separate «Поручить агенту» link opens a right-hand drawer for that specific task for open work without an attached scenario, subject to workspace AI and task access. Both surfaces render messages and the composer through the same chat component. [P22 conversation contract](UNIVERSAL_TASKS.md#task-conversations)
 
 ## Today page
 
-Section order: brief → «Ждут решения» → «По плану на сегодня» (planner due and
-overdue, calendar events, scheduled agent runs) → «Ждут ответа» (inbox triage) →
-«Требует внимания» (reconnect, failed or unknown delivery, budget limits) →
-«Последние результаты». Empty or unavailable providers collapse with their reason.
-Existing dashboard sections remain accessible. The user can select a start page
-in settings; «Сегодня» is the default (O-2).
+The [desktop prototype](prototypes/workspace.html) defines the P22 layout. The brief links connection warnings to the recovery controls below. «Собрано за последние 24 часа» shows observed run outcomes in a rolling window. The daily plan links deadlines and external calendar events with «Открыть →». Personal tasks completed today stay visible with muted, struck-through titles. «Ждут ответа» opens a reply drawer. A pending agent action shows its result and «Согласовать» opens the exact recipient and payload before confirmation. Settings and reauthorization links follow the viewer’s grants.
 
 **Attention item projection** (read-time, no copy): provider and kind,
 authoritative reference and route, redacted title, reason, recommended priority

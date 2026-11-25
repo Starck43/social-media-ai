@@ -54,9 +54,11 @@
                 <template x-for="tab in conversationTabs" :key="tab.value">
                     <li>
                         <button type="button" :data-chat-conversation="tab.value" @click="selectConversation(tab.value)"
-                                :aria-pressed="conversationParam() === tab.value" :disabled="pending">
+                                :aria-pressed="conversationParam() === tab.value">
                             <span x-text="tab.title"></span>
                             <span class="chat-conversation-meta" x-show="tab.scenario" x-text="tab.scenario"></span>
+                            <span class="chat-conversation-meta" x-show="tab.delegation === false" x-cloak
+                                  x-text="tab.reason === 'task_closed' ? 'закрыта' : 'только чтение'"></span>
                         </button>
                     </li>
                 </template>

@@ -5,9 +5,14 @@ This module answers three questions for the caller, in the current workspace and
 for the authenticated actor:
 
 - may this actor use AI chat at all (`ai_chat_available`);
-- does a task have an explicitly configured, usable agent scenario, and which
-  step of its published plan supplies it (`open_task_chat`);
+- may this actor read the task conversation, and may they delegate new work in
+  it right now (`open_task_chat`);
 - which agent session renders it (`conversation`, allocated on the first send).
+
+Delegation is the narrow capability. It needs an open task with no scenario
+attached to its current plan; closing the task or attaching a scenario ends new
+delegation and keeps authorized private history readable. Reading a task
+conversation needs workspace AI access and current task access only.
 
 The binding itself lives in `TaskChatBinding`; the transcript stays in the
 existing agent session and message tables.
@@ -21,7 +26,6 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.access_catalog import workspace_grants
 from app.core.database import with_db_session
 from app.core.permissions import get_current_user
 from app.core.pii import PIIError, decrypt_pii
@@ -36,12 +40,14 @@ WEB_CHANNEL = "web"
 TASK_CHAT_PREFIX = "task:"
 MAIN_TITLE = "Основной чат"
 
+OPEN_STATUSES = frozenset({"todo", "in_progress"})
+
 DENIED_REASONS = frozenset(
     {
         "ai_chat_denied",
         "task_unavailable",
-        "no_scenario_binding",
-        "scenario_unavailable",
+        "task_closed",
+        "scenario_attached",
         "conversation_unavailable",
     }
 )
@@ -57,11 +63,19 @@ class TaskChatDenied(PermissionError):
 
 @dataclass(frozen=True)
 class TaskChatAction:
-    """What a task card may offer, and what the drawer will talk about."""
+    """What a task card may offer, and what the drawer will talk about.
+
+    `available` means this actor may read the conversation. `delegation` means
+    new work may be sent right now: the task is open and no scenario is attached.
+    A closed task or an attached scenario keeps the history readable and refuses
+    new turns with `reason`.
+    """
 
     available: bool
     task_id: int
     title: str = ""
+    delegation: bool = False
+    work_status: str = ""
     scenario_id: int | None = None
     scenario_name: str = ""
     step: str = ""
@@ -79,6 +93,8 @@ class ChatScope:
     scenario_id: int | None = None
     scenario_name: str = ""
     step: str = ""
+    delegation: bool = True
+    reason: str = ""
 
     @property
     def is_task(self) -> bool:
@@ -92,10 +108,6 @@ def task_chat_actor_id(user_id: int, task_id: int) -> str:
     members of the same workspace would otherwise share one transcript.
     """
     return f"{TASK_CHAT_PREFIX}{task_id}:{user_id}"
-
-
-def _scenario_grants(role: str | None) -> bool:
-    return ("agentscenario", ActionType.VIEW) in workspace_grants(role)
 
 
 def _latest_definition(stored: TaskPlanRevision):
@@ -121,13 +133,52 @@ async def _ai_chat_available(session: AsyncSession) -> bool:
     return bool(member is not None and (member.is_owner or member.ai_chat_enabled))
 
 
-async def _open_task_chat(session: AsyncSession, task_id: int) -> TaskChatAction:
-    """The `open_task_chat` action: only a configured, usable binding qualifies.
+async def _attached_scenario(session: AsyncSession, identity: tuple, task_id: int) -> tuple[int | None, str, str]:
+    """The scenario attached to the task's current plan, if any.
 
-    A catalog scenario, the workspace default or another task's binding never
-    qualifies. With several agent steps the plan's last LLM step (the one that
-    produces the artifact) is the resolved step; the choice is explicit and
-    stable for a given revision.
+    Attachment is a fact about the plan, not about the viewer: a configured but
+    unavailable scenario (inactive, missing snapshot, deleted) still counts as
+    attached, and a revision this code cannot decode counts as attached too.
+    With several agent steps the last LLM step (the one producing the artifact)
+    names the attached scenario for display.
+    """
+    stored = await session.scalar(
+        select(TaskPlanRevision)
+        .where(TaskPlanRevision.tenant_id == identity[0], TaskPlanRevision.task_id == task_id)
+        .order_by(TaskPlanRevision.revision.desc())
+        .limit(1)
+        .execution_options(populate_existing=True)
+    )
+    if stored is None:
+        return None, "", ""
+    try:
+        plan, methodology = _latest_definition(stored)
+        steps = [step for step in plan.steps if step.scenario_id is not None]
+    except (ExecutionPlanError, PIIError, ValueError, KeyError, TypeError):
+        return -1, "", ""
+    if not steps:
+        return None, "", ""
+    step = steps[-1]
+    scenario_id = int(step.scenario_id)
+    scenario_name = str(
+        await session.scalar(
+            select(AgentScenario.name).where(AgentScenario.tenant_id == identity[0], AgentScenario.id == scenario_id)
+        )
+        or ""
+    )
+    if not scenario_name:
+        snapshot = (methodology.get("scenarios") or {}).get(str(scenario_id)) or {}
+        scenario_name = str(snapshot.get("name") or "")
+    return scenario_id, scenario_name, str(step.name or "")
+
+
+async def _open_task_chat(session: AsyncSession, task_id: int) -> TaskChatAction:
+    """The `open_task_chat` action, split into reading and delegating.
+
+    An open task without an attached scenario offers delegation even before any
+    plan exists: the user's instruction is the topic. A closed task or an
+    attached scenario keeps an authorized history readable through the session
+    picker but refuses new turns.
     """
     actor = get_current_user()
     title = ""
@@ -139,37 +190,23 @@ async def _open_task_chat(session: AsyncSession, task_id: int) -> TaskChatAction
         if task.deleted_at is not None:
             return TaskChatAction(False, task_id, reason="task_unavailable")
         title = str(task.title_encrypted or "")
-        stored = await session.scalar(
-            select(TaskPlanRevision)
-            .where(TaskPlanRevision.tenant_id == identity[0], TaskPlanRevision.task_id == task.id)
-            .order_by(TaskPlanRevision.revision.desc())
-            .limit(1)
-            .execution_options(populate_existing=True)
+        scenario_id, scenario_name, step = await _attached_scenario(session, identity, task.id)
+        open_work = task.status in OPEN_STATUSES
+        delegation = open_work and scenario_id is None
+        reason = "" if delegation else ("task_closed" if not open_work else "scenario_attached")
+        return TaskChatAction(
+            True,
+            task.id,
+            title,
+            delegation=delegation,
+            work_status=str(task.status or ""),
+            scenario_id=scenario_id,
+            scenario_name=scenario_name,
+            step=step,
+            reason=reason,
         )
-        if stored is None:
-            return TaskChatAction(False, task_id, title, reason="no_scenario_binding")
-        plan, methodology = _latest_definition(stored)
-        steps = [step for step in plan.steps if step.scenario_id is not None]
-        if not steps:
-            return TaskChatAction(False, task_id, title, reason="no_scenario_binding")
-        step = steps[-1]
-        snapshots = methodology.get("scenarios") or {}
-        if str(step.scenario_id) not in snapshots:
-            return TaskChatAction(False, task_id, title, reason="no_scenario_binding")
-        if not _scenario_grants(identity[2]):
-            return TaskChatAction(False, task_id, title, reason="scenario_unavailable")
-        scenario = await session.scalar(
-            select(AgentScenario).where(
-                AgentScenario.tenant_id == identity[0],
-                AgentScenario.id == step.scenario_id,
-                AgentScenario.is_active.is_(True),
-            )
-        )
-        if scenario is None:
-            return TaskChatAction(False, task_id, title, reason="scenario_unavailable")
-        return TaskChatAction(True, task.id, title, scenario.id, str(scenario.name or ""), step.name)
     except (PermissionError, PlannerUnavailable, ExecutionPlanError, PIIError, ValueError, KeyError, TypeError):
-        # A missing right and a broken revision get one answer: not offered.
+        # A missing right gets one answer: the conversation is not offered.
         return TaskChatAction(False, task_id, title, reason="task_unavailable")
 
 
@@ -182,6 +219,8 @@ def _task_scope(action: TaskChatAction, session_id: int | None) -> ChatScope:
         scenario_id=action.scenario_id,
         scenario_name=action.scenario_name,
         step=action.step,
+        delegation=action.delegation,
+        reason=action.reason,
     )
 
 
@@ -225,18 +264,51 @@ class TaskChatService:
         if not action.available:
             raise TaskChatDenied(action.reason)
         binding = await _binding_for(task_id)
+        if binding is None and not action.delegation:
+            # Nothing to read and nothing to start: an explicit unavailable state.
+            raise TaskChatDenied(action.reason or "conversation_unavailable")
         return _task_scope(action, binding.session_id if binding is not None else None)
 
     @with_db_session
     async def list_task_conversations(self, *, limit: int = 20, session: AsyncSession | None = None) -> list[dict]:
-        """Canonical tasks whose saved binding makes a conversation available.
+        """Conversations the picker may show, using the same rules as the send path.
 
-        Bounded on purpose: the picker shows the newest visible tasks, and each
-        candidate is checked with the same rule the send path uses.
+        Two groups, deduplicated: tasks this actor already talked to (readable
+        even when closed or scenario-attached) and the newest open tasks without
+        an attached scenario (delegation candidates). Bounded on purpose.
         """
+        from app.models import TaskChatBinding
+
         identity = await task_service._actor(session, ActionType.VIEW)
+        items: list[dict] = []
+        seen: set[int] = set()
+
+        def add(action: TaskChatAction) -> None:
+            if action.task_id in seen:
+                return
+            seen.add(action.task_id)
+            items.append(
+                {
+                    "task_id": action.task_id,
+                    "title": action.title,
+                    "scenario_name": action.scenario_name,
+                    "step": action.step,
+                    "delegation": action.delegation,
+                    "reason": action.reason,
+                }
+            )
+
+        bound_ids = await session.scalars(
+            select(TaskChatBinding.task_id).where(
+                TaskChatBinding.tenant_id == identity[0], TaskChatBinding.user_id == identity[1]
+            )
+        )
+        for task_id in list(bound_ids):
+            action = await _open_task_chat(session, int(task_id))
+            if action.available:
+                add(action)
         rows = await session.scalars(
-            select(Task)
+            select(Task.id)
             .where(
                 Task.tenant_id == identity[0],
                 Task.deleted_at.is_(None),
@@ -245,26 +317,26 @@ class TaskChatService:
             .order_by(Task.id.desc())
             .limit(limit)
         )
-        items: list[dict] = []
-        for task in rows:
-            action = await _open_task_chat(session, task.id)
-            if action.available:
-                items.append(
-                    {
-                        "task_id": action.task_id,
-                        "title": action.title,
-                        "scenario_name": action.scenario_name,
-                        "step": action.step,
-                    }
-                )
+        for task_id in list(rows):
+            if int(task_id) in seen:
+                continue
+            action = await _open_task_chat(session, int(task_id))
+            if action.available and action.delegation:
+                add(action)
         return items
 
     @with_db_session
     async def ensure_task_conversation(self, task_id: int, *, session: AsyncSession | None = None) -> ChatScope:
-        """Allocate this actor's task conversation once, on the first send."""
+        """Allocate this actor's task conversation once, on the first send.
+
+        Send-time recheck: delegation needs an open task with no attached
+        scenario. A stale drawer keeps failing closed after either changes.
+        """
         action = await _open_task_chat(session, task_id)
         if not action.available:
             raise TaskChatDenied(action.reason)
+        if not action.delegation:
+            raise TaskChatDenied(action.reason or "conversation_unavailable")
         actor = get_current_user()
         if actor is None:
             raise TaskChatDenied("ai_chat_denied")

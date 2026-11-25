@@ -78,6 +78,7 @@ def _scope_public(scope: ChatScope | None) -> dict:
             "scenario": "",
             "step": "",
             "available": True,
+            "delegation": True,
             "reason": "",
         }
     return {
@@ -88,7 +89,8 @@ def _scope_public(scope: ChatScope | None) -> dict:
         "scenario": scope.scenario_name,
         "step": scope.step,
         "available": True,
-        "reason": "",
+        "delegation": scope.delegation,
+        "reason": scope.reason,
     }
 
 
@@ -136,8 +138,9 @@ def _scope_error_page(request: Request, reason: str, is_ajax: bool):
 async def _conversation_tabs(user_id: int) -> list[dict]:
     """Conversation entries for the right sidebar.
 
-    Only canonical tasks with a usable scenario binding are offered, and only
-    when this actor may read the task; the main chat is always first.
+    Readable task conversations (including closed or scenario-attached history)
+    and open tasks without an attached scenario are offered when this actor may
+    read the task; the main chat is always first.
     """
     try:
         tasks = await task_chat_service.list_task_conversations()
@@ -149,6 +152,8 @@ async def _conversation_tabs(user_id: int) -> list[dict]:
             "title": item["title"],
             "scenario": item["scenario_name"],
             "task_id": item["task_id"],
+            "delegation": item["delegation"],
+            "reason": item["reason"],
         }
         for item in tasks
     ]
@@ -663,9 +668,13 @@ async def chat_send(
     try:
         scope = await _scope_for(conversation, allocate=True)
     except TaskChatDenied as exc:
+        message = {
+            "task_closed": "Задача закрыта: история сохранена, новые поручения недоступны.",
+            "scenario_attached": "К задаче привязан сценарий: история сохранена, новые поручения недоступны.",
+        }.get(exc.reason, "Разговор с задачей недоступен")
         if is_ajax:
-            return JSONResponse({"error": "Разговор с задачей недоступен", "code": exc.reason}, status_code=403)
-        add_flash(request, "error", "Разговор с задачей недоступен")
+            return JSONResponse({"error": message, "code": exc.reason}, status_code=403)
+        add_flash(request, "error", message)
         return RedirectResponse(_chat_path(request), status_code=303)
 
     resolved_task_id = task_id if type(task_id) is int else None

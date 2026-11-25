@@ -30,7 +30,7 @@ from tests.support.schema_guard import require_isolated_schema
 pytestmark = [pytest.mark.tenancy, pytest.mark.asyncio]
 
 
-def _social_plan(scenario_id: int) -> str:
+def _social_plan(scenario_id: int | None) -> str:
     return map_social_plan(
         {
             "task_plan": {
@@ -43,6 +43,21 @@ def _social_plan(scenario_id: int) -> str:
             "collect_before_analyze": True,
         },
         job_type="analyze",
+    ).model_dump_json()
+
+
+def _collect_plan() -> str:
+    """A plan with no analysis step: nothing references an agent scenario."""
+    return map_social_plan(
+        {
+            "task_plan": {
+                "source_scope": "discovery",
+                "collection": {"queries": ["synthetic topic"]},
+                "trigger": {"type": "schedule", "cron": "0 9 * * *"},
+                "vk_access": {"mode": "api"},
+            }
+        },
+        job_type="collect",
     ).model_dump_json()
 
 
@@ -83,53 +98,133 @@ def allow_dynamic_sources(monkeypatch):
     monkeypatch.setattr(task_execution_plans, "check_canonical_read_access", allow)
 
 
-async def test_task_without_saved_binding_offers_no_conversation(task_world, monkeypatch):  # noqa: F811
+async def test_an_open_task_without_scenario_can_be_delegated(task_world, monkeypatch):  # noqa: F811
+    """The current contract: delegation needs an open task and no attached scenario."""
     require_isolated_schema()
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
     world = task_world
     with actor(world, 0):
         task = await task_service.create(CreateTask(title="No scenario yet"))
         action = await task_chat_service.open_task_chat(task.id)
-        assert action.available is False
-        assert action.reason == "no_scenario_binding"
-        with pytest.raises(TaskChatDenied, match="no_scenario_binding"):
-            await task_chat_service.conversation(task.id)
-        with pytest.raises(TaskChatDenied, match="no_scenario_binding"):
+        assert action.available is True
+        assert action.delegation is True
+        assert action.scenario_name == ""
+        assert action.reason == ""
+
+        # Reading the empty conversation allocates nothing.
+        before_bindings = await _rows(TaskChatBinding)
+        read = await task_chat_service.conversation(task.id)
+        assert read.session_id is None
+        assert await _rows(TaskChatBinding) == before_bindings
+
+        # A catalog scenario that is not attached to this task changes nothing.
+        await _scenario(world.tenants[0].id)
+        assert (await task_chat_service.open_task_chat(task.id)).delegation is True
+
+        first = await task_chat_service.ensure_task_conversation(task.id)
+        assert first.session_id is not None
+        assert await _rows(TaskChatBinding) == before_bindings + 1
+
+
+async def test_attached_scenario_keeps_history_readable_but_ends_delegation(task_world, monkeypatch):  # noqa: F811
+    require_isolated_schema()
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    world = task_world
+    tenant_id = world.tenants[0].id
+    with actor(world, 0):
+        task = await task_service.create(CreateTask(title="Delegated before planning"))
+        session = await task_chat_service.ensure_task_conversation(task.id)
+
+        scenario = await _scenario(tenant_id)
+        await task_execution_plans.execution_plan_service.publish(task.id, task.version, _social_plan(scenario.id))
+
+        action = await task_chat_service.open_task_chat(task.id)
+        assert action.available is True, "authorized history stays readable"
+        assert action.delegation is False
+        assert action.reason == "scenario_attached"
+        assert action.scenario_id == scenario.id
+        assert action.scenario_name == scenario.name
+
+        # A stale drawer or card cannot spend a turn on the attached scenario.
+        with pytest.raises(TaskChatDenied, match="scenario_attached"):
             await task_chat_service.ensure_task_conversation(task.id)
 
-        # A catalog scenario, not bound to this task, never qualifies.
-        await _scenario(world.tenants[0].id)
-        assert (await task_chat_service.open_task_chat(task.id)).available is False
+        # The existing private transcript is still the same session.
+        read = await task_chat_service.conversation(task.id)
+        assert read.session_id == session.session_id
+        tabs = await task_chat_service.list_task_conversations()
+        assert [(item["task_id"], item["delegation"]) for item in tabs] == [(task.id, False)]
+
+        # Attaching is about the current plan: a later revision without an
+        # analysis step restores delegation and resumes the same conversation.
+        await task_execution_plans.execution_plan_service.publish(task.id, task.version + 1, _collect_plan())
+        restored = await task_chat_service.open_task_chat(task.id)
+        assert restored.delegation is True
+        assert await _rows(TaskChatBinding) >= 1
+        assert (await task_chat_service.ensure_task_conversation(task.id)).session_id == session.session_id
+
+
+async def test_closing_work_ends_delegation_and_keeps_the_same_private_history(task_world, monkeypatch):  # noqa: F811
+    require_isolated_schema()
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    world = task_world
+    with actor(world, 0):
+        task = await task_service.create(CreateTask(title="Delegated then closed"))
+        session = await task_chat_service.ensure_task_conversation(task.id)
+
+        from app.services.planner.contracts import TaskUpdate
+
+        await task_service.complete(task.id, task.version)
+
+        action = await task_chat_service.open_task_chat(task.id)
+        assert action.available is True
+        assert action.delegation is False
+        assert action.reason == "task_closed"
+        assert action.work_status == "done"
+        with pytest.raises(TaskChatDenied, match="task_closed"):
+            await task_chat_service.ensure_task_conversation(task.id)
+        read = await task_chat_service.conversation(task.id)
+        assert read.session_id == session.session_id
+        assert read.delegation is False
+        assert read.reason == "task_closed"
+
+        # Cancelling is closed work too: the same history, no new delegation.
+        # Reopening is P22-T17's contract; this module only reads the status.
+        cancelled = await task_service.create(CreateTask(title="Delegated then cancelled"))
+        cancelled_session = await task_chat_service.ensure_task_conversation(cancelled.id)
+        await task_service.update(
+            cancelled.id, TaskUpdate(expected_version=cancelled.version, scope="occurrence", status="cancelled")
+        )
+        cancelled_action = await task_chat_service.open_task_chat(cancelled.id)
+        assert cancelled_action.reason == "task_closed"
+        assert (await task_chat_service.conversation(cancelled.id)).session_id == cancelled_session.session_id
 
 
 async def test_binding_is_allocated_once_on_first_send_and_read_creates_no_rows(task_world, monkeypatch):  # noqa: F811
     require_isolated_schema()
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
     world = task_world
-    tenant_id = world.tenants[0].id
     with actor(world, 0):
-        scenario = await _scenario(tenant_id)
-        task_id = await _bound_task(scenario.id)
+        task = await task_service.create(CreateTask(title="Allocated once"))
         before_sessions = await _rows(AgentSession)
         before_bindings = await _rows(TaskChatBinding)
 
-        action = await task_chat_service.open_task_chat(task_id)
+        action = await task_chat_service.open_task_chat(task.id)
         assert action.available is True
-        assert action.scenario_id == scenario.id
-        assert action.step == "digest" or action.step == "analyze"
+        assert action.delegation is True
 
-        read = await task_chat_service.conversation(task_id)
+        read = await task_chat_service.conversation(task.id)
         assert read.is_task is True
         assert read.session_id is None
         assert await _rows(AgentSession) == before_sessions
         assert await _rows(TaskChatBinding) == before_bindings
 
-        first = await task_chat_service.ensure_task_conversation(task_id)
+        first = await task_chat_service.ensure_task_conversation(task.id)
         assert first.session_id is not None
-        second = await task_chat_service.ensure_task_conversation(task_id)
+        second = await task_chat_service.ensure_task_conversation(task.id)
         assert second.session_id == first.session_id
         assert await _rows(TaskChatBinding) == before_bindings + 1
-        assert task_chat_actor_id(world.users[0].id, task_id) in await _session_chat_ids()
+        assert task_chat_actor_id(world.users[0].id, task.id) in await _session_chat_ids()
 
         # The main conversation is not the task conversation.
         assert (await task_chat_service.conversation()).session_id != first.session_id
@@ -160,9 +255,9 @@ async def test_two_members_with_access_get_separate_private_conversations(task_w
         membership.ai_chat_enabled = True
 
     with actor(world, 0):
-        scenario = await _scenario(tenant_id)
-        task_id = await _bound_task(scenario.id)
-        owner_scope = await task_chat_service.ensure_task_conversation(task_id)
+        task = await task_service.create(CreateTask(title="Shared workspace task", visibility="workspace"))
+        owner_scope = await task_chat_service.ensure_task_conversation(task.id)
+        task_id = task.id
 
     with actor(world, 1):
         member_scope = await task_chat_service.ensure_task_conversation(task_id)
@@ -187,8 +282,8 @@ async def test_member_without_ai_chat_is_denied_even_with_task_access(task_world
     tenant_id = world.tenants[0].id
 
     with actor(world, 0):
-        scenario = await _scenario(tenant_id)
-        task_id = await _bound_task(scenario.id)
+        task = await task_service.create(CreateTask(title="Member visibility task", visibility="workspace"))
+        task_id = task.id
 
     # User 1 is an active member without effective AI chat access.
     await _demote_to_member(tenant_id, world.users[1].id, ai_chat=False)
@@ -199,18 +294,24 @@ async def test_member_without_ai_chat_is_denied_even_with_task_access(task_world
         with pytest.raises(TaskChatDenied, match="ai_chat_denied"):
             await task_chat_service.ensure_task_conversation(task_id)
 
-    # With chat access but without the role rights the binding needs, the task
-    # conversation stays closed (missing task or scenario view, one answer).
+    # With chat access the same workspace task becomes delegable, and the
+    # member's private transcript is their own.
     await _demote_to_member(tenant_id, world.users[1].id, ai_chat=True)
     with actor(world, 1):
         action = await task_chat_service.open_task_chat(task_id)
-        assert action.available is False
-        assert action.reason in {"task_unavailable", "scenario_unavailable"}
-        with pytest.raises(TaskChatDenied):
-            await task_chat_service.ensure_task_conversation(task_id)
+        assert action.available is True
+        assert action.delegation is True
+        own = await task_chat_service.ensure_task_conversation(task_id)
+        assert own.session_id is not None
+
+    # A private task of the owner stays invisible to the member.
+    with actor(world, 0):
+        private = await task_service.create(CreateTask(title="Owner only", visibility="private"))
+    with actor(world, 1):
+        assert (await task_chat_service.open_task_chat(private.id)).available is False
 
 
-async def test_task_surface_offers_the_chat_action_only_with_a_usable_binding(task_world, monkeypatch):  # noqa: F811
+async def test_task_surface_offers_delegation_for_an_open_task_without_scenario(task_world, monkeypatch):  # noqa: F811
     require_isolated_schema()
     monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
     from app.services.workspace.task_surface import canonical_task_actions
@@ -221,23 +322,28 @@ async def test_task_surface_offers_the_chat_action_only_with_a_usable_binding(ta
     with actor(world, 0):
         plain = await task_service.create(CreateTask(title="Задача без сценария", visibility="workspace"))
         plain_id = plain.id
+        surface = await canonical_task_actions(plain_id)
+    chat_actions = [a for a in surface["actions"] if a["reference"] == "open_task_chat"]
+    assert len(chat_actions) == 1, "delegation does not require a scenario"
+    action = chat_actions[0]
+    assert action["label"] == "Поручить агенту"
+    assert action["conversation"] == f"task:{plain_id}"
+    assert action["href"] == f"/chat?conversation=task:{plain_id}"
+    assert not action.get("scenario") and not action.get("step")
 
+    # An attached scenario hides the delegation link, not the history.
     with actor(world, 0):
+        scenario = await _scenario(tenant_id)
+        await task_execution_plans.execution_plan_service.publish(plain_id, plain.version, _social_plan(scenario.id))
         surface = await canonical_task_actions(plain_id)
     assert not [a for a in surface["actions"] if a["reference"] == "open_task_chat"]
 
+    # Closed work has no delegation link either.
     with actor(world, 0):
-        scenario = await _scenario(tenant_id)
-        task_id = await _bound_task(scenario.id)
-        surface = await canonical_task_actions(task_id)
-    chat_actions = [a for a in surface["actions"] if a["reference"] == "open_task_chat"]
-    assert len(chat_actions) == 1
-    action = chat_actions[0]
-    assert action["label"] == "Спросить агента"
-    assert action["conversation"] == f"task:{task_id}"
-    assert action["href"] == f"/chat?conversation=task:{task_id}"
-    assert action["scenario"]
-    assert action["step"]
+        done = await task_service.create(CreateTask(title="Закрытая задача", visibility="workspace"))
+        await task_service.complete(done.id, done.version)
+        surface = await canonical_task_actions(done.id)
+    assert not [a for a in surface["actions"] if a["reference"] == "open_task_chat"]
 
 
 async def test_runtime_rules_keep_task_sessions_bound_to_their_actor():
@@ -299,10 +405,14 @@ def test_conversation_selector_and_in_place_switch_are_wired():
     assert "data-chat-conversations" in workspace
     assert "selectConversation('main')" in workspace
     assert 'x-for="tab in conversationTabs"' in workspace
+    assert (
+        ':disabled="pending"' not in workspace.split("conversationTabs")[1].split("</template>")[0]
+    ), "a running turn must not lock the picker"
 
     page = Path("app/web/templates/web/chat.html").read_text()
     assert "data-chat-conversation-line" in page
     assert "conversationBlocked()" in page, "an unavailable conversation cannot send"
+    assert "data-chat-conversation-readonly" in page, "closed work keeps readable history"
     assert "__chatConversation" in page
 
     script = Path("app/static/js/chat.js").read_text()
@@ -312,6 +422,7 @@ def test_conversation_selector_and_in_place_switch_are_wired():
     assert "this.sendToken += 1" in script, "a switch detaches from a running turn"
     assert "Дождитесь ответа агента, чтобы сменить разговор" not in script, "a switch is never refused"
     assert "'conversation': this.conversationParam()" in script
+    assert "conversation?.delegation === false" in script, "delegation needs open, scenario-free work"
     assert "sessionStorage.setItem(this.draftKey()" in script, "drafts are per conversation"
     assert "this.messages = [];" in script, "the old transcript leaves the view while switching"
     assert "data-chat-conversation-loading" in page, "a switch has an explicit loading state"
@@ -337,6 +448,18 @@ def test_task_chat_drawer_embeds_the_shared_chat_page():
     assert 'src="/chat?conversation=task:7&amp;embedded=1"' in html
     assert "шаг: analyze" in html
     assert "Сценарий" in html
+
+    plain = drawer.render(
+        chat_conversation={
+            "value": "task:8",
+            "title": "Задача без сценария",
+            "href": "/chat?conversation=task:8",
+            "available": True,
+            "delegation": True,
+        }
+    )
+    assert "Задача без сценария" in plain
+    assert "шаг:" not in plain, "delegation carries no scenario step"
 
     assert drawer.render(chat_conversation={"available": False}).strip() == ""
     assert drawer.render(chat_conversation=None).strip() == ""
@@ -391,6 +514,20 @@ async def test_embedded_chat_page_denies_an_unbound_task_without_rows(monkeypatc
             assert await _rows(TaskChatBinding) == before, "a denied read creates nothing"
         finally:
             await purge_account(user.id)
+
+
+def test_scope_payload_reports_delegation_and_read_only_history():
+    """The browser gets both capabilities; the server decides what they mean."""
+    from app.services.task_chat import ChatScope
+    from app.web.chat import _scope_public
+
+    open_scope = _scope_public(ChatScope("task", "Задача", None, task_id=3, delegation=True))
+    assert open_scope["available"] is True and open_scope["delegation"] is True
+
+    closed = _scope_public(ChatScope("task", "Задача", 5, task_id=3, delegation=False, reason="task_closed"))
+    assert closed["available"] is True, "the reader may still read"
+    assert closed["delegation"] is False
+    assert closed["reason"] == "task_closed"
 
 
 def test_task_topic_line_is_hidden_from_the_reader_but_not_lost():

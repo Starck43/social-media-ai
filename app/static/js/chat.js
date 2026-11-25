@@ -836,7 +836,10 @@ function chatApp() {
             },
 
             conversationBlocked() {
-                return this.conversation?.available === false;
+                if (this.conversation?.available === false) return true
+                // Closed work or an attached scenario: history stays readable,
+                // new delegation does not. The server rechecks on send.
+                return this.conversation?.kind === 'task' && this.conversation?.delegation === false
             },
 
             draftKey() {
@@ -953,7 +956,11 @@ function chatApp() {
                     return
                 }
                 if (this.conversationBlocked()) {
-                    this.notice = 'В этом разговоре отправка недоступна: выберите другой разговор.'
+                    this.notice = this.conversation?.reason === 'task_closed'
+                        ? 'Задача закрыта: история сохранена, новые поручения недоступны.'
+                        : this.conversation?.reason === 'scenario_attached'
+                            ? 'К задаче привязан сценарий: история сохранена, новые поручения недоступны.'
+                            : 'В этом разговоре отправка недоступна: выберите другой разговор.'
                     return
                 }
                 if ((!rawText && !readyAtts.length) || this.pending || this.workspaceContextBlocked()) return

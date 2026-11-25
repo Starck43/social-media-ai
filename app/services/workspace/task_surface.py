@@ -476,18 +476,17 @@ async def canonical_task_actions(task_id, *, perms=None, boundary="cloud"):
             and task_service._can_share(task, identity)
         ):
             actions.append({"reference": "delete", "label": "Удалить", "confirmation_required": True})
-        # A task conversation is offered only when this actor may actually open
-        # it: the same rule the chat page and the send path run. T08 renders it.
+        # «Поручить агенту» is offered for an open task without an attached
+        # scenario: the same rule the chat page and the send path run. A closed
+        # task or an attached scenario keeps its history readable, not delegable.
         chat = await task_chat_service.open_task_chat(task.id, session=session)
-        if chat.available:
+        if chat.available and chat.delegation:
             actions.append(
                 {
                     "reference": "open_task_chat",
-                    "label": "Спросить агента",
+                    "label": "Поручить агенту",
                     "conversation": f"task:{task.id}",
                     "href": f"/chat?conversation=task:{task.id}",
-                    "scenario": chat.scenario_name,
-                    "step": chat.step,
                 }
             )
         decisions = await task_decision_service.pending(task_id, perms=perms, boundary=boundary, session=session)

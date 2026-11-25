@@ -582,4 +582,8 @@
     .chat-header-hint { margin-inline: 2px; }
     .ui-shell .chat-composer { padding: 10px; }
 }
-
+/* P22-T14: the task drawer hosts the same chat page, embedded. */
+.chat-task-drawer { width:100%; max-width:32rem; padding:0; }
+.chat-task-drawer[open] { display:flex; flex-direction:column; gap:0; }
+.chat-task-drawer .shell-dialog-heading { padding:12px 16px; border-bottom:1px solid var(--color-border); margin:0; }
+.chat-task-drawer-frame { width:100%; min-height:min(70vh, 560px); border:0; background:var(--color-surface); border-radius:0 0 12px 12px; }

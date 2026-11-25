@@ -422,6 +422,7 @@ async def canonical_task_actions(task_id, *, perms=None, boundary="cloud"):
     from app.services.commands.task_decisions import task_decision_service
     from app.services.execution_plan_contracts import ExecutionPlanError
     from app.services.planner.canonical_tasks import task_service
+    from app.services.task_chat import task_chat_service
     from app.services.task_execution_plans import execution_plan_service
     from app.services.task_run_admission import TaskRunAdmissionError, authorize_task_run, validate_admissible_plan
 
@@ -475,6 +476,20 @@ async def canonical_task_actions(task_id, *, perms=None, boundary="cloud"):
             and task_service._can_share(task, identity)
         ):
             actions.append({"reference": "delete", "label": "Удалить", "confirmation_required": True})
+        # A task conversation is offered only when this actor may actually open
+        # it: the same rule the chat page and the send path run. T08 renders it.
+        chat = await task_chat_service.open_task_chat(task.id, session=session)
+        if chat.available:
+            actions.append(
+                {
+                    "reference": "open_task_chat",
+                    "label": "Спросить агента",
+                    "conversation": f"task:{task.id}",
+                    "href": f"/chat?conversation=task:{task.id}",
+                    "scenario": chat.scenario_name,
+                    "step": chat.step,
+                }
+            )
         decisions = await task_decision_service.pending(task_id, perms=perms, boundary=boundary, session=session)
         return {
             "task_id": task.id,

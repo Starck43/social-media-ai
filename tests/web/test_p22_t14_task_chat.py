@@ -210,6 +210,36 @@ async def test_member_without_ai_chat_is_denied_even_with_task_access(task_world
             await task_chat_service.ensure_task_conversation(task_id)
 
 
+async def test_task_surface_offers_the_chat_action_only_with_a_usable_binding(task_world, monkeypatch):  # noqa: F811
+    require_isolated_schema()
+    monkeypatch.setattr(settings, "PII_ENCRYPTION_KEYS", Fernet.generate_key().decode())
+    from app.services.workspace.task_surface import canonical_task_actions
+
+    world = task_world
+    tenant_id = world.tenants[0].id
+
+    with actor(world, 0):
+        plain = await task_service.create(CreateTask(title="Задача без сценария", visibility="workspace"))
+        plain_id = plain.id
+
+    with actor(world, 0):
+        surface = await canonical_task_actions(plain_id)
+    assert not [a for a in surface["actions"] if a["reference"] == "open_task_chat"]
+
+    with actor(world, 0):
+        scenario = await _scenario(tenant_id)
+        task_id = await _bound_task(scenario.id)
+        surface = await canonical_task_actions(task_id)
+    chat_actions = [a for a in surface["actions"] if a["reference"] == "open_task_chat"]
+    assert len(chat_actions) == 1
+    action = chat_actions[0]
+    assert action["label"] == "Спросить агента"
+    assert action["conversation"] == f"task:{task_id}"
+    assert action["href"] == f"/chat?conversation=task:{task_id}"
+    assert action["scenario"]
+    assert action["step"]
+
+
 async def test_runtime_rules_keep_task_sessions_bound_to_their_actor():
     identity = RuntimeIdentity(
         tenant_id=1,
@@ -280,3 +310,30 @@ def test_conversation_selector_and_in_place_switch_are_wired():
     assert "token !== this.conversationRequest" in script
     assert "'conversation': this.conversationParam()" in script
     assert "sessionStorage.setItem(this.draftKey()" in script, "drafts are per conversation"
+    assert "this.messages = [];" in script, "the old transcript leaves the view while switching"
+    assert "data-chat-conversation-loading" in page, "a switch has an explicit loading state"
+
+
+def test_task_chat_drawer_embeds_the_shared_chat_page():
+    """The drawer reuses `/chat`; it never renders a second transcript."""
+    from app.web.deps import templates
+
+    drawer = templates.env.get_template("web/_task_chat.html")
+    html = drawer.render(
+        chat_conversation={
+            "value": "task:7",
+            "title": "Задача",
+            "href": "/chat?conversation=task:7",
+            "scenario": "Сценарий",
+            "step": "analyze",
+            "available": True,
+        }
+    )
+    assert 'data-task-chat-conversation="task:7"' in html
+    assert "embedded=1" in html
+    assert 'src="/chat?conversation=task:7&amp;embedded=1"' in html
+    assert "шаг: analyze" in html
+    assert "Сценарий" in html
+
+    assert drawer.render(chat_conversation={"available": False}).strip() == ""
+    assert drawer.render(chat_conversation=None).strip() == ""

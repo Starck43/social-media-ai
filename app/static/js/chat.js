@@ -31,6 +31,7 @@ function chatApp() {
             conversation: window.__chatConversation || {value: 'main', title: 'Основной чат', available: true},
             conversationTabs: window.__chatConversationTabs || [],
             conversationRequest: 0,
+            conversationLoading: false,
             awaitingConfirmation: Boolean(window.__chatAwaitingConfirmation),
             attachmentPolicy: window.__chatAttachmentPolicy || null,
             attachments: [],
@@ -872,7 +873,19 @@ function chatApp() {
                     return;
                 }
                 const token = ++this.conversationRequest;
+                // The old transcript must leave the view at once: showing it under
+                // the new title would attribute one conversation's messages to
+                // another while the fetch is in flight.
+                const previous = {
+                    conversation: this.conversation,
+                    messages: this.messages,
+                    awaitingConfirmation: this.awaitingConfirmation,
+                };
                 this.stashDraft();
+                this.conversationLoading = true;
+                this.messages = [];
+                this.awaitingConfirmation = false;
+                this.confirmation = null;
                 const url = next === 'main' ? '/chat' : '/chat?conversation=' + encodeURIComponent(next);
                 try {
                     const response = await fetch(url, {
@@ -885,6 +898,11 @@ function chatApp() {
                     // transcript the user is looking at now.
                     if (token !== this.conversationRequest) return;
                     if (!response.ok || !data.conversation) {
+                        // A denied selection has no composer target; the previous
+                        // view comes back instead of an empty page.
+                        this.conversation = previous.conversation;
+                        this.messages = previous.messages;
+                        this.awaitingConfirmation = previous.awaitingConfirmation;
                         this.notice = data.error || 'Разговор недоступен.'
                         return
                     }
@@ -901,7 +919,12 @@ function chatApp() {
                 } catch (err) {
                     if (token !== this.conversationRequest) return;
                     console.error('Conversation switch error:', err)
+                    this.conversation = previous.conversation;
+                    this.messages = previous.messages;
+                    this.awaitingConfirmation = previous.awaitingConfirmation;
                     this.notice = 'Не удалось открыть разговор.'
+                } finally {
+                    if (token === this.conversationRequest) this.conversationLoading = false;
                 }
             },
 

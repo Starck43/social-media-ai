@@ -22,7 +22,7 @@ WorkTaskVersion = TaskVersion
 WorkTaskDeleted = DeletedOut
 
 DecisionSource = Literal["local", "command", "document"]
-ActionReference = Literal["edit", "complete", "run", "delete"]
+ActionReference = Literal["edit", "complete", "run", "delete", "open_task_chat"]
 
 
 class WorkTaskAction(BusinessSchema):
@@ -30,6 +30,12 @@ class WorkTaskAction(BusinessSchema):
     label: str = Field(min_length=1, max_length=80)
     revision: StrictInt | None = Field(default=None, gt=0)
     confirmation_required: bool | None = None
+    # P22-T14: `open_task_chat` names a server-resolved conversation; these
+    # fields carry it without letting a client choose the actor or the session.
+    conversation: str | None = Field(default=None, max_length=64)
+    href: str | None = Field(default=None, max_length=500)
+    scenario: str | None = Field(default=None, max_length=120)
+    step: str | None = Field(default=None, max_length=32)
 
 
 class LatestRun(BusinessSchema):

@@ -230,7 +230,7 @@ def _enrich_message(msg) -> dict:
     from app.agent.quick_replies import split_quick_replies
 
     if msg.role == "user":
-        content, options = msg.content, []
+        content, options = _strip_task_topic(msg.content), []
     else:
         content, options = split_quick_replies(msg.content)
         content = _render_assistant_content(content)
@@ -268,8 +268,19 @@ def _valid_chat_actor(request: Request) -> tuple[Any, int] | None:
     return user, tenant_id
 
 
+TASK_TOPIC_PREFIX = "[Разговор по задаче: "
+
+
+def _strip_task_topic(content: str | None) -> str | None:
+    """Hide the server-resolved topic line; it informs the model, not the reader."""
+    if not content or not content.startswith(TASK_TOPIC_PREFIX):
+        return content
+    head, sep, rest = content.partition("]\n")
+    return rest if sep else content
+
+
 def _display_transcript(messages) -> list[dict]:
-    """Presentation only: tool-call placeholders stay in storage, not in bubbles."""
+    """Presentation only: tool-call placeholders and the topic line stay out of bubbles."""
     return [
         _enrich_message(msg) for msg in messages if msg.role in ("user", "assistant") and (msg.content or "").strip()
     ]

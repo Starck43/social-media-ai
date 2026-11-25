@@ -337,3 +337,65 @@ def test_task_chat_drawer_embeds_the_shared_chat_page():
 
     assert drawer.render(chat_conversation={"available": False}).strip() == ""
     assert drawer.render(chat_conversation=None).strip() == ""
+
+
+async def test_embedded_chat_page_denies_an_unbound_task_without_rows(monkeypatch):
+    """The drawer loads the same page; an unreadable selection is refused."""
+    import json
+    import re
+    import secrets
+
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import create_application
+    from app.models import User
+    from app.models.managers.tenant_manager import TenantUserManager
+    from tests.shared.account_cleanup import purge_account
+
+    application = create_application()
+    async with AsyncClient(
+        transport=ASGITransport(app=application), base_url="http://testserver", follow_redirects=True
+    ) as client:
+        username = f"TaskChat{secrets.token_hex(4)}"
+        token = re.search(r'name="_csrf" value="([^"]+)"', (await client.get("/app/register")).text).group(1)
+        registered = await client.post(
+            "/app/register",
+            data={
+                "username": username,
+                "email": f"{username}@example.com",
+                "password": "secret-password-1",
+                "workspace": "Task chat workspace",
+                "_csrf": token,
+            },
+        )
+        assert registered.status_code == 200
+        user = await User.objects.get(username=username)
+        tenant_id = (await TenantUserManager().web_memberships(user.id))[0].tenant_id
+        try:
+            before = await _rows(TaskChatBinding)
+            embedded = await client.get("/chat?embedded=1")
+            assert embedded.status_code == 200
+            assert "chat-dock-container" not in embedded.text, "the drawer must not nest another dock"
+
+            denied = await client.get(
+                "/chat?conversation=task:999999",
+                headers={"X-Requested-With": "XMLHttpRequest", "Accept": "application/json"},
+            )
+            assert denied.status_code == 403
+            payload = json.loads(denied.text)
+            assert payload["code"] in {"task_unavailable", "scenario_unavailable"}
+            assert payload["conversation"]["available"] is False
+            assert await _rows(TaskChatBinding) == before, "a denied read creates nothing"
+        finally:
+            await purge_account(user.id)
+
+
+def test_task_topic_line_is_hidden_from_the_reader_but_not_lost():
+    """The server-resolved topic informs the model; bubbles show the question."""
+    from app.web.chat import _strip_task_topic
+
+    prefix = "[Разговор по задаче: Задача | сценарий: Сценарий | шаг: analyze]\n"
+    assert _strip_task_topic(prefix + "Вопрос") == "Вопрос"
+    assert _strip_task_topic("Вопрос") == "Вопрос"
+    assert _strip_task_topic(None) is None
+    assert _strip_task_topic(prefix.rstrip("\n")) == prefix.rstrip("\n"), "a bare topic line stays"

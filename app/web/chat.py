@@ -72,6 +72,7 @@ def _scope_public(scope: ChatScope | None) -> dict:
     if scope is None:
         return {
             "kind": "main",
+            "value": "main",
             "title": "Основной чат",
             "task_id": None,
             "scenario": "",
@@ -81,6 +82,7 @@ def _scope_public(scope: ChatScope | None) -> dict:
         }
     return {
         "kind": scope.kind,
+        "value": _conversation_value(scope),
         "title": scope.title,
         "task_id": scope.task_id,
         "scenario": scope.scenario_name,
@@ -419,6 +421,7 @@ async def chat_page(
                 "connector_search": connector_search,
                 "conversation": _scope_public(scope),
                 "conversation_value": _conversation_value(scope),
+                "conversation_tabs": await _conversation_tabs(user.id),
             }
         )
 
@@ -761,7 +764,8 @@ async def chat_send(
 
         if limit_reached:
             add_flash(request, "error", reply)
-            return RedirectResponse("/app/chat", status_code=302)
+            target = "/chat" if not scope.is_task else f"/chat?conversation={_conversation_value(scope)}"
+            return RedirectResponse(target, status_code=302)
 
         # "A waiting confirmation" is a question the owner must answer, not a
         # missing answer: the client must not add the "no text" notice on top.
@@ -772,6 +776,7 @@ async def chat_send(
                     "messages": enriched,
                     "conversation": _scope_public(scope),
                     "conversation_value": _conversation_value(scope),
+                    "conversation_tabs": await _conversation_tabs(user.id),
                     "warning": (
                         "Агент завершил обработку без текстового ответа. "
                         "Проверьте результат действия или уточните запрос."

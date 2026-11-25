@@ -26,6 +26,11 @@ function chatApp() {
             workspaceCheckedAt: '',
             workspaceListRequest: 0,
             workspaceTaskRequest: 0,
+            // P22-T14: the selected conversation. The client only names it; the
+            // server decides whether it exists and what its transcript is.
+            conversation: window.__chatConversation || {value: 'main', title: 'Основной чат', available: true},
+            conversationTabs: window.__chatConversationTabs || [],
+            conversationRequest: 0,
             awaitingConfirmation: Boolean(window.__chatAwaitingConfirmation),
             attachmentPolicy: window.__chatAttachmentPolicy || null,
             attachments: [],
@@ -824,8 +829,84 @@ function chatApp() {
                 return this.safeMarkdown(html)
             },
 
+            conversationParam() {
+                return this.conversation?.value || 'main';
+            },
+
+            conversationBlocked() {
+                return this.conversation?.available === false;
+            },
+
+            draftKey() {
+                return 'chat.draft:' + this.conversationParam();
+            },
+
+            stashDraft() {
+                const textarea = this.$refs.input;
+                if (!textarea) return;
+                try {
+                    const text = textarea.value || '';
+                    if (text) sessionStorage.setItem(this.draftKey(), text);
+                    else sessionStorage.removeItem(this.draftKey());
+                } catch (_) { /* Drafts are a convenience, not a guarantee. */ }
+            },
+
+            restoreDraft() {
+                const textarea = this.$refs.input;
+                if (!textarea) return;
+                let text = '';
+                try { text = sessionStorage.getItem(this.draftKey()) || ''; } catch (_) { /* no storage */ }
+                textarea.value = text;
+                this.resizeInput();
+            },
+
+            async selectConversation(value) {
+                const next = value || 'main';
+                if (next === this.conversationParam()) return;
+                if (this.pending) {
+                    this.notice = 'Дождитесь ответа агента, чтобы сменить разговор.';
+                    return;
+                }
+                if (this.awaitingConfirmation) {
+                    this.notice = 'Помощник ждёт подтверждения в текущем разговоре. Ответьте на его вопрос перед сменой.';
+                    return;
+                }
+                const token = ++this.conversationRequest;
+                this.stashDraft();
+                const url = next === 'main' ? '/chat' : '/chat?conversation=' + encodeURIComponent(next);
+                try {
+                    const response = await fetch(url, {
+                        headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'},
+                        cache: 'no-store',
+                    })
+                    let data = {}
+                    try { data = await response.json() } catch (parseError) { if (response.ok) throw parseError }
+                    // A late answer for an older selection must not overwrite the
+                    // transcript the user is looking at now.
+                    if (token !== this.conversationRequest) return;
+                    if (!response.ok || !data.conversation) {
+                        this.notice = data.error || 'Разговор недоступен.'
+                        return
+                    }
+                    this.conversation = data.conversation;
+                    this.conversationTabs = data.conversation_tabs || this.conversationTabs;
+                    this.messages = this.visibleMessages(data.messages || []);
+                    this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
+                    this.attachments = [];
+                    this.confirmation = null;
+                    this.notice = data.conversation.available === false ? (data.conversation.reason || 'Разговор недоступен.') : '';
+                    window.history.replaceState({}, '', url);
+                    this.restoreDraft();
+                    this.$nextTick(() => { this.scrollToBottom(); this.onScroll(); });
+                } catch (err) {
+                    if (token !== this.conversationRequest) return;
+                    console.error('Conversation switch error:', err)
+                    this.notice = 'Не удалось открыть разговор.'
+                }
+            },
+
             async loadTranscript() {
-                const response = await fetch('/app/chat', {
+                const response = await fetch('/chat?conversation=' + encodeURIComponent(this.conversationParam()), {
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest',
                         'Accept': 'application/json, text/plain, */*',
@@ -844,6 +925,10 @@ function chatApp() {
                 const readyAtts = this.readyAttachments()
                 if (this.isLocalOnlyBlocked()) {
                     this.notice = 'Этот контекст нельзя передавать в облачный чат. Локальный маршрут не настроен.'
+                    return
+                }
+                if (this.conversationBlocked()) {
+                    this.notice = 'В этом разговоре отправка недоступна: выберите другой разговор.'
                     return
                 }
                 if ((!rawText && !readyAtts.length) || this.pending || this.workspaceContextBlocked()) return
@@ -908,6 +993,7 @@ ${text}`
                         body: new URLSearchParams({
                             '_csrf': this.csrf,
                             'text': text,
+                            'conversation': this.conversationParam(),
                             ...(selectedId ? {task_id: selectedId} : {}),
                             ...(activeContext ? {context_type: activeContext.type, context_id: activeContext.context_id, boundary: activeContext.boundary} : {}),
                             ...(attachmentIds ? {attachment_ids: attachmentIds} : {}),
@@ -938,6 +1024,8 @@ ${text}`
 
                     // Replace with full transcript from server (includes user msg + assistant replies)
                     this.messages = this.visibleMessages(data.messages || [])
+                    if (data.conversation) this.conversation = data.conversation
+                    if (data.conversation_tabs) this.conversationTabs = data.conversation_tabs
                     this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
                     if (data.warning) this.notice = data.warning
                     else if (data.awaiting_confirmation) {
@@ -987,6 +1075,7 @@ ${text}`
                         body: new URLSearchParams({
                             '_csrf': this.csrf,
                             'text': '/stop',
+                            'conversation': this.conversationParam(),
                         }),
                     })
                     const data = await response.json()
@@ -995,7 +1084,7 @@ ${text}`
                     this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
                     this.attachments = [];
                     this.pending = false;
-                    this.clearWorkspaceTask();
+                    if (this.conversation.kind !== 'task') this.clearWorkspaceTask();
                     if (data.warning) this.notice = data.warning
                     this.$nextTick(() => this.scrollToBottom())
                 } catch (err) {
@@ -1019,6 +1108,7 @@ ${text}`
                         },
                         body: new URLSearchParams({
                             '_csrf': this.csrf,
+                            'conversation': this.conversationParam(),
                         }),
                     })
                     const data = await response.json()

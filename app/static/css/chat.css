@@ -295,6 +295,13 @@
 .chat-task-picker-list button { width:100%; }
 .chat-task-picker-list button[aria-pressed="true"] { background:var(--ui-accent-soft); color:var(--ui-accent); }
 .chat-task-name { font-weight:600; }
+/* P22-T14: the selected conversation and its server-rendered switcher. */
+.chat-conversation-line { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px; margin:0 0 2px; }
+.chat-conversation-title { font-weight:600; font-size:13px; color:var(--color-text-primary); }
+.chat-conversation-meta { font-size:12px; color:var(--color-text-secondary); }
+.chat-conversation-list { list-style:none; margin:6px 0 0; padding:0; display:grid; gap:4px; max-height:220px; overflow-y:auto; }
+.chat-conversation-list button { width:100%; text-align:left; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; }
+.chat-conversation-list button[aria-pressed="true"] { background:var(--ui-accent-soft); color:var(--ui-accent); }
 .chat-panel-plan { display:grid; grid-template-columns:1fr; gap:3px; }
 .chat-panel-plan dt { color:var(--color-text-secondary); font-size:12px; margin-top:6px; }
 .chat-panel-plan dd { margin:0; white-space:pre-wrap; }

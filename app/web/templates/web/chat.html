@@ -10,6 +10,8 @@
     window.__chatEvidenceContext = {{ (scoped_context if scoped_context is defined else none) | tojson }};
     window.__chatAttachmentPolicy = {{ (attachment_policy if attachment_policy is defined else none) | tojson }};
     window.__chatConnectorSearch = {{ (connector_search if connector_search is defined else {'enabled': false, 'devices': []}) | tojson }};
+    window.__chatConversation = {{ (conversation if conversation is defined else {'value': 'main', 'title': 'Основной чат', 'available': true}) | tojson }};
+    window.__chatConversationTabs = {{ (conversation_tabs if conversation_tabs is defined else []) | tojson }};
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
@@ -50,6 +52,14 @@
         Агент отвечает по данным этого workspace и может читать их без подтверждения.
         {% endif %}
     </p>
+
+    <div class="chat-conversation-line" data-chat-conversation-line>
+        <span class="chat-conversation-title" data-chat-conversation-title x-text="conversation?.title || 'Основной чат'"></span>
+        <span class="chat-conversation-meta" x-show="conversation?.kind === 'task'" x-cloak
+              x-text="[conversation?.scenario, conversation?.step].filter(Boolean).join(' · ')"></span>
+        <span class="chat-conversation-meta" x-show="conversation?.available === false" x-cloak role="alert"
+              data-chat-conversation-unavailable>Разговор недоступен — выберите основной чат.</span>
+    </div>
 
     <div class="chat-workspace-toolbar" x-show="workspaceTaskId || evidenceContext" x-cloak>
         <span class="chat-context-label" x-show="workspaceTaskId" x-cloak>
@@ -408,7 +418,7 @@
                 ></textarea>
                 <button type="button" class="chat-send" :class="{ 'chat-send-stop': sending }"
                         @click="sending ? stopGeneration() : sendMessage()"
-                        :disabled="(pending && !sending) || workspaceContextBlocked() || isLocalOnlyBlocked()"
+                        :disabled="(pending && !sending) || workspaceContextBlocked() || isLocalOnlyBlocked() || conversationBlocked()"
                         :aria-label="sending ? 'Остановить генерацию' : 'Отправить сообщение'"
                         :title="sending ? 'Остановить' : 'Отправить'">
                     <span x-show="!sending">{{ icon('send') }}</span>

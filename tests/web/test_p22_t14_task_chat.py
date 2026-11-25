@@ -259,3 +259,24 @@ def test_global_chat_entry_and_compatible_app_entry_are_both_routed():
     # The compatible entry mounts the very same chat router under `/app`.
     assert web_router.prefix == "/app"
     assert chat_router.prefix == "/chat"
+
+
+def test_conversation_selector_and_in_place_switch_are_wired():
+    """The sidebar names conversations; the server still decides who may read."""
+    from pathlib import Path
+
+    workspace = Path("app/web/templates/web/_chat_workspace.html").read_text()
+    assert "data-chat-conversations" in workspace
+    assert "selectConversation('main')" in workspace
+    assert 'x-for="tab in conversationTabs"' in workspace
+
+    page = Path("app/web/templates/web/chat.html").read_text()
+    assert "data-chat-conversation-line" in page
+    assert "conversationBlocked()" in page, "an unavailable conversation cannot send"
+    assert "__chatConversation" in page
+
+    script = Path("app/static/js/chat.js").read_text()
+    assert "conversationRequest" in script, "late answers need a request token"
+    assert "token !== this.conversationRequest" in script
+    assert "'conversation': this.conversationParam()" in script
+    assert "sessionStorage.setItem(this.draftKey()" in script, "drafts are per conversation"

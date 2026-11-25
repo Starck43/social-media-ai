@@ -29,9 +29,29 @@ from app.agent.identity import (
     memory_actor_scope,
     refresh_runtime_identity,
     resolve_runtime_identity,
-    session_matches_conversation,
+    session_matches_identity,
     task_conversation_owner,
 )
+
+
+def session_matches_conversation(session, identity) -> bool:
+    """A session this actor may use: their main chat or their own task chat.
+
+    Kept in the runtime, not in the identity module, because operators and tests
+    replace `session_matches_identity` here to stand in for a fresh re-check.
+    """
+    if session_matches_identity(session, identity):
+        return True
+    return bool(
+        session is not None
+        and getattr(session, "id", None)
+        and getattr(session, "is_active", False)
+        and getattr(session, "tenant_id", None) == identity.tenant_id
+        and getattr(session, "channel", None) == identity.channel
+        and task_conversation_owner(getattr(session, "chat_id", None)) == str(identity.chat_id)
+    )
+
+
 from app.agent.prompts import DEFAULT_SYSTEM_PROMPT
 from app.agent.tools import TOOL_REGISTRY, call_tool, to_openai_call, tool_specs
 from app.channels.base import Inbound

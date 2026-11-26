@@ -21,7 +21,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 11. [P22-T11 — External tasks and team tracker commands](../tasks/p22-t11.md). Depends on P22-T02, P22-T05, P22-T07.
 12. [P22-T12 — Workspace cutover, reconciliation and legacy retirement](../tasks/p22-t12.md). Depends on P22-T06, P22-T07, P22-T08, P22-T09, P22-T10, P22-T11. The follow-up redirect also depends on P22-T15.
 13. [P22-T13 — Jira issue adapter and Slack task context](../tasks/p22-t13.md). Depends on P22-T11.
-14. [P22-T14 — Task-scoped agent chat and shared transcript UI](../tasks/p22-t14.md). Depends on P22-T03 and P22-T07. Supplies the drawer to P22-T08.
+14. [P22-T14 — Task-scoped agent chat and shared transcript UI](../audit/p22/p22-t14.md). DONE 2026-11-26 at `bdae7b33`. Private task chat and bounded conversation picker.
 15. [P22-T15 — Turn commitments into dated tasks with reminders](../tasks/p22-t15.md). Depends on P22-T08 and P22-T10, uses the accepted P22-T07 interface and has a soft dependency on P15-T04.
 16. [P22-T16 — Sidebar sections for daily work](../audit/p22/p22-t16.md) — **DONE 2026-11-30** (`b6b6ca71`, merged
     `c18fc98e`). No hard prerequisite; supplies the structure P22-T08 and P22-T15 land in.

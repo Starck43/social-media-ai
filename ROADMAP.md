@@ -49,7 +49,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P22-T22](docs/tasks/p22-t22.md) One task shape: unify AgentTask with canonical Task and the prototype editor — **TODO** · unassigned · — · `P1` · `C5`
 - [P22-T23](docs/tasks/p22-t23.md) Generalize the resource binding so a new platform is data, not code — **TODO** · unassigned · — · `P1` · `C5`
-- [P22-T24](docs/tasks/p22-t24.md) Make the canonical task path executable, or retire it — **TODO** · unassigned · — · `P0` · `C5`
+- [P22-T24](docs/tasks/p22-t24.md) Publish and run canonical task automation — **TODO** · unassigned · — · `P0` · `C5`
 - [P22-T25](docs/tasks/p22-t25.md) Make triage a plan step, and let a thread become a task — **TODO** · unassigned · — · `P1` · `C4`
 - [P22-T26](docs/tasks/p22-t26.md) Priority rules: sender standing and deadline pressure — **TODO** · unassigned · — · `P2` · `C3`
 - [P22-T18](docs/tasks/p22-t18.md) Task filters, calendar and rolling run results — **IN_PROGRESS** · free-pi executor · `free-pi session 01a216c5-c4de-706e-839a-82cb1a676baf` · `P1` · `C4`

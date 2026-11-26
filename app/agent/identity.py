@@ -198,3 +198,32 @@ def session_matches_identity(session: Any, identity: RuntimeIdentity) -> bool:
         and getattr(session, "channel", None) == identity.channel
         and getattr(session, "chat_id", None) == identity.chat_id
     )
+
+
+def task_conversation_owner(chat_id: Any) -> str | None:
+    """Actor id of a task conversation chat id (`task:<task_id>:<user_id>`)."""
+    if not isinstance(chat_id, str):
+        return None
+    parts = chat_id.split(":")
+    if len(parts) != 3 or parts[0] != "task" or not parts[1].isdigit() or not parts[2].isdigit():
+        return None
+    return parts[2]
+
+
+def session_matches_conversation(session: Any, identity: RuntimeIdentity) -> bool:
+    """A session this actor may use: their main chat or their own task chat.
+
+    The task id is part of the chat id, so the suffix check keeps a conversation
+    bound to the actor who was authorized for it at send time. The actor half of
+    the identity never comes from the conversation selector.
+    """
+    if session_matches_identity(session, identity):
+        return True
+    return bool(
+        session is not None
+        and _positive_id(getattr(session, "id", None))
+        and getattr(session, "is_active", False)
+        and getattr(session, "tenant_id", None) == identity.tenant_id
+        and getattr(session, "channel", None) == identity.channel
+        and task_conversation_owner(getattr(session, "chat_id", None)) == str(identity.chat_id)
+    )

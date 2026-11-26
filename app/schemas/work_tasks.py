@@ -22,7 +22,7 @@ WorkTaskVersion = TaskVersion
 WorkTaskDeleted = DeletedOut
 
 DecisionSource = Literal["local", "command", "document"]
-ActionReference = Literal["edit", "complete", "run", "delete", "close", "reopen", "schedule"]
+ActionReference = Literal["edit", "complete", "run", "delete", "close", "reopen", "schedule", "open_task_chat"]
 ClosureOperation = Literal["close", "reopen"]
 
 
@@ -32,6 +32,10 @@ class WorkTaskAction(BusinessSchema):
     revision: StrictInt | None = Field(default=None, gt=0)
     confirmation_required: bool | None = None
     enabled: bool | None = None
+    conversation: str | None = Field(default=None, max_length=64)
+    href: str | None = Field(default=None, max_length=500)
+    scenario: str | None = Field(default=None, max_length=120)
+    step: str | None = Field(default=None, max_length=32)
 
 
 class LatestRun(BusinessSchema):

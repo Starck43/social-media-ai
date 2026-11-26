@@ -26,6 +26,13 @@ function chatApp() {
             workspaceCheckedAt: '',
             workspaceListRequest: 0,
             workspaceTaskRequest: 0,
+            // P22-T14: the selected conversation. The client only names it; the
+            // server decides whether it exists and what its transcript is.
+            conversation: window.__chatConversation || {value: 'main', title: 'Основной чат', available: true},
+            conversationTabs: window.__chatConversationTabs || [],
+            conversationRequest: 0,
+            conversationLoading: false,
+            sendToken: 0,
             awaitingConfirmation: Boolean(window.__chatAwaitingConfirmation),
             attachmentPolicy: window.__chatAttachmentPolicy || null,
             attachments: [],
@@ -824,8 +831,110 @@ function chatApp() {
                 return this.safeMarkdown(html)
             },
 
+            conversationParam() {
+                return this.conversation?.value || 'main';
+            },
+
+            conversationBlocked() {
+                if (this.conversation?.available === false) return true
+                // Closed work or an attached scenario: history stays readable,
+                // new delegation does not. The server rechecks on send.
+                return this.conversation?.kind === 'task' && this.conversation?.delegation === false
+            },
+
+            draftKey() {
+                return 'chat.draft:' + this.conversationParam();
+            },
+
+            stashDraft() {
+                const textarea = this.$refs.input;
+                if (!textarea) return;
+                try {
+                    const text = textarea.value || '';
+                    if (text) sessionStorage.setItem(this.draftKey(), text);
+                    else sessionStorage.removeItem(this.draftKey());
+                } catch (_) { /* Drafts are a convenience, not a guarantee. */ }
+            },
+
+            restoreDraft() {
+                const textarea = this.$refs.input;
+                if (!textarea) return;
+                let text = '';
+                try { text = sessionStorage.getItem(this.draftKey()) || ''; } catch (_) { /* no storage */ }
+                textarea.value = text;
+                this.resizeInput();
+            },
+
+            async selectConversation(value) {
+                const next = value || 'main';
+                if (next === this.conversationParam()) return;
+                // A turn or a pending confirmation belongs to its own session.
+                // Switching detaches from the turn: its late answer is dropped
+                // below, and the confirmation is still there on the way back.
+                if (this.pending) {
+                    this.sendToken += 1;
+                    this.pending = false;
+                    this.sending = false;
+                    this.stopThinking();
+                }
+                const token = ++this.conversationRequest;
+                // The old transcript must leave the view at once: showing it under
+                // the new title would attribute one conversation's messages to
+                // another while the fetch is in flight.
+                const previous = {
+                    conversation: this.conversation,
+                    messages: this.messages,
+                    awaitingConfirmation: this.awaitingConfirmation,
+                };
+                this.stashDraft();
+                this.conversationLoading = true;
+                this.messages = [];
+                this.awaitingConfirmation = false;
+                this.confirmation = null;
+                const url = next === 'main' ? '/chat' : '/chat?conversation=' + encodeURIComponent(next);
+                try {
+                    const response = await fetch(url, {
+                        headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'},
+                        cache: 'no-store',
+                    })
+                    let data = {}
+                    try { data = await response.json() } catch (parseError) { if (response.ok) throw parseError }
+                    // A late answer for an older selection must not overwrite the
+                    // transcript the user is looking at now.
+                    if (token !== this.conversationRequest) return;
+                    if (!response.ok || !data.conversation) {
+                        // A denied selection has no composer target; the previous
+                        // view comes back instead of an empty page.
+                        this.conversation = previous.conversation;
+                        this.messages = previous.messages;
+                        this.awaitingConfirmation = previous.awaitingConfirmation;
+                        this.notice = data.error || 'Разговор недоступен.'
+                        return
+                    }
+                    this.conversation = data.conversation;
+                    this.conversationTabs = data.conversation_tabs || this.conversationTabs;
+                    this.messages = this.visibleMessages(data.messages || []);
+                    this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
+                    this.attachments = [];
+                    this.confirmation = null;
+                    this.notice = data.conversation.available === false ? (data.conversation.reason || 'Разговор недоступен.') : '';
+                    window.history.replaceState({}, '', url);
+                    this.restoreDraft();
+                    this.$nextTick(() => { this.scrollToBottom(); this.onScroll(); });
+                } catch (err) {
+                    if (token !== this.conversationRequest) return;
+                    console.error('Conversation switch error:', err)
+                    this.conversation = previous.conversation;
+                    this.messages = previous.messages;
+                    this.awaitingConfirmation = previous.awaitingConfirmation;
+                    this.notice = 'Не удалось открыть разговор.'
+                } finally {
+                    if (token === this.conversationRequest) this.conversationLoading = false;
+                }
+            },
+
             async loadTranscript() {
-                const response = await fetch('/app/chat', {
+                const response = await fetch('/chat?conversation=' + encodeURIComponent(this.conversationParam()), {
                     headers: {
                         'X-Requested-With': 'XMLHttpRequest',
                         'Accept': 'application/json, text/plain, */*',
@@ -844,6 +953,14 @@ function chatApp() {
                 const readyAtts = this.readyAttachments()
                 if (this.isLocalOnlyBlocked()) {
                     this.notice = 'Этот контекст нельзя передавать в облачный чат. Локальный маршрут не настроен.'
+                    return
+                }
+                if (this.conversationBlocked()) {
+                    this.notice = this.conversation?.reason === 'task_closed'
+                        ? 'Задача закрыта: история сохранена, новые поручения недоступны.'
+                        : this.conversation?.reason === 'scenario_attached'
+                            ? 'К задаче привязан сценарий: история сохранена, новые поручения недоступны.'
+                            : 'В этом разговоре отправка недоступна: выберите другой разговор.'
                     return
                 }
                 if ((!rawText && !readyAtts.length) || this.pending || this.workspaceContextBlocked()) return
@@ -874,6 +991,8 @@ function chatApp() {
                 this.draftNotice = '';
                 const selectedId = this.workspaceTaskId;
                 const activeContext = this.evidenceContext;
+                const sendToken = ++this.sendToken;
+                const stillCurrent = () => sendToken === this.sendToken;
 
                 this.pending = true
                 this.sending = true
@@ -908,6 +1027,7 @@ ${text}`
                         body: new URLSearchParams({
                             '_csrf': this.csrf,
                             'text': text,
+                            'conversation': this.conversationParam(),
                             ...(selectedId ? {task_id: selectedId} : {}),
                             ...(activeContext ? {context_type: activeContext.type, context_id: activeContext.context_id, boundary: activeContext.boundary} : {}),
                             ...(attachmentIds ? {attachment_ids: attachmentIds} : {}),
@@ -924,6 +1044,9 @@ ${text}`
                         // status code, not "the server said nothing".
                         if (response.ok) throw parseError
                     }
+                    // The reader moved to another conversation: this turn's
+                    // transcript and notices belong to the old one.
+                    if (!stillCurrent()) return
 
                     if (!response.ok || data.error) {
                         const error = new Error(data.error || `Ошибка отправки (${response.status})`)
@@ -938,6 +1061,8 @@ ${text}`
 
                     // Replace with full transcript from server (includes user msg + assistant replies)
                     this.messages = this.visibleMessages(data.messages || [])
+                    if (data.conversation) this.conversation = data.conversation
+                    if (data.conversation_tabs) this.conversationTabs = data.conversation_tabs
                     this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
                     if (data.warning) this.notice = data.warning
                     else if (data.awaiting_confirmation) {
@@ -949,6 +1074,7 @@ ${text}`
                     else if (this.messages.at(-1)?.role !== 'assistant') this.notice = 'Ответ без текста. Проверьте результат действия или уточните запрос.'
                     this.$nextTick(() => this.scrollToBottom())
                 } catch (err) {
+                    if (!stillCurrent()) return
                     if (err.name === 'AbortError') {
                         this.notice = 'Генерация остановлена.'
                         this.loadTranscript().catch(() => { })
@@ -965,10 +1091,12 @@ ${text}`
                         (err.message || 'Не удалось отправить сообщение.')
                     this.$nextTick(() => this.scrollToBottom())
                 } finally {
-                    this.pending = false
-                    this.sending = false
-                    this.abortController = null
-                    this.stopThinking()
+                    if (stillCurrent()) {
+                        this.pending = false
+                        this.sending = false
+                        this.abortController = null
+                        this.stopThinking()
+                    }
                     if (this.workspaceTaskId) this.refreshWorkspaceTask();
                 }
             },
@@ -987,6 +1115,7 @@ ${text}`
                         body: new URLSearchParams({
                             '_csrf': this.csrf,
                             'text': '/stop',
+                            'conversation': this.conversationParam(),
                         }),
                     })
                     const data = await response.json()
@@ -995,7 +1124,7 @@ ${text}`
                     this.awaitingConfirmation = Boolean(data.awaiting_confirmation);
                     this.attachments = [];
                     this.pending = false;
-                    this.clearWorkspaceTask();
+                    if (this.conversation.kind !== 'task') this.clearWorkspaceTask();
                     if (data.warning) this.notice = data.warning
                     this.$nextTick(() => this.scrollToBottom())
                 } catch (err) {
@@ -1019,6 +1148,7 @@ ${text}`
                         },
                         body: new URLSearchParams({
                             '_csrf': this.csrf,
+                            'conversation': this.conversationParam(),
                         }),
                     })
                     const data = await response.json()

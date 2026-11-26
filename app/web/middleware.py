@@ -64,7 +64,9 @@ class TenantUIMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         path = scope.get("path", "")
-        if scope["type"] != "http" or not (path == "/app" or path.startswith("/app/")):
+        if scope["type"] != "http" or not (
+            path in ("/app", "/chat") or path.startswith("/app/") or path.startswith("/chat/")
+        ):
             await self.app(scope, receive, send)
             return
 

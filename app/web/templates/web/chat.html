@@ -10,6 +10,8 @@
     window.__chatEvidenceContext = {{ (scoped_context if scoped_context is defined else none) | tojson }};
     window.__chatAttachmentPolicy = {{ (attachment_policy if attachment_policy is defined else none) | tojson }};
     window.__chatConnectorSearch = {{ (connector_search if connector_search is defined else {'enabled': false, 'devices': []}) | tojson }};
+    window.__chatConversation = {{ (conversation if conversation is defined else {'value': 'main', 'title': 'Основной чат', 'available': true}) | tojson }};
+    window.__chatConversationTabs = {{ (conversation_tabs if conversation_tabs is defined else []) | tojson }};
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
@@ -63,6 +65,16 @@
     </div>
     <div class="chat-workspace-grid">
     <section class="chat-window" aria-label="Диалог с агентом">
+        <div class="chat-conversation-line" data-chat-conversation-line>
+            <span class="chat-conversation-title" data-chat-conversation-title x-text="conversation?.title || 'Основной чат'"></span>
+            <span class="chat-conversation-meta" x-show="conversation?.kind === 'task'" x-cloak
+                  x-text="[conversation?.scenario, conversation?.step].filter(Boolean).join(' · ')"></span>
+            <span class="chat-conversation-meta" x-show="conversation?.available === false" x-cloak role="alert"
+                  data-chat-conversation-unavailable>Разговор недоступен — выберите основной чат.</span>
+            <span class="chat-conversation-meta" x-show="conversation?.available !== false && conversation?.kind === 'task' && conversation?.delegation === false" x-cloak role="status"
+                  data-chat-conversation-readonly
+                  x-text="conversation?.reason === 'task_closed' ? 'Задача закрыта — история сохранена, новые поручения недоступны.' : 'К задаче привязан сценарий — история сохранена, новые поручения недоступны.'"></span>
+        </div>
         {% if scoped_context %}
         <div x-show="evidenceContext" class="chat-scoped-context-banner p-3 m-3 mb-0 rounded-lg border {% if scoped_context.is_local_only %}border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40{% else %}border-cyan-200 bg-cyan-50/70 dark:border-cyan-900/60 dark:bg-cyan-950/30{% endif %} flex flex-wrap items-center justify-between gap-3 text-xs" data-chat-scoped-context>
             <div class="space-y-0.5">
@@ -143,7 +155,7 @@
             x-ref="messages"
         >
             <!-- Empty state -->
-            <div x-show="messages.length === 0"
+            <div x-show="messages.length === 0 && !conversationLoading"
                  class="flex h-full min-h-48 flex-col items-center justify-center text-center">
                 <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-cyan-700 dark:text-cyan-400" fill="none"
@@ -301,6 +313,7 @@
                 </svg>
             </button>
 
+        <p x-show="conversationLoading" x-cloak class="chat-notice" role="status" data-chat-conversation-loading>Открываю разговор…</p>
         <div x-show="notice" x-cloak class="chat-notice chat-notice-error" role="alert"><span x-text="notice"></span>
             <button type="button" @click="notice = ''" aria-label="Скрыть сообщение">×</button>
         </div>
@@ -408,7 +421,7 @@
                 ></textarea>
                 <button type="button" class="chat-send" :class="{ 'chat-send-stop': sending }"
                         @click="sending ? stopGeneration() : sendMessage()"
-                        :disabled="(pending && !sending) || workspaceContextBlocked() || isLocalOnlyBlocked()"
+                        :disabled="(pending && !sending) || workspaceContextBlocked() || isLocalOnlyBlocked() || conversationBlocked()"
                         :aria-label="sending ? 'Остановить генерацию' : 'Отправить сообщение'"
                         :title="sending ? 'Остановить' : 'Отправить'">
                     <span x-show="!sending">{{ icon('send') }}</span>

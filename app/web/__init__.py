@@ -91,4 +91,10 @@ web_router.include_router(trusted_hosts_router)
 web_router.include_router(vk_router)
 web_router.include_router(web_research_router)
 
-__all__ = ["web_router"]
+# P22-T14: the same conversation page and endpoints are also reachable at
+# `/chat` (the global entry). `/app/chat` stays a compatible entry; the client
+# never learns a second implementation.
+chat_root_router = APIRouter(tags=["web"], dependencies=[Depends(pending_approvals_badge)])
+chat_root_router.include_router(chat_router)
+
+__all__ = ["chat_root_router", "web_router"]

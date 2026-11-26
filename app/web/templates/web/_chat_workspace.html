@@ -42,6 +42,29 @@
             </div>
         </section>
 
+        <section data-chat-conversations aria-labelledby="chat-conversations-title">
+            <h3 id="chat-conversations-title">Разговоры</h3>
+            <p class="chat-panel-hint">Основной диалог и отдельные разговоры по задачам со сценарием. Выбор меняет диалог на месте.</p>
+            <ul class="chat-conversation-list" aria-label="Доступные разговоры">
+                <li>
+                    <button type="button" data-chat-conversation="main" @click="selectConversation('main')"
+                            :aria-pressed="conversationParam() === 'main'" :disabled="pending"
+                            x-text="'Основной чат'"></button>
+                </li>
+                <template x-for="tab in conversationTabs" :key="tab.value">
+                    <li>
+                        <button type="button" :data-chat-conversation="tab.value" @click="selectConversation(tab.value)"
+                                :aria-pressed="conversationParam() === tab.value">
+                            <span x-text="tab.title"></span>
+                            <span class="chat-conversation-meta" x-show="tab.scenario" x-text="tab.scenario"></span>
+                            <span class="chat-conversation-meta" x-show="tab.delegation === false" x-cloak
+                                  x-text="tab.reason === 'task_closed' ? 'закрыта' : 'только чтение'"></span>
+                        </button>
+                    </li>
+                </template>
+            </ul>
+        </section>
+
         <section aria-labelledby="chat-actions-title">
             <h3 id="chat-actions-title">Быстрые действия</h3>
             <p class="chat-panel-hint">Подготовят запрос в поле ввода. Проверьте его перед отправкой.</p>

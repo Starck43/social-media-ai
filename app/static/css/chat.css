@@ -295,6 +295,20 @@
 .chat-task-picker-list button { width:100%; }
 .chat-task-picker-list button[aria-pressed="true"] { background:var(--ui-accent-soft); color:var(--ui-accent); }
 .chat-task-name { font-weight:600; }
+/* P22-T14: the selected conversation and its server-rendered switcher. */
+.chat-conversation-line {
+    display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px; margin:0 0 2px;
+    /* The shell scrolls the page, so the selected conversation must stay
+       readable above the transcript while the reader is at the composer. */
+    position:sticky; top:0; z-index:2; padding-block:6px;
+    background:var(--color-surface); border-bottom:1px solid transparent;
+}
+.chat-conversation-line[data-stuck] { border-bottom-color:var(--color-border); }
+.chat-conversation-title { font-weight:600; font-size:13px; color:var(--color-text-primary); }
+.chat-conversation-meta { font-size:12px; color:var(--color-text-secondary); }
+.chat-conversation-list { list-style:none; margin:6px 0 0; padding:0; display:grid; gap:4px; max-height:220px; overflow-y:auto; }
+.chat-conversation-list button { width:100%; text-align:left; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; }
+.chat-conversation-list button[aria-pressed="true"] { background:var(--ui-accent-soft); color:var(--ui-accent); }
 .chat-panel-plan { display:grid; grid-template-columns:1fr; gap:3px; }
 .chat-panel-plan dt { color:var(--color-text-secondary); font-size:12px; margin-top:6px; }
 .chat-panel-plan dd { margin:0; white-space:pre-wrap; }
@@ -575,4 +589,8 @@
     .chat-header-hint { margin-inline: 2px; }
     .ui-shell .chat-composer { padding: 10px; }
 }
-
+/* P22-T14: the task drawer hosts the same chat page, embedded. */
+.chat-task-drawer { width:100%; max-width:32rem; padding:0; }
+.chat-task-drawer[open] { display:flex; flex-direction:column; gap:0; }
+.chat-task-drawer .shell-dialog-heading { padding:12px 16px; border-bottom:1px solid var(--color-border); margin:0; }
+.chat-task-drawer-frame { width:100%; min-height:min(70vh, 560px); border:0; background:var(--color-surface); border-radius:0 0 12px 12px; }

@@ -10,13 +10,15 @@ if TYPE_CHECKING:
     from .agent_memory import AgentMemory
     from .agent_message import AgentMessage
     from .agent_session import AgentSession
+    from .task_chat import TaskChatBinding
 
-__all__ = ["AgentSession", "AgentMessage", "AgentMemory", "AgentFeedback"]
+__all__ = ["AgentSession", "AgentMessage", "AgentMemory", "AgentFeedback", "TaskChatBinding"]
 _MODULES = {
     "AgentSession": "agent_session",
     "AgentMessage": "agent_message",
     "AgentMemory": "agent_memory",
     "AgentFeedback": "agent_feedback",
+    "TaskChatBinding": "task_chat",
 }
 
 

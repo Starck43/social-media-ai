@@ -9,10 +9,9 @@ Declare this skill at session start, then load `task` and follow it as the singl
 source of truth for claiming, branch/worktree, statuses, evidence and merge rules.
 Apply only the deltas below on top of it.
 
-- Delegate one bounded unit of work in the order defined by `task`
-  (`perch` → `free-pi`), using native children for the OpenCode route. Use
-  OpenCode V2 `subagent`, never V1 `task`, and never start the configured tester
-  as the parent agent.
+- Delegate bounded research/implementation to `explore`/`general`; use OpenCode V2
+  `subagent`, never V1 `task`, and never start the configured tester as the parent
+  agent. Test and audit routes are defined in `task` and `test-runner`.
 - Tests: load `test-runner`. The configured `build` parent owns preflight and
   cleanup, then invokes `tester` in subagent mode. Tester runs only the supplied
   command and reports output; it does not edit source or add tests.

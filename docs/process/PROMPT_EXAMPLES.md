@@ -7,6 +7,7 @@ an agent follows general execution and all mandatory AGENTS rules.
 | Situation | Prompt | Skill |
 | --- | --- | --- |
 | Local execution | `$task P8-T12 implement` | [task](../../.agents/skills/task/SKILL.md) |
+| One session executes and audits | `Apply skill orchestrator-task: P8-T12 execute and audit` | [orchestrator](../../.agents/skills/orchestrator-task/SKILL.md) |
 | OpenCode implementation | `Apply skill opencode-task: P8-T12 implement` | [opencode-task](../../.agents/skills/opencode-task/SKILL.md) |
 | Perch executor | `Apply skill perch-task: P8-T12 implement` | [perch-task](../../.agents/skills/perch-task/SKILL.md) |
 | Remote Git/PR execution | `Apply skill remote-task: P8-T12 implement` | [remote-task](../../.agents/skills/remote-task/SKILL.md) |
@@ -20,6 +21,33 @@ an agent follows general execution and all mandatory AGENTS rules.
 skill” wording and load the named SKILL.md. These examples do not install slash
 commands: `/audit` is usable only with a configured adapter; native `/review`
 does not itself guarantee the project acceptance workflow. Use `$audit` for it.
+
+## Anti-pattern: audit plus redesign
+
+On 2026-11-26 a single prompt combined an audit with a UI redesign:
+
+> `выполни $audit ... Use subagents. Попутно делай правки шаблонов и стилей
+> согласно твоему новому макету. Сохрани только пока цветовую гамму ...`
+
+It spent 16.4M input tokens in ~15 minutes and returned `CHANGES_REQUIRED`.
+Only 2% went to the verdict: 35% to premature UI edits, 25% to independent
+review, 23% to DB-setup research. Five forked children each re-sent 56–102k of
+inherited context 20–43 times; Perch and `opencode run` were spawned before their
+routes were known to be unavailable.
+
+Keep the two jobs in separate lanes and keep the audit verdict-only:
+
+```text
+$audit P22-T08
+```
+
+```text
+$task P22-T08 implement the accepted review corrections; the UI restyle is a
+separate task with its own card.
+```
+
+Do not add design work to an audit prompt. An audit that needs a fix returns
+`CHANGES_REQUIRED` with the exact corrections; it does not build the fix.
 
 ## Remote work → local DB help → audit
 

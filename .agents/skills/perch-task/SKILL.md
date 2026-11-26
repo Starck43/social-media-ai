@@ -94,11 +94,7 @@ and treat anything else as a finding, not a pass.
 
 ## Roles
 
-Declare this skill at session start. Resolve the task card and repository from
-the task ID; read AGENTS and only linked contracts needed. Use a task-ID branch
-and assigned paths. Route claim/status updates through the shared registry
-custodian. For testing, load test-runner. Record the actual docs read, source
-revision, exact `perch` command, `status`, `modelLabel`/`modelId` and checks in the card/PR
-body; report READY only when required checks pass, otherwise task-related
-BLOCKED with the exact JSON error and next step. Preserve the JSON receipt, then
-delete child sessions and Perch threads you started.
+Declare this skill at session start, then load `task` and follow it; this skill
+adds only the Perch execution delta. Record the exact `perch` command, `status`,
+`modelLabel`/`modelId` and the JSON receipt in the card/PR. Perch never owns HEAD,
+the registry, DB setup or cleanup. Delete the Perch threads you started.

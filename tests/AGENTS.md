@@ -4,6 +4,12 @@ Use the assigned task's test-runner skill and read only its card plus the
 relevant [test](../docs/process/COLLABORATION.md#tests) or
 [database](../docs/process/COLLABORATION.md#database) procedure.
 
+- A DB run is a prepared recipe, not research: the card supplies the schema,
+  ordered commands, reset/cleanup and inventory paths. A tester that has to
+  discover `initdb`, `setup_test_db.py` or fixtures stops at ~1M input tokens or
+  ~20 turns and reports the missing recipe instead of exploring. A killed
+  research child yields no evidence.
+
 - Group tests by domain under `tests/<domain>/` (for example `billing/`,
   `security/`, `jobs/`, `web/`, `collection/`). Keep root for pytest bootstrap,
   `conftest.py` and package metadata.
@@ -31,9 +37,14 @@ relevant [test](../docs/process/COLLABORATION.md#tests) or
   `PYTHONPATH=.:tests pytest <file> --noconftest -p no:cacheprovider -o addopts=""`
   (today only `tests/api/test_http_user_response_privacy.py`, see its audit).
 - Strengthen observable contracts; preserve authorization and tenant checks.
-  Mock paid APIs/external writes. Never weaken assertions to obtain PASS. A
-  run-only tester changes no source and authors no tests. No full suite without
-  owner request. Do not commit logs, caches or generated test data.
+  Mock only external, paid or irreversible boundaries, never the module under
+  test; each mock asserts the interaction it replaces and returns
+  production-shaped data. Never weaken an assertion, edit an expectation or
+  reshape a fixture to obtain PASS — that is a finding, not a fix. A regression
+  test is evidence only after a red-green check: it fails on the pre-change
+  revision and passes on the candidate. A run-only tester changes no source and
+  authors no tests. No full suite without owner request. Do not commit logs,
+  caches or generated test data.
 
 Report exact test paths, command, tested revision, exit/counts, failures and
 cause, unrun checks, DB cleanup, and documentation actually read in the task

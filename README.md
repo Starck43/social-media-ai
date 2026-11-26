@@ -28,8 +28,9 @@ API/admin may run separately. Do not start duplicate runtime owners.
 This hierarchy defines ownership, not a mandatory reading chain; follow AGENTS'
 lazy task-reading rule rather than loading every ancestor.
 
-**First session:** README, [DESIGN](docs/product/DESIGN.md), [AGENTS](AGENTS.md).
-**Task:** one queue row/card and its selected skill; then only relevant links.
+**Owner first session:** README, [DESIGN](docs/product/DESIGN.md), [AGENTS](AGENTS.md).
+**Agent session:** AGENTS, one queue row/card and its selected skill; then only
+relevant links.
 [Prompt examples](docs/process/PROMPT_EXAMPLES.md) cover local/remote work and PR audit.
 [Subsystem index](docs/DOCS_INDEX.md) routes API, models, setup and release gates.
 

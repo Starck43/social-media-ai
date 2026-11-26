@@ -5,7 +5,13 @@ description: Execute one bounded task from ROADMAP.md remotely via a GitHub PR l
 
 # Remote task execution
 
-Governing rules: [AGENTS.md](../../../AGENTS.md), [docs/process/COLLABORATION.md](../../../docs/process/COLLABORATION.md).
+Governing rules: [AGENTS.md](../../../AGENTS.md), then only the
+[Tasks](../../../docs/process/COLLABORATION.md#tasks),
+[Evidence](../../../docs/process/COLLABORATION.md#evidence),
+[Tests](../../../docs/process/COLLABORATION.md#tests),
+[Database](../../../docs/process/COLLABORATION.md#database) and
+[Acceptance](../../../docs/process/COLLABORATION.md#acceptance) sections. Do not
+load the whole contract for one task.
 
 Invocation is one line: «take task `<Pxx-Tyy>` and apply this skill». The ID
 resolves everything; never ask the dispatcher for a summary, the rules or the

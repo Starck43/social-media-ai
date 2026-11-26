@@ -2,20 +2,29 @@
 
 These rules apply to every local/remote agent, including chat assignments without
 a skill. Owner instructions take precedence. A skill selects a role; without one,
-use general execution. Anyone may add a question or TODO to [ROADMAP](ROADMAP.md).
+use general execution. Project skills in `.agents/skills/` win over generic
+global skills: a generic reviewer, test-writer or lifecycle skill never replaces
+`audit`, `test-runner` or `task`. Anyone may add a question or TODO to
+[ROADMAP](ROADMAP.md).
 
 ## Read once, then lazily
 
-Read [README](README.md), [DESIGN](docs/product/DESIGN.md) and this file once per session.
-For work, open one ROADMAP row and its task card; load only relevant linked
-sections. A link is navigation, not an instruction to recursively load parent
-phases, PRODUCT_PLAN, related cards or audit history. If assigned an ID, read only
-its queue row; scan the queue only to choose work or coordinate ownership. For
-predecessors inspect their current row and just the specific delivered contract
-needed. Reuse already-loaded unchanged rules within a session; refresh source
-and changed sections after a revision change. Record documents actually read and
-checks in the card/PR. Shared
+Owner onboarding reads [README](README.md), [DESIGN](docs/product/DESIGN.md) and
+this file once. An agent session reads this file, then one ROADMAP row and its
+task card; it opens README/DESIGN only when the card's subsystem needs them.
+Load only relevant linked sections. A link is navigation, not an instruction to
+recursively load parent phases, PRODUCT_PLAN, related cards or audit history. If
+assigned an ID, read only its queue row; scan the queue only to choose work or
+coordinate ownership. For predecessors inspect their current row and just the
+specific delivered contract needed. Reuse already-loaded unchanged rules within a
+session; refresh source and changed sections after a revision change. Record
+documents actually read and checks in the card/PR. Shared
 [skills and prompt examples](docs/process/PROMPT_EXAMPLES.md) select execution/audit roles.
+
+Never load a whole process document when its section anchor is named, and never
+paste a document tree into a child prompt: hand it the path, the exact sections
+and the one question. That is the difference between a cheap child and a second
+main session.
 
 For structural changes, keep move-only and behavior edits separate, preserve
 compatibility until consumers migrate, and define a safe rollback. Task cards
@@ -75,12 +84,16 @@ carry only task-specific additions, not copies of these common rules.
   `test_schema` precondition for a public apply.
 - Reuse ORM managers/services and transactions. Fail closed; recheck tenant/actor
   rights at execution. Preserve confirmation/dry-run, payer/usage evidence and
-  secrets. Mock paid providers and external writes during tests.
+  secrets. Mock only external, paid or irreversible boundaries — never the module
+  under test — and make each mock assert the interaction it replaces. Never reshape
+  a fixture, expectation or scenario to match the implementation.
 - One `python -m app.runtime` owner; Celery/Redis and Streamlit stay frozen.
   Registry-only publication above does not authorize code pushes, force-push,
   deployment, production mutation or publication of unrelated local commits.
-- Any agent may invoke third-party agents, Perch first; native children are the
-  fallback. Preserve
+- Any agent may invoke third-party agents. Prefer the cheapest sufficient route:
+  a native `tester`/`explore`/`general` child for one bounded run or question,
+  Perch for a self-contained agentic job; native children are the fallback.
+  Preserve
   handoff evidence in the task card/PR; `.agents/tmp` and `/tmp` are scratch,
   never portable evidence. Acceptance authorizes the merge it covers; any other
   merge or deferral asks the owner first and preserves the resume branch/PR.

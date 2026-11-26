@@ -1,7 +1,8 @@
 # Development contract
 
 Entry rules live in [AGENTS](../../AGENTS.md); this file owns detailed workflow,
-DB and test procedures. Read only the section your skill needs.
+DB and test procedures. Read only the section your skill names — this is a
+reference, not a per-session read.
 
 ## Tasks
 
@@ -20,8 +21,9 @@ registry-only commit based on current `origin/dev`. Synchronize local `dev`
 without overwriting others' changes; if local dev is ahead, use a separate
 registry worktree instead of pushing unrelated commits. On a non-fast-forward
 push: fetch, reconcile, recheck the claim; never force-push. Claim publication
-to `origin/dev` is authorized by this workflow; solution publication and merge
-still require the owner's explicit choice. An unpublishable claim stays local —
+to `origin/dev` is authorized by this workflow; solution publication still
+requires the owner's explicit choice, while merge follows
+[Acceptance](#acceptance). An unpublishable claim stays local —
 report the limitation, never pretend it is visible. Remote agents self-publish
 their scoped claim commit under the same rules, always before any solution edit
 and never with it; they never publish solutions, unrelated rows or competing
@@ -111,11 +113,19 @@ owner waives a named check).
 
 ## Acceptance
 
-The auditor resolves a READY row → card → PR diff and recorded checks. Findings
-may require focused tests (auditor judgment on corrections and risk); no routine
-retest for docs-only reviews; full suites need owner request. No executor
-self-acceptance. `audit <ID>` selects the skill; `/audit` only where an
-interface maps it.
+The auditor resolves a READY row → card → PR diff and recorded checks. Acceptance
+is criterion-by-criterion: for each acceptance item name the code path, the test
+that exercises it and the observed evidence. A test that still passes with the
+change reverted proves nothing; a mock-only or unit-only green never replaces a
+required DB/integration scenario. A suite reshaped to the implementation (weakened
+assertion, edited expectation, mock of the module under test) is a finding, not a
+pass. Findings may require focused tests (auditor judgment on corrections and
+risk); no routine retest for docs-only reviews; full suites need owner request.
+No executor self-acceptance. Self-review is not acceptance: an orchestrator that
+both implemented and reviews may run the mechanical pre-flight (diff, checks,
+integration proof), but the verdict must come from the independent reviewer
+route; without one the task stays READY, never DONE. `audit <ID>` selects the
+skill; `/audit` only where an interface maps it.
 
 On successful review, verify integration **before** publishing DONE or removing
 any row/card:
@@ -249,12 +259,38 @@ Delegate bounded routine edits/inventories/test commands to a cheaper agent when
 narrow input saves more cost/context than setup and review. Keep judgment and
 final acceptance with the auditor; don't relay whole documentation trees. Assign
 one outcome, exact HEAD, file ownership and checks; require a compact verdict
-with file refs and counts. Only Codex calls third-party agents; otherwise use
-native children under the same scope/guards. Persist results, then stop/delete
-owned child sessions immediately; never touch foreign sessions or session
-storage. Unavailable/closed sessions are housekeeping notes, not task failures;
-keep a durable handoff if deletion prevents resume; don't repeatedly investigate
-missing sessions after owner closure.
+with file refs and counts.
+
+| Delegate to a cheap child | Keep with the executor/auditor |
+| --- | --- |
+| Repo/call-site exploration; one subsystem question | Acceptance judgment and the verdict |
+| Running one exact test command (`tester`) | DB migration/cycle decisions and schema ownership |
+| Parsing a long log, traceback or test report | Merge, force-push, deployment, destructive cleanup |
+| Link, registry, branch/worktree, schema inventories (scripts) | Owner questions and irreversible choices |
+| Drafting a doc/PR section from a fixed outline | Security review and final handoff wording |
+| Repeating a deterministic check on a named SHA | Anything whose failure you cannot verify yourself |
+
+A child gets the path, the exact section, the command and the expected output —
+never the parent transcript. If the parent cannot check the child's result in one
+read, the delegation was too broad. Only Codex calls third-party agents;
+otherwise use native children under the same scope/guards. Persist results, then
+stop/delete owned child sessions immediately; never touch foreign sessions or
+session storage. Unavailable/closed sessions are housekeeping notes, not task
+failures; keep a durable handoff if deletion prevents resume; don't repeatedly
+investigate missing sessions after owner closure.
+
+Budget each lane: at most 1–2 children per task, each capped at ~1M input tokens
+or ~20 turns, and a compact handoff instead of a forked session. A forked child
+re-sends its inherited 50–100k context every turn, so five children can outspend
+the whole task. Preflight a third-party route once (`perch status`, `free-pi`
+availability) before spawning it; a child must not spend a turn discovering the
+route is down. Use one blocking call with a timeout, never a polling loop. An
+audit is verdict-only: UI/style/code work added "along the way" is a separate
+`task` lane, never implementation inside the audit. On 2026-11-26 an audit of
+P22-T08 spent 16.4M input tokens in ~15 minutes (2% on the verdict, 35% on
+premature UI edits, 25% on review, 23% on DB research); see
+[PROMPT_EXAMPLES](PROMPT_EXAMPLES.md#anti-pattern-audit-plus-redesign) for the
+corrected prompt shape.
 
 Remote assignments include repository and PR URLs. The PR body holds
 solution/evidence; instructions, feedback and questions go through PR comments.
@@ -277,10 +313,11 @@ Record the resolved SHA as evidence.
 
 Read [test-runner](../../.agents/skills/test-runner/SKILL.md) and
 [tests/AGENTS](../../tests/AGENTS.md) for test work. Route runs in delegation
-order: [Perch](../../.agents/skills/perch-task/SKILL.md) (`perch run --json`),
-then the `free-pi` subagent (`free-pi/deepseek-v4.1-flash#medium`); fall to the
-next route only when the previous is unavailable or fails, and report which
-route ran — permission/HEAD/ownership failures are not bypass permissions.
+order: the `tester` child (`cent.ai/hy4-flash:free`, run-only), then the `free-pi`
+subagent (`free-pi/deepseek-v4.1-flash#medium`), then the executor's own model;
+fall to the next route only when the previous is unavailable or fails, and report
+which route ran — permission/HEAD/ownership failures are not bypass permissions.
+Perch is an external executor for a self-contained job, not a test runner.
 Collect affected paths after enum/import/layout changes. DB scopes use root
 conftest; disable it only for proven no-DB isolation. No broad suite without
 explicit owner request; auditor retests follow Acceptance above.

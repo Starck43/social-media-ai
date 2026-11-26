@@ -65,7 +65,11 @@ class PlatformType(DatabaseEnum, Enum):
             return None
 
     def __str__(self) -> str:
-        return self.name
+        # Must match `choices()`, which yields `db_value` ('vk', 'telegram').
+        # Returning `self.name` ('VK', 'TELEGRAM') made every `str()`-based check
+        # reject a valid choice: the admin form's AnyOf validator compared
+        # 'TELEGRAM' against the choice list and silently kept the old value.
+        return self.db_value
 
 
 @database_enum

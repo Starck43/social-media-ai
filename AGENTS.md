@@ -90,10 +90,10 @@ carry only task-specific additions, not copies of these common rules.
 - One `python -m app.runtime` owner; Celery/Redis and Streamlit stay frozen.
   Registry-only publication above does not authorize code pushes, force-push,
   deployment, production mutation or publication of unrelated local commits.
-- Any agent may invoke third-party agents. Prefer the cheapest sufficient route:
-  a native `tester`/`explore`/`general` child for one bounded run or question,
-  Perch for a self-contained agentic job; native children are the fallback.
-  Preserve
+- Any configured lane may dispatch third-party agents when its adapter supports
+  them; the role skill chooses the route. A native `tester`/`explore`/`general`
+  child handles one bounded run or question, Perch a self-contained agentic job,
+  and native children are the fallback when a route is unavailable. Preserve
   handoff evidence in the task card/PR; `.agents/tmp` and `/tmp` are scratch,
   never portable evidence. Acceptance authorizes the merge it covers; any other
   merge or deferral asks the owner first and preserves the resume branch/PR.

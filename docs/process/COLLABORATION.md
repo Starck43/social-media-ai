@@ -272,8 +272,9 @@ with file refs and counts.
 
 A child gets the path, the exact section, the command and the expected output —
 never the parent transcript. If the parent cannot check the child's result in one
-read, the delegation was too broad. Only Codex calls third-party agents;
-otherwise use native children under the same scope/guards. Persist results, then
+read, the delegation was too broad. Any configured lane may dispatch third-party
+routes (`perch`, `free-pi`); use native children under the same scope/guards when
+a route is unavailable. Persist results, then
 stop/delete owned child sessions immediately; never touch foreign sessions or
 session storage. Unavailable/closed sessions are housekeeping notes, not task
 failures; keep a durable handoff if deletion prevents resume; don't repeatedly

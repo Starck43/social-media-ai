@@ -9,8 +9,9 @@ Declare this skill at session start. `/audit <ID>` or a task ID plus `audit` is
 enough when the repository resolves the candidate. Start with ROADMAP's READY
 row, task card/PR body and exact diff; read only linked contracts and check
 evidence. Confirm the current candidate revision and that evidence matches it.
-Do not take feature implementation beyond authorized corrections/refactoring/
-docs. Full suites require an owner request. This skill is the operating
+Do not implement features or UI: the audit returns corrections and a verdict,
+and the only writes are documentation/registry updates. Full suites require an
+owner request. This skill is the operating
 checklist; [COLLABORATION](../../../docs/process/COLLABORATION.md) owns the
 detailed contract and wins on any conflict.
 
@@ -34,8 +35,8 @@ missing work, not a branch you built yourself.
   availability/model ID, and the native `auditor` ID. A route that costs a child
   a turn to discover it is unavailable is a wasted child.
 - Use at most one reviewer child per candidate. Send one blocking call with a
-  timeout; no `write_stdin` polling loops. Stop every child as soon as the
-  verdict no longer depends on it.
+  timeout; no input-polling loops. Stop every child as soon as the verdict no
+  longer depends on it.
 - A child that exceeds ~1M input tokens or ~20 turns is stopped and narrowed;
   more context is not more certainty.
 - DB evidence comes from the exact commands in the card on an isolated schema,

@@ -31,6 +31,7 @@ A person can save a deadline note, coordinate a team obligation, run social anal
 20. [P22-T20 — Page older chat messages and saved task conversations](../tasks/p22-t20.md). Follows the T14 conversation contract.
 21. [P22-T21 — Budget and compact agent conversation context](../tasks/p22-t21.md). Follows the T14 conversation contract.
 22. [P22-T22 — One task shape: unify AgentTask with the canonical Task and the prototype editor](../tasks/p22-t22.md). Depends on P22-T01, P22-T03, P22-T06, P22-T07, P22-T08. Supplies the shape P22-T08's automation branch and P22-T10 write into.
+23. [P22-T23 — Generalize the resource binding so a new platform is data, not code](../tasks/p22-t23.md). Depends on P22-T02, P22-T03, P22-T06, P22-T08. Supplies the extension seam any new social platform needs; independent of P22-T22's payload work.
 
 T01 and T02 supply the foundations for T03. T06 owns legacy writes and migration. T07 owns the new interface namespace and command adapters. Coordinate the legacy regression fixtures at their boundary. T08, T09, T10 and T11 can implement independent surfaces after their prerequisites. T08 uses capability fixtures until the pilots land. T12 integrates the verticals. T17 and T18 extend the accepted task contracts for the desktop prototype. P20-T20 owns the Today dashboard and consumes the T18 projections. T13 extends the provider set independently.
 

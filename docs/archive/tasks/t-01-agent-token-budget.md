@@ -1,5 +1,7 @@
 # T-01 Agent token budget and delegation guardrails
 
+[Audit](../../audit/shared/t-01.md) · accepted `49d9c563` on 2026-11-26
+
 Status: READY · OpenCode · 2026-11-26
 
 ## Why

@@ -77,7 +77,6 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 Registered tooling follow-ups (not phase work; repo-level hygiene):
 
 
-- [T-01](docs/tasks/t-01-agent-token-budget.md) Agent token budget and delegation guardrails — **READY** · OpenCode · — · `P2` · `C1`
 
 Business modules P13–P19 ([adapted TZ and review](docs/product/BUSINESS_MODULES.md)); bands set by owner decision D1 ([Q-18](docs/audit/q/q-18-owner-decisions.md)):
 

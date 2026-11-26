@@ -49,7 +49,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 
 - [P22-T18](docs/tasks/p22-t18.md) Task filters, calendar and rolling run results — **IN_PROGRESS** · free-pi executor · `free-pi session 01a216c5-c4de-706e-839a-82cb1a676baf` · `P1` · `C4`
 - [P22-T08](docs/tasks/p22-t08.md) Unify task navigation, labels, creation and detail views — **IN_PROGRESS** · free-pi executor · `free-pi session 01a216c5-c4de-706e-839a-82cb1a676baf` · `P1` · `C4`
-- [P22-T10](docs/tasks/p22-t10.md) Correspondence task and sender-grouped Messages — **TODO** · unassigned · `codex resume 01a1fb41-51c9-76a1-8771-93536f57a54b` · `P1` · `C4`
+- [P22-T10](docs/tasks/p22-t10.md) Correspondence task and sender-grouped Messages — **IN_PROGRESS** · free-pi executor · `free-pi session 01a216c5-c4de-706e-839a-82cb1a676baf` · `P1` · `C4`
 
 ### Priority P2
 

@@ -69,9 +69,9 @@ transcript. If you cannot check its result in one read, the task was too broad.
    step.
 5. On `ACCEPTED` the auditor owns integration, merge and registry closeout under
    [acceptance](../../../docs/process/COLLABORATION.md#acceptance). Hand over the
-   exact branch/PR and stop editing the registry. If the owner explicitly assigns
-   the closeout to you, record the independent verdict first and make only the
-   registry-only closeout commit.
+   exact branch/PR and stop editing the registry. If the owner explicitly assigns a
+   registry-only closeout to you, record the independent verdict first and make
+   only the registry edits; do not merge or delete the branch.
 
 Keep IN_PROGRESS on actionable failures; use BLOCKED only when the solution or
 required acceptance cannot proceed. Store handoff in the card/PR, not `/tmp` or

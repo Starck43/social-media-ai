@@ -39,7 +39,7 @@ Edits in `.agents/skills/{audit,task,test-runner,orchestrator-task}/SKILL.md`,
 and `tests/AGENTS.md`; `AGENTS.md`/`README.md`/`ROADMAP.md` carry the lazy-read
 and skill-precedence rules.
 
-Checks: `git diff --check` clean; `python3 scripts/check_markdown_links.py`
-reports pre-existing failures in `docs/archive`, `docs/tasks` sibling cards and
-the p20 audit anchor; none in the changed files. Documentation-only change; no
-pytest run.
+Checks: `git diff --check` clean. `python3 scripts/check_markdown_links.py`
+reports 45 errors: 39 in `docs/archive` and 6 pre-existing in
+`docs/tasks/p22-{t08,t09,t11,t18}.md`/`docs/audit/p20/p20-t06.md`; zero in any
+file changed by this task. Documentation-only change; no pytest run.

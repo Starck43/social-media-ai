@@ -4,7 +4,7 @@ Revision: `0163`, after `0162`. The revision adds only a binding
 table plus one unique index on `agent_sessions(tenant_id, id)`, which the
 composite foreign key needs to stay tenant-checked in the database. Existing
 main-session ids, channels and message rows are untouched, so the downgrade is a
-plain drop and loses no delivered conversation.
+guarded drop after verifying that no task conversations are bound.
 """
 
 import sqlalchemy as sa
@@ -58,6 +58,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    quoted = bind.dialect.identifier_preparer.quote_schema(SCHEMA)
+    table = f"{quoted}.task_chat_bindings"
+    bind.execute(sa.text(f"LOCK TABLE {table} IN ACCESS EXCLUSIVE MODE"))
+    if bind.scalar(sa.text(f"SELECT EXISTS (SELECT 1 FROM {table})")):
+        raise RuntimeError("Downgrade refused: task chat bindings contain durable conversation references")
     op.drop_index("ix_task_chat_binding_user", table_name="task_chat_bindings", schema=SCHEMA)
     op.drop_table("task_chat_bindings", schema=SCHEMA)
     op.drop_constraint("uq_agent_session_tenant_id", "agent_sessions", schema=SCHEMA, type_="unique")

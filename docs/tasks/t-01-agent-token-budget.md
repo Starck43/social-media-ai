@@ -34,6 +34,7 @@ Process-only guardrails in the audit/task/test-runner/orchestrator skills,
 ## Evidence
 
 Edits in `.agents/skills/{audit,task,test-runner,orchestrator-task}/SKILL.md`,
+`.agents/skills/{opencode-task,perch-task,remote-task}/SKILL.md`,
 `docs/process/COLLABORATION.md#delegation`, `docs/process/PROMPT_EXAMPLES.md`
 and `tests/AGENTS.md`; `AGENTS.md`/`README.md`/`ROADMAP.md` carry the lazy-read
 and skill-precedence rules.

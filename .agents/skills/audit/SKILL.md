@@ -9,9 +9,9 @@ Declare this skill at session start. `/audit <ID>` or a task ID plus `audit` is
 enough when the repository resolves the candidate. Start with ROADMAP's READY
 row, task card/PR body and exact diff; read only linked contracts and check
 evidence. Confirm the current candidate revision and that evidence matches it.
-Do not implement features or UI: the audit returns corrections and a verdict,
-and the only writes are documentation/registry updates. Full suites require an
-owner request. This skill is the operating
+Do not edit the reviewed implementation: the audit returns corrections and a
+verdict. Writes are limited to the audit note, registry rows and the authorized
+merge/cleanup. Full suites require an owner request. This skill is the operating
 checklist; [COLLABORATION](../../../docs/process/COLLABORATION.md) owns the
 detailed contract and wins on any conflict.
 

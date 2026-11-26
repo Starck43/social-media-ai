@@ -47,6 +47,7 @@ Historical statuses and owner-selected deferrals are unchanged by this ranking.
 - [P7-T02](docs/tasks/p7-t02.md) One staging-backed operations proof — **BLOCKED** · unassigned · — · `P1` · `C4`
 - [P6-T01](docs/tasks/p6-t01.md) Deploy-gated retention rollout — **BLOCKED** · product-owner · — · `P1` · `C3`
 
+- [P22-T22](docs/tasks/p22-t22.md) One task shape: unify AgentTask with canonical Task and the prototype editor — **TODO** · unassigned · — · `P1` · `C5`
 - [P22-T18](docs/tasks/p22-t18.md) Task filters, calendar and rolling run results — **IN_PROGRESS** · free-pi executor · `free-pi session 01a216c5-c4de-706e-839a-82cb1a676baf` · `P1` · `C4`
 - [P22-T08](docs/tasks/p22-t08.md) Unify task navigation, labels, creation and detail views — **BLOCKED** · free-pi executor · `free-pi session 01a216c5-c4de-706e-839a-82cb1a676baf` · `P1` · `C4`
 - [P22-T10](docs/tasks/p22-t10.md) Correspondence task and sender-grouped Messages — **IN_PROGRESS** · free-pi executor · `free-pi session 01a216c5-c4de-706e-839a-82cb1a676baf` · `P1` · `C4`

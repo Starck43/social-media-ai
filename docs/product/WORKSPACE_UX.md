@@ -100,10 +100,16 @@ social results as the first provider.
 
 ## Correspondence
 
-Connected mailboxes (P15-T01) and Telegram/MAX
-(P15-T02; personal Telegram behind P12-T14) form threads per
-contact. Personal VK messages need their own authorized capability; none is
-planned. Flow: ingest metadata → thread → triage («Нужен ответ», «К сведению»,
+In P22, «Переписка» starts with all correspondence accounts the user connected in Settings
+and can read in this workspace. Users can open this view directly without creating a task.
+Finding a sender opens their history across mailboxes, messengers
+and social inboxes. Each message identifies its account and original thread. Account, channel
+and date filters narrow that view. A connection requiring sign-in appears in coverage while
+available messages from the other accounts remain visible. [Sender identity and coverage](../tasks/p22-t10.md)
+
+Each inbox needs its own correspondence read grant. For example, reading public VK posts gives
+no access to private VK messages. The earlier mail and messenger paths are P15-T01 and P15-T02.
+Ingest metadata → thread → triage («Нужен ответ», «К сведению»,
 «Подождёт», «Не уверен» with a reason) → the agent proposes a reply draft, a
 planner task, a follow-up, a document or a CRM note → the user edits and approves
 → outbox ([../audit/p15-t05-0141.md](../audit/p15/p15-t05-0141.md)) and senders ([P15-T06](../audit/p15/p15-t06.md))
